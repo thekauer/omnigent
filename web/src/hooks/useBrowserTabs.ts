@@ -261,38 +261,13 @@ function retainOpenTabRequests(): () => void {
   };
 }
 
-export function useBrowserTabs(conversationId: string) {
-  const [state, setState] = useState(() => readBrowserTabsState(conversationId));
-  // Reload on a conversation switch during render, so the session's first frame
-  // (and the rail's tab fallback) never sees the previous session's tabs.
-  const [stateConversationId, setStateConversationId] = useState(conversationId);
-  if (stateConversationId !== conversationId) {
-    setStateConversationId(conversationId);
-    setState(readBrowserTabsState(conversationId));
-  }
-  // The session on screen, so a late async update for another one only persists.
-  const shownConversationRef = useRef(conversationId);
-  shownConversationRef.current = conversationId;
+/**
+ * The live pages of a session's browser tabs, from the desktop shell's URL and title updates;
+ * an older shell or a plain browser leaves the default labels.
+ */
+export function useBrowserPageLabels(conversationId: string, tabIds: readonly string[]) {
   const [pages, setPages] = useState<Record<string, BrowserPage>>({});
-  const viewIdsKey = JSON.stringify(
-    state.tabs.map((tabId) => browserViewId(conversationId, tabId)),
-  );
-  useEffect(() => {
-    // Showing the session again (or a remounted rail) counts as a selection, so a reopen
-    // started before it doesn't move the tab shown now.
-    noteBrowserSelection(conversationId);
-  }, [conversationId]);
-  useEffect(() => {
-    const listener = (changedConversationId: string, next: BrowserTabsState) => {
-      if (changedConversationId === shownConversationRef.current) setState(next);
-    };
-    browserTabsListeners.add(listener);
-    return () => {
-      browserTabsListeners.delete(listener);
-    };
-  }, []);
-  useEffect(() => retainOpenTabRequests(), []);
-
+  const viewIdsKey = JSON.stringify(tabIds.map((tabId) => browserViewId(conversationId, tabId)));
   useEffect(() => {
     const viewIds = new Set<string>(JSON.parse(viewIdsKey));
     setPages((current) => {
@@ -339,6 +314,39 @@ export function useBrowserTabs(conversationId: string) {
 
   const labelFor = (tabId: string, index: number): string =>
     browserPageLabel(pages[browserViewId(conversationId, tabId)], `Browser ${index + 1}`);
+  const pageFor = (tabId: string): BrowserPage | undefined =>
+    pages[browserViewId(conversationId, tabId)];
+  return { labelFor, pageFor };
+}
+
+export function useBrowserTabs(conversationId: string) {
+  const [state, setState] = useState(() => readBrowserTabsState(conversationId));
+  // Reload on a conversation switch during render, so the session's first frame
+  // (and the rail's tab fallback) never sees the previous session's tabs.
+  const [stateConversationId, setStateConversationId] = useState(conversationId);
+  if (stateConversationId !== conversationId) {
+    setStateConversationId(conversationId);
+    setState(readBrowserTabsState(conversationId));
+  }
+  // The session on screen, so a late async update for another one only persists.
+  const shownConversationRef = useRef(conversationId);
+  shownConversationRef.current = conversationId;
+  const { labelFor, pageFor } = useBrowserPageLabels(conversationId, state.tabs);
+  useEffect(() => {
+    // Showing the session again (or a remounted rail) counts as a selection, so a reopen
+    // started before it doesn't move the tab shown now.
+    noteBrowserSelection(conversationId);
+  }, [conversationId]);
+  useEffect(() => {
+    const listener = (changedConversationId: string, next: BrowserTabsState) => {
+      if (changedConversationId === shownConversationRef.current) setState(next);
+    };
+    browserTabsListeners.add(listener);
+    return () => {
+      browserTabsListeners.delete(listener);
+    };
+  }, []);
+  useEffect(() => retainOpenTabRequests(), []);
 
   const update = useCallback(
     (mutate: (current: BrowserTabsState) => BrowserTabsState) => {
@@ -402,7 +410,7 @@ export function useBrowserTabs(conversationId: string) {
   const pageUrl = async (tabId: string): Promise<string | undefined> => {
     const viewId = browserViewId(conversationId, tabId);
     // A snapshot without a URL (the view didn't exist yet when the strip looked) asks again.
-    const known = pages[viewId]?.url;
+    const known = pageFor(tabId)?.url;
     if (known) return known;
     const page = await browserTabsBridge()
       ?.browserHasView?.(viewId)
@@ -461,7 +469,7 @@ export function useBrowserTabs(conversationId: string) {
   return {
     ...state,
     labelFor,
-    urlFor: (tabId: string) => pages[browserViewId(conversationId, tabId)]?.url,
+    urlFor: (tabId: string) => pageFor(tabId)?.url,
     pageUrl,
     add,
     reopen,
