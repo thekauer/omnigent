@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { browserViewId } from "@/lib/browserTabs";
 import type * as UseTerminalsModule from "@/hooks/useTerminals";
 import type * as SessionsApiModule from "@/lib/sessionsApi";
 import { LEVEL_EDIT, LEVEL_OWNER, LEVEL_READ } from "@/lib/permissionsApi";
@@ -829,4 +830,38 @@ describe("a shell's tab", () => {
       await waitFor(() => expect(resume).not.toBeDisabled());
     },
   );
+});
+
+describe("a browser tab's label", () => {
+  afterEach(() => {
+    delete (window as unknown as { omnigentDesktop?: unknown }).omnigentDesktop;
+  });
+
+  it("follows its page's live title", async () => {
+    let urlChanged:
+      ((page: { conversationId: string; url: string; title: string }) => void) | null = null;
+    (window as unknown as { omnigentDesktop?: unknown }).omnigentDesktop = {
+      onBrowserUrlChanged: (callback: typeof urlChanged) => {
+        urlChanged = callback;
+        return () => {};
+      },
+      browserHasView: async () => ({ exists: false }),
+    };
+    renderPanels([{ conversationId: "conv_a" }]);
+    await waitFor(() => expect(sessionsWithWorkspaceRows()).toEqual(["conv_a"]));
+    act(pressNewBrowser);
+    await waitFor(() => expect(browserTabCount("conv_a")).toBe(1));
+    const tab = workspaceTabsSession("conv_a").store.selectedTab()!;
+    const viewKey = tab.binding?.kind === "browser-view" ? tab.binding.viewKey : "";
+    await waitFor(() => expect(urlChanged).not.toBeNull());
+
+    act(() =>
+      urlChanged!({
+        conversationId: browserViewId("conv_a", viewKey),
+        url: "https://example.com/docs",
+        title: "Example docs",
+      }),
+    );
+    expect(await screen.findByRole("tab", { name: /Example docs/ })).toBeInTheDocument();
+  });
 });

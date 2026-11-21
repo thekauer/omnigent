@@ -60,7 +60,7 @@ import { useNewBrowserHotkey } from "@/hooks/useNewBrowserHotkey";
 import type { SessionLiveness } from "@/hooks/useSessionLiveness";
 import { terminalDisplayLabel, terminalTabKey, useTerminals } from "@/hooks/useTerminals";
 import { AGENT_BROWSER_TAB_ID, browserViewId } from "@/lib/browserTabs";
-import { closeBrowserView, forgetBrowserTab } from "@/hooks/useBrowserTabs";
+import { closeBrowserView, forgetBrowserTab, useBrowserPageLabels } from "@/hooks/useBrowserTabs";
 import { isEditorLevel, isOwnerLevel } from "@/lib/permissionsApi";
 import { shortcutAriaKeys, shortcutKeys } from "@/shell/workspaceTabs/workspaceSidebarShortcuts";
 import { supportsSideChat } from "@/lib/sideChat";
@@ -408,6 +408,11 @@ function WorkspaceTabsPanelImpl({
     tab.binding?.kind === "agent" ? [subagentTabId(tab.binding.id)] : [],
   );
   const agentLabels = useSubagentTabLabels(agentTabIds);
+  // Each browser tab is named after its page's live title, as the desktop shell reports it.
+  const browserPages = useBrowserPageLabels(
+    conversationId,
+    knownTabs.flatMap((tab) => (tab.binding?.kind === "browser-view" ? [tab.binding.viewKey] : [])),
+  );
   // Recent pull requests on any new-tab page, named from what the session already knows of them.
   const recentPullRequestUrls = [
     ...new Set(
@@ -434,12 +439,15 @@ function WorkspaceTabsPanelImpl({
   );
   const titleOf = (tab: WorkspaceTab): TabTitle => {
     const { place, binding } = tab;
+    const page =
+      binding?.kind === "browser-view" ? browserPages.pageFor(binding.viewKey) : undefined;
     const title = placeTitle(place, {
       otherFilePaths: filePaths.filter((path) => !(place.kind === "files" && place.path === path)),
       terminal: place.kind === "terminal" ? { label: terminalLabel(place.key) } : undefined,
       agentName: place.kind === "agent" ? agentLabels[subagentTabId(place.id)] : undefined,
       // Side chats are numbered in strip order, as the classic strip numbers them.
       chatTitle: place.kind === "chat" ? `Side chat ${chatTabs.indexOf(tab) + 1}` : undefined,
+      page: page ? { url: page.url, title: page.title } : undefined,
       // An attached shell shows its terminal, so its icon follows that, not the list.
       connecting:
         binding?.kind === "terminal" &&
