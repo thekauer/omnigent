@@ -4696,6 +4696,9 @@ function createBrowserRegistryForWindow(win) {
       }
     },
     isHostFocused: () => !win.isDestroyed() && win.isFocused(),
+    focusHost: () => {
+      if (!win.isDestroyed()) win.webContents.focus();
+    },
     // Renderer measures in CSS px; convert to window DIPs using the host
     // webContents zoom factor (Cmd+/Cmd- changes this out from under us).
     getHostZoomFactor: () => {
@@ -4711,12 +4714,17 @@ function createBrowserRegistryForWindow(win) {
       Menu.buildFromTemplate(items).popup({ window: win });
     },
   });
+  // A reloaded or replaced renderer asks again for the page keys it handles; an older
+  // bundle never asks, so pages keep them.
   win.webContents.on("did-start-navigation", (_event, _url, isInPlace, isMainFrame) => {
     if (isMainFrame && !isInPlace) {
       registry.setRecentSessionSwitchSupported(false);
+      registry.setForwardedChords([]);
       registry.setOpenTabSupported(false);
     }
   });
+  // A crashed renderer can't take the keys it asked for.
+  win.webContents.on("render-process-gone", () => registry.setForwardedChords([]));
   return registry;
 }
 
