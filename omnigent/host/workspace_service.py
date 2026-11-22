@@ -123,7 +123,7 @@ _SERVED: dict[str, _Served] = {
     "ListWorkingCopyChanges": _Served(tool="git"),
     "ReadBaseFile": _Served(tool="git"),
     "ListRepositoryRefs": _Served(tool="git"),
-    "ListBranchCommits": _Served(features=("branch_commits",), tool="git"),
+    "ListBranchCommits": _Served(features=("branch_commits", "branch_commits.head"), tool="git"),
     "ResolveRepositoryContext": _Served(tool="git"),
 }
 
