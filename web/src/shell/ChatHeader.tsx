@@ -45,6 +45,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { AgentInfoButton } from "@/components/AgentInfo";
+import { SessionHeaderItems } from "@/vscodeExtensions/SessionHeaderItems";
 import { ConversationBreadcrumb } from "./ConversationBreadcrumb";
 import { HeaderConversationMenu } from "./HeaderConversationMenu";
 import { SessionActionMenuItem } from "@/components/SessionActionMenuItem";
@@ -685,6 +686,9 @@ export function ChatHeader({
             the three-dot "Session actions" menu below. Fork is also
             available from the session menus and assistant messages. */}
         {pending && <PendingHeaderActions isMobile={isMobile} />}
+        {/* Extension session header items, left of Agent info. Desktop-only;
+            renders no DOM when no extension shows an item. */}
+        {!pending && conversationId && <SessionHeaderItems />}
         {/* Agent info: tools & policies for the bound agent. Desktop-only
             popover; self-hides when the agent has neither configured. */}
         {!pending && conversationId && (

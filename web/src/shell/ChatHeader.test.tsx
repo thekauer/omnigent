@@ -9,6 +9,10 @@ import type { Agent } from "@/hooks/useAgents";
 import type { Conversation } from "@/hooks/useConversations";
 import type * as NativeBridgeModule from "@/lib/nativeBridge";
 import { setOmnigentHostConfig } from "@/lib/host";
+import {
+  SessionHeaderItemAlignment,
+  sessionHeaderItems,
+} from "@/vscodeExtensions/sessionHeaderItems";
 import { ChatHeader } from "./ChatHeader";
 import {
   TerminalFirstContextProvider,
@@ -1218,5 +1222,83 @@ describe("ChatHeader — title-adjacent conversation actions", () => {
     expect(screen.queryByRole("button", { name: "Conversation actions" })).toBeNull();
     expect(screen.getByRole("link", { name: "Back to parent session" })).toBeInTheDocument();
     expect(screen.getByText("reviewer")).toBeInTheDocument();
+  });
+});
+
+describe("ChatHeader - extension session header items", () => {
+  const created: { dispose: () => void }[] = [];
+  afterEach(() => {
+    for (const item of created.splice(0)) item.dispose();
+  });
+
+  function addItem(
+    id: string,
+    text: string,
+    alignment: number,
+    priority: number,
+    tooltip?: string,
+  ) {
+    const item = sessionHeaderItems.create("pub.ext", id, alignment, priority);
+    item.text = text;
+    item.tooltip = tooltip;
+    item.show();
+    created.push(item);
+    return item;
+  }
+
+  it("renders no extra DOM when no extension shows an item", () => {
+    const { container } = renderHeader({ sidebarOpen: true, conversationId: "conv-1" });
+    const before = container.innerHTML;
+    expect(container.querySelector('[data-testid^="session-header-item-"]')).toBeNull();
+
+    let item!: ReturnType<typeof addItem>;
+    act(() => {
+      item = addItem("cost", "$1.00", SessionHeaderItemAlignment.Right, 0);
+    });
+    expect(screen.getByTestId("session-header-item-pub.ext.cost")).toBeInTheDocument();
+    act(() => item.dispose());
+    expect(container.innerHTML).toBe(before);
+  });
+
+  it("renders visible items in order immediately left of the agent info trigger", () => {
+    addItem("left", "L", SessionHeaderItemAlignment.Left, 0);
+    addItem("near", "$1.23", SessionHeaderItemAlignment.Right, 100, "Session cost");
+    addItem("far", "F", SessionHeaderItemAlignment.Right, 1);
+    renderHeader({ sidebarOpen: true, conversationId: "conv-1" });
+
+    const trigger = screen.getByTestId("agent-info-trigger");
+    const near = screen.getByTestId("session-header-item-pub.ext.near");
+    expect(trigger.previousElementSibling).toBe(near);
+    expect(near.previousElementSibling).toBe(screen.getByTestId("session-header-item-pub.ext.far"));
+    expect(near.previousElementSibling?.previousElementSibling).toBe(
+      screen.getByTestId("session-header-item-pub.ext.left"),
+    );
+    expect(near).toHaveTextContent("$1.23");
+    // Desktop only, in the header's small muted text, like the info button.
+    expect(near).toHaveClass("hidden", "md:inline-flex", "text-sm", "text-muted-foreground");
+  });
+
+  it("updates text live and shows the tooltip on focus", async () => {
+    const item = addItem("cost", "$1.00", SessionHeaderItemAlignment.Right, 0, "Session cost");
+    renderHeader({ sidebarOpen: true, conversationId: "conv-1" });
+    act(() => {
+      item.text = "$2.50";
+    });
+    const element = screen.getByTestId("session-header-item-pub.ext.cost");
+    expect(element).toHaveTextContent("$2.50");
+
+    act(() => element.focus());
+    expect((await screen.findByRole("tooltip")).textContent).toContain("Session cost");
+    act(() => item.hide());
+    expect(screen.queryByTestId("session-header-item-pub.ext.cost")).toBeNull();
+  });
+
+  it("stays out of the header without a session or while it is pending", () => {
+    addItem("cost", "$1.00", SessionHeaderItemAlignment.Right, 0);
+    renderHeader({ sidebarOpen: true });
+    expect(screen.queryByTestId("session-header-item-pub.ext.cost")).toBeNull();
+    cleanup();
+    renderHeader({ sidebarOpen: true, conversationId: "temp:12345678", pending: true });
+    expect(screen.queryByTestId("session-header-item-pub.ext.cost")).toBeNull();
   });
 });

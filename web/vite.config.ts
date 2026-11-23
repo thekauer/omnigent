@@ -5,6 +5,7 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import type { Plugin, ProxyOptions } from "vite";
 import { defineConfig } from "vitest/config";
+import { omnigentExtensionsDev } from "./vite.omnigentExtensions";
 import { shikiManualChunk } from "./vite.shiki";
 import { streamdownManualChunk } from "./vite.streamdown";
 import { workerBuildOptions } from "./vite.workerExports";
@@ -326,7 +327,14 @@ export default defineConfig(({ command }) => ({
   // `{base}/assets/...` at serve time (see `_rewrite_web_ui_index` in
   // omnigent/server/app.py). Dev (`vite serve`) stays at root.
   base: command === "build" ? "./" : "/",
-  plugins: [devProxyAuth(), safariLookbehindWorkarounds(), react(), tailwindcss()],
+  plugins: [
+    devProxyAuth(),
+    // VS Code-style extensions from OMNIGENT_WEB_EXTENSION_DEV_PATHS (dev only).
+    omnigentExtensionsDev(),
+    safariLookbehindWorkarounds(),
+    react(),
+    tailwindcss(),
+  ],
   // Workers have no DOM, so they take a package's worker entry over its browser one.
   worker: workerBuildOptions,
   resolve: {

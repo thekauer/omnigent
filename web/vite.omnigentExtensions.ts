@@ -1,0 +1,565 @@
+// Dev-server loading of VS Code-style web extensions from local folders.
+//
+// OMNIGENT_WEB_EXTENSION_DEV_PATHS lists extension folders (path-delimiter
+// separated). Each folder's package.json is validated; valid extensions are
+// exposed to the UI through `virtual:omnigent-dev-extensions`, their browser
+// entries are served through Vite (`/@fs/...`), and a bare `import "omnigent"`
+// inside an extension folder resolves to an API module bound to that extension.
+//
+// Trust model: a dev-path extension is trusted local code, like VS Code's
+// --extensionDevelopmentPath. The guards below stop accidents and plain HTTP
+// requests for files outside the extension's own sources: a realpath check of
+// the browser entry, a server.fs.allow list of just its own files, a 403 for any
+// request whose real path leaves its folder, refusal of bare imports other than
+// `omnigent` and of imports resolving outside the folder (Vite's own client ids
+// excepted), and an optimizer guard. They are not a sandbox: CSS @import, `?raw`
+// of files inside the folder, hardlinks and crafted transforms are out of scope.
+// The real boundary is the isolated host (see docs/extending/vscode_style_extensions.md).
+
+import { existsSync, lstatSync, readFileSync, readdirSync, realpathSync, statSync } from "node:fs";
+import type { IncomingMessage, ServerResponse } from "node:http";
+import { createRequire } from "node:module";
+import path from "node:path";
+import { normalizePath, type Plugin, type ResolvedConfig, type ViteDevServer } from "vite";
+
+export const DEV_PATHS_ENV = "OMNIGENT_WEB_EXTENSION_DEV_PATHS";
+export const DEV_EXTENSIONS_MODULE = "virtual:omnigent-dev-extensions";
+export const DEV_EXTENSIONS_ENDPOINT = "/__omnigent/extensions";
+const RESOLVED_DEV_EXTENSIONS_MODULE = `\0${DEV_EXTENSIONS_MODULE}`;
+const API_MODULE_PREFIX = "\0omnigent-api:";
+
+/** Re-exported names of the per-extension module; mirrors OMNIGENT_API_EXPORT_NAMES. */
+export const OMNIGENT_API_EXPORTS = [
+  "version",
+  "Disposable",
+  "EventEmitter",
+  "SessionHeaderItemAlignment",
+  "window",
+  "sessions",
+] as const;
+
+const KNOWN_ACTIVATION_EVENTS = new Set(["*", "onStartupFinished"]);
+const NAME_PATTERN = /^[a-z0-9][a-z0-9._-]*$/;
+const PUBLISHER_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9-]*$/;
+const SEMVER_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+const RANGE_COMPARATOR_PATTERN = /^(?:\^|~|>=|<=|>|<|=)?\d+(?:\.\d+){0,2}(?:-[0-9A-Za-z.-]+)?$/;
+/** Files an extension may import; everything else in its folder is not served. */
+const SERVABLE_FILE_PATTERN = /\.(?:m?js|json|css)$/;
+const SKIPPED_DIRECTORIES = new Set(["node_modules", ".git"]);
+const MAX_SERVABLE_FILES = 5000;
+/**
+ * The only `/@` ids an extension file may import unchecked: what Vite itself
+ * injects (the HMR client, the env shim of a worker) and the React refresh
+ * runtime. Any other `/@...` specifier is resolved and checked like a path.
+ */
+const VITE_CLIENT_IDS = new Set(["/@vite/client", "/@vite/env", "/@react-refresh"]);
+
+/** Real paths of Vite's client and env modules, which Vite injects as `/@fs/` imports. */
+function viteClientFiles(): Set<string> {
+  const vitePackageDir = path.dirname(
+    createRequire(path.join(__dirname, "package.json")).resolve("vite/package.json"),
+  );
+  return new Set(
+    ["dist/client/client.mjs", "dist/client/env.mjs"].flatMap((file) => {
+      const real = realpathOrUndefined(path.join(vitePackageDir, file));
+      return real === undefined ? [] : [real];
+    }),
+  );
+}
+
+/** A validated extension, as served to the UI (plain JSON). */
+export interface DevExtension {
+  id: string;
+  publisher: string;
+  name: string;
+  version: string;
+  engines: { omnigent: string };
+  activationEvents: string[];
+  /** Absolute, real path of the extension folder. */
+  directory: string;
+  /** Absolute path of the browser entry. */
+  entryPath: string;
+  /** URL the browser imports the entry from. */
+  entryUrl: string;
+}
+
+export interface DevExtensionScan {
+  extensions: DevExtension[];
+  errors: string[];
+  warnings: string[];
+}
+
+export function parseDevPaths(raw: string | undefined, cwd = process.cwd()): string[] {
+  if (!raw) return [];
+  return raw
+    .split(path.delimiter)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+    .map((entry) => path.resolve(cwd, entry));
+}
+
+export function isValidEngineRange(range: string): boolean {
+  const trimmed = range.trim();
+  if (trimmed === "*") return true;
+  const comparators = trimmed.split(/\s+/);
+  return comparators.length > 0 && comparators.every((c) => RANGE_COMPARATOR_PATTERN.test(c));
+}
+
+function fsUrl(absolutePath: string): string {
+  const posix = absolutePath.split(path.sep).join("/");
+  return `/@fs${posix.startsWith("/") ? "" : "/"}${posix}`;
+}
+
+type ManifestResult =
+  { extension: DevExtension; warnings: string[] } | { error: string; warnings: string[] };
+
+/** Validates one extension folder; errors name the folder and every problem found. */
+export function readDevExtension(folder: string): ManifestResult {
+  const warnings: string[] = [];
+  const failure = (problems: string[]): ManifestResult => ({
+    error: `${folder}: invalid extension: ${problems.join("; ")}`,
+    warnings,
+  });
+  if (!existsSync(folder) || !statSync(folder).isDirectory()) {
+    return failure(["folder does not exist"]);
+  }
+  const directory = realpathSync(folder);
+  const manifestPath = path.join(directory, "package.json");
+  let manifest: Record<string, unknown>;
+  try {
+    const parsed: unknown = JSON.parse(readFileSync(manifestPath, "utf8"));
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      return failure(["package.json must contain a JSON object"]);
+    }
+    manifest = parsed as Record<string, unknown>;
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    return failure([`cannot read package.json (${reason})`]);
+  }
+
+  const problems: string[] = [];
+  const { name, publisher, version, engines, browser, activationEvents } = manifest;
+  if (typeof name !== "string" || !NAME_PATTERN.test(name)) {
+    problems.push('"name" must be a lowercase string without spaces');
+  }
+  if (typeof publisher !== "string" || !PUBLISHER_PATTERN.test(publisher)) {
+    problems.push('"publisher" must be a string of letters, digits and dashes');
+  }
+  if (typeof version !== "string" || !SEMVER_PATTERN.test(version)) {
+    problems.push('"version" must be a semver version such as 0.1.0');
+  }
+  const engineRange =
+    typeof engines === "object" && engines !== null
+      ? (engines as Record<string, unknown>).omnigent
+      : undefined;
+  if (engineRange === undefined) {
+    problems.push('"engines.omnigent" is required (for example "^0.24.0")');
+  } else if (typeof engineRange !== "string" || !isValidEngineRange(engineRange)) {
+    problems.push(`"engines.omnigent" must be a semver range, got ${JSON.stringify(engineRange)}`);
+  }
+
+  let entryPath: string | undefined;
+  if (typeof browser !== "string" || browser.trim() === "") {
+    problems.push('"browser" must name the browser entry file, for example "./src/extension.js"');
+  } else {
+    const resolved = path.resolve(directory, browser);
+    if (!isInside(resolved, directory)) {
+      problems.push(`"browser" must stay inside the extension folder, got ${browser}`);
+    } else if (!existsSync(resolved) || !statSync(resolved).isFile()) {
+      problems.push(`"browser" entry ${browser} does not exist`);
+    } else if (!isInside(realpathSync(resolved), directory)) {
+      problems.push(
+        `"browser" entry ${browser} is a symlink to a file outside the extension folder`,
+      );
+    } else if (!/\.m?js$/.test(resolved)) {
+      problems.push(`"browser" entry ${browser} must be an ES module (.js or .mjs)`);
+    } else {
+      entryPath = realpathSync(resolved);
+    }
+  }
+
+  let events: string[] = [];
+  if (activationEvents === undefined) {
+    warnings.push(`${folder}: no "activationEvents"; the extension will not be activated`);
+  } else if (
+    !Array.isArray(activationEvents) ||
+    !activationEvents.every((event) => typeof event === "string")
+  ) {
+    problems.push('"activationEvents" must be an array of strings');
+  } else {
+    events = activationEvents;
+    for (const event of events) {
+      if (!KNOWN_ACTIVATION_EVENTS.has(event)) {
+        warnings.push(`${folder}: activation event "${event}" is not supported yet`);
+      }
+    }
+  }
+
+  if (problems.length > 0 || entryPath === undefined) return failure(problems);
+  const id = `${publisher as string}.${name as string}`;
+  return {
+    extension: {
+      id,
+      publisher: publisher as string,
+      name: name as string,
+      version: version as string,
+      engines: { omnigent: engineRange as string },
+      activationEvents: events,
+      directory,
+      entryPath,
+      entryUrl: fsUrl(entryPath),
+    },
+    warnings,
+  };
+}
+
+export function scanDevExtensions(folders: readonly string[]): DevExtensionScan {
+  const scan: DevExtensionScan = { extensions: [], errors: [], warnings: [] };
+  const seen = new Map<string, string>();
+  for (const folder of folders) {
+    const result = readDevExtension(folder);
+    scan.warnings.push(...result.warnings);
+    if ("error" in result) {
+      scan.errors.push(result.error);
+      continue;
+    }
+    const previous = seen.get(result.extension.id);
+    if (previous !== undefined) {
+      scan.errors.push(
+        `${folder}: invalid extension: duplicate id ${result.extension.id} (already loaded from ${previous})`,
+      );
+      continue;
+    }
+    seen.set(result.extension.id, folder);
+    scan.extensions.push(result.extension);
+  }
+  return scan;
+}
+
+function isInside(file: string, directory: string): boolean {
+  const relative = path.relative(directory, file);
+  return (
+    relative !== "" &&
+    relative !== ".." &&
+    !relative.startsWith(`..${path.sep}`) &&
+    !path.isAbsolute(relative)
+  );
+}
+
+function realpathOrUndefined(file: string): string | undefined {
+  try {
+    return realpathSync(file);
+  } catch {
+    return undefined;
+  }
+}
+
+/** Strips Vite's query suffix and `/@fs` prefix from an importer id. */
+function importerPath(importer: string): string {
+  const withoutQuery = importer.split("?")[0] ?? importer;
+  return withoutQuery.startsWith("/@fs/") ? withoutQuery.slice(4) : withoutQuery;
+}
+
+/**
+ * Real paths of the files an extension can import: its own servable files,
+ * skipping node_modules, .git, symlinked directories and symlinks that leave it.
+ */
+export function servableExtensionFiles(directory: string): string[] {
+  const files: string[] = [];
+  const pending = [directory];
+  while (pending.length > 0 && files.length < MAX_SERVABLE_FILES) {
+    const current = pending.pop()!;
+    let entries: string[];
+    try {
+      entries = readdirSync(current);
+    } catch {
+      continue;
+    }
+    for (const name of entries) {
+      const file = path.join(current, name);
+      let stats;
+      try {
+        stats = lstatSync(file);
+      } catch {
+        continue;
+      }
+      if (stats.isDirectory()) {
+        if (!SKIPPED_DIRECTORIES.has(name)) pending.push(file);
+        continue;
+      }
+      if (!SERVABLE_FILE_PATTERN.test(name)) continue;
+      const real = stats.isSymbolicLink() ? realpathOrUndefined(file) : file;
+      if (real !== undefined && isInside(real, directory) && statSync(real).isFile()) {
+        files.push(real);
+      }
+    }
+  }
+  return [...new Set(files)].sort();
+}
+
+/** `file` is inside `directory` and not under a node_modules or .git folder of it. */
+function isOwnFile(file: string, directory: string): boolean {
+  return (
+    isInside(file, directory) &&
+    !path
+      .relative(directory, file)
+      .split(path.sep)
+      .some((segment) => SKIPPED_DIRECTORIES.has(segment))
+  );
+}
+
+/** A bare package specifier such as `pkg` or `@scope/pkg` (not a path or URL). */
+function isBareSpecifier(id: string): boolean {
+  return !/^[./]/.test(id) && !/^[a-zA-Z][a-zA-Z0-9+.-]*:/.test(id);
+}
+
+/** The deepest of `directories` that contains `file`, so a nested folder wins. */
+function deepestContaining<T>(
+  file: string,
+  items: readonly T[],
+  directoryOf: (item: T) => string,
+): T | undefined {
+  let best: T | undefined;
+  for (const item of items) {
+    const directory = directoryOf(item);
+    if (!isInside(file, directory)) continue;
+    if (best === undefined || directory.length > directoryOf(best).length) best = item;
+  }
+  return best;
+}
+
+/** Filesystem path a dev-server request URL names, if it names one. */
+function requestPath(url: string, root: string): string | undefined {
+  let pathname: string;
+  try {
+    pathname = decodeURIComponent(new URL(url, "http://localhost").pathname);
+  } catch {
+    return undefined;
+  }
+  if (pathname.startsWith("/@fs/")) return path.resolve(pathname.slice(4));
+  if (pathname.startsWith("/@")) return undefined;
+  return path.join(root, pathname);
+}
+
+export interface OmnigentExtensionsDevOptions {
+  /** Extension folders; defaults to OMNIGENT_WEB_EXTENSION_DEV_PATHS. */
+  paths?: readonly string[];
+  /** Module the per-extension API module imports `getExtensionApi` from. */
+  apiRegistryModule?: string;
+  /** Silences the startup summary (tests). */
+  quiet?: boolean;
+}
+
+export function omnigentExtensionsDev(options: OmnigentExtensionsDevOptions = {}): Plugin {
+  const folders = options.paths ?? parseDevPaths(process.env[DEV_PATHS_ENV]);
+  const apiRegistryModule =
+    options.apiRegistryModule ?? path.resolve(__dirname, "src/vscodeExtensions/apiRegistry.ts");
+  let scan: DevExtensionScan = scanDevExtensions(folders);
+  let serving = false;
+  let resolvedConfig: ResolvedConfig | undefined;
+  // What this plugin added to server.fs.allow, so a rescan can replace it.
+  let allowedFiles: string[] = [];
+  let viteClient: Set<string> | undefined;
+
+  const report = () => {
+    if (options.quiet) return;
+    for (const extension of scan.extensions) {
+      console.log(
+        `[omnigent-extensions] loaded ${extension.id} ${extension.version} from ${extension.directory}`,
+      );
+    }
+    for (const warning of scan.warnings) console.warn(`[omnigent-extensions] warning: ${warning}`);
+    for (const error of scan.errors) console.error(`[omnigent-extensions] error: ${error}`);
+  };
+
+  const extensionFor = (importer: string): DevExtension | undefined =>
+    deepestContaining(importerPath(importer), scan.extensions, (extension) => extension.directory);
+
+  /** Replaces this plugin's server.fs.allow entries with the current extensions' files. */
+  const refreshAllowList = () => {
+    if (!serving || resolvedConfig === undefined) return;
+    const allow = resolvedConfig.server.fs.allow;
+    const previous = new Set(allowedFiles);
+    const kept = allow.filter((entry) => !previous.has(entry));
+    allowedFiles = scan.extensions.flatMap((extension) =>
+      servableExtensionFiles(extension.directory).map((file) => normalizePath(file)),
+    );
+    allow.splice(0, allow.length, ...kept, ...allowedFiles);
+  };
+
+  const rescan = (server: ViteDevServer) => {
+    scan = scanDevExtensions(folders);
+    refreshAllowList();
+    report();
+    const module = server.moduleGraph.getModuleById(RESOLVED_DEV_EXTENSIONS_MODULE);
+    if (module) server.moduleGraph.invalidateModule(module);
+    server.ws.send({ type: "full-reload" });
+  };
+
+  /** Each configured folder that exists, by declared and by real path. */
+  const folderRoots = () =>
+    folders.flatMap((folder) => {
+      const real = realpathOrUndefined(folder);
+      if (real === undefined) return [];
+      const declared = path.resolve(folder);
+      return declared === real
+        ? [{ directory: real, real }]
+        : [
+            { directory: declared, real },
+            { directory: real, real },
+          ];
+    });
+
+  /** `file` (declared or real path) is in a configured extension folder. */
+  const inAnyFolder = (file: string) =>
+    folderRoots().some(({ directory, real }) => isInside(file, directory) || isInside(file, real));
+
+  /** Why `file` must not be served: it is in an extension folder but really lives outside it. */
+  const escapeReason = (file: string): string | undefined => {
+    const root = deepestContaining(file, folderRoots(), ({ directory }) => directory);
+    if (root === undefined) return undefined;
+    const real = realpathOrUndefined(file);
+    if (real === undefined || isInside(real, root.real)) return undefined;
+    return `${file} resolves to ${real}, outside the extension folder ${root.real}`;
+  };
+
+  const guardMiddleware = (req: IncomingMessage, res: ServerResponse, next: () => void) => {
+    const file =
+      req.url === undefined || resolvedConfig === undefined
+        ? undefined
+        : requestPath(req.url, resolvedConfig.root);
+    const reason = file === undefined ? undefined : escapeReason(file);
+    if (reason === undefined) return next();
+    console.error(`[omnigent-extensions] refused to serve ${reason}`);
+    res.statusCode = 403;
+    res.end("Forbidden: extension file outside its folder");
+  };
+
+  return {
+    name: "omnigent-extensions-dev",
+    enforce: "pre",
+    config() {
+      if (folders.length === 0) return;
+      // Defense in depth for the dep optimizer, which resolves and bundles a
+      // package's imports without the resolveId guard below: it must never read a
+      // file in an extension folder (its node_modules included). Extension
+      // entries are loaded by dynamic URL, so the scanner cannot find them from
+      // index.html either.
+      return {
+        optimizeDeps: {
+          rolldownOptions: {
+            plugins: [
+              {
+                name: "omnigent-extensions-no-prebundle",
+                load(id: string) {
+                  const file = importerPath(id);
+                  if (path.isAbsolute(file) && inAnyFolder(file)) {
+                    throw new Error(
+                      `[omnigent-extensions] refused to pre-bundle ${file}: files in an extension folder are never optimized`,
+                    );
+                  }
+                  return null;
+                },
+              },
+            ],
+          },
+        },
+      };
+    },
+    configResolved(config) {
+      resolvedConfig = config;
+      serving = config.command === "serve" && !config.isProduction;
+      if (!serving) return;
+      refreshAllowList();
+      if (folders.length > 0) report();
+    },
+    configureServer(server) {
+      // Registered before Vite's own middlewares, so it sees every file request.
+      server.middlewares.use(guardMiddleware);
+      server.middlewares.use(DEV_EXTENSIONS_ENDPOINT, (req, res, next) => {
+        if (req.method !== "GET") return next();
+        res.setHeader("Content-Type", "application/json");
+        res.end(JSON.stringify(scan));
+      });
+      if (folders.length === 0) return;
+      const manifests = new Set(folders.map((folder) => path.resolve(folder, "package.json")));
+      const isManifest = (file: string) =>
+        manifests.has(path.resolve(file)) ||
+        folderRoots().some(({ real }) => path.resolve(file) === path.join(real, "package.json"));
+      const inFolder = (file: string) =>
+        folderRoots().some(({ directory }) => isInside(path.resolve(file), directory));
+      server.watcher.add([...folders, ...manifests]);
+      server.watcher.on("all", (event, file) => {
+        if (event !== "add" && event !== "change" && event !== "unlink") return;
+        if (isManifest(file)) rescan(server);
+        // A new, replaced or removed source file changes what the extension may
+        // import (a change can turn a file into a symlink); rebuilding is cheap.
+        else if (inFolder(file)) refreshAllowList();
+      });
+    },
+    async resolveId(id, importer) {
+      if (id === DEV_EXTENSIONS_MODULE) return RESOLVED_DEV_EXTENSIONS_MODULE;
+      if (importer === undefined) return null;
+      const extension = extensionFor(importer);
+      if (extension === undefined) return null;
+      if (id === "omnigent") return `${API_MODULE_PREFIX}${extension.id}`;
+      if (id.startsWith("\0") || id.startsWith("virtual:")) return null;
+      const refuse = (why: string): never =>
+        this.error(
+          `${extension.id}: ${importerPath(importer)} imports ${id}, ${why}; an extension may import only "omnigent" and its own files`,
+        );
+      // Refused before resolving: resolving a bare package registers it with the
+      // dep optimizer, which would bundle it (and what it imports) into
+      // /node_modules/.vite/deps without this guard.
+      if (id.startsWith("/@id/")) refuse("a Vite module id");
+      if (VITE_CLIENT_IDS.has(id)) return null;
+      if (isBareSpecifier(id)) refuse("a package");
+      // Vite serves whatever an allowed module imports, so check the real target here.
+      const resolved = await this.resolve(id, importer, { skipSelf: true });
+      if (resolved === null || resolved.external || resolved.id.startsWith("\0")) return resolved;
+      const resolvedPath = importerPath(resolved.id);
+      // A target that does not exist (yet) is judged by its path.
+      const target = realpathOrUndefined(resolvedPath) ?? path.resolve(resolvedPath);
+      // Vite injects its env module into workers as a `/@fs/` import.
+      viteClient ??= viteClientFiles();
+      if (viteClient.has(target)) return resolved;
+      if (!isInside(target, extension.directory)) {
+        refuse(`which resolves to ${target}, outside the extension folder ${extension.directory}`);
+      }
+      if (!isOwnFile(target, extension.directory)) {
+        refuse(`which resolves to ${target}, inside the extension's node_modules or .git`);
+      }
+      return resolved;
+    },
+    load(id) {
+      if (id === RESOLVED_DEV_EXTENSIONS_MODULE) {
+        const extensions = serving
+          ? scan.extensions.map(({ id: extensionId, version, activationEvents, entryUrl }) => ({
+              id: extensionId,
+              version,
+              activationEvents,
+              entryUrl,
+            }))
+          : [];
+        return [
+          `export const devExtensions = ${JSON.stringify(extensions)};`,
+          `export const devExtensionErrors = ${JSON.stringify(serving ? scan.errors : [])};`,
+        ].join("\n");
+      }
+      if (id.startsWith(API_MODULE_PREFIX)) {
+        const extensionId = id.slice(API_MODULE_PREFIX.length);
+        return [
+          `import { getExtensionApi } from ${JSON.stringify(apiRegistryModule)};`,
+          `const api = getExtensionApi(${JSON.stringify(extensionId)});`,
+          ...OMNIGENT_API_EXPORTS.map((name) => `export const ${name} = api.${name};`),
+          "export default api;",
+        ].join("\n");
+      }
+      if (serving && !id.startsWith("\0")) {
+        const reason = escapeReason(importerPath(id));
+        if (reason !== undefined) this.error(`refused to load ${reason}`);
+      }
+      return null;
+    },
+  };
+}

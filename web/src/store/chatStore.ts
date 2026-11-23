@@ -1115,6 +1115,8 @@ export interface ConversationState {
    * tokens, total cost) is derived from this map on the frontend.
    */
   sessionUsageByModel: Record<string, ModelUsage> | null;
+  /** True once the server reports the operator hides USD cost for this session. */
+  sessionCostHidden: boolean;
   /** True while this conversation's first separate usage read is in flight. */
   sessionUsageLoading: boolean;
   /**
@@ -2403,6 +2405,7 @@ export const useChatStore = create<ChatState>((_rootSet, get) => ({
   tokensUsed: null,
   sessionCostUsd: null,
   sessionUsageByModel: null,
+  sessionCostHidden: false,
   sessionUsageLoading: false,
   gitBranch: null,
   todos: [],
@@ -5537,6 +5540,14 @@ async function bindStream(
   }
   const stateBeforeFetch = get();
   const launchBeforeFetch = mcpStartupBeforeSnapshot(id, stateBeforeFetch);
+  const usageEntry = conversationRegistry.peek(id);
+  const costRevisionBeforeFetch =
+    usageEntry === undefined ? 0 : (sessionUsageRevisions.get(usageEntry)?.cost ?? 0);
+  // A live cost report (even a same-value one) during the fetch is newer than the snapshot.
+  const liveCostDuringFetch = (state: ConversationState): boolean =>
+    state.sessionCostUsd !== stateBeforeFetch.sessionCostUsd ||
+    (usageEntry !== undefined &&
+      (sessionUsageRevisions.get(usageEntry)?.cost ?? 0) !== costRevisionBeforeFetch);
   try {
     // One larger page, so opening a session is a single round trip that then
     // stays still — rather than a small page followed by background growth
@@ -5745,12 +5756,17 @@ async function bindStream(
         // back re-projects (it does not re-bind, so it cannot recompute it).
         sessionReasoningEffort: effectiveEffort,
         tokensUsed: session.lastTotalTokens ?? null,
-        sessionCostUsd:
-          state.sessionCostUsd !== stateBeforeFetch.sessionCostUsd
-            ? state.sessionCostUsd
-            : session.costHidden
-              ? null
-              : (session.totalCostUsd ?? state.sessionCostUsd),
+        // The cost and its hidden flag always come from the same report.
+        ...(liveCostDuringFetch(state)
+          ? {}
+          : {
+              sessionCostUsd: session.costHidden
+                ? null
+                : (session.totalCostUsd ?? state.sessionCostUsd),
+              sessionCostHidden:
+                session.costHidden === true ||
+                (session.totalCostUsd == null && state.sessionCostHidden),
+            }),
         sessionUsageByModel:
           state.sessionUsageByModel !== stateBeforeFetch.sessionUsageByModel
             ? state.sessionUsageByModel
@@ -5821,10 +5837,14 @@ async function hydrateSessionUsage(id: string): Promise<void> {
     const revisions = sessionUsageRevisions.get(entry) ?? { cost: 0, models: 0 };
     // A live cost/model update during the read wins independently for each field.
     entrySetter(entry)((state) => ({
+      // The hidden flag shares the cost's guard so both come from the same report.
       ...(revisions.cost === revisionsBeforeFetch.cost &&
       state.sessionCostUsd === before.sessionCostUsd
         ? {
             sessionCostUsd: usage.costHidden ? null : (usage.totalCostUsd ?? state.sessionCostUsd),
+            ...(usage.costHidden || usage.totalCostUsd != null
+              ? { sessionCostHidden: usage.costHidden === true }
+              : {}),
           }
         : {}),
       ...(revisions.models === revisionsBeforeFetch.models &&
@@ -6030,9 +6050,13 @@ function reconnectStatusPatch(
   if (session.costHidden) {
     if (queryClient !== null) invalidateAgentCosts(queryClient, true);
     patch.sessionCostUsd = null;
+    patch.sessionCostHidden = true;
     patch.sessionUsageByModel = withoutModelCosts(session.usageByModel ?? s.sessionUsageByModel);
   } else {
-    if (session.totalCostUsd != null) patch.sessionCostUsd = session.totalCostUsd;
+    if (session.totalCostUsd != null) {
+      patch.sessionCostUsd = session.totalCostUsd;
+      patch.sessionCostHidden = false;
+    }
     if (session.usageByModel != null) patch.sessionUsageByModel = session.usageByModel;
   }
   if (!settleTurn) return patch;
@@ -9062,6 +9086,7 @@ export function handleSessionEvent(event: StreamEvent, streamConversationId?: st
         tokensUsed?: number;
         contextWindow?: number;
         sessionCostUsd?: number | null;
+        sessionCostHidden?: boolean;
         sessionUsageByModel?: Record<string, ModelUsage>;
       } = {};
       if (event.contextTokens !== undefined) {
@@ -9074,6 +9099,7 @@ export function handleSessionEvent(event: StreamEvent, streamConversationId?: st
         patch.sessionCostUsd = null;
       } else if (event.totalCostUsd !== undefined) {
         patch.sessionCostUsd = event.totalCostUsd;
+        patch.sessionCostHidden = false;
       }
       if (event.usageByModel !== undefined) {
         patch.sessionUsageByModel = event.usageByModel;
@@ -9098,6 +9124,7 @@ export function handleSessionEvent(event: StreamEvent, streamConversationId?: st
         if (queryClient !== null) invalidateAgentCosts(queryClient, true);
         applyToConversation((s) => ({
           ...patch,
+          sessionCostHidden: true,
           sessionUsageByModel: withoutModelCosts(event.usageByModel ?? s.sessionUsageByModel),
         }));
       } else if (Object.keys(patch).length > 0) {

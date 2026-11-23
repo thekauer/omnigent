@@ -945,6 +945,74 @@ describe("chatStore — lazy subtree usage", () => {
     expect(useChatStore.getState().sessionUsageByModel).toEqual(liveModels);
   });
 
+  function pendingResponse(): { promise: Promise<Response>; finish: (r: Response) => void } {
+    let finish!: (response: Response) => void;
+    const promise = new Promise<Response>((resolve) => {
+      finish = resolve;
+    });
+    return { promise, finish };
+  }
+
+  it("keeps a live priced cost visible over a stale hidden usage read", async () => {
+    const read = pendingResponse();
+    routeUsage("conv_usage", () => read.promise);
+    await useChatStore.getState().switchTo("conv_usage");
+    handleSessionEvent({ type: "session_usage", conversationId: "conv_usage", totalCostUsd: 8 });
+
+    read.finish(mockResponse({ id: "conv_usage", cost_hidden: true, usage_by_model: null }));
+    await tick();
+
+    expect(useChatStore.getState().sessionCostUsd).toBe(8);
+    expect(useChatStore.getState().sessionCostHidden).toBe(false);
+  });
+
+  it("keeps a live hidden cost hidden over a stale priced usage read", async () => {
+    const read = pendingResponse();
+    routeUsage("conv_usage", () => read.promise);
+    await useChatStore.getState().switchTo("conv_usage");
+    handleSessionEvent({ type: "session_usage", conversationId: "conv_usage", costHidden: true });
+
+    read.finish(usage("conv_usage", 3.5));
+    await tick();
+
+    expect(useChatStore.getState().sessionCostUsd).toBeNull();
+    expect(useChatStore.getState().sessionCostHidden).toBe(true);
+  });
+
+  it("keeps a live priced cost visible over a stale hidden snapshot", async () => {
+    const metadata = pendingResponse();
+    routeUsage(
+      "conv_usage",
+      () => mockResponse({ id: "conv_usage", total_cost_usd: null, usage_by_model: null }),
+      metadata.promise,
+    );
+    const binding = useChatStore.getState().switchTo("conv_usage");
+    await tick();
+    handleSessionEvent({ type: "session_usage", conversationId: "conv_usage", totalCostUsd: 8 });
+
+    metadata.finish(snapshot("conv_usage", { cost_hidden: true }));
+    await binding;
+    await tick();
+
+    expect(useChatStore.getState().sessionCostUsd).toBe(8);
+    expect(useChatStore.getState().sessionCostHidden).toBe(false);
+  });
+
+  it("keeps a live hidden cost hidden over a stale priced snapshot", async () => {
+    const metadata = pendingResponse();
+    routeUsage("conv_usage", () => usage("conv_usage", 3.5), metadata.promise);
+    const binding = useChatStore.getState().switchTo("conv_usage");
+    await tick();
+    handleSessionEvent({ type: "session_usage", conversationId: "conv_usage", costHidden: true });
+
+    metadata.finish(snapshot("conv_usage", { usage_included: true, total_cost_usd: 3.5 }));
+    await binding;
+    await tick();
+
+    expect(useChatStore.getState().sessionCostUsd).toBeNull();
+    expect(useChatStore.getState().sessionCostHidden).toBe(true);
+  });
+
   it.each(["cost", "models"])(
     "preserves a reaffirmed %s field during reconnect without blocking the other field",
     async (field) => {
@@ -1061,10 +1129,12 @@ describe("chatStore — lazy subtree usage", () => {
     await tick();
 
     expect(useChatStore.getState().sessionCostUsd).toBeNull();
+    expect(useChatStore.getState().sessionCostHidden).toBe(true);
     expect(useChatStore.getState().sessionUsageByModel?.["model-a"]?.inputTokens).toBe(200);
 
     handleSessionEvent({ type: "session_usage", conversationId: "conv_usage", totalCostUsd: 8 });
     expect(useChatStore.getState().sessionCostUsd).toBe(8);
+    expect(useChatStore.getState().sessionCostHidden).toBe(false);
     handleSessionEvent({
       type: "session_usage",
       conversationId: "conv_usage",
@@ -1082,6 +1152,7 @@ describe("chatStore — lazy subtree usage", () => {
     });
 
     expect(useChatStore.getState().sessionCostUsd).toBeNull();
+    expect(useChatStore.getState().sessionCostHidden).toBe(true);
     expect(useChatStore.getState().sessionUsageByModel?.["model-a"]?.inputTokens).toBe(300);
 
     await useChatStore.getState().switchTo("conv_other");
@@ -1132,6 +1203,7 @@ describe("chatStore — lazy subtree usage", () => {
     await tick();
 
     expect(useChatStore.getState().sessionCostUsd).toBeNull();
+    expect(useChatStore.getState().sessionCostHidden).toBe(true);
     expect(useChatStore.getState().sessionUsageByModel?.["model-a"]).toMatchObject({
       inputTokens: 100,
       totalCostUsd: null,

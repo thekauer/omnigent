@@ -60,6 +60,13 @@ const queryClient = new QueryClient({
 // invalidate cached queries (e.g. the conversations list when a new
 // conversation is created server-side).
 initChatStore(queryClient);
+// VS Code-style extensions from OMNIGENT_WEB_EXTENSION_DEV_PATHS. Dev server only:
+// the guard drops the loader and the extension host from production builds.
+if (import.meta.env.DEV) {
+  void import("./vscodeExtensions/devLoader").then(({ startDevExtensions }) =>
+    startDevExtensions(),
+  );
+}
 
 // Let a host-scoped request resolve its session's routing host on demand,
 // walking a hostless sub-agent child up to its host-bound ancestor (a cold
