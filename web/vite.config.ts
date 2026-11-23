@@ -34,32 +34,95 @@ function resolveTarget(raw: string): string {
 
 const OMNIGENT_URL = resolveTarget(process.env.OMNIGENT_URL ?? "http://localhost:6767");
 
-let cachedToken: string | null | undefined;
+// The Databricks CLI profile to mint tokens with. Needed when several
+// ~/.databrickscfg profiles match the same host, where `--host` alone is
+// ambiguous and the CLI refuses to pick one.
+const DATABRICKS_PROFILE =
+  process.env.OMNIGENT_DATABRICKS_PROFILE || process.env.DATABRICKS_CONFIG_PROFILE || undefined;
+
+// CLI-minted OAuth tokens are short-lived (about an hour), so a long-running dev
+// server re-fetches shortly before expiry instead of caching one forever.
+const TOKEN_REFRESH_MARGIN_MS = 5 * 60 * 1000;
+// Used when the CLI omits an expiry, and as a back-off after a failed lookup so
+// a missing login doesn't shell out on every proxied request.
+const TOKEN_FALLBACK_TTL_MS = 5 * 60 * 1000;
+const TOKEN_FAILURE_RETRY_MS = 30 * 1000;
+// Upper bound on one `databricks auth token` call; a timeout counts as a failed
+// lookup and falls back to TOKEN_FAILURE_RETRY_MS.
+const CLI_TIMEOUT_MS = 30_000;
+
+let cachedToken: { value: string | null; refreshAt: number; fetchedAt: number } | undefined;
+let forceRefreshToken = false;
+
+function databricksAuthArgs(host: string): string[] {
+  return DATABRICKS_PROFILE ? ["--host", host, "--profile", DATABRICKS_PROFILE] : ["--host", host];
+}
 
 function resolveToken(host: string): string | null {
-  if (cachedToken !== undefined) return cachedToken;
-
-  if (process.env.OMNIGENT_AUTH_TOKEN) {
-    cachedToken = process.env.OMNIGENT_AUTH_TOKEN;
-    return cachedToken;
+  if (process.env.OMNIGENT_AUTH_TOKEN) return process.env.OMNIGENT_AUTH_TOKEN;
+  if (cachedToken && !forceRefreshToken && Date.now() < cachedToken.refreshAt) {
+    return cachedToken.value;
   }
 
-  try {
+  const baseArgs = ["auth", "token", ...databricksAuthArgs(host), "--output", "json"];
+  const fetchToken = (forceRefresh: boolean): { value: string | null; expiresAt: number } => {
     const output = execFileSync(
       "databricks",
-      ["auth", "token", "--host", host, "--output", "json"],
+      forceRefresh ? [...baseArgs, "--force-refresh"] : baseArgs,
       {
         encoding: "utf8",
         stdio: ["ignore", "pipe", "pipe"],
+        // A hung CLI would otherwise block the dev server's event loop forever.
+        timeout: CLI_TIMEOUT_MS,
       },
     );
-    const tokenResponse = JSON.parse(output) as { access_token?: string };
-    cachedToken = tokenResponse.access_token ?? null;
+    const tokenResponse = JSON.parse(output) as { access_token?: string; expiry?: string };
+    const expiresAt = tokenResponse.expiry ? Date.parse(tokenResponse.expiry) : Number.NaN;
+    return { value: tokenResponse.access_token ?? null, expiresAt };
+  };
+  const forced = forceRefreshToken;
+  forceRefreshToken = false;
+
+  const now = Date.now();
+  try {
+    let token = fetchToken(forced);
+    // The CLI can hand back a cached token that is already inside the refresh
+    // margin; mint a fresh one once rather than serving it until it expires.
+    if (
+      !forced &&
+      token.value &&
+      Number.isFinite(token.expiresAt) &&
+      token.expiresAt - TOKEN_REFRESH_MARGIN_MS <= Date.now()
+    ) {
+      try {
+        token = fetchToken(true);
+      } catch {
+        // Keep the nearly-expired token; the next request past refreshAt retries.
+      }
+    }
+    const { value, expiresAt } = token;
+    const refreshAt = Number.isFinite(expiresAt)
+      ? Math.max(now + TOKEN_FAILURE_RETRY_MS, expiresAt - TOKEN_REFRESH_MARGIN_MS)
+      : now + TOKEN_FALLBACK_TTL_MS;
+    cachedToken = {
+      value,
+      refreshAt: value ? refreshAt : now + TOKEN_FAILURE_RETRY_MS,
+      fetchedAt: now,
+    };
   } catch {
-    cachedToken = null;
+    cachedToken = { value: null, refreshAt: now + TOKEN_FAILURE_RETRY_MS, fetchedAt: now };
   }
 
-  return cachedToken;
+  return cachedToken.value;
+}
+
+// A 401 means the cached token was revoked or expired early: mint a fresh one
+// for the next request. Rate-limited so a request the server rejects for other
+// reasons doesn't force a CLI refresh per call.
+function invalidateTokenAfter401(): void {
+  if (process.env.OMNIGENT_AUTH_TOKEN || !cachedToken) return;
+  if (Date.now() - cachedToken.fetchedAt < TOKEN_FAILURE_RETRY_MS) return;
+  forceRefreshToken = true;
 }
 
 function configureProxy(target: string, useAuth: boolean): NonNullable<ProxyOptions["configure"]> {
@@ -84,10 +147,16 @@ function configureProxy(target: string, useAuth: boolean): NonNullable<ProxyOpti
       if (useAuth) {
         const token = resolveToken(host);
         if (token) proxyReq.setHeader("Authorization", `Bearer ${token}`);
+        // http-proxy emits no proxyRes for a rejected (non-101) upgrade, so watch
+        // the upstream response directly to catch a 401 on the WebSocket path.
+        proxyReq.on("response", (upstreamRes) => {
+          if (upstreamRes.statusCode === 401) invalidateTokenAfter401();
+        });
       }
     });
 
     proxy.on("proxyRes", (proxyRes, _req, res) => {
+      if (useAuth && proxyRes.statusCode === 401) invalidateTokenAfter401();
       const contentType = proxyRes.headers["content-type"] ?? "";
       if (typeof contentType === "string" && contentType.includes("text/event-stream")) {
         // http-proxy applies upstream headers after its own proxyRes listener
@@ -190,7 +259,8 @@ function devProxyAuth(): Plugin {
       }
       console.error(
         `\n[dev-proxy] ERROR: No auth token for ${parsed.origin}.\n` +
-          `  Set OMNIGENT_AUTH_TOKEN or run:  databricks auth login --host ${parsed.origin}\n`,
+          `  Set OMNIGENT_AUTH_TOKEN or run:  databricks auth login ${databricksAuthArgs(parsed.origin).join(" ")}\n` +
+          `  (select a CLI profile with OMNIGENT_DATABRICKS_PROFILE or DATABRICKS_CONFIG_PROFILE)\n`,
       );
       process.exit(1);
     },
