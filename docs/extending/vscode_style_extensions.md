@@ -141,6 +141,10 @@ Stop after item 4. The rest of the "Later" list waits for the user.
      and event subscriptions are no-ops, each logged.
    - Every listener an extension registers on a host event is wrapped: a throw or
      rejection is logged with the extension id and does not reach other listeners.
+     A returned promise is recognized by shape (a `then` method), not with
+     `instanceof Promise`: the app's telemetry (`lib/telemetry.ts`) loads
+     zone.js, which replaces the global `Promise`, so its promises would be
+     missed. The same holds for `EventEmitter` listeners.
    - `activationEvents`: `*` activates at boot, `onStartupFinished` after the
      window `load` event. Anything else warns; an extension with no supported
      event is not activated.
@@ -205,10 +209,11 @@ Stop after item 4. The rest of the "Later" list waits for the user.
      path is inside the folder).
    - The dev plugin runs every Node entry in one child process (`fork`, IPC),
      like VS Code's extension host process: extension code never runs in, or
-     blocks, the dev server. A crash fails the calls in flight; a manifest
-     change, or an edit to any file of an extension with a Node entry,
-     restarts the process once no command is running (Node has no hot reload).
-     Dev server shutdown stops it.
+     blocks, the dev server. A crash fails the calls in flight, and the host
+     process is restarted after a crash; a command that hangs times out. A
+     manifest change, or an edit to any file of an extension with a Node
+     entry, restarts the process once no command is running (Node has no hot
+     reload). Dev server shutdown stops it.
    - `import * as omnigent from "omnigent/node"` resolves, through Node module
      hooks in that process, to the extension's Node API: `version`,
      `Disposable`, `commands.registerCommand`, `window.withProgress` and
@@ -313,11 +318,16 @@ can run local programs:
 
 - A random token generated at each dev server start, given to the page by the
   virtual module, is required in the `x-omnigent-extension-token` header
-  (compared in constant time). Other sites cannot read it: they cannot load the
-  dev server's modules cross-origin.
+  (compared in constant time). Remote sites cannot read it. A page on another
+  local port can: Vite's default CORS reflects any `localhost:*` or
+  `127.0.0.1:*` Origin, so such a page can load the virtual module.
 - `Origin` must be exactly `http://127.0.0.1:<port>` or `http://localhost:<port>`
   of this dev server, and `Host` must be `127.0.0.1:<port>` or
-  `localhost:<port>`, which also stops DNS rebinding.
+  `localhost:<port>`, which also stops DNS rebinding. This exact check, not the
+  token, is what keeps other pages in the browser out.
+- Neither protects against local processes: anything that can reach the port
+  can read the token and send any headers. On a machine shared with other OS
+  users, they are not kept out.
 - Only `POST` with `application/json`; the body is capped at 64 KiB and must be
   `{"args": [...]}`.
 - Only commands the extension named in the path registered run; anything else

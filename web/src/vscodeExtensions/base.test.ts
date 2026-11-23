@@ -85,6 +85,23 @@ describe("EventEmitter", () => {
     expect(report).toHaveBeenCalledTimes(2);
   });
 
+  it("reports a listener's rejected non-native thenable", () => {
+    // zone.js replaces the global Promise, so a rejection is found by shape, not instanceof.
+    const report = vi.fn();
+    const emitter = new EventEmitter<number>(report);
+    const error = new Error("zone rejection");
+    const thenable = {
+      then(_onFulfilled: unknown, onRejected?: (reason: unknown) => void) {
+        onRejected?.(error);
+        return thenable;
+      },
+    };
+    expect(thenable instanceof Promise).toBe(false);
+    emitter.event(() => thenable);
+    emitter.fire(1);
+    expect(report).toHaveBeenCalledWith(error);
+  });
+
   it("applies listener changes made while firing on the next fire", () => {
     const emitter = new EventEmitter<void>();
     const late = vi.fn();

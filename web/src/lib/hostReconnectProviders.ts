@@ -3,6 +3,10 @@
 // a host reconnects it; with none, Reconnect host keeps its default behavior.
 // The built-in server wake (resumable managed hosts) is a provider too.
 
+import { isThenable } from "./thenable";
+
+export { isThenable };
+
 /** The host a reconnect is asked for. Plain data. */
 export interface ReconnectHost {
   readonly hostId: string;
@@ -45,18 +49,6 @@ const defaultReporter: ProviderErrorReporter = (providerId, message, error) => {
 export interface SelectedReconnectProvider {
   readonly id: string;
   readonly provider: HostReconnectProvider;
-}
-
-/**
- * A promise or other thenable. Checked by shape: a page can replace the global
- * `Promise`, and an async function still returns the native one.
- */
-export function isThenable<T>(value: unknown): value is PromiseLike<T> {
-  return (
-    (typeof value === "object" || typeof value === "function") &&
-    value !== null &&
-    typeof (value as { then?: unknown }).then === "function"
-  );
 }
 
 export class HostReconnectProviderRegistry {

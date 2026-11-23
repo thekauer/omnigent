@@ -1,6 +1,7 @@
 // Disposable and EventEmitter with VS Code semantics. Dependency-free so the same
 // code can run in a future Worker-based extension host.
 import type * as omnigent from "omnigent";
+import { isThenable } from "@/lib/thenable";
 
 export type DisposableLike = omnigent.DisposableLike;
 
@@ -80,7 +81,8 @@ export class EventEmitter<T> implements omnigent.EventEmitter<T> {
     for (const listener of [...this.listeners]) {
       try {
         const result = listener.callback.call(listener.thisArgs, data);
-        if (result instanceof Promise) result.catch(this.report);
+        // By shape: zone.js replaces the global Promise, so instanceof misses async listeners.
+        if (isThenable(result)) result.then(undefined, this.report);
       } catch (error) {
         this.report(error);
       }

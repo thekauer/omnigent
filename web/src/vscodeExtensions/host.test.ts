@@ -544,6 +544,30 @@ describe("ExtensionHost", () => {
     );
   });
 
+  it("logs a host event listener's rejected non-native thenable", async () => {
+    const error = new Error("zone rejection");
+    const thenable = {
+      then(_onFulfilled: unknown, onRejected?: (reason: unknown) => void) {
+        onRejected?.(error);
+        return thenable;
+      },
+    };
+    const { host, store, log } = setup({
+      "/ext/pub.zone.js": {
+        activate: () => {
+          getExtensionApi("pub.zone").sessions.onDidChangeActiveSession(() => thenable);
+        },
+      },
+    });
+    await host.start([describeExtension("pub.zone")]);
+    store.set({ sessionId: "s1" });
+    await flush();
+    expect(log.error).toHaveBeenCalledWith(
+      "[omnigent-extensions] pub.zone: onDidChangeActiveSession listener rejected",
+      error,
+    );
+  });
+
   it("removes listeners and header items an extension did not dispose itself", async () => {
     const listener = vi.fn();
     const { host, headerItems, store } = setup({

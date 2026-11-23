@@ -2,6 +2,7 @@
 // like VS Code's per-extension `vscode` module, so every call is attributable.
 import type * as omnigent from "omnigent";
 import type { HostReconnectProviderRegistry, ReconnectHost } from "@/lib/hostReconnectProviders";
+import { isThenable } from "@/lib/thenable";
 import { Disposable, EventEmitter, disposeAll, type DisposableLike } from "./base";
 import type { CommandHandler, CommandRegistry } from "./commands";
 import type { NodeProgressEvent } from "./nodeCommands";
@@ -105,8 +106,11 @@ export function createExtensionApi(
         if (disposed) return;
         try {
           const result: unknown = listener.call(thisArgs, data);
-          if (result instanceof Promise) {
-            result.catch((error: unknown) => logError(`${name} listener rejected`, error));
+          // By shape: zone.js replaces the global Promise, so instanceof misses async listeners.
+          if (isThenable(result)) {
+            result.then(undefined, (error: unknown) =>
+              logError(`${name} listener rejected`, error),
+            );
           }
         } catch (error) {
           logError(`${name} listener threw`, error);
