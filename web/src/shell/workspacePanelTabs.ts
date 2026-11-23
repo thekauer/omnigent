@@ -1,7 +1,8 @@
 /**
  * Labels, icons and trigger presentation for the Workspace rail's fixed panel
- * tabs (Files, Changes, Pull Requests, Agents, Tasks, Content search). `WorkspacePanel`
- * draws every trigger from these descriptors with one tab-agnostic renderer.
+ * tabs (Files, Changes, Pull Requests, Agents, Tasks, Content search) and the
+ * tabs of extension views. `WorkspacePanel` draws every trigger from these
+ * descriptors with one tab-agnostic renderer.
  */
 
 import {
@@ -15,10 +16,20 @@ import {
 } from "lucide-react";
 import { ARIA_MOD_KEY, MOD_KEY, SHIFT_KEY } from "@/components/KeyboardShortcut";
 import { cn } from "@/lib/utils";
-import { type RightRailTab, TAB_BADGE_BASE } from "./railTabs";
+import {
+  type BuiltInRailTab,
+  type ExtensionRailTab,
+  extensionRailTabViewId,
+  TAB_BADGE_BASE,
+} from "./railTabs";
+import { DEFAULT_RAIL_VIEW_ICON, railViewIcon } from "./railViewIcons";
+import type { RailView } from "./railViews";
 
-/** The rail's fixed panel tabs: everything but the dynamic browser and side-chat modes. */
-export type WorkspacePanelTab = Exclude<RightRailTab, "browser" | "sidechat">;
+/** The rail's fixed built-in panel tabs: everything but the dynamic browser and side-chat modes. */
+export type WorkspacePanelTab = Exclude<BuiltInRailTab, "browser" | "sidechat">;
+
+/** Every tab the strip draws a fixed trigger for: the built-ins and extension views. */
+export type RailPanelTab = WorkspacePanelTab | ExtensionRailTab;
 
 /** What a tab's trigger may depend on, gathered once per render by `WorkspacePanel`. */
 export interface WorkspacePanelTabContext {
@@ -106,6 +117,35 @@ export const WORKSPACE_PANEL_TABS: Record<WorkspacePanelTab, WorkspacePanelTabDe
     }),
   },
 };
+
+/** The trigger of an extension view's tab; its badge reads like the Changes count. */
+export function extensionViewTabDescriptor(view: RailView): WorkspacePanelTabDescriptor {
+  return {
+    label: view.name,
+    icon: railViewIcon(view.icon) ?? DEFAULT_RAIL_VIEW_ICON,
+    shown: () => true,
+    ariaLabel: () =>
+      view.badge && view.badge.value > 0
+        ? `${view.name} ${view.badge.tooltip || view.badge.value}`
+        : view.name,
+    badge: () =>
+      view.badge && view.badge.value > 0 ? { text: view.badge.value, className: "sr-only" } : null,
+  };
+}
+
+/**
+ * The descriptor of any fixed tab: a built-in's from {@link WORKSPACE_PANEL_TABS},
+ * an extension view's from its registered view; null for a view not registered (yet).
+ */
+export function railTabDescriptor(
+  tab: RailPanelTab,
+  views: readonly RailView[],
+): WorkspacePanelTabDescriptor | null {
+  const viewId = extensionRailTabViewId(tab);
+  if (viewId === null) return WORKSPACE_PANEL_TABS[tab as WorkspacePanelTab];
+  const view = views.find((candidate) => candidate.id === viewId);
+  return view ? extensionViewTabDescriptor(view) : null;
+}
 
 /** The resolved props one tab trigger draws. */
 export interface WorkspacePanelTabPresentation {

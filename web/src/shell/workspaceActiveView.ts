@@ -2,11 +2,19 @@
 // over the selected page. A pure function, so any sidebar that restores the rail's
 // selection shows exactly what the rail would.
 
-import type { RightRailTab } from "./railTabs";
+import { extensionRailTabViewId, type RightRailTab } from "./railTabs";
 
 /** The page beneath any open shell or file. */
 export type WorkspaceScopeView =
-  "sidechat" | "browser" | "github" | "tasks" | "subagents" | "empty" | "content-search" | "files";
+  | "sidechat"
+  | "browser"
+  | "github"
+  | "tasks"
+  | "subagents"
+  | "empty"
+  | "content-search"
+  | "files"
+  | "extension";
 
 export interface WorkspaceSelection {
   rightRailTab: RightRailTab | null;
@@ -37,6 +45,8 @@ export interface WorkspaceActiveView {
   scope: WorkspaceScopeView;
   /** The Files page lists only changes. */
   flat: boolean;
+  /** The extension view of an `ext:` tab, when that page is selected. */
+  extensionViewId: string | null;
   sideChatSelected: boolean;
   browserSelected: boolean;
 }
@@ -56,6 +66,7 @@ export function resolveWorkspaceActiveView(
     rightRailTab === "sidechat" && nothingInFront && selection.selectedSideChatId !== null;
   const browserSelected =
     rightRailTab === "browser" && nothingInFront && selection.selectedBrowserId !== null;
+  const extensionViewId = extensionRailTabViewId(rightRailTab);
   const scope: WorkspaceScopeView =
     sideChatSelected && !availability.mobile
       ? "sidechat"
@@ -69,14 +80,17 @@ export function resolveWorkspaceActiveView(
               ? "subagents"
               : rightRailTab === null
                 ? "empty"
-                : rightRailTab === "content-search" && availability.showContentSearch
-                  ? "content-search"
-                  : "files";
+                : extensionViewId !== null
+                  ? "extension"
+                  : rightRailTab === "content-search" && availability.showContentSearch
+                    ? "content-search"
+                    : "files";
   return {
     terminalKey,
     filePath: terminalKey === null ? selectedFilePath : null,
     scope,
     flat: rightRailTab === "changes",
+    extensionViewId,
     sideChatSelected,
     browserSelected,
   };

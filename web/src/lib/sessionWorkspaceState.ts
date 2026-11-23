@@ -6,7 +6,7 @@
 // Shell tabs restore to whichever terminals still exist — the AppShell prune
 // effect drops keys whose PTY has gone away once the terminal list loads.
 
-import type { RightRailTab } from "@/shell/railTabs";
+import { isRailTab, type RightRailTab } from "@/shell/railTabs";
 import { parseTerminalSplitState, type TerminalSplitState } from "./terminalSplitLayout";
 import type { DefaultWorkspaceTab } from "./workspaceTabPreferences";
 
@@ -16,12 +16,6 @@ const WORKSPACE_PANEL_TABS: readonly DefaultWorkspaceTab[] = [
   "github",
   "tasks",
   "subagents",
-];
-const RAIL_TABS: readonly RightRailTab[] = [
-  ...WORKSPACE_PANEL_TABS,
-  "browser",
-  "sidechat",
-  "content-search",
 ];
 
 export interface SessionWorkspaceState {
@@ -53,6 +47,8 @@ export interface SessionWorkspaceState {
   selectedSideChatId?: string | null;
   /** Split panes of the main terminal view; absent while unsplit. */
   terminalSplit?: TerminalSplitState;
+  /** Each extension's `workspaceState` memento for this session: key to JSON value. */
+  extensionState?: Record<string, Record<string, unknown>>;
 }
 
 export const SESSION_WORKSPACE_STATE_KEY = "omnigent:session-workspace-state";
@@ -64,13 +60,16 @@ const MAX_SESSIONS = 100;
 // through many files can't bloat the store. Tabs are appended in open order, so
 // the most-recent (tail) entries are kept.
 export const MAX_OPEN_TABS = 20;
+// Bounds of the extension mementos kept per session.
+export const MAX_EXTENSION_STATE_EXTENSIONS = 20;
+export const MAX_EXTENSION_STATE_KEYS = 50;
+export const MAX_EXTENSION_STATE_KEY_LENGTH = 128;
+/** Bytes of one extension's memento in one session, as JSON. */
+export const MAX_EXTENSION_STATE_BYTES = 8 * 1024;
+const EXTENSION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9-]*\.[a-z0-9][a-z0-9._-]*$/;
 
 function isValidWidth(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
-}
-
-function isRailTab(value: unknown): value is RightRailTab {
-  return typeof value === "string" && (RAIL_TABS as readonly string[]).includes(value);
 }
 
 /**
@@ -86,6 +85,45 @@ interface StoredEntry {
 }
 
 type Store = StoredEntry[];
+
+/** Why one extension's memento does not fit the caps, or null when it does. */
+export function extensionStateProblem(bucket: Record<string, unknown>): string | null {
+  const keys = Object.keys(bucket);
+  if (keys.length > MAX_EXTENSION_STATE_KEYS) {
+    return `at most ${MAX_EXTENSION_STATE_KEYS} keys per chat session`;
+  }
+  if (keys.some((key) => key === "" || key.length > MAX_EXTENSION_STATE_KEY_LENGTH)) {
+    return `keys must be 1 to ${MAX_EXTENSION_STATE_KEY_LENGTH} characters`;
+  }
+  let json: string;
+  try {
+    json = JSON.stringify(bucket);
+  } catch {
+    return "values must be JSON";
+  }
+  if (new TextEncoder().encode(json).length > MAX_EXTENSION_STATE_BYTES) {
+    return `at most ${MAX_EXTENSION_STATE_BYTES} bytes of JSON per chat session`;
+  }
+  return null;
+}
+
+function sanitizeExtensionState(
+  value: unknown,
+): Record<string, Record<string, unknown>> | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const result: Record<string, Record<string, unknown>> = {};
+  let count = 0;
+  for (const [extensionId, bucket] of Object.entries(value as Record<string, unknown>)) {
+    if (count >= MAX_EXTENSION_STATE_EXTENSIONS) break;
+    if (!EXTENSION_ID_PATTERN.test(extensionId)) continue;
+    if (typeof bucket !== "object" || bucket === null || Array.isArray(bucket)) continue;
+    const record = bucket as Record<string, unknown>;
+    if (extensionStateProblem(record) !== null) continue;
+    result[extensionId] = record;
+    count += 1;
+  }
+  return count > 0 ? result : undefined;
+}
 
 /** The non-empty strings in `values`, first occurrence kept. */
 function uniqueIds(values: unknown[]): string[] {
@@ -143,6 +181,8 @@ function sanitize(entry: unknown): SessionWorkspaceState {
   }
   const terminalSplit = parseTerminalSplitState(record.terminalSplit);
   if (terminalSplit) state.terminalSplit = terminalSplit;
+  const extensionState = sanitizeExtensionState(record.extensionState);
+  if (extensionState) state.extensionState = extensionState;
   return state;
 }
 
@@ -229,6 +269,47 @@ export function writeSessionWorkspaceState(
   patch: SessionWorkspaceState,
 ): void {
   saveSessionWorkspaceState(conversationId, patch);
+}
+
+/** One extension's memento in one session (empty when none was stored). */
+export function readExtensionState(
+  conversationId: string,
+  extensionId: string,
+): Readonly<Record<string, unknown>> {
+  return readSessionWorkspaceState(conversationId).extensionState?.[extensionId] ?? {};
+}
+
+/**
+ * Replace one extension's memento in one session; an empty one is removed.
+ * Throws a RangeError when it does not fit the caps, an Error when storage refused it.
+ */
+export function writeExtensionState(
+  conversationId: string,
+  extensionId: string,
+  bucket: Record<string, unknown>,
+): void {
+  if (!EXTENSION_ID_PATTERN.test(extensionId)) {
+    throw new RangeError(`invalid extension id ${extensionId}`);
+  }
+  const problem = extensionStateProblem(bucket);
+  if (problem !== null) throw new RangeError(`workspaceState: ${problem}`);
+  const others = Object.fromEntries(
+    Object.entries(readSessionWorkspaceState(conversationId).extensionState ?? {}).filter(
+      ([id]) => id !== extensionId,
+    ),
+  );
+  if (Object.keys(bucket).length > 0) {
+    if (Object.keys(others).length >= MAX_EXTENSION_STATE_EXTENSIONS) {
+      throw new RangeError(
+        `workspaceState: at most ${MAX_EXTENSION_STATE_EXTENSIONS} extensions per chat session`,
+      );
+    }
+    others[extensionId] = bucket;
+  }
+  const extensionState = Object.keys(others).length > 0 ? others : undefined;
+  if (!saveSessionWorkspaceState(conversationId, { extensionState })) {
+    throw new Error("workspaceState: the browser refused to store it");
+  }
 }
 
 /** Let existing chats follow a changed default while keeping their open tabs and layout. */

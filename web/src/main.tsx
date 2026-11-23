@@ -35,6 +35,7 @@ import { migrateLegacyProjectFolderPagination } from "./lib/projectFolderPaginat
 import { applyThemePalette, readThemePalette } from "./lib/themePalette";
 import { applyCustomTheme, readCustomTheme } from "./lib/customTheme";
 import { initChatStore } from "./store/chatStore";
+import { railViews } from "./shell/railViews";
 import "katex/dist/katex.min.css";
 import "streamdown/styles.css";
 import "./index.css";
@@ -63,9 +64,11 @@ initChatStore(queryClient);
 // VS Code-style extensions from OMNIGENT_WEB_EXTENSION_DEV_PATHS. Dev server only:
 // the guard drops the loader and the extension host from production builds.
 if (import.meta.env.DEV) {
-  void import("./vscodeExtensions/devLoader").then(({ startDevExtensions }) =>
-    startDevExtensions(),
-  );
+  // A restored extension tab waits for the views those extensions contribute.
+  const extensionViewsLoaded = railViews.beginLoading();
+  void import("./vscodeExtensions/devLoader")
+    .then(({ startDevExtensions }) => startDevExtensions())
+    .finally(extensionViewsLoaded);
 }
 
 // Let a host-scoped request resolve its session's routing host on demand,

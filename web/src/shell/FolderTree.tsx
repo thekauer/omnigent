@@ -1,6 +1,6 @@
 import { ChevronRightIcon, FolderIcon, FolderOpenIcon } from "lucide-react";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { RefObject } from "react";
+import type { ReactNode, RefObject } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import {
   type DirectoryResult,
@@ -33,10 +33,10 @@ const INDENT_STEP = 16;
 const BASE_PAD = 8;
 const GUIDE_OFFSET = 7;
 const TREE_MOTION_MS = 180;
-const indentFor = (depth: number) => depth * INDENT_STEP + BASE_PAD;
+export const indentFor = (depth: number) => depth * INDENT_STEP + BASE_PAD;
 
 // One vertical guide line per ancestor level; the row must be `relative`.
-function IndentGuides({ depth }: { depth: number }) {
+export function IndentGuides({ depth }: { depth: number }) {
   if (depth <= 0) return null;
   return (
     <>
@@ -937,13 +937,14 @@ function FolderTreeInner({
  * with depth-based indentation).  Keeping the DOM structure in one place
  * prevents the two views from drifting apart over time.
  */
-function FileRowItem({
+export function FileRowItem({
   path,
   displayLabel,
   labelIsPath = false,
   depth = 0,
   fileStatus,
   bytes,
+  meta,
   onFileSelect,
   conversationId,
 }: {
@@ -959,6 +960,8 @@ function FileRowItem({
   depth?: number;
   fileStatus: WorkspaceChangedFile["status"] | undefined;
   bytes: number | null;
+  /** Drawn at rest in the trailing column instead of the byte size. */
+  meta?: ReactNode;
   onFileSelect: (path: string) => void;
   conversationId: string | undefined;
 }) {
@@ -1029,11 +1032,14 @@ function FileRowItem({
         <span
           className={cn("relative flex shrink-0 items-center justify-end", ROW_META_SLOT_CLASS)}
         >
-          {bytes !== null && !isDeleted && (
-            <span className="text-muted-foreground text-sm group-hover:invisible">
-              {formatBytes(bytes)}
-            </span>
-          )}
+          {meta !== undefined
+            ? meta
+            : bytes !== null &&
+              !isDeleted && (
+                <span className="text-muted-foreground text-sm group-hover:invisible">
+                  {formatBytes(bytes)}
+                </span>
+              )}
           <span className="absolute inset-0 flex items-center justify-end gap-1">
             {!isDeleted && conversationId ? (
               <FileDownloadButton conversationId={conversationId} path={path} />
@@ -1198,7 +1204,6 @@ const TreeNodeRow = memo(function TreeNodeRow({
   /** Briefly flash this row — used when a folder is revealed from search. */
   highlighted?: boolean;
 }) {
-  const reveal = useRevealMenu(node.type === "file" ? null : node.path, true);
   if (node.type === "file") {
     return (
       <TreeFileRow
@@ -1211,7 +1216,49 @@ const TreeNodeRow = memo(function TreeNodeRow({
     );
   }
 
-  const dirStatus = dirtyDirMap.get(node.path);
+  return (
+    <FolderRowItem
+      name={node.name}
+      path={node.path}
+      depth={depth}
+      open={open}
+      status={dirtyDirMap.get(node.path)}
+      onToggle={() => onTogglePath(node.path)}
+      onNavigate={onNavigateDir ? () => onNavigateDir(node.path) : undefined}
+      highlighted={highlighted}
+    />
+  );
+});
+
+// ---------------------------------------------------------------------------
+// FolderRowItem
+// ---------------------------------------------------------------------------
+
+/** One directory header row: folder icon (a chevron on hover), name, change dot, copy button. */
+export function FolderRowItem({
+  name,
+  path,
+  depth,
+  open,
+  status,
+  onToggle,
+  onNavigate,
+  highlighted = false,
+}: {
+  name: string;
+  /** Workspace path, for the copy button and the reveal menu. */
+  path: string;
+  depth: number;
+  open: boolean;
+  /** Strongest change status of anything inside, drawn as a colored dot. */
+  status: WorkspaceChangedFile["status"] | undefined;
+  onToggle: () => void;
+  onNavigate?: () => void;
+  /** Briefly flash this row, as when a folder is revealed from search. */
+  highlighted?: boolean;
+}) {
+  const reveal = useRevealMenu(path, true);
+  const dirStatus = status;
   const dirDotClass =
     dirStatus === "created"
       ? "text-green-500 dark:text-green-400"
@@ -1238,8 +1285,8 @@ const TreeNodeRow = memo(function TreeNodeRow({
       <button
         type="button"
         className="group/folder flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left"
-        onClick={() => onTogglePath(node.path)}
-        onDoubleClick={onNavigateDir ? () => onNavigateDir(node.path) : undefined}
+        onClick={onToggle}
+        onDoubleClick={onNavigate}
         aria-expanded={open}
       >
         <span className="relative flex size-3.5 shrink-0 items-center justify-center">
@@ -1257,7 +1304,7 @@ const TreeNodeRow = memo(function TreeNodeRow({
             )}
           />
         </span>
-        <span className={cn("min-w-0 flex-1 truncate text-ui", dirDotClass)}>{node.name}/</span>
+        <span className={cn("min-w-0 flex-1 truncate text-ui", dirDotClass)}>{name}/</span>
         {dirStatus && (
           <span
             className={cn("flex shrink-0 items-center justify-center", ROW_STATUS_SLOT_CLASS)}
@@ -1274,10 +1321,10 @@ const TreeNodeRow = memo(function TreeNodeRow({
       <span className={cn("relative flex shrink-0 items-center justify-end", ROW_META_SLOT_CLASS)}>
         <span className="absolute inset-0 flex items-center justify-end gap-1">
           <span className={cn("shrink-0", ROW_ACTION_SIZE_CLASS)} aria-hidden />
-          <CopyPathButton path={node.path} label="Copy folder path" revealOnHover />
+          <CopyPathButton path={path} label="Copy folder path" revealOnHover />
         </span>
       </span>
       {reveal.menu}
     </div>
   );
-});
+}

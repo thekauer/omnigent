@@ -195,7 +195,9 @@ import {
   useDockedOverviewOpen,
   useIsWideViewport,
 } from "./SessionOverview";
-import type { RightRailTab } from "./railTabs";
+import { extensionRailTabViewId, type RightRailTab } from "./railTabs";
+import { useRailViews } from "./railViews";
+import { workspaceBridge } from "./workspaceBridge";
 
 /**
  * Top-level layout. The sidebar and right panels are responsive:
@@ -867,6 +869,8 @@ function AppShellImpl() {
     showFilesPanel,
     changedCount,
     changedFiles,
+    changedFilesData,
+    changedFilesError,
     isChangedPath,
   } = useWorkspaceResources({
     sessionId: serverConversationId,
@@ -1710,6 +1714,7 @@ function AppShellImpl() {
   }, [agentTerminal, agentsPanelRequested, conversationId, searchParams, terminalFirst]);
 
   // Validate the latest selection, including a tab queued by session restoration.
+  const { views: extensionViews, settled: extensionViewsSettled } = useRailViews();
   useEffect(() => {
     setRightRailTab((tab) => {
       const fallbackTab =
@@ -1719,10 +1724,25 @@ function AppShellImpl() {
       if (tab === null) return fallbackTab;
       if (tab === "sidechat") return tab;
       if (tab === "content-search" && serverInfo === "loading") return tab;
-      if (railTabsAvailable[tab]) return tab;
+      // An extension view's tab waits while extensions load, then needs its view.
+      const viewId = extensionRailTabViewId(tab);
+      if (viewId !== null) {
+        return !extensionViewsSettled || extensionViews.some((view) => view.id === viewId)
+          ? tab
+          : fallbackTab;
+      }
+      if (railTabsAvailable[tab as keyof typeof railTabsAvailable]) return tab;
       return fallbackTab;
     });
-  }, [railTabsAvailable, rightRailTab, openPanels, fallbackWorkspaceTab, serverInfo]);
+  }, [
+    railTabsAvailable,
+    rightRailTab,
+    openPanels,
+    fallbackWorkspaceTab,
+    serverInfo,
+    extensionViews,
+    extensionViewsSettled,
+  ]);
 
   // Closing a file must not reveal an unpinned scope that was never opened.
   useEffect(() => {
@@ -1896,6 +1916,30 @@ function AppShellImpl() {
   );
 
   useUiOpenFile(serverConversationId, showFilesPanel, openFileViewer);
+
+  // Extension APIs read the active session's changed files and open files through the bridge.
+  useEffect(() => {
+    workspaceBridge.publishChangedFiles(
+      serverConversationId ?? null,
+      showFilesPanel ? changedFilesData : [],
+      showFilesPanel ? changedFilesError : undefined,
+    );
+  }, [serverConversationId, showFilesPanel, changedFilesData, changedFilesError]);
+  const openFileViewerRef = useRef(openFileViewer);
+  openFileViewerRef.current = openFileViewer;
+  useEffect(
+    () =>
+      workspaceBridge.registerActions({
+        openFile: (path) => openFileViewerRef.current(path),
+        refreshChangedFiles: () =>
+          serverConversationId
+            ? queryClient.invalidateQueries({
+                queryKey: ["workspace-changed-files", serverConversationId],
+              })
+            : Promise.resolve(),
+      }),
+    [queryClient, serverConversationId],
+  );
 
   // Strip the file-viewer URL params (file/diff/comment). Memoized on
   // ``setSearchParams`` so it always closes over react-router's *current*

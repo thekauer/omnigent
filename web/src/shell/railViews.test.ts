@@ -1,0 +1,193 @@
+import { describe, expect, it, vi } from "vitest";
+import {
+  BUILT_IN_RAIL_TABS,
+  extensionRailTab,
+  extensionRailTabViewId,
+  isExtensionRailTab,
+  isRailTab,
+} from "./railTabs";
+import { DEFAULT_RAIL_VIEW_ICON, RAIL_VIEW_ICONS } from "./railViewIcons";
+import { changedStatusOf, RailViewRegistry, railStatusOf } from "./railViews";
+import { resolveWorkspaceActiveView } from "./workspaceActiveView";
+import {
+  WORKSPACE_PANEL_TABS,
+  railTabDescriptor,
+  workspacePanelTabPresentation,
+  type WorkspacePanelTab,
+  type WorkspacePanelTabContext,
+} from "./workspacePanelTabs";
+
+const CONTEXT: WorkspacePanelTabContext = {
+  pending: false,
+  showFilesPanel: true,
+  showGithubTab: true,
+  showTasksTab: true,
+  showContentSearch: true,
+  changedCount: 3,
+  agentCount: 2,
+  subagentsWorking: 1,
+  digit: "7",
+  digitAriaShortcut: "Control+7",
+};
+
+describe("rail tab ids", () => {
+  it("keeps the built-in ids and accepts ext:<view id>", () => {
+    for (const tab of BUILT_IN_RAIL_TABS) expect(isRailTab(tab)).toBe(true);
+    expect(extensionRailTab("pub.ext.view")).toBe("ext:pub.ext.view");
+    expect(isRailTab("ext:pub.ext.view")).toBe(true);
+    expect(extensionRailTabViewId("ext:pub.ext.view")).toBe("pub.ext.view");
+    expect(extensionRailTabViewId("files")).toBeNull();
+  });
+
+  it.each(["", "ext:", "ext:bad id", "ext:../x", "ext:-x", "unknown", 3, null])(
+    "drops %j",
+    (value) => {
+      expect(isRailTab(value)).toBe(false);
+      expect(isExtensionRailTab(value)).toBe(false);
+    },
+  );
+});
+
+describe("RailViewRegistry", () => {
+  const view = (id: string, extensionId: string) => ({
+    id,
+    extensionId,
+    name: id,
+    icon: undefined,
+  });
+
+  it("orders views by extension, then manifest order", () => {
+    const registry = new RailViewRegistry();
+    registry.register(view("b.ext.second", "b.ext"), 1);
+    registry.register(view("b.ext.first", "b.ext"), 0);
+    registry.register(view("a.ext.only", "a.ext"), 0);
+    expect(registry.getSnapshot().views.map((entry) => entry.id)).toEqual([
+      "a.ext.only",
+      "b.ext.first",
+      "b.ext.second",
+    ]);
+  });
+
+  it("publishes updates and removal, and refuses duplicates", () => {
+    const registry = new RailViewRegistry();
+    const listener = vi.fn();
+    registry.subscribe(listener);
+    const handle = registry.register(view("a.ext.v", "a.ext"));
+    expect(registry.get("a.ext.v")?.loading).toBe(true);
+    expect(() => registry.register(view("a.ext.v", "a.ext"))).toThrow(/already registered/);
+    handle.update({ loading: false, badge: { value: 2, tooltip: "2 things" } });
+    expect(registry.get("a.ext.v")).toMatchObject({ loading: false, badge: { value: 2 } });
+    // The contribution itself cannot be changed through an update.
+    handle.update({ name: "renamed" } as never);
+    expect(registry.get("a.ext.v")?.name).toBe("a.ext.v");
+    handle.dispose();
+    handle.update({ loading: true });
+    expect(registry.get("a.ext.v")).toBeUndefined();
+    expect(listener).toHaveBeenCalledTimes(4);
+  });
+
+  it("is settled only once every loader finished", () => {
+    const registry = new RailViewRegistry();
+    expect(registry.getSnapshot().settled).toBe(true);
+    const first = registry.beginLoading();
+    const second = registry.beginLoading();
+    expect(registry.getSnapshot().settled).toBe(false);
+    first();
+    first();
+    expect(registry.getSnapshot().settled).toBe(false);
+    second();
+    expect(registry.getSnapshot().settled).toBe(true);
+  });
+});
+
+describe("railTabDescriptor", () => {
+  it("returns the built-in descriptors unchanged", () => {
+    for (const tab of Object.keys(WORKSPACE_PANEL_TABS) as WorkspacePanelTab[]) {
+      expect(railTabDescriptor(tab, [])).toBe(WORKSPACE_PANEL_TABS[tab]);
+    }
+  });
+
+  it("describes a registered extension view with its icon and badge", () => {
+    const registry = new RailViewRegistry();
+    const handle = registry.register({
+      id: "a.ext.v",
+      extensionId: "a.ext",
+      name: "Changes 2",
+      icon: "git-compare",
+    });
+    const views = () => registry.getSnapshot().views;
+    expect(railTabDescriptor("ext:a.ext.unknown", views())).toBeNull();
+    let presentation = workspacePanelTabPresentation(
+      railTabDescriptor("ext:a.ext.v", views())!,
+      CONTEXT,
+    );
+    expect(presentation).toMatchObject({
+      label: "Changes 2",
+      icon: RAIL_VIEW_ICONS["git-compare"],
+      ariaLabel: "Changes 2",
+      tooltipShortcut: "7",
+      ariaKeyShortcuts: "Control+7",
+      badge: null,
+    });
+    handle.update({ badge: { value: 4, tooltip: "4 changed files" } });
+    presentation = workspacePanelTabPresentation(
+      railTabDescriptor("ext:a.ext.v", views())!,
+      CONTEXT,
+    );
+    expect(presentation?.ariaLabel).toBe("Changes 2 4 changed files");
+    expect(presentation?.badge).toEqual({ text: 4, className: "sr-only" });
+  });
+
+  it("falls back to the default icon", () => {
+    const registry = new RailViewRegistry();
+    registry.register({ id: "a.ext.v", extensionId: "a.ext", name: "V", icon: "nope" });
+    expect(railTabDescriptor("ext:a.ext.v", registry.getSnapshot().views)?.icon).toBe(
+      DEFAULT_RAIL_VIEW_ICON,
+    );
+  });
+});
+
+describe("resolveWorkspaceActiveView with an extension tab", () => {
+  const availability = {
+    terminalPresent: () => true,
+    showBrowserTab: true,
+    showGithubTab: true,
+    showTasksTab: true,
+    showContentSearch: true,
+    hasAgentTree: true,
+    mobile: false,
+  };
+  const selection = {
+    selectedFilePath: null,
+    selectedTerminalKey: null,
+    selectedBrowserId: null,
+    selectedSideChatId: null,
+  };
+
+  it("shows the extension page for an ext: tab and nothing else changes", () => {
+    expect(
+      resolveWorkspaceActiveView({ ...selection, rightRailTab: "ext:a.ext.v" }, availability),
+    ).toMatchObject({ scope: "extension", extensionViewId: "a.ext.v", flat: false });
+    expect(
+      resolveWorkspaceActiveView({ ...selection, rightRailTab: "changes" }, availability),
+    ).toMatchObject({ scope: "files", extensionViewId: null, flat: true });
+  });
+
+  it("keeps an open file in front of the extension page", () => {
+    expect(
+      resolveWorkspaceActiveView(
+        { ...selection, rightRailTab: "ext:a.ext.v", selectedFilePath: "a.ts" },
+        availability,
+      ),
+    ).toMatchObject({ scope: "extension", filePath: "a.ts" });
+  });
+});
+
+describe("tree item statuses", () => {
+  it("maps between the changed-files and tree-item names", () => {
+    expect(railStatusOf("created")).toBe("added");
+    expect(railStatusOf("deleted")).toBe("deleted");
+    expect(changedStatusOf("added")).toBe("created");
+    expect(changedStatusOf(undefined)).toBeUndefined();
+  });
+});

@@ -102,11 +102,14 @@ import { PullRequestPanel } from "./PullRequestPanel";
 import type { ChangedSort } from "./FlatFileList";
 import { SubagentsPanel } from "./SubagentsPanel";
 import { useTerminalStatuses } from "./useTerminalStatuses";
-import type { RightRailTab } from "./railTabs";
+import { extensionRailTab, type RightRailTab } from "./railTabs";
+import { useRailViews } from "./railViews";
+import { ExtensionRailView } from "./extensionViews/ExtensionRailView";
 import {
   WORKSPACE_PANEL_TABS,
-  type WorkspacePanelTab,
+  type RailPanelTab,
   workspacePanelTabPresentation,
+  railTabDescriptor,
 } from "./workspacePanelTabs";
 import { Button } from "../components/ui/button";
 
@@ -1354,9 +1357,12 @@ function WorkspacePanelImpl({
     return pending || showFilesPanel;
   });
   const pinnedTabs = readPinnedWorkspaceTabs();
-  const visiblePermanentTabs = [
+  const { views: extensionViews, settled: extensionViewsSettled } = useRailViews();
+  const visiblePermanentTabs: RailPanelTab[] = [
     ...availablePanels.filter((tab) => pinnedTabs.includes(tab)),
     ...(showContentSearch && (pending || showFilesPanel) ? ["content-search" as const] : []),
+    // Extension views follow the built-ins, in the registry's order.
+    ...extensionViews.map((view) => extensionRailTab(view.id)),
   ];
   const unpinnedTabs = availablePanels.filter((tab) => !pinnedTabs.includes(tab));
   const visibleOpenPanels = openPanels.filter((tab) => unpinnedTabs.includes(tab));
@@ -1452,7 +1458,7 @@ function WorkspacePanelImpl({
   const panelOptions = [
     ...[...visiblePermanentTabs, ...visibleOpenPanels].map((tab) => ({
       key: tab,
-      label: WORKSPACE_PANEL_TABS[tab].label,
+      label: railTabDescriptor(tab, extensionViews)?.label ?? tab,
       active:
         selectedFilePath === null &&
         selectedTerminalKey === null &&
@@ -1497,8 +1503,10 @@ function WorkspacePanelImpl({
       disabled: false,
     })),
   ];
-  const renderTabTrigger = (tab: WorkspacePanelTab) => {
-    const presentation = workspacePanelTabPresentation(WORKSPACE_PANEL_TABS[tab], {
+  const renderTabTrigger = (tab: RailPanelTab) => {
+    const descriptor = railTabDescriptor(tab, extensionViews);
+    if (descriptor === null) return null;
+    const presentation = workspacePanelTabPresentation(descriptor, {
       pending,
       showFilesPanel,
       showGithubTab,
@@ -2198,6 +2206,18 @@ function WorkspacePanelImpl({
               <SubagentPanelOpenerContext.Provider value={subagentPanelOpener ?? null}>
                 <SubagentsPanel conversationId={conversationId} rootSessionId={rootSessionId} />
               </SubagentPanelOpenerContext.Provider>
+            ) : scopeView === "extension" && activeView.extensionViewId !== null ? (
+              <RenderErrorBoundary
+                name="this view"
+                resetKey={JSON.stringify([conversationId, activeView.extensionViewId])}
+              >
+                <ExtensionRailView
+                  key={activeView.extensionViewId}
+                  viewId={activeView.extensionViewId}
+                  settled={extensionViewsSettled}
+                  conversationId={conversationId}
+                />
+              </RenderErrorBoundary>
             ) : scopeView === "empty" ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center text-muted-foreground">
                 <PlusIcon className="size-6" />

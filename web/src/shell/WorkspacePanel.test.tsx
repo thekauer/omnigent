@@ -33,6 +33,7 @@ import type { Session } from "@/lib/types";
 import { type FileNavigationGuard, FileViewerContext } from "./FileViewerContext";
 import type { ChangedSort } from "./FlatFileList";
 import type { RightRailTab } from "./railTabs";
+import { railViews } from "./railViews";
 import {
   type DefaultWorkspaceTab,
   writeDefaultWorkspaceTab,
@@ -3357,5 +3358,89 @@ describe("WorkspacePanel desktop menu commands", () => {
     reopen();
     expect(openFileViewer).toHaveBeenCalledExactlyOnceWith("src/a.ts");
     expect(onReveal).toHaveBeenCalledTimes(3);
+  });
+});
+
+describe("extension view tabs", () => {
+  const handles: { dispose: () => void }[] = [];
+  const addView = (id: string, extensionId: string, name: string, order = 0) => {
+    const handle = railViews.register({ id, extensionId, name, icon: "git-compare" }, order);
+    handles.push(handle);
+    return handle;
+  };
+  afterEach(() => {
+    for (const handle of handles.splice(0)) handle.dispose();
+  });
+
+  it("follows the built-in tabs in registry order and gets the next digits", () => {
+    writeDefaultWorkspaceTab("files");
+    addView("zed.ext.view", "zed.ext", "Zed view");
+    addView("pub.ext.second", "pub.ext", "Second", 1);
+    addView("pub.ext.first", "pub.ext", "First", 0);
+    const { onRightRailTabChange } = renderWorkspace({ showGithubTab: true });
+
+    expect(screen.getAllByRole("tab").map((item) => item.getAttribute("aria-label"))).toEqual([
+      "Files",
+      "Changes",
+      "Pull Requests",
+      "Agents 1",
+      "First",
+      "Second",
+      "Zed view",
+    ]);
+    expect(screen.getByRole("tab", { name: "First" })).toHaveAttribute(
+      "aria-keyshortcuts",
+      workspaceTabAriaShortcut("5"),
+    );
+    expect(pressTabNumber(6)).toBe(false);
+    expect(onRightRailTabChange).toHaveBeenLastCalledWith("ext:pub.ext.second");
+    fireEvent.mouseDown(screen.getByRole("tab", { name: "Zed view" }));
+    expect(onRightRailTabChange).toHaveBeenLastCalledWith("ext:zed.ext.view");
+  });
+
+  it("shows the selected view's page and its badge", () => {
+    const handle = addView("pub.ext.view", "pub.ext", "Changes 2");
+    handle.update({ loading: false, badge: { value: 3, tooltip: "3 changed files" } });
+    renderWorkspace({ rightRailTab: "ext:pub.ext.view" });
+
+    const tab = screen.getByRole("tab", { name: "Changes 2 3 changed files" });
+    expect(tab).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByTestId("extension-view-pub.ext.view")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Changes 2" })).toBeInTheDocument();
+    expect(
+      screen.getByText("There is no data provider registered that can provide view data."),
+    ).toBeInTheDocument();
+    expect(screen.queryByTestId("files-panel-stub")).toBeNull();
+  });
+
+  it("waits for a restored view's extension, then shows nothing once loading settled", () => {
+    const done = railViews.beginLoading();
+    renderWorkspace({ rightRailTab: "ext:pub.ext.later" });
+    expect(screen.queryByRole("tab", { name: "Later" })).toBeNull();
+    expect(
+      within(document.querySelector<HTMLElement>("[data-workspace-panel-content]")!).getByRole(
+        "status",
+      ),
+    ).toBeInTheDocument();
+    act(() => {
+      addView("pub.ext.later", "pub.ext", "Later");
+    });
+    expect(screen.getByRole("tab", { name: "Later" })).toHaveAttribute("aria-selected", "true");
+    act(() => {
+      done();
+      for (const handle of handles.splice(0)) handle.dispose();
+    });
+    expect(screen.queryByTestId("extension-view-pub.ext.later")).toBeNull();
+  });
+
+  it("leaves the built-in tabs exactly as before without extension views", () => {
+    writeDefaultWorkspaceTab("files");
+    renderWorkspace({ showGithubTab: true });
+    expect(screen.getAllByRole("tab").map((item) => item.getAttribute("aria-label"))).toEqual([
+      "Files",
+      "Changes",
+      "Pull Requests",
+      "Agents 1",
+    ]);
   });
 });

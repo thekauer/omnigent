@@ -1,7 +1,12 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  MAX_EXTENSION_STATE_BYTES,
+  MAX_EXTENSION_STATE_EXTENSIONS,
+  MAX_EXTENSION_STATE_KEYS,
   type SessionWorkspaceState,
+  readExtensionState,
   readSessionWorkspaceState,
+  writeExtensionState,
   resetSessionWorkspaceTabSelections,
   saveSessionWorkspaceState,
   unpinSessionWorkspaceTabs,
@@ -234,5 +239,74 @@ describe("sessionWorkspaceState", () => {
     expect(readSessionWorkspaceState("conv_c")).toEqual({
       openSubagentTabs: ["subagent:a", "subagent:b"],
     });
+  });
+});
+
+describe("extension tabs and mementos", () => {
+  it("restores an extension view's tab and drops malformed ones", () => {
+    writeSessionWorkspaceState("conv_ext", { rightRailTab: "ext:pub.ext.view" });
+    expect(readSessionWorkspaceState("conv_ext").rightRailTab).toBe("ext:pub.ext.view");
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify([{ id: "conv_bad", state: { rightRailTab: "ext:not a view" } }]),
+    );
+    expect(readSessionWorkspaceState("conv_bad").rightRailTab).toBeUndefined();
+  });
+
+  it("keeps each extension's memento per session", () => {
+    writeExtensionState("conv_a", "pub.one", { mode: "tree" });
+    writeExtensionState("conv_a", "pub.two", { other: 1 });
+    writeExtensionState("conv_b", "pub.one", { mode: "list" });
+    expect(readExtensionState("conv_a", "pub.one")).toEqual({ mode: "tree" });
+    expect(readExtensionState("conv_a", "pub.two")).toEqual({ other: 1 });
+    expect(readExtensionState("conv_b", "pub.one")).toEqual({ mode: "list" });
+    expect(readExtensionState("conv_c", "pub.one")).toEqual({});
+    // Other state of the session is untouched, and an empty memento is removed.
+    writeSessionWorkspaceState("conv_a", { open: true });
+    writeExtensionState("conv_a", "pub.two", {});
+    expect(readSessionWorkspaceState("conv_a")).toEqual({
+      open: true,
+      extensionState: { "pub.one": { mode: "tree" } },
+    });
+  });
+
+  it("refuses mementos over the caps", () => {
+    const tooManyKeys = Object.fromEntries(
+      Array.from({ length: MAX_EXTENSION_STATE_KEYS + 1 }, (_, index) => [`k${index}`, index]),
+    );
+    expect(() => writeExtensionState("conv_a", "pub.one", tooManyKeys)).toThrow(RangeError);
+    expect(() =>
+      writeExtensionState("conv_a", "pub.one", { big: "x".repeat(MAX_EXTENSION_STATE_BYTES) }),
+    ).toThrow(/bytes/);
+    expect(() => writeExtensionState("conv_a", "bad id", { a: 1 })).toThrow(RangeError);
+    for (let index = 0; index < MAX_EXTENSION_STATE_EXTENSIONS; index += 1) {
+      writeExtensionState("conv_full", `pub.ext${index}`, { a: index });
+    }
+    expect(() => writeExtensionState("conv_full", "pub.onemore", { a: 1 })).toThrow(/extensions/);
+    expect(readExtensionState("conv_a", "pub.one")).toEqual({});
+  });
+
+  it("drops stored mementos that are malformed or over the caps", () => {
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify([
+        {
+          id: "conv_stored",
+          state: {
+            extensionState: {
+              "pub.ok": { mode: "tree" },
+              "pub.array": ["x"],
+              "not an id": { a: 1 },
+              "pub.big": { big: "x".repeat(MAX_EXTENSION_STATE_BYTES) },
+            },
+          },
+        },
+        { id: "conv_garbage", state: { extensionState: "nope" } },
+      ]),
+    );
+    expect(readSessionWorkspaceState("conv_stored").extensionState).toEqual({
+      "pub.ok": { mode: "tree" },
+    });
+    expect(readSessionWorkspaceState("conv_garbage")).toEqual({});
   });
 });
