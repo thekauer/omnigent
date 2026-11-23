@@ -29,7 +29,9 @@ interface ActiveExtension {
 type LoadOutcome =
   | { kind: "activated"; module: ExtensionModule }
   | { kind: "load-failed" | "activate-failed"; error: unknown }
-  | { kind: "no-activate" };
+  | { kind: "no-activate" }
+  /** The race was already over (timeout, cancel) when loading finished. */
+  | { kind: "abandoned" };
 
 export type ActivationResult = "activated" | "failed" | "skipped";
 
@@ -38,9 +40,10 @@ const SUPPORTED_ACTIVATION_EVENTS = new Set(["*", "onStartupFinished"]);
 export const ACTIVATION_TIMEOUT_MS = 10_000;
 /**
  * How long loading the entry and its imports may take. Longer than the activate
- * budget: on a busy page the browser queues module requests behind API calls.
+ * budget: a page's long-lived streams can hold most of the browser's HTTP/1.1
+ * connections, so entries start loading at boot, before those streams open.
  */
-export const LOAD_TIMEOUT_MS = 60_000;
+export const LOAD_TIMEOUT_MS = 20_000;
 
 export interface ExtensionHostOptions {
   services: HostServices;
@@ -114,13 +117,30 @@ export class ExtensionHost {
         );
       }
     }
-    await Promise.all(eager.map((extension) => this.activate(extension)));
-    if (afterStartup.length === 0) return;
-    await this.whenStartupFinished();
-    await Promise.all(afterStartup.map((extension) => this.activate(extension)));
+    const eagerRuns = eager.map((extension) => this.activate(extension));
+    if (afterStartup.length === 0) {
+      await Promise.all(eagerRuns);
+      return;
+    }
+    // Entries of later extensions start loading now, before the page opens its
+    // long-lived streams: HTTP/1.1 allows about six connections per origin, and
+    // module requests made later queue behind those streams. Only `activate`
+    // waits for the activation event.
+    const startupFinished = Promise.all(eagerRuns).then(() => this.whenStartupFinished());
+    await Promise.all([
+      ...eagerRuns,
+      ...afterStartup.map((extension) => this.activate(extension, startupFinished)),
+    ]);
   }
 
-  activate(extension: ExtensionDescription): Promise<ActivationResult> {
+  /**
+   * Loads `extension` and activates it, once `activateAfter` (if given) resolves.
+   * Loading starts at once either way.
+   */
+  activate(
+    extension: ExtensionDescription,
+    activateAfter?: Promise<unknown>,
+  ): Promise<ActivationResult> {
     if (this.active.has(extension.id)) return Promise.resolve("skipped");
     const pending = this.activating.get(extension.id);
     if (pending) return pending;
@@ -138,14 +158,17 @@ export class ExtensionHost {
       );
     }
     this.attempted.add(extension.id);
-    const activation = this.doActivate(extension).finally(() =>
+    const activation = this.doActivate(extension, activateAfter).finally(() =>
       this.activating.delete(extension.id),
     );
     this.activating.set(extension.id, activation);
     return activation;
   }
 
-  private async doActivate(extension: ExtensionDescription): Promise<ActivationResult> {
+  private async doActivate(
+    extension: ExtensionDescription,
+    activateAfter: Promise<unknown> | undefined,
+  ): Promise<ActivationResult> {
     const logError = (message: string, error?: unknown) =>
       this.log.error(`[omnigent-extensions] ${extension.id}: ${message}`, error);
     const apiHandle = createExtensionApi(extension.id, this.services, logError);
@@ -173,6 +196,7 @@ export class ExtensionHost {
     let timeoutMessage = "";
     let raced = false;
     let armTimeout!: (ms: number, message: string) => void;
+    const disarmTimeout = () => clearTimeout(timer);
     const timedOut = new Promise<"timeout">((resolve) => {
       armTimeout = (ms, message) => {
         if (raced) return;
@@ -192,7 +216,15 @@ export class ExtensionHost {
       } catch (error) {
         return { kind: "load-failed", error };
       }
+      // The load timed out or the host was disposed meanwhile: never activate late.
+      if (raced) return { kind: "abandoned" };
       if (typeof module.activate !== "function") return { kind: "no-activate" };
+      if (activateAfter !== undefined) {
+        // Waiting for the activation event is not part of either budget.
+        disarmTimeout();
+        await activateAfter;
+        if (raced) return { kind: "abandoned" };
+      }
       armTimeout(
         this.activationTimeoutMs,
         `activate timed out after ${this.activationTimeoutMs}ms`,
@@ -248,6 +280,11 @@ export class ExtensionHost {
         return fail("browser entry does not export an activate function");
       case "activate-failed":
         return fail("activate failed", outcome.error);
+      case "abandoned":
+        // Unreachable: `run` only reports this after the race was decided.
+        cleanUp();
+        unregisterApi();
+        return "skipped";
     }
     this.active.set(extension.id, { module: outcome.module, context, apiHandle, unregisterApi });
     this.log.info(`[omnigent-extensions] activated ${extension.id} ${extension.version}`);

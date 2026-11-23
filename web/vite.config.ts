@@ -1,10 +1,10 @@
-import { execFileSync } from "node:child_process";
 import { validateHeaderName, validateHeaderValue } from "node:http";
 import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import type { Plugin, ProxyOptions } from "vite";
 import { defineConfig } from "vitest/config";
+import { DevProxyToken } from "./vite.devProxyToken";
 import { omnigentExtensionsDev } from "./vite.omnigentExtensions";
 import { shikiManualChunk } from "./vite.shiki";
 import { streamdownManualChunk } from "./vite.streamdown";
@@ -41,89 +41,35 @@ const OMNIGENT_URL = resolveTarget(process.env.OMNIGENT_URL ?? "http://localhost
 const DATABRICKS_PROFILE =
   process.env.OMNIGENT_DATABRICKS_PROFILE || process.env.DATABRICKS_CONFIG_PROFILE || undefined;
 
-// CLI-minted OAuth tokens are short-lived (about an hour), so a long-running dev
-// server re-fetches shortly before expiry instead of caching one forever.
-const TOKEN_REFRESH_MARGIN_MS = 5 * 60 * 1000;
-// Used when the CLI omits an expiry, and as a back-off after a failed lookup so
-// a missing login doesn't shell out on every proxied request.
-const TOKEN_FALLBACK_TTL_MS = 5 * 60 * 1000;
-const TOKEN_FAILURE_RETRY_MS = 30 * 1000;
-// Upper bound on one `databricks auth token` call; a timeout counts as a failed
-// lookup and falls back to TOKEN_FAILURE_RETRY_MS.
-const CLI_TIMEOUT_MS = 30_000;
-
-let cachedToken: { value: string | null; refreshAt: number; fetchedAt: number } | undefined;
-let forceRefreshToken = false;
+let proxyToken: DevProxyToken | undefined;
 
 function databricksAuthArgs(host: string): string[] {
   return DATABRICKS_PROFILE ? ["--host", host, "--profile", DATABRICKS_PROFILE] : ["--host", host];
 }
 
+function tokenFor(host: string): DevProxyToken {
+  proxyToken ??= new DevProxyToken({ authArgs: databricksAuthArgs(host) });
+  return proxyToken;
+}
+
+/** The token to send now; never waits for the CLI (see `ensureToken`). */
 function resolveToken(host: string): string | null {
   if (process.env.OMNIGENT_AUTH_TOKEN) return process.env.OMNIGENT_AUTH_TOKEN;
-  if (cachedToken && !forceRefreshToken && Date.now() < cachedToken.refreshAt) {
-    return cachedToken.value;
-  }
+  return tokenFor(host).current();
+}
 
-  const baseArgs = ["auth", "token", ...databricksAuthArgs(host), "--output", "json"];
-  const fetchToken = (forceRefresh: boolean): { value: string | null; expiresAt: number } => {
-    const output = execFileSync(
-      "databricks",
-      forceRefresh ? [...baseArgs, "--force-refresh"] : baseArgs,
-      {
-        encoding: "utf8",
-        stdio: ["ignore", "pipe", "pipe"],
-        // A hung CLI would otherwise block the dev server's event loop forever.
-        timeout: CLI_TIMEOUT_MS,
-      },
-    );
-    const tokenResponse = JSON.parse(output) as { access_token?: string; expiry?: string };
-    const expiresAt = tokenResponse.expiry ? Date.parse(tokenResponse.expiry) : Number.NaN;
-    return { value: tokenResponse.access_token ?? null, expiresAt };
-  };
-  const forced = forceRefreshToken;
-  forceRefreshToken = false;
-
-  const now = Date.now();
-  try {
-    let token = fetchToken(forced);
-    // The CLI can hand back a cached token that is already inside the refresh
-    // margin; mint a fresh one once rather than serving it until it expires.
-    if (
-      !forced &&
-      token.value &&
-      Number.isFinite(token.expiresAt) &&
-      token.expiresAt - TOKEN_REFRESH_MARGIN_MS <= Date.now()
-    ) {
-      try {
-        token = fetchToken(true);
-      } catch {
-        // Keep the nearly-expired token; the next request past refreshAt retries.
-      }
-    }
-    const { value, expiresAt } = token;
-    const refreshAt = Number.isFinite(expiresAt)
-      ? Math.max(now + TOKEN_FAILURE_RETRY_MS, expiresAt - TOKEN_REFRESH_MARGIN_MS)
-      : now + TOKEN_FALLBACK_TTL_MS;
-    cachedToken = {
-      value,
-      refreshAt: value ? refreshAt : now + TOKEN_FAILURE_RETRY_MS,
-      fetchedAt: now,
-    };
-  } catch {
-    cachedToken = { value: null, refreshAt: now + TOKEN_FAILURE_RETRY_MS, fetchedAt: now };
-  }
-
-  return cachedToken.value;
+/** Waits for the CLI only when no usable token is cached. */
+async function ensureToken(host: string): Promise<string | null> {
+  if (process.env.OMNIGENT_AUTH_TOKEN) return process.env.OMNIGENT_AUTH_TOKEN;
+  return tokenFor(host).ensure();
 }
 
 // A 401 means the cached token was revoked or expired early: mint a fresh one
 // for the next request. Rate-limited so a request the server rejects for other
 // reasons doesn't force a CLI refresh per call.
 function invalidateTokenAfter401(): void {
-  if (process.env.OMNIGENT_AUTH_TOKEN || !cachedToken) return;
-  if (Date.now() - cachedToken.fetchedAt < TOKEN_FAILURE_RETRY_MS) return;
-  forceRefreshToken = true;
+  if (process.env.OMNIGENT_AUTH_TOKEN) return;
+  proxyToken?.invalidateAfter401();
 }
 
 function configureProxy(target: string, useAuth: boolean): NonNullable<ProxyOptions["configure"]> {
@@ -171,6 +117,15 @@ function configureProxy(target: string, useAuth: boolean): NonNullable<ProxyOpti
 function createProxyConfig(target: string, useAuth: boolean): Record<string, ProxyOptions> {
   const origin = new URL(target).origin;
   const configure = configureProxy(target, useAuth);
+  // Vite awaits `bypass` before proxying, so a request with no cached token
+  // waits for the CLI here instead of being sent unauthenticated; one with a
+  // cached token goes straight through while a refresh runs in the background.
+  const bypass: ProxyOptions["bypass"] = useAuth
+    ? async () => {
+        await ensureToken(origin);
+        return undefined;
+      }
+    : undefined;
   const byOrigin = JSON.parse(process.env.OMNIGENT_PROXY_HEADERS || "{}");
   if (!byOrigin || typeof byOrigin !== "object" || Array.isArray(byOrigin)) {
     throw new Error("OMNIGENT_PROXY_HEADERS must be a JSON object keyed by server origin");
@@ -194,24 +149,28 @@ function createProxyConfig(target: string, useAuth: boolean): Record<string, Pro
       changeOrigin: true,
       ws: true,
       configure,
+      bypass,
     },
     "/api": {
       target: origin,
       headers,
       changeOrigin: true,
       configure,
+      bypass,
     },
     "/auth": {
       target: origin,
       headers,
       changeOrigin: true,
       configure,
+      bypass,
     },
     "/health": {
       target: origin,
       headers,
       changeOrigin: true,
       configure,
+      bypass,
     },
     // The server's version manifest (/.well-known/omnigent.json), which the
     // desktop shell reads to learn what it's talking to. Without this the dev
@@ -223,6 +182,7 @@ function createProxyConfig(target: string, useAuth: boolean): Record<string, Pro
       headers,
       changeOrigin: true,
       configure,
+      bypass,
     },
   };
 }
@@ -246,12 +206,12 @@ function devProxyAuth(): Plugin {
   return {
     name: "dev-proxy-auth",
     apply: "serve",
-    config() {
+    async config() {
       if (!useAuth) {
         console.log(`[dev-proxy] target=${OMNIGENT_URL}`);
         return;
       }
-      const token = resolveToken(parsed.origin);
+      const token = await ensureToken(parsed.origin);
       if (token) {
         console.log(
           `[dev-proxy] target=${OMNIGENT_URL} (authenticated${isDatabricksWorkspaceEnv ? ", databricks-workspace" : ""})`,

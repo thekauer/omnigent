@@ -123,11 +123,18 @@ Stop after item 4. The rest of the "Later" list waits for the user.
    - A failed load, a missing `activate`, or `activate` throwing or rejecting is
      logged as `[omnigent-extensions] <id>: ...`; whatever the extension created
      so far is disposed, and the other extensions still activate.
-   - Loading the entry and its imports gets 60 seconds (`LOAD_TIMEOUT_MS`), so a
-     top-level `await` that never settles is covered; on a busy page the browser
-     queues module requests behind API calls, so loading can take well over 10
-     seconds. `activate` then gets 10 seconds (`ACTIVATION_TIMEOUT_MS`, as in the
-     V1 view host). A hanging one is logged as failed and
+   - Every entry starts loading at boot, also for `onStartupFinished`
+     extensions; only `activate` waits for the activation event. The dev server
+     speaks HTTP/1.1, so the browser opens about six connections per origin, and
+     the app keeps three or four long-lived SSE streams open
+     (`conversationRegistry.ts`, `streamSlots.ts`); module requests made after
+     those streams open queue behind them and took well over 10 seconds.
+   - Loading the entry and its imports gets 20 seconds (`LOAD_TIMEOUT_MS`), so a
+     top-level `await` that never settles is covered. `activate` then gets 10
+     seconds (`ACTIVATION_TIMEOUT_MS`, as in the V1 view host); waiting for the
+     activation event counts against neither. An entry that finishes loading
+     after its load timed out, or after the host was disposed, is never
+     activated. A hanging one is logged as failed and
      does not block `start()` or the other extensions; if it finishes later, its
      `deactivate()` runs and everything it created is disposed. The id is not
      activated again in this page, and its API instance is inert from the
@@ -206,7 +213,10 @@ requests for files outside an extension's sources:
 - The `browser` entry must have a real path inside the folder.
 - `server.fs.allow` gets only the extension's own `.js`/`.mjs`/`.json`/`.css`
   files, by real path; `node_modules`, `.git`, symlinked directories and symlinks
-  that leave the folder are left out.
+  that leave the folder are left out. Vite's default entry, the workspace root of
+  the checkout, stays in the list, so this narrowing only matters for extension
+  folders outside the checkout: a folder inside it is fully servable over plain
+  HTTP.
 - A middleware answers 403 to any request for a file in an extension folder whose
   real path is outside it.
 - Imports from extension files: a bare package other than `omnigent` and a
@@ -227,7 +237,8 @@ What the guards do not protect against, by design:
 - CSS `@import` is resolved by Vite's CSS pipeline, not through `resolveId`, so an
   extension stylesheet can pull in other files. There is no CSS sandbox.
 - `?raw` (and similar queries) of any file inside the folder returns its text,
-  including files that are not `.js`/`.mjs`/`.json`/`.css`.
+  including files that are not `.js`/`.mjs`/`.json`/`.css`. Once imported that
+  way, Vite also serves the file to plain GET requests.
 - Hardlinks to files outside the folder look like the extension's own files.
 - Crafted transforms or other ways of steering Vite's plugins.
 

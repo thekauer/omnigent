@@ -239,11 +239,11 @@ describe("ExtensionHost", () => {
         // Module requests queued behind a busy page's API calls.
         "/ext/pub.slowload.js": () =>
           new Promise((resolve) => {
-            setTimeout(() => resolve({ activate }), ACTIVATION_TIMEOUT_MS * 2);
+            setTimeout(() => resolve({ activate }), (ACTIVATION_TIMEOUT_MS + LOAD_TIMEOUT_MS) / 2);
           }),
       });
       const activation = host.activate(describeExtension("pub.slowload"));
-      await vi.advanceTimersByTimeAsync(ACTIVATION_TIMEOUT_MS * 2);
+      await vi.advanceTimersByTimeAsync((ACTIVATION_TIMEOUT_MS + LOAD_TIMEOUT_MS) / 2);
       expect(await activation).toBe("activated");
       expect(activate).toHaveBeenCalledOnce();
     } finally {
@@ -449,6 +449,73 @@ describe("ExtensionHost", () => {
     finishStartup();
     await started;
     expect(order).toEqual(["/ext/pub.eager.js", "/ext/pub.late.js"]);
+  });
+
+  it("starts loading onStartupFinished entries at once and activates them after startup", async () => {
+    const imported: string[] = [];
+    const activate = vi.fn();
+    let finishStartup!: () => void;
+    const host = new ExtensionHost({
+      services: {
+        headerItems: new SessionHeaderItemRegistry(),
+        sessions: new SessionsService(fakeSource().source),
+      },
+      importModule: async (url) => {
+        imported.push(url);
+        return { activate };
+      },
+      whenStartupFinished: () =>
+        new Promise((resolve) => {
+          finishStartup = resolve;
+        }),
+      console: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
+    });
+    const started = host.start([describeExtension("pub.late", ["onStartupFinished"])]);
+    await flush();
+    expect(imported).toEqual(["/ext/pub.late.js"]);
+    expect(activate).not.toHaveBeenCalled();
+    finishStartup();
+    await started;
+    expect(activate).toHaveBeenCalledOnce();
+    expect(host.isActive("pub.late")).toBe(true);
+  });
+
+  it("never calls activate on an entry that finishes loading after its load timed out", async () => {
+    vi.useFakeTimers();
+    try {
+      const activate = vi.fn();
+      const { host } = setup({
+        "/ext/pub.lateload.js": () =>
+          new Promise((resolve) => {
+            setTimeout(() => resolve({ activate }), LOAD_TIMEOUT_MS + 1000);
+          }),
+      });
+      const activation = host.activate(describeExtension("pub.lateload"));
+      await vi.advanceTimersByTimeAsync(LOAD_TIMEOUT_MS);
+      expect(await activation).toBe("failed");
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(activate).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("never calls activate on an entry that finishes loading after the host was disposed", async () => {
+    let finishLoad!: (module: unknown) => void;
+    const activate = vi.fn();
+    const { host } = setup({
+      "/ext/pub.disposedload.js": () =>
+        new Promise((resolve) => {
+          finishLoad = resolve;
+        }),
+    });
+    const activation = host.activate(describeExtension("pub.disposedload"));
+    await flush();
+    await host.dispose();
+    expect(await activation).toBe("skipped");
+    finishLoad({ activate });
+    await flush();
+    expect(activate).not.toHaveBeenCalled();
   });
 
   it("keeps a throwing listener from breaking other extensions", async () => {
