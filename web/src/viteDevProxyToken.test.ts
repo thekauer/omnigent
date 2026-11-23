@@ -1,7 +1,11 @@
-import { describe, expect, it, vi } from "vitest";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   checkStartupToken,
   CLI_TIMEOUT,
+  createCliRunner,
   DevProxyToken,
   TOKEN_FAILURE_RETRY_MS,
   TOKEN_FALLBACK_TTL_MS,
@@ -232,5 +236,76 @@ describe("checkStartupToken", () => {
         restarted: true,
       }),
     ).toBe("keep-running");
+  });
+});
+
+describe("createCliRunner", () => {
+  let directory: string | undefined;
+  const previousPath = process.env.PATH;
+  afterEach(() => {
+    process.env.PATH = previousPath;
+    if (directory) rmSync(directory, { recursive: true, force: true });
+    directory = undefined;
+  });
+
+  /** A fake `databricks` first on PATH; it logs each run's pid to `runs`. */
+  function fakeCli(body: string) {
+    directory = mkdtempSync(path.join(tmpdir(), "fake-databricks-"));
+    const runs = path.join(directory, "runs");
+    writeFileSync(runs, "");
+    const script = path.join(directory, "databricks");
+    writeFileSync(script, `#!/bin/sh\necho $$ >> "${runs}"\n${body}\n`);
+    chmodSync(script, 0o755);
+    process.env.PATH = `${directory}${path.delimiter}${previousPath}`;
+    return {
+      pids: () => readFileSync(runs, "utf8").split("\n").filter(Boolean).map(Number),
+    };
+  }
+
+  const alive = (pid: number) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  it("returns the CLI's stdout", async () => {
+    fakeCli(`echo '{"access_token":"t1"}'`);
+    expect(await createCliRunner()(["auth", "token"])).toBe('{"access_token":"t1"}\n');
+  });
+
+  it("fails on a non-zero exit", async () => {
+    fakeCli("exit 3");
+    await expect(createCliRunner()(["auth", "token"])).rejects.toThrow("code 3");
+  });
+
+  it("settles on time and kills a CLI that ignores SIGTERM", async () => {
+    const cli = fakeCli('trap "" TERM\nwhile :; do sleep 0.1; done');
+    const run = createCliRunner({ timeoutMs: 300, killGraceMs: 200 });
+    const started = Date.now();
+    await expect(run(["auth", "token"])).rejects.toThrow("timed out after 300ms");
+    expect(Date.now() - started).toBeLessThan(2000);
+    const [pid] = cli.pids();
+    await vi.waitFor(() => expect(alive(pid!)).toBe(false), { timeout: 3000 });
+  });
+
+  it("keeps a first start from hanging and caches the failure for the back-off", async () => {
+    const cli = fakeCli('trap "" TERM\nwhile :; do sleep 0.1; done');
+    const token = new DevProxyToken({
+      authArgs: ["--host", "https://example.com"],
+      runCli: createCliRunner({ timeoutMs: 200, killGraceMs: 100 }),
+    });
+    const outcome = await checkStartupToken({
+      ensure: () => token.ensure(),
+      retry: () => token.refresh(),
+      restarted: true,
+    });
+    expect(outcome).toBe("keep-running");
+    // Requests within the back-off reuse the failure instead of running the CLI again.
+    expect(token.current()).toBeNull();
+    expect(await token.ensure()).toBeNull();
+    expect(cli.pids()).toHaveLength(2);
   });
 });

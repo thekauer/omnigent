@@ -41,7 +41,12 @@ export interface NodeProgressEvent {
 
 type HostMessage =
   | { type: "started" | "ready" }
-  | { type: "activated" | "commands"; extensionId: string; commands: string[] }
+  | {
+      type: "activated" | "commands";
+      extensionId: string;
+      commands: string[];
+      timeouts?: Record<string, number>;
+    }
   | { type: "activationFailed"; extensionId: string; error: string }
   | { type: "log"; extensionId: string; level: "info" | "warn" | "error"; message: string }
   | { type: "progress"; callId: number; event: NodeProgressEvent }
@@ -54,32 +59,118 @@ interface PendingCall {
   onProgress: (event: NodeProgressEvent) => void;
 }
 
+/** Default per-call timeout; a command may set its own when it registers. */
+export const NODE_COMMAND_TIMEOUT_MS = 15 * 60 * 1000;
+/** How long a requested restart waits for running commands before failing them. */
+export const NODE_RESTART_GRACE_MS = 30_000;
+/** First delay before restarting a host that exited on its own; it doubles per crash. */
+export const NODE_RESTART_DELAY_MS = 1000;
+export const NODE_MAX_RESTART_DELAY_MS = 30_000;
+/** A host up this long before it crashed restarts after the first delay again. */
+export const NODE_STABLE_UPTIME_MS = 60_000;
+/** Grace between SIGTERM and SIGKILL for processes the extensions left behind. */
+const PROCESS_GROUP_KILL_GRACE_MS = 2000;
+/** The host runs as a process group leader, so its extensions' processes can be killed with it. */
+const USE_PROCESS_GROUP = process.platform !== "win32";
+
+/** `stopped`: not wanted; `restarting`: waiting to start again after a crash. */
+export type NodeExtensionHostStatus = "stopped" | "starting" | "running" | "restarting";
+
+export interface NodeExecuteOptions {
+  /** Aborting fails the call (the page went away); the host drops its outcome. */
+  signal?: AbortSignal;
+}
+
 export interface NodeExtensionHostOptions {
   script?: string;
   readyTimeoutMs?: number;
+  /** Per-call timeout for commands that set none. */
+  commandTimeoutMs?: number;
+  restartGraceMs?: number;
+  restartDelayMs?: number;
+  maxRestartDelayMs?: number;
+  stableUptimeMs?: number;
   /** Extra environment for the host process (tests). */
   env?: NodeJS.ProcessEnv;
   log?: Pick<Console, "log" | "warn" | "error">;
 }
 
+const LOG_PREFIX = "[omnigent-extensions] node host:";
+
+/** Calls `onLine` once per complete line of `stream`, and for a last unterminated one at its end. */
+function forEachLine(stream: NodeJS.ReadableStream | null, onLine: (line: string) => void): void {
+  if (!stream) return;
+  stream.setEncoding("utf8");
+  let partial = "";
+  stream.on("data", (chunk: string) => {
+    const lines = (partial + chunk).split("\n");
+    partial = lines.pop() ?? "";
+    for (const line of lines) if (line) onLine(line);
+  });
+  stream.on("end", () => {
+    if (partial) onLine(partial);
+    partial = "";
+  });
+}
+
+/** Signals the process group `pid` leads, then kills what is left of it after a grace. */
+function killProcessGroup(pid: number | undefined): void {
+  if (!USE_PROCESS_GROUP || pid === undefined) return;
+  try {
+    process.kill(-pid, "SIGTERM");
+  } catch {
+    return; // The group is already gone.
+  }
+  const timer = setTimeout(() => {
+    try {
+      process.kill(-pid, "SIGKILL");
+    } catch {
+      // Everything exited on SIGTERM.
+    }
+  }, PROCESS_GROUP_KILL_GRACE_MS);
+  timer.unref();
+}
+
 /**
  * Runs the Node entries in one child process. A crash or a hung entry never
- * takes the dev server down: calls in flight fail, and `restart` starts afresh.
+ * takes the dev server down: calls in flight fail, a host that exits on its own
+ * restarts with backoff, and a requested restart waits for running calls only
+ * for a grace period.
  */
 export class NodeExtensionHost {
   private readonly script: string;
   private readonly readyTimeoutMs: number;
+  private readonly commandTimeoutMs: number;
+  private readonly restartGraceMs: number;
+  private readonly restartDelayMs: number;
+  private readonly maxRestartDelayMs: number;
+  private readonly stableUptimeMs: number;
   private readonly env: NodeJS.ProcessEnv | undefined;
   private readonly log: Pick<Console, "log" | "warn" | "error">;
   private child: ChildProcess | undefined;
+  private childReady = false;
+  private extensions: readonly NodeExtensionDescription[] = [];
   private readonly commandsByExtension = new Map<string, string[]>();
+  private readonly commandTimeouts = new Map<string, number>();
   private readonly pending = new Map<number, PendingCall>();
   private nextCallId = 1;
   private readyPromise: Promise<void> = Promise.resolve();
+  /** Crashes since the last stable run, for the restart backoff. */
+  private crashes = 0;
+  private crashRestartTimer: ReturnType<typeof setTimeout> | undefined;
+  private restartDebounceTimer: ReturnType<typeof setTimeout> | undefined;
+  private restartGraceTimer: ReturnType<typeof setTimeout> | undefined;
+  /** A requested restart is waiting for running calls to finish. */
+  private restartWaiting = false;
 
   constructor(options: NodeExtensionHostOptions = {}) {
     this.script = options.script ?? NODE_HOST_SCRIPT;
     this.readyTimeoutMs = options.readyTimeoutMs ?? NODE_HOST_READY_TIMEOUT_MS;
+    this.commandTimeoutMs = options.commandTimeoutMs ?? NODE_COMMAND_TIMEOUT_MS;
+    this.restartGraceMs = options.restartGraceMs ?? NODE_RESTART_GRACE_MS;
+    this.restartDelayMs = options.restartDelayMs ?? NODE_RESTART_DELAY_MS;
+    this.maxRestartDelayMs = options.maxRestartDelayMs ?? NODE_MAX_RESTART_DELAY_MS;
+    this.stableUptimeMs = options.stableUptimeMs ?? NODE_STABLE_UPTIME_MS;
     this.env = options.env;
     this.log = options.log ?? console;
   }
@@ -91,6 +182,11 @@ export class NodeExtensionHost {
 
   get running(): boolean {
     return this.child !== undefined;
+  }
+
+  get status(): NodeExtensionHostStatus {
+    if (this.child !== undefined) return this.childReady ? "running" : "starting";
+    return this.crashRestartTimer === undefined ? "stopped" : "restarting";
   }
 
   get callsInFlight(): number {
@@ -109,35 +205,50 @@ export class NodeExtensionHost {
     );
   }
 
-  start(extensions: readonly NodeExtensionDescription[]): Promise<void> {
-    this.stop();
+  /** Starts (or restarts) the host for `extensions`, failing calls in flight. */
+  start(
+    extensions: readonly NodeExtensionDescription[],
+    reason = "the Node extension host was stopped",
+  ): Promise<void> {
+    this.stop(reason);
+    this.extensions = extensions;
+    this.crashes = 0;
     if (extensions.length === 0) {
       this.readyPromise = Promise.resolve();
       return this.readyPromise;
     }
+    return this.launch();
+  }
+
+  private launch(): Promise<void> {
+    const extensions = this.extensions;
     const child = fork(this.script, [], {
       stdio: ["ignore", "pipe", "pipe", "ipc"],
       execArgv: [],
-      env: { ...process.env, ...this.env },
+      env: {
+        ...process.env,
+        ...(USE_PROCESS_GROUP ? { OMNIGENT_NODE_HOST_PROCESS_GROUP: "1" } : {}),
+        ...this.env,
+      },
       serialization: "json",
+      // Its own process group, so processes its extensions start die with it.
+      detached: USE_PROCESS_GROUP,
     });
     this.child = child;
-    const prefix = "[omnigent-extensions] node host:";
-    child.stdout?.setEncoding("utf8");
-    child.stderr?.setEncoding("utf8");
-    child.stdout?.on("data", (chunk: string) => {
-      for (const line of chunk.split("\n")) if (line) this.log.log(`${prefix} ${line}`);
-    });
-    child.stderr?.on("data", (chunk: string) => {
-      for (const line of chunk.split("\n")) if (line) this.log.error(`${prefix} ${line}`);
-    });
+    this.childReady = false;
+    const startedAt = Date.now();
+    forEachLine(child.stdout, (line) => this.log.log(`${LOG_PREFIX} ${line}`));
+    forEachLine(child.stderr, (line) => this.log.error(`${LOG_PREFIX} ${line}`));
 
     let markReady!: () => void;
     const ready = new Promise<void>((resolve) => {
-      markReady = resolve;
+      markReady = () => {
+        if (this.child === child) this.childReady = true;
+        resolve();
+      };
     });
     const timer = setTimeout(() => {
-      this.log.error(`${prefix} entries not activated after ${this.readyTimeoutMs}ms`);
+      this.log.error(`${LOG_PREFIX} entries not activated after ${this.readyTimeoutMs}ms`);
       markReady();
     }, this.readyTimeoutMs);
     this.readyPromise = ready.finally(() => clearTimeout(timer));
@@ -147,20 +258,52 @@ export class NodeExtensionHost {
       this.onMessage(message, markReady);
     });
     child.on("error", (error) => {
-      this.log.error(`${prefix} ${error.message}`);
+      this.log.error(`${LOG_PREFIX} ${error.message}`);
     });
     child.on("exit", (code, signal) => {
+      killProcessGroup(child.pid);
       if (this.child !== child) return;
       this.child = undefined;
-      this.commandsByExtension.clear();
+      this.childReady = false;
+      this.clearCommands();
       markReady();
-      if (code !== 0) {
-        this.log.error(`${prefix} exited (${signal ?? `code ${code}`})`);
-      }
+      this.log.error(`${LOG_PREFIX} exited unexpectedly (${signal ?? `code ${code}`})`);
       this.failPending("the Node extension host exited");
+      this.scheduleCrashRestart(Date.now() - startedAt);
     });
     child.send({ type: "activate", extensions });
     return this.readyPromise;
+  }
+
+  /** Starts the host again after it exited on its own, waiting longer after each quick crash. */
+  private scheduleCrashRestart(uptimeMs: number): void {
+    if (uptimeMs >= this.stableUptimeMs) this.crashes = 0;
+    const delay = Math.min(this.restartDelayMs * 2 ** this.crashes, this.maxRestartDelayMs);
+    this.crashes += 1;
+    this.log.error(`${LOG_PREFIX} restarting in ${delay}ms`);
+    this.crashRestartTimer = setTimeout(() => {
+      this.crashRestartTimer = undefined;
+      void this.launch();
+    }, delay);
+  }
+
+  private clearCommands(): void {
+    this.commandsByExtension.clear();
+    this.commandTimeouts.clear();
+  }
+
+  private setCommands(
+    extensionId: string,
+    commands: string[],
+    timeouts: Record<string, number> = {},
+  ): void {
+    for (const command of this.commandsByExtension.get(extensionId) ?? []) {
+      this.commandTimeouts.delete(command);
+    }
+    this.commandsByExtension.set(extensionId, commands);
+    for (const [command, timeoutMs] of Object.entries(timeouts)) {
+      this.commandTimeouts.set(command, timeoutMs);
+    }
   }
 
   private onMessage(message: HostMessage, markReady: () => void): void {
@@ -169,13 +312,14 @@ export class NodeExtensionHost {
         markReady();
         return;
       case "activated":
-        this.commandsByExtension.set(message.extensionId, message.commands);
+        this.setCommands(message.extensionId, message.commands, message.timeouts);
         this.log.log(`[omnigent-extensions] activated ${message.extensionId} (node)`);
         return;
       case "commands":
-        this.commandsByExtension.set(message.extensionId, message.commands);
+        this.setCommands(message.extensionId, message.commands, message.timeouts);
         return;
       case "activationFailed":
+        this.setCommands(message.extensionId, []);
         this.commandsByExtension.delete(message.extensionId);
         this.log.error(
           `[omnigent-extensions] ${message.extensionId} (node): activation failed: ${message.error}`,
@@ -211,6 +355,7 @@ export class NodeExtensionHost {
     command: string,
     args: unknown[],
     onProgress: (event: NodeProgressEvent) => void = () => {},
+    options: NodeExecuteOptions = {},
   ): Promise<unknown> {
     const child = this.child;
     if (!child || !child.connected) {
@@ -219,11 +364,86 @@ export class NodeExtensionHost {
     if (!this.commandsOf(extensionId).includes(command)) {
       return Promise.reject(new Error(`command '${command}' not found`));
     }
+    const { signal } = options;
+    if (signal?.aborted) return Promise.reject(new Error(`command '${command}' was cancelled`));
     const callId = this.nextCallId++;
+    const timeoutMs = this.commandTimeouts.get(command) ?? this.commandTimeoutMs;
     return new Promise((resolve, reject) => {
-      this.pending.set(callId, { resolve, reject, onProgress });
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const settle = () => {
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", onAbort);
+        this.afterCallSettled();
+      };
+      /** Fails the call here and tells the host to drop its outcome. */
+      const abandon = (message: string) => {
+        if (!this.pending.has(callId)) return;
+        this.pending.delete(callId);
+        if (this.child === child && child.connected) child.send({ type: "cancel", callId });
+        settle();
+        reject(new Error(message));
+      };
+      const onAbort = () => abandon(`command '${command}' was cancelled`);
+      timer = setTimeout(() => {
+        this.log.warn(`[omnigent-extensions] ${extensionId} (node): ${command} timed out`);
+        abandon(`command '${command}' timed out after ${timeoutMs}ms`);
+      }, timeoutMs);
+      signal?.addEventListener("abort", onAbort, { once: true });
+      this.pending.set(callId, {
+        resolve: (value) => {
+          settle();
+          resolve(value);
+        },
+        reject: (error) => {
+          settle();
+          reject(error);
+        },
+        onProgress,
+      });
       child.send({ type: "execute", callId, extensionId, command, args });
     });
+  }
+
+  /**
+   * Restarts the host for `extensions` after `debounceMs` without another
+   * request, once no command is running, or after the grace period regardless.
+   */
+  scheduleRestart(extensions: readonly NodeExtensionDescription[], debounceMs: number): void {
+    this.extensions = extensions;
+    clearTimeout(this.restartDebounceTimer);
+    this.restartDebounceTimer = setTimeout(() => {
+      this.restartDebounceTimer = undefined;
+      if (this.pending.size === 0) return this.restartNow();
+      this.restartWaiting = true;
+      this.restartGraceTimer ??= setTimeout(() => {
+        this.log.warn(
+          `${LOG_PREFIX} restarting with ${this.pending.size} command(s) still running after ${this.restartGraceMs}ms`,
+        );
+        this.restartNow("the Node extension host restarted while the command was running");
+      }, this.restartGraceMs);
+    }, debounceMs);
+  }
+
+  private afterCallSettled(): void {
+    if (!this.restartWaiting || this.pending.size > 0) return;
+    // Not inside the settling call's own stack.
+    setImmediate(() => {
+      if (this.restartWaiting && this.pending.size === 0) this.restartNow();
+    });
+  }
+
+  private restartNow(reason?: string): void {
+    void this.start(this.extensions, reason);
+  }
+
+  private cancelScheduledRestarts(): void {
+    clearTimeout(this.crashRestartTimer);
+    clearTimeout(this.restartDebounceTimer);
+    clearTimeout(this.restartGraceTimer);
+    this.crashRestartTimer = undefined;
+    this.restartDebounceTimer = undefined;
+    this.restartGraceTimer = undefined;
+    this.restartWaiting = false;
   }
 
   private failPending(message: string): void {
@@ -232,18 +452,24 @@ export class NodeExtensionHost {
     for (const call of calls) call.reject(new Error(message));
   }
 
-  stop(): void {
+  stop(reason = "the Node extension host was stopped"): void {
+    this.cancelScheduledRestarts();
     const child = this.child;
     this.child = undefined;
-    this.commandsByExtension.clear();
-    this.failPending("the Node extension host was stopped");
+    this.childReady = false;
+    this.clearCommands();
+    this.failPending(reason);
+    this.restartWaiting = false;
     if (!child) return;
     if (child.connected) {
       child.send({ type: "shutdown" });
       child.disconnect();
     }
-    // A host stuck in a deactivate is killed.
-    const kill = setTimeout(() => child.kill("SIGKILL"), 5000);
+    // A host stuck in a deactivate is killed, with its process group.
+    const kill = setTimeout(() => {
+      child.kill("SIGKILL");
+      killProcessGroup(child.pid);
+    }, 5000);
     kill.unref();
     child.once("exit", () => clearTimeout(kill));
   }
@@ -262,7 +488,7 @@ function sameToken(given: string, expected: string): boolean {
 
 export interface CommandEndpointOptions {
   token: string;
-  host: Pick<NodeExtensionHost, "commandsOf" | "execute">;
+  host: Pick<NodeExtensionHost, "commandsOf" | "execute" | "status" | "ready">;
   /** The port the dev server listens on, read per request. */
   port: () => number | undefined;
   maxBodyBytes?: number;
@@ -313,7 +539,15 @@ export function createCommandEndpoint(options: CommandEndpointOptions) {
     const pathname = (req.url ?? "").split("?")[0] ?? "";
     const match = COMMAND_PATH.exec(pathname);
     if (!match) return next();
-    void handle(req, res, decodeURIComponent(match[1]!), decodeURIComponent(match[2]!));
+    let extensionId: string;
+    let command: string;
+    try {
+      extensionId = decodeURIComponent(match[1]!);
+      command = decodeURIComponent(match[2]!);
+    } catch {
+      return sendJsonError(res, 400, "the command path is not valid URI encoding");
+    }
+    void handle(req, res, extensionId, command);
   };
 
   async function handle(
@@ -368,6 +602,11 @@ export function createCommandEndpoint(options: CommandEndpointOptions) {
     } catch {
       return sendJsonError(res, 400, 'the body must be JSON like {"args": [...]}');
     }
+    // A host that is starting (after an edit or a crash) is waited for, up to its ready timeout.
+    if (options.host.status === "starting") await options.host.ready;
+    if (options.host.status === "starting" || options.host.status === "restarting") {
+      return sendJsonError(res, 503, "Node extension host is not running");
+    }
     if (!options.host.commandsOf(extensionId).includes(command)) {
       return sendJsonError(res, 404, `extension ${extensionId} has no Node command '${command}'`);
     }
@@ -379,9 +618,18 @@ export function createCommandEndpoint(options: CommandEndpointOptions) {
     const write = (line: object) => {
       if (!res.writableEnded) res.write(`${JSON.stringify(line)}\n`);
     };
+    // The page closing the request (navigation, reload) cancels the call.
+    const disconnected = new AbortController();
+    res.on("close", () => {
+      if (!res.writableFinished) disconnected.abort();
+    });
     try {
-      const value = await options.host.execute(extensionId, command, args, (event) =>
-        write({ type: "progress", ...event }),
+      const value = await options.host.execute(
+        extensionId,
+        command,
+        args,
+        (event) => write({ type: "progress", ...event }),
+        { signal: disconnected.signal },
       );
       write(value === undefined ? { type: "result" } : { type: "result", value });
     } catch (error) {

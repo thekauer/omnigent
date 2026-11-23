@@ -401,21 +401,15 @@ export function omnigentExtensionsDev(options: OmnigentExtensionsDevOptions = {}
   // Node entries and the endpoint the page runs their commands through: dev only.
   const commandToken = createCommandToken();
   const nodeHost = new NodeExtensionHost(options.nodeHost);
-  let nodeRestartTimer: ReturnType<typeof setTimeout> | undefined;
   let listeningPort: number | undefined;
   const nodeExtensions = () =>
     scan.extensions.flatMap(({ id, version, directory, mainPath }) =>
       mainPath === undefined ? [] : [{ id, version, directory, mainPath }],
     );
   const startNodeHost = () => void nodeHost.start(nodeExtensions());
-  /** Restarts the Node host after edits, once its running commands have finished. */
-  const scheduleNodeRestart = () => {
-    clearTimeout(nodeRestartTimer);
-    nodeRestartTimer = setTimeout(() => {
-      if (nodeHost.callsInFlight > 0) return scheduleNodeRestart();
-      startNodeHost();
-    }, NODE_RESTART_DEBOUNCE_MS);
-  };
+  /** Restarts the Node host after edits, once its running commands finish or their grace ends. */
+  const scheduleNodeRestart = () =>
+    nodeHost.scheduleRestart(nodeExtensions(), NODE_RESTART_DEBOUNCE_MS);
 
   const report = () => {
     if (options.quiet) return;
@@ -447,7 +441,6 @@ export function omnigentExtensionsDev(options: OmnigentExtensionsDevOptions = {}
     scan = scanDevExtensions(folders);
     refreshAllowList();
     report();
-    clearTimeout(nodeRestartTimer);
     startNodeHost();
     const module = server.moduleGraph.getModuleById(RESOLVED_DEV_EXTENSIONS_MODULE);
     if (module) server.moduleGraph.invalidateModule(module);
@@ -547,7 +540,6 @@ export function omnigentExtensionsDev(options: OmnigentExtensionsDevOptions = {}
         listeningPort = typeof address === "object" && address !== null ? address.port : undefined;
       });
       server.httpServer?.on("close", () => {
-        clearTimeout(nodeRestartTimer);
         nodeHost.stop();
       });
       server.middlewares.use(DEV_EXTENSIONS_ENDPOINT, (req, res, next) => {

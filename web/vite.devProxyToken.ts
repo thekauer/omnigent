@@ -4,7 +4,7 @@
 // `databricks auth token` never blocks the dev server: while a refresh runs,
 // requests keep the cached token, and only a request with no usable token waits.
 
-import { execFile } from "node:child_process";
+import { spawn } from "node:child_process";
 
 // CLI-minted OAuth tokens are short-lived (about an hour), so a long-running dev
 // server re-fetches shortly before expiry instead of caching one forever.
@@ -15,8 +15,11 @@ export const TOKEN_FALLBACK_TTL_MS = 5 * 60 * 1000;
 export const TOKEN_FAILURE_RETRY_MS = 30 * 1000;
 // The CLI's own limit (its default is an hour, which covers a browser login).
 export const CLI_TIMEOUT = "30s";
-// Backstop for a CLI that ignores its --timeout.
+// Backstop for a CLI that ignores its --timeout: the call fails then, whatever the CLI does.
 export const CLI_KILL_TIMEOUT_MS = 35_000;
+// After the backstop's SIGTERM, a CLI that is still running gets SIGKILL.
+export const CLI_KILL_GRACE_MS = 2000;
+const CLI_MAX_OUTPUT_BYTES = 1024 * 1024;
 
 export interface CliToken {
   value: string | null;
@@ -27,15 +30,58 @@ export interface CliToken {
 /** Runs `databricks <args>` and returns its stdout. */
 export type RunCli = (args: string[]) => Promise<string>;
 
-export const runDatabricksCli: RunCli = (args) =>
-  new Promise((resolve, reject) => {
-    execFile(
-      "databricks",
-      args,
-      { encoding: "utf8", timeout: CLI_KILL_TIMEOUT_MS, maxBuffer: 1024 * 1024 },
-      (error, stdout) => (error ? reject(error) : resolve(stdout)),
-    );
-  });
+export interface CliRunnerOptions {
+  command?: string;
+  timeoutMs?: number;
+  killGraceMs?: number;
+}
+
+/**
+ * A RunCli that settles by its own timer: unlike execFile's timeout, which
+ * waits for the child to close, a CLI that ignores SIGTERM (or a grandchild
+ * holding its stdout) cannot keep the call pending.
+ */
+export function createCliRunner({
+  command = "databricks",
+  timeoutMs = CLI_KILL_TIMEOUT_MS,
+  killGraceMs = CLI_KILL_GRACE_MS,
+}: CliRunnerOptions = {}): RunCli {
+  return (args) =>
+    new Promise((resolve, reject) => {
+      const child = spawn(command, args, { stdio: ["ignore", "pipe", "ignore"] });
+      const chunks: Buffer[] = [];
+      let size = 0;
+      let settled = false;
+      const finish = (error: Error | undefined) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        if (error) reject(error);
+        else resolve(Buffer.concat(chunks).toString("utf8"));
+      };
+      const kill = (reason: string) => {
+        finish(new Error(`${command} ${reason}`));
+        child.kill("SIGTERM");
+        const force = setTimeout(() => {
+          if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+        }, killGraceMs);
+        force.unref();
+      };
+      const timer = setTimeout(() => kill(`timed out after ${timeoutMs}ms`), timeoutMs);
+      child.stdout.on("data", (chunk: Buffer) => {
+        size += chunk.length;
+        if (size > CLI_MAX_OUTPUT_BYTES) kill("printed more than 1 MiB");
+        else chunks.push(chunk);
+      });
+      child.on("error", (error) => finish(error));
+      child.on("close", (code, signal) => {
+        if (code === 0) finish(undefined);
+        else finish(new Error(`${command} exited (${signal ?? `code ${code}`})`));
+      });
+    });
+}
+
+export const runDatabricksCli: RunCli = createCliRunner();
 
 export interface DevProxyTokenOptions {
   /** `--host`, plus `--profile` when one is selected. */
