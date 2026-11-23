@@ -45,6 +45,8 @@ export const OMNIGENT_API_EXPORTS = [
   "sessions",
   "commands",
   "hosts",
+  "workspace",
+  "TreeItemCollapsibleState",
 ] as const;
 
 const KNOWN_ACTIVATION_EVENTS = new Set(["*", "onStartupFinished"]);
@@ -92,6 +94,8 @@ export interface DevExtension {
   mainPath?: string;
   /** URL the browser imports the entry from. */
   entryUrl: string;
+  /** `contributes` as written (an object); the page host checks its entries. */
+  contributes?: Record<string, unknown>;
 }
 
 export interface DevExtensionScan {
@@ -192,6 +196,13 @@ export function readDevExtension(folder: string): ManifestResult {
     }
   }
 
+  const { contributes } = manifest;
+  const contributesObject =
+    typeof contributes === "object" && contributes !== null && !Array.isArray(contributes);
+  if (contributes !== undefined && !contributesObject) {
+    problems.push('"contributes" must be an object');
+  }
+
   if (problems.length > 0 || entryPath === undefined) return failure(problems);
   const id = `${publisher as string}.${name as string}`;
   return {
@@ -206,6 +217,7 @@ export function readDevExtension(folder: string): ManifestResult {
       entryPath,
       entryUrl: fsUrl(entryPath),
       ...(mainPath === undefined ? {} : { mainPath }),
+      ...(contributesObject ? { contributes: contributes as Record<string, unknown> } : {}),
     },
     warnings,
   };
@@ -618,12 +630,15 @@ export function omnigentExtensionsDev(options: OmnigentExtensionsDevOptions = {}
             }
           : null;
         const extensions = serving
-          ? scan.extensions.map(({ id: extensionId, version, activationEvents, entryUrl }) => ({
-              id: extensionId,
-              version,
-              activationEvents,
-              entryUrl,
-            }))
+          ? scan.extensions.map(
+              ({ id: extensionId, version, activationEvents, entryUrl, contributes }) => ({
+                id: extensionId,
+                version,
+                activationEvents,
+                entryUrl,
+                ...(contributes === undefined ? {} : { contributes }),
+              }),
+            )
           : [];
         return [
           `export const devExtensions = ${JSON.stringify(extensions)};`,

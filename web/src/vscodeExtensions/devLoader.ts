@@ -26,6 +26,12 @@ async function boot(): Promise<ExtensionHost | null> {
     { toastNotifications },
     { hostReconnectProviders },
     { refreshRunnerHealth },
+    { railViews },
+    { workspaceBridge },
+    { ContextKeyService },
+    { ViewsService },
+    { WorkspaceService },
+    { registerBuiltInCommands },
   ] = await Promise.all([
     import("./host"),
     import("./sessionHeaderItems"),
@@ -35,18 +41,34 @@ async function boot(): Promise<ExtensionHost | null> {
     import("./progress"),
     import("@/lib/hostReconnectProviders"),
     import("@/hooks/useRunnerHealth"),
+    import("@/shell/railViews"),
+    import("@/shell/workspaceBridge"),
+    import("./contextKeys"),
+    import("./viewsService"),
+    import("./workspaceService"),
+    import("./builtinCommands"),
   ]);
+  const commands = new CommandRegistry(
+    devCommandEndpoint
+      ? createNodeCommandRoute(devCommandEndpoint, (input, init) => window.fetch(input, init))
+      : undefined,
+  );
+  const contextKeys = new ContextKeyService();
+  registerBuiltInCommands(commands, { contextKeys, workspace: workspaceBridge });
   const extensionHost = new ExtensionHost({
     services: {
       headerItems: sessionHeaderItems,
       sessions: new SessionsService(chatStoreSessionSource()),
-      commands: new CommandRegistry(
-        devCommandEndpoint
-          ? createNodeCommandRoute(devCommandEndpoint, (input, init) => window.fetch(input, init))
-          : undefined,
-      ),
+      commands,
       notifications: toastNotifications,
       hostReconnect: { registry: hostReconnectProviders, onReconnected: refreshRunnerHealth },
+      views: new ViewsService({
+        registry: railViews,
+        contextKeys,
+        executeCommand: (command, args) => commands.execute(command, args, () => {}),
+        showError: (message) => toastNotifications.error(message),
+      }),
+      workspace: new WorkspaceService(workspaceBridge),
     },
   });
   await extensionHost.start(devExtensions);

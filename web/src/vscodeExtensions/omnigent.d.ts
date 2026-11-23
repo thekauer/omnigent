@@ -78,11 +78,38 @@ declare module "omnigent" {
     readonly version: string;
   }
 
+  /**
+   * A key-value store, as `vscode.Memento`. Values are JSON data; `get` returns
+   * a copy, so changing it does not change what is stored.
+   */
+  export interface Memento {
+    /** The stored keys. */
+    keys: () => readonly string[];
+    /** The value stored under `key`, or `defaultValue` when there is none. */
+    get: {
+      <T>(key: string): T | undefined;
+      <T>(key: string, defaultValue: T): T;
+    };
+    /**
+     * Store `value` (JSON) under `key`; `undefined` removes the key. Rejects when
+     * no chat session is open, the value is not JSON, or the store is full (50
+     * keys and 8 KiB of JSON per extension and chat session).
+     */
+    update: (key: string, value: unknown) => Promise<void>;
+  }
+
   /** Passed to an extension's `activate` function. */
   export interface ExtensionContext {
     /** Disposed, in order, when the extension is deactivated. */
     readonly subscriptions: DisposableLike[];
     readonly extension: Extension;
+    /**
+     * Values kept per chat session, unlike VS Code's per-workspace state: each
+     * call reads or writes the memento of the session on screen at that moment
+     * (see {@link sessions.activeSession}). It lives in this browser's storage,
+     * with the session's other UI state, for the 100 most recent sessions.
+     */
+    readonly workspaceState: Memento;
   }
 
   /** Which end of the session header slot an item sits at. */
@@ -112,6 +139,100 @@ declare module "omnigent" {
     show: () => void;
     hide: () => void;
     /** Remove the item for good. */
+    dispose: () => void;
+  }
+
+  /** How a tree item shows its children, as `vscode.TreeItemCollapsibleState`. */
+  export enum TreeItemCollapsibleState {
+    /** A leaf. */
+    None = 0,
+    Collapsed = 1,
+    Expanded = 2,
+  }
+
+  /** The file or folder a tree item stands for: a workspace path, as plain data. */
+  export interface ResourceUri {
+    readonly path: string;
+  }
+
+  /** A command a tree item runs when clicked, as `vscode.Command`. */
+  export interface Command {
+    command: string;
+    title?: string;
+    /** Copied as JSON. */
+    arguments?: unknown[];
+  }
+
+  /** One styled piece of a {@link TreeItemDecoration}. */
+  export interface TreeItemDecorationPart {
+    text: string;
+    tone?: "added" | "removed" | "muted";
+  }
+
+  /**
+   * Trailing text of a row, such as a diffstat. `parts` (up to 8, 24 characters
+   * each) win over `text`; `title` is its accessible label.
+   */
+  export interface TreeItemDecoration {
+    text?: string;
+    parts?: TreeItemDecorationPart[];
+    title?: string;
+  }
+
+  /**
+   * One row of a tree view, as `vscode.TreeItem`, in plain data. A row with a
+   * `resourceUri` is drawn like the Files tree (a folder when it has children
+   * and `iconPath` is "folder"), or like the Changes list when it has a
+   * `description` and no children.
+   */
+  export interface TreeItem {
+    /** Names the item across refreshes; expand state is kept by it. */
+    id?: string;
+    /** Defaults to the last segment of `resourceUri`. */
+    label?: string;
+    /** Muted text after the label; `true` uses the folder of `resourceUri`. */
+    description?: string | boolean;
+    tooltip?: string;
+    resourceUri?: ResourceUri;
+    /** "file" or "folder" for the file icon of `resourceUri`, or an icon name from the allowlist. */
+    iconPath?: string;
+    decoration?: TreeItemDecoration;
+    /** Drawn as the A/M/D letter of a file, or the dot of a folder. */
+    gitStatus?: "added" | "modified" | "deleted";
+    collapsibleState?: TreeItemCollapsibleState;
+    command?: Command;
+    contextValue?: string;
+  }
+
+  /** Provides a tree view's data, as `vscode.TreeDataProvider`. */
+  export interface TreeDataProvider<T> {
+    /** Fire it when the data changes; the view reloads what it shows. */
+    onDidChangeTreeData?: Event<T | T[] | undefined | null | void>;
+    getTreeItem: (element: T) => TreeItem | Promise<TreeItem>;
+    /** The roots when `element` is undefined. */
+    getChildren: (element?: T) => T[] | null | undefined | Promise<T[] | null | undefined>;
+  }
+
+  export interface TreeViewOptions<T> {
+    treeDataProvider: TreeDataProvider<T>;
+  }
+
+  /** A count on a view's tab, as `vscode.ViewBadge`. */
+  export interface ViewBadge {
+    readonly value: number;
+    readonly tooltip: string;
+  }
+
+  /** A tree view, as `vscode.TreeView`; plain text everywhere. No selection or reveal yet. */
+  export interface TreeView<T> {
+    /** Shown in the view's title bar; defaults to the contributed name. */
+    title: string | undefined;
+    /** Muted text next to the title. */
+    description: string | undefined;
+    /** Shown above the tree, for example when it is empty. */
+    message: string | undefined;
+    badge: ViewBadge | undefined;
+    /** Removes the data provider; the view stays, without data. */
     dispose: () => void;
   }
 
@@ -169,11 +290,23 @@ declare module "omnigent" {
       alignment?: SessionHeaderItemAlignment,
       priority?: number,
     ): SessionHeaderItem;
+
+    /**
+     * Give a view the extension contributes (`contributes.views`) its data. Its
+     * rows are drawn by the host, windowed, with expand state kept per view and
+     * chat session. Throws for a view the extension did not contribute.
+     */
+    export function createTreeView<T>(viewId: string, options: TreeViewOptions<T>): TreeView<T>;
   }
 
   /**
    * Commands, as in `vscode.commands`: one registry per window, shared by all
    * extensions. Arguments and results are copied as JSON.
+   *
+   * Built-in commands:
+   * - `setContext(key, value)` sets a context key for `when` clauses.
+   * - `omnigent.openFile(path)` opens a workspace file in the file viewer.
+   * - `omnigent.refreshChangedFiles()` refetches the active session's changed files.
    */
   export namespace commands {
     /**
@@ -255,6 +388,41 @@ declare module "omnigent" {
     readonly costHidden: boolean;
     /** Per-model breakdown keyed by raw model id; `null` until recorded. */
     readonly usageByModel: Readonly<Record<string, ModelUsage>> | null;
+  }
+
+  /** A file the active session changed. Plain data. */
+  export interface ChangedFile {
+    /** Workspace-relative path. */
+    readonly path: string;
+    readonly name: string;
+    /** The repository the file is in, when the workspace has several. */
+    readonly repositoryRoot: string | undefined;
+    readonly status: "added" | "modified" | "deleted";
+    readonly bytes: number | null;
+    readonly modifiedAt: number | null;
+    /** `null` when unknown (binary files, for example). */
+    readonly linesAdded: number | null;
+    readonly linesRemoved: number | null;
+  }
+
+  export interface ChangedFilesChangeEvent {
+    readonly sessionId: string | undefined;
+    /** `undefined` while the list loads, or when it could not be loaded. */
+    readonly files: readonly ChangedFile[] | undefined;
+    /** Why the list could not be loaded, as {@link workspace.changedFilesError}. */
+    readonly error?: string;
+  }
+
+  export namespace workspace {
+    /**
+     * The active session's changed files, frozen; `undefined` while they load
+     * or without a session.
+     */
+    export function getChangedFiles(): readonly ChangedFile[] | undefined;
+    /** Why the active session's changed files could not be loaded, if they could not. */
+    export const changedFilesError: string | undefined;
+    /** Fires when that list changes, including when the active session changes. */
+    export const onDidChangeChangedFiles: Event<ChangedFilesChangeEvent>;
   }
 
   export namespace sessions {

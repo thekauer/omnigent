@@ -15,6 +15,8 @@ import {
 } from "./progress";
 import { SessionHeaderItemAlignment, type SessionHeaderItemRegistry } from "./sessionHeaderItems";
 import type { SessionsService } from "./sessionsService";
+import type { ViewsService } from "./viewsService";
+import type { WorkspaceService } from "./workspaceService";
 
 export const OMNIGENT_API_VERSION = "0.1.0";
 
@@ -34,7 +36,12 @@ export const OMNIGENT_API_EXPORT_NAMES = [
   "sessions",
   "commands",
   "hosts",
+  "workspace",
+  "TreeItemCollapsibleState",
 ] as const;
+
+/** As `vscode.TreeItemCollapsibleState`. */
+export const TreeItemCollapsibleState = Object.freeze({ None: 0, Collapsed: 1, Expanded: 2 });
 
 export interface HostServices {
   headerItems: SessionHeaderItemRegistry;
@@ -46,6 +53,8 @@ export interface HostServices {
     /** Called after a provider's reconnect succeeded, to refresh host liveness. */
     onReconnected?: () => void;
   };
+  views: ViewsService;
+  workspace: WorkspaceService;
 }
 
 export type ExtensionLogger = (message: string, error?: unknown) => void;
@@ -154,6 +163,33 @@ export function createExtensionApi(
     "onDidChangeActiveSession",
   );
   const onDidChangeUsage = guard(services.sessions.onDidChangeUsage, "onDidChangeUsage");
+  const onDidChangeChangedFiles = guard(
+    services.workspace.onDidChangeChangedFiles,
+    "onDidChangeChangedFiles",
+  );
+
+  function createTreeView<T>(
+    viewId: string,
+    options: omnigent.TreeViewOptions<T>,
+  ): omnigent.TreeView<T> {
+    if (disposed) {
+      refuse("createTreeView");
+      return {
+        title: undefined,
+        description: undefined,
+        message: undefined,
+        badge: undefined,
+        dispose: () => {},
+      };
+    }
+    const view = services.views.createTreeView(extensionId, viewId, options, logError);
+    const dispose = view.dispose;
+    view.dispose = () => {
+      resources.delete(view);
+      dispose();
+    };
+    return track(view);
+  }
   const reportEmitterError = (error: unknown) => logError("EventEmitter listener threw", error);
 
   // Progress this extension shows; a Node command's progress joins the latest one.
@@ -309,14 +345,24 @@ export function createExtensionApi(
       }
     },
     SessionHeaderItemAlignment,
+    TreeItemCollapsibleState:
+      TreeItemCollapsibleState as unknown as typeof omnigent.TreeItemCollapsibleState,
     window: Object.freeze({
       createSessionHeaderItem,
+      createTreeView,
       withProgress,
       showInformationMessage: (message: string) => showMessage("info", message),
       showErrorMessage: (message: string) => showMessage("error", message),
     }),
     commands: Object.freeze({ registerCommand, executeCommand }),
     hosts: Object.freeze({ registerReconnectProvider }),
+    workspace: Object.freeze({
+      getChangedFiles: () => services.workspace.getChangedFiles(),
+      get changedFilesError() {
+        return services.workspace.changedFilesError;
+      },
+      onDidChangeChangedFiles,
+    }),
     sessions: Object.freeze({
       get activeSession() {
         return services.sessions.activeSession;

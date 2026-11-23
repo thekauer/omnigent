@@ -4,6 +4,12 @@ import type * as omnigent from "omnigent";
 import { disposeAll } from "./base";
 import { createExtensionApi, type ExtensionApiHandle, type HostServices } from "./api";
 import { registerExtensionApi } from "./apiRegistry";
+import { parseContributions } from "./contributions";
+import {
+  createWorkspaceState,
+  type ExtensionStateStore,
+  sessionExtensionStateStore,
+} from "./memento";
 
 /** One extension as the dev plugin describes it (plain data). */
 export interface ExtensionDescription {
@@ -12,6 +18,8 @@ export interface ExtensionDescription {
   readonly activationEvents: readonly string[];
   /** URL the browser entry is imported from. */
   readonly entryUrl: string;
+  /** The manifest's `contributes`, unchecked. */
+  readonly contributes?: unknown;
 }
 
 interface ExtensionModule {
@@ -51,6 +59,8 @@ export interface ExtensionHostOptions {
   /** Resolves once the page has finished starting; gates `onStartupFinished`. */
   whenStartupFinished?: () => Promise<void>;
   console?: Pick<Console, "error" | "warn" | "info">;
+  /** Where `context.workspaceState` keeps each extension's per-session values. */
+  extensionState?: ExtensionStateStore;
   activationTimeoutMs?: number;
   loadTimeoutMs?: number;
 }
@@ -81,6 +91,9 @@ export class ExtensionHost {
   private readonly settling = new Set<string>();
   /** Cancels activations still loading or activating when the host is disposed. */
   private readonly cancelPending = new Set<() => void>();
+  /** Removes each extension's contributed views, commands and menus. */
+  private readonly contributed = new Map<string, () => void>();
+  private readonly extensionState: ExtensionStateStore;
   private disposed = false;
 
   constructor(options: ExtensionHostOptions) {
@@ -90,6 +103,20 @@ export class ExtensionHost {
     this.log = options.console ?? console;
     this.activationTimeoutMs = options.activationTimeoutMs ?? ACTIVATION_TIMEOUT_MS;
     this.loadTimeoutMs = options.loadTimeoutMs ?? LOAD_TIMEOUT_MS;
+    this.extensionState = options.extensionState ?? sessionExtensionStateStore;
+  }
+
+  /** Registers what the manifest contributes, once per id, before the extension activates. */
+  private contribute(extension: ExtensionDescription): void {
+    if (this.contributed.has(extension.id) || this.disposed) return;
+    const { contributions, warnings } = parseContributions(extension.id, extension.contributes);
+    for (const warning of warnings) {
+      this.log.warn(`[omnigent-extensions] ${extension.id}: ${warning}`);
+    }
+    this.contributed.set(
+      extension.id,
+      this.services.views.addExtension(extension.id, contributions),
+    );
   }
 
   isActive(extensionId: string): boolean {
@@ -115,6 +142,8 @@ export class ExtensionHost {
         this.log.warn(
           `[omnigent-extensions] ${extension.id}: no supported activation event; not activating it`,
         );
+        this.contribute(extension);
+        this.services.views.extensionSettled(extension.id);
       }
     }
     const eagerRuns = eager.map((extension) => this.activate(extension));
@@ -141,6 +170,7 @@ export class ExtensionHost {
     extension: ExtensionDescription,
     activateAfter?: Promise<unknown>,
   ): Promise<ActivationResult> {
+    this.contribute(extension);
     if (this.active.has(extension.id)) return Promise.resolve("skipped");
     const pending = this.activating.get(extension.id);
     if (pending) return pending;
@@ -158,9 +188,11 @@ export class ExtensionHost {
       );
     }
     this.attempted.add(extension.id);
-    const activation = this.doActivate(extension, activateAfter).finally(() =>
-      this.activating.delete(extension.id),
-    );
+    const activation = this.doActivate(extension, activateAfter).finally(() => {
+      this.activating.delete(extension.id);
+      // Its views stop showing "Loading" whether it activated or not.
+      this.services.views.extensionSettled(extension.id);
+    });
     this.activating.set(extension.id, activation);
     return activation;
   }
@@ -177,6 +209,11 @@ export class ExtensionHost {
     const context: omnigent.ExtensionContext = Object.freeze({
       subscriptions: [],
       extension: Object.freeze({ id: extension.id, version: extension.version }),
+      workspaceState: createWorkspaceState(
+        extension.id,
+        this.extensionState,
+        () => this.services.sessions.activeSession?.id,
+      ),
     });
     const cleanUp = () => {
       disposeAll(context.subscriptions, (error) => logError("dispose failed", error));
@@ -317,5 +354,7 @@ export class ExtensionHost {
     for (const cancel of [...this.cancelPending]) cancel();
     await Promise.all([...this.activating.values()]);
     await Promise.all([...this.active.keys()].map((id) => this.deactivate(id)));
+    for (const remove of this.contributed.values()) remove();
+    this.contributed.clear();
   }
 }

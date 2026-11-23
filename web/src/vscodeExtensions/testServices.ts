@@ -5,6 +5,11 @@ import { CommandRegistry } from "./commands";
 import type { Notifications } from "./progress";
 import { SessionHeaderItemRegistry } from "./sessionHeaderItems";
 import { SessionsService } from "./sessionsService";
+import { RailViewRegistry } from "@/shell/railViews";
+import { WorkspaceBridge } from "@/shell/workspaceBridge";
+import { ContextKeyService } from "./contextKeys";
+import { ViewsService } from "./viewsService";
+import { WorkspaceService } from "./workspaceService";
 
 export interface RecordedNotification {
   kind: "progress" | "info" | "error";
@@ -53,12 +58,32 @@ const emptySessions = () =>
     subscribe: () => () => {},
   });
 
+/** Views over their own registry and context keys, running commands through `commands`. */
+export function testViewsService(
+  commands: CommandRegistry,
+  options: {
+    registry?: RailViewRegistry;
+    contextKeys?: ContextKeyService;
+    showError?: (message: string) => void;
+  } = {},
+): ViewsService {
+  return new ViewsService({
+    registry: options.registry ?? new RailViewRegistry(),
+    contextKeys: options.contextKeys ?? new ContextKeyService(),
+    executeCommand: (command, args) => commands.execute(command, args, () => {}),
+    showError: options.showError ?? (() => {}),
+  });
+}
+
 export function hostServices(overrides: Partial<HostServices> = {}): HostServices {
+  const commands = overrides.commands ?? new CommandRegistry();
   return {
     headerItems: overrides.headerItems ?? new SessionHeaderItemRegistry(),
     sessions: overrides.sessions ?? emptySessions(),
-    commands: overrides.commands ?? new CommandRegistry(),
+    commands,
     notifications: overrides.notifications ?? recordingNotifications(),
     hostReconnect: overrides.hostReconnect ?? { registry: new HostReconnectProviderRegistry() },
+    views: overrides.views ?? testViewsService(commands),
+    workspace: overrides.workspace ?? new WorkspaceService(new WorkspaceBridge()),
   };
 }

@@ -12,7 +12,10 @@ This section is the durable state to resume from. Update it at each checkpoint.
 feature, hardening of the host lifecycle and the dev plugin, the trust model
 below, and queue item 1 (reconnect for the user's own cloud dev machines): Node
 entries, commands, progress notifications and the host reconnect provider seam,
-with the server wake moved onto it.
+with the server wake moved onto it; and queue item 3 (Changes 2): extension views
+in the classic rail, host-rendered tree views, view/title actions with `when`
+clauses and context keys, built-in workspace commands, changed-files events and
+a per-chat-session `workspaceState`. Item 2 is still open.
 
 **Queue, in order.** Deployment-specific details (machine and host names, exact
 commands, the private Git host's URL shape) are kept in the personal extensions
@@ -42,12 +45,23 @@ repository's reference policy keeps them out of here.
    - If the server cannot fetch from the private host, the dev extension's Node
      part fetches the PR on the developer's machine with its local `gh`
      credentials.
-3. **Changes 2:** a new right-panel tab in `thekauer.dev`.
-   - Changed files with a view/title toggle between a flat list and a tree styled
-     like the classic Files tab, remembered per chat session.
-   - Needs views, a host-rendered TreeView/TreeDataProvider, view/title actions,
-     commands, setContext/when, workspaceState, and changed-files events.
-   - Classic rail only. Existing tabs stay untouched.
+3. **Done: Changes 2,** a new right-panel tab in `thekauer.dev`
+   (`src/features/changes2.js`), scope items 12 to 17 below.
+   - The session's changed files with VS Code's two view/title commands, "View
+     as Tree" and "View as List" (shown by `when` on a context key the
+     extension sets), next to Refresh; the mode is kept in `workspaceState`, so
+     per chat session. Several repositories group under their roots in both
+     modes, as in the Changes list.
+   - Rows reuse the classic row components (extracted from `FolderTree.tsx` and
+     `FlatFileList.tsx` without changing them): list rows are the Changes list's
+     rows, tree rows the Files tree's. The browser verify compares their
+     geometry, colors, fonts, status letters and diffstats against the classic
+     tabs and saves side-by-side screenshots. Known differences: no search
+     field or sort, and no file size (a tree item has no size; the tree's
+     trailing column shows the diffstat instead).
+   - Classic rail only; the v2 sidebar and the existing tabs are unchanged.
+   - Built-in tabs and extension views now resolve through one descriptor path
+     (`railTabDescriptor`), a step toward item 4.
 4. **Tab migration** once Changes 2 is proven.
    - Move the right-panel tabs onto built-in extensions, which needs production
      loading. Delete each core version once its replacement passes the same tests.
@@ -276,6 +290,98 @@ sandboxProvider, resumable }`.
       <name>" progress toast; a second click for the same host joins the run;
       success refreshes host liveness.
 
+12. **Rail view registry** (`web/src/shell/railViews.ts`, `railTabs.ts`,
+    `railViewIcons.ts`, `workspacePanelTabs.ts`; shipped in builds).
+    - The rail's tab ids are `BUILT_IN_RAIL_TABS` plus `ext:<view id>` for
+      extension views; `isRailTab` (one function, used by the per-session store)
+      accepts both, so a selected extension tab survives a reload. Unknown or
+      malformed ids are still dropped on restore.
+    - `railViews` holds each view as plain data: contribution (`id`,
+      `extensionId`, `name`, `icon`) plus state (`title`, `description`,
+      `badge`, `message`, `loading`, title `actions`, `tree` model). Views sort
+      by extension id, then manifest order, and follow the built-in tabs in the
+      strip, with the next ⌃N digits, in the narrow-rail picker too.
+    - `railTabDescriptor(tab, views)` gives every trigger its descriptor: a
+      built-in's from `WORKSPACE_PANEL_TABS` (unchanged), a view's from the
+      registry (badge drawn like the Changes count). `resolveWorkspaceActiveView`
+      has an `extension` scope; the content slot renders `ExtensionRailView`.
+    - Extensions load after the app mounts, so `main.tsx` marks the registry as
+      loading while the dev loader runs: a restored `ext:` tab shows a spinner
+      until its view registers, and falls back like any unavailable tab once
+      loading settled without it. Builds never load extensions, so an `ext:`
+      tab from a dev session falls back at once there.
+    - Icons are lucide names from an allowlist (`file-diff`, `git-compare`,
+      `list-tree`, `list`, `refresh-cw`, `git-branch` and a few more); anything
+      else draws a generic icon.
+13. **Tree views** (`window.createTreeView(viewId, { treeDataProvider })`;
+    `treeView.ts` turns a provider into the plain `RailTreeModel` the rail
+    draws, `ExtensionRailView.tsx` and `treeRows.ts` draw it).
+    - `getChildren(element?)` and `getTreeItem(element)` may return promises;
+      elements stay in the host, the rail sees handles (`id:<TreeItem.id>`, or
+      parent plus label) and checked, capped items.
+    - `TreeItem` fields: `label`, `description` (`true` uses the resource's
+      folder), `tooltip`, `resourceUri` (`{ path }`), `iconPath` (`file`,
+      `folder` or an allowlisted icon), `decoration` (`text`, `parts` with a
+      `text` and a `tone` of added, removed or muted, and `title`),
+      `gitStatus`, `collapsibleState`, `command`, `contextValue`, `id`.
+    - Rows: a collapsible `folder` item is the Files tree's folder row (icon,
+      chevron on hover, colored name with `/`, status dot, copy button); other
+      collapsible items are the Changes list's group header (chevron, icon,
+      label, description as the count); a resource leaf with a `description` is
+      the Changes list's row (name, folder subtitle, diffstat, A/M/D, copy and
+      download on hover); one without is the Files tree's file row (indent
+      guides, colored name, A/M/D, decoration in the trailing column).
+    - Windowed with the same virtualizer settings as the Files tree (rows of a
+      tree without folders are spaced like the Changes list). Expand state is
+      kept per view and chat session for the page's lifetime;
+      `onDidChangeTreeData` reloads the roots and then each open node level by
+      level, swapping them in at once.
+    - Clicking a row runs its `command` (JSON arguments); a failure is logged
+      against the extension. A provider that throws shows no rows and is logged.
+    - `TreeView` has `title`, `description`, `message` (shown above the rows),
+      `badge` (`{ value, tooltip }`, on the tab) and `dispose()`, which leaves
+      the view in VS Code's "There is no data provider registered" state.
+14. **Contributions** (`contributions.ts`, `viewsService.ts`; `contributes` is
+    passed through by the dev plugin and checked in the page).
+    - `contributes.views["omnigent.rightPanel"]`: `{ id, name, icon }`. Ids
+      must start with the extension id. Views register before the extension
+      activates and show "Loading" until it settled.
+    - `contributes.commands`: `{ command, title, icon, toggled? }`; `toggled`
+      is a `when` clause, and a button of such a command has `aria-pressed`.
+    - `contributes.menus["view/title"]`: `{ command, when?, group }`. Entries in
+      group `navigation` are buttons in the view's title bar, styled like the
+      Changes tab's Refresh; other groups are not shown yet. Unknown containers,
+      menus and malformed entries are warnings; an invalid `when` never holds.
+15. **`when` clauses and context keys** (`when.ts`, `contextKeys.ts`). `key`,
+    `!`, `==`/`===`, `!=`/`!==`, `&&`, `||`, parentheses, `true`/`false`,
+    quoted or bare values; precedence `!`, then comparisons, `&&`, `||`. Values
+    compare by their string form, `true`/`false` as booleans. Context keys are
+    window-wide, set by `commands.executeCommand("setContext", key, value)`
+    (strings, numbers, booleans, null or short arrays; `undefined` removes); the
+    view/title evaluation adds `view` (the view's id).
+16. **Built-in commands and workspace data** (`builtinCommands.ts`,
+    `workspaceService.ts`, `web/src/shell/workspaceBridge.ts`).
+    - `omnigent.openFile(path)` calls the shell's `openFileViewer`;
+      `omnigent.refreshChangedFiles()` invalidates the session's
+      `["workspace-changed-files", id]` query. The shell (AppShell) registers
+      both on the bridge and publishes the active session's changed files from
+      its existing query, so SSE `session.changed_files.invalidated` and the
+      end-of-turn refetch reach extensions with no new fetches.
+    - `workspace.getChangedFiles()` returns a frozen camelCase snapshot
+      (`path`, `name`, `repositoryRoot`, `status` added/modified/deleted,
+      `bytes`, `modifiedAt`, `linesAdded`, `linesRemoved`), `undefined` while
+      loading; `workspace.changedFilesError` says why they could not be
+      loaded; `workspace.onDidChangeChangedFiles` fires `{ sessionId, files,
+error? }`, coalesced per microtask, also on session switches.
+17. **`context.workspaceState`** (`memento.ts`, stored by
+    `lib/sessionWorkspaceState.ts`). Synchronous `get(key, default?)` (a copy),
+    `keys()`, and `update(key, value)` (JSON; `undefined` deletes), always on
+    the chat session on screen at the call. Stored as the session's
+    `extensionState` bucket, so it shares the store's LRU of 100 sessions; per
+    session at most 20 extensions, 50 keys of up to 128 characters and 8 KiB of
+    JSON per extension. `update` rejects without a session or over a cap;
+    stored buckets that break a cap are dropped on read.
+
 ### Security and trust model
 
 A dev-path extension is trusted local code, like a folder passed to VS Code's
@@ -357,6 +463,7 @@ dev/
   src/features/index.js   list of features
   src/features/sessionCost.js
   src/features/<reconnect>.js  the dev machine reconnect provider
+  src/features/changes2.js  Changes 2: tree view, view/title toggle, per-session mode
   src/node/extension.js   Node entry: registers the Node commands
   test/fake-<cli>/        a fake machine CLI the tests put first on PATH
   types/omnigent.d.ts     vendored copy of the API typings
@@ -390,6 +497,15 @@ Plain ESM with `// @ts-check`; no build step.
 | `window.createOutputChannel(name, { log: true })`                    | `window.createOutputChannel(name)` (Node only)               | Lines go to the dev server output                  |
 | `workspace.registerRemoteAuthorityResolver`                          | `hosts.registerReconnectProvider`                            | For "Reconnect host"; plain host data              |
 | `import * as vscode from "vscode"` in `main`                         | `import * as omnigent from "omnigent/node"`                  | A smaller API than the page's                      |
+| `contributes.views` (view containers)                                | `contributes.views["omnigent.rightPanel"]`                   | Tabs in the classic workspace rail                 |
+| `window.createTreeView(id, { treeDataProvider })`                    | same                                                         | Host-drawn rows; no selection, reveal or DnD       |
+| `TreeDataProvider`, `TreeItem`, `TreeItemCollapsibleState`           | same, plain data                                             | Plus `decoration` and `gitStatus` on items         |
+| `TreeView.title`, `.description`, `.message`, `.badge`               | same                                                         |                                                    |
+| `contributes.commands` (`title`, `icon`, `toggled`)                  | same                                                         | Lucide icon names from an allowlist                |
+| `contributes.menus["view/title"]`, group `navigation`                | same                                                         | Other groups (the "..." menu) not shown yet        |
+| `when` clauses, `setContext`                                         | same, a subset                                               | No `=~`, `in`, `<`/`>` or `not in` yet             |
+| `ExtensionContext.workspaceState` (`Memento`)                        | same                                                         | Per chat session, not per workspace                |
+| `vscode.open` and SCM resource states                                | `omnigent.openFile`, `workspace.getChangedFiles`             | Plain paths, the session's changed files           |
 
 Deviations and why:
 
@@ -413,12 +529,25 @@ Deviations and why:
   own notification. VS Code has no such bridge.
 - Reconnect providers are ordered by registration, built-ins first, not by an
   authority prefix: hosts have no URI scheme to key on.
+- View ids must start with the extension id, so views of different extensions
+  cannot collide; VS Code only requires them to be unique.
+- `resourceUri` is a plain `{ path }` and `iconPath` a name, not `Uri` or
+  `ThemeIcon` objects, to keep the API plain data. `decoration` and
+  `gitStatus` stand in for `FileDecorationProvider` and SCM resource
+  decorations, which would need a separate provider round trip per row.
+- `onDidChangeTreeData` always reloads what is shown, even when fired with an
+  element; handles keep expand state across the reload.
+- `workspaceState` follows the chat session on screen, because the UI has no
+  workspace folder; it lives in the browser's storage, not on the server.
+- Context keys live in the page only; the Node side cannot set or read them.
 
 ## Later
 
 - `item.command` on header items.
-- `contributes.menus`, `keybindings`, `configuration` and a settings UI.
-- `when` clauses and context keys.
+- Menus other than `view/title` (item context menus, the "..." overflow),
+  `keybindings`, `configuration` and a settings UI.
+- The rest of the `when` grammar (`=~`, `in`, comparisons), tree selection and
+  `reveal`, and views in the v2 workspace sidebar.
 - An isolated host: one Worker per extension inside a sandboxed iframe, with the
   API proxied over `postMessage`. The plain-data API is designed for this. This
   is the real security boundary: the dev plugin's path guards only stop
@@ -446,7 +575,9 @@ From `web/` (use `corepack pnpm exec` or `node_modules/.bin`):
 corepack pnpm exec vitest run src/vscodeExtensions src/shell/ChatHeader.test.tsx \
   src/store/chatStore.test.ts src/lib/hostReconnectProviders.test.ts \
   src/hooks/useSessionReconnect.test.ts src/components/HostBadge.test.tsx \
-  src/viteDevProxyToken.test.ts
+  src/viteDevProxyToken.test.ts src/shell/railViews.test.ts \
+  src/lib/sessionWorkspaceState.test.ts src/shell/WorkspacePanel.test.tsx \
+  src/shell/FolderTree.test.tsx src/shell/FilesPanel.test.tsx src/shell/FlatFileList.test.tsx
 # Broader regression set
 corepack pnpm exec vitest run src/shell src/components/AgentInfo src/vscodeExtensions
 # Static checks
@@ -456,9 +587,11 @@ corepack pnpm exec prettier --check vite.config.ts vite.omnigentExtensions.ts \
   src/components/HostBadge.tsx src/pages/ChatPage.tsx src/shell/ChatHeader.tsx src/main.tsx \
   src/store/chatStore.ts src/store/conversationState.ts
 corepack pnpm exec oxlint --deny-warnings --report-unused-disable-directives .
-# A production build carries no Node host, endpoint or token code
+# A production build carries no Node host, endpoint or token code, and none of the
+# extension API (built-in commands, manifest checks); the rail's view code ships
 corepack pnpm exec vite build --outDir /tmp/omnigent-build-check && \
-  ! grep -rlE "x-omnigent-extension-token|__omnigent/extensions|omnigent/node" /tmp/omnigent-build-check
+  ! grep -rlE "x-omnigent-extension-token|__omnigent/extensions|omnigent/node|omnigent\.refreshChangedFiles|invalid when clause" /tmp/omnigent-build-check && \
+  grep -rlq "There is no data provider registered" /tmp/omnigent-build-check
 corepack pnpm exec tsc -b   # app and node (vite config) projects
 ```
 
@@ -516,6 +649,26 @@ What the suites cover:
   answer after a session switch, a failing `reconnect`; the menu warming
   providers for an offline host only, the item label unchanged.
 - `viteDevProxyToken.test.ts`: the async token cache of the dev proxy.
+- `railViews.test.ts`: tab ids (`ext:` accepted, malformed dropped), registry
+  order, updates, duplicates, loading state; built-in descriptors unchanged,
+  an extension view's label, icon, digit and badge; the `extension` scope.
+- `sessionWorkspaceState.test.ts`: an `ext:` tab restored; mementos per
+  session and extension, the caps, dropping malformed stored buckets.
+- `WorkspacePanel.test.tsx`: extension tabs after the built-ins in registry
+  order with the next digits, selection, the page and badge, a restored tab
+  waiting for its view, built-in tabs unchanged without views.
+- `when.test.ts`: the `when` grammar and precedence, refused clauses, context
+  keys, and `contributes` parsing with its warnings.
+- `treeViews.test.tsx`: view/title actions by `when` and context keys, toggles
+  with `aria-pressed`, a failing action's error; the tree host rendering
+  provider rows as the Changes list and as the Files tree, decorations, a click
+  running the row's command, expand state per session, reloads on
+  `onDidChangeTreeData`, message, title, badge, the no-provider state,
+  ownership checks, a failing provider, and item sanitizing.
+- `workspaceApi.test.ts`: `workspaceState` per session, caps and rejections,
+  passed to `activate`; changed-files snapshots and events, through the API
+  and after deactivation; the built-in commands; contributed views registered
+  before activation and the tree view through the host.
 - `ChatHeader.test.tsx`: items render immediately left of `agent-info-trigger` in
   order, update live, show the tooltip, stay out without a session or while
   pending, and leave the DOM unchanged when no item is visible.
@@ -555,6 +708,17 @@ OMNI_UI_REPO=<omnigent checkout> ./verify/verify.sh            # mocked + prod
     SSH, with the exact argv. A host that is not one of the machines opens the
     existing reconnect dialog, and a resumable managed host still sends the
     server wake (`retry_session`, captured by the mock).
+  - Changes 2, on mocked changed files, directory listings and file contents:
+    the tab opens with the flat list; the title bar has "View as Tree" next to
+    Refresh; list rows match the classic Changes rows (names, subtitles,
+    `+N −M`, A/M/D, row height, icon and label position, color, font, spacing);
+    "View as Tree" shows folders, whose rows match the classic Files tree's
+    (indent, icon and label position, height, color, font, status); folders
+    collapse and expand; each session keeps its own mode; tab and mode survive
+    a reload; an SSE `session.changed_files.invalidated` adds a row; a click
+    opens the file viewer; the classic tabs still work. Screenshots:
+    `list-side-by-side.png`, `tree-side-by-side.png` and their halves.
+    `--only-changes2` runs just these.
 - `prod`: starts the dev server (port 5182) against the real backend with CLI
   profile auth, aborts every non-GET request from the page, and checks a real
   session shows a `$` value left of the info button (`prod.png`).
