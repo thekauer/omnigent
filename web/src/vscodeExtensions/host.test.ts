@@ -11,6 +11,7 @@ import {
 } from "./host";
 import { SessionHeaderItemRegistry } from "./sessionHeaderItems";
 import { SessionsService, type SessionSourceState } from "./sessionsService";
+import { hostServices } from "./testServices";
 import { OMNIGENT_API_EXPORTS } from "../../vite.omnigentExtensions";
 
 function fakeSource(initial: Partial<SessionSourceState> = {}) {
@@ -48,7 +49,7 @@ function setup(modules: Record<string, unknown>, initial?: Partial<SessionSource
   const sessions = new SessionsService(store.source);
   const log = { error: vi.fn(), warn: vi.fn(), info: vi.fn() };
   const host = new ExtensionHost({
-    services: { headerItems, sessions },
+    services: hostServices({ headerItems, sessions }),
     importModule: async (url) => {
       if (!(url in modules)) throw new Error(`no module at ${url}`);
       const module = modules[url];
@@ -432,7 +433,7 @@ describe("ExtensionHost", () => {
     let finishStartup!: () => void;
     const headerItems = new SessionHeaderItemRegistry();
     const host = new ExtensionHost({
-      services: { headerItems, sessions: new SessionsService(fakeSource().source) },
+      services: hostServices({ headerItems, sessions: new SessionsService(fakeSource().source) }),
       importModule: async (url) => ({ activate: () => order.push(url) }),
       whenStartupFinished: () =>
         new Promise((resolve) => {
@@ -456,10 +457,7 @@ describe("ExtensionHost", () => {
     const activate = vi.fn();
     let finishStartup!: () => void;
     const host = new ExtensionHost({
-      services: {
-        headerItems: new SessionHeaderItemRegistry(),
-        sessions: new SessionsService(fakeSource().source),
-      },
+      services: hostServices(),
       importModule: async (url) => {
         imported.push(url);
         return { activate };
@@ -574,11 +572,7 @@ describe("ExtensionHost", () => {
 describe("createExtensionApi", () => {
   it("exposes exactly the names the dev plugin re-exports", () => {
     const sessions = new SessionsService(fakeSource().source);
-    const { api } = createExtensionApi(
-      "pub.a",
-      { headerItems: new SessionHeaderItemRegistry(), sessions },
-      vi.fn(),
-    );
+    const { api } = createExtensionApi("pub.a", hostServices({ sessions }), vi.fn());
     expect(Object.keys(api).sort()).toEqual([...OMNIGENT_API_EXPORT_NAMES].sort());
     expect([...OMNIGENT_API_EXPORTS]).toEqual([...OMNIGENT_API_EXPORT_NAMES]);
   });
@@ -592,11 +586,7 @@ describe("createExtensionApi", () => {
       onDidChangeActiveSession: emitter.event,
       onDidChangeUsage: usage.event,
     } as unknown as SessionsService;
-    const handle = createExtensionApi(
-      "pub.a",
-      { headerItems: new SessionHeaderItemRegistry(), sessions },
-      vi.fn(),
-    );
+    const handle = createExtensionApi("pub.a", hostServices({ sessions }), vi.fn());
     const second = vi.fn();
     // The first listener tears the extension down while the event is being delivered.
     handle.api.sessions.onDidChangeActiveSession(() => handle.dispose());
@@ -611,7 +601,7 @@ describe("createExtensionApi", () => {
     const logError = vi.fn();
     const handle = createExtensionApi(
       "pub.a",
-      { headerItems, sessions: new SessionsService(fakeSource().source) },
+      hostServices({ headerItems, sessions: new SessionsService(fakeSource().source) }),
       logError,
     );
     handle.dispose();
@@ -633,14 +623,7 @@ describe("createExtensionApi", () => {
 
   it("reports errors from extension-created emitters against the extension", () => {
     const logError = vi.fn();
-    const { api } = createExtensionApi(
-      "pub.a",
-      {
-        headerItems: new SessionHeaderItemRegistry(),
-        sessions: new SessionsService(fakeSource().source),
-      },
-      logError,
-    );
+    const { api } = createExtensionApi("pub.a", hostServices(), logError);
     const emitter = new api.EventEmitter<number>();
     const after = vi.fn();
     emitter.event(() => {

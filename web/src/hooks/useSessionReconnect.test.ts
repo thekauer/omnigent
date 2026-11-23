@@ -9,6 +9,11 @@ import { refreshRunnerHealth } from "@/hooks/useRunnerHealth";
 import type { SessionLiveness } from "@/hooks/useRunnerHealth";
 import { readArcaHostId, writeArcaHostId } from "@/lib/arcaHost";
 import {
+  hostReconnectProviders,
+  type HostReconnectProvider,
+  type ReconnectHost,
+} from "@/lib/hostReconnectProviders";
+import {
   connectArcaHost,
   controlHost,
   getHostIdentity,
@@ -1153,5 +1158,151 @@ describe("useSessionReconnect", () => {
     expect(result.current.localReconnect?.reconnecting).toBe(false);
     expect(toast.dismiss).toHaveBeenCalledWith("new-progress");
     expect(toast.success).toHaveBeenCalledOnce();
+  });
+});
+
+describe("useSessionReconnect host reconnect providers", () => {
+  const userMachine = {
+    sessionId: "session",
+    hostId: "host-devbox",
+    hostName: "devbox",
+    hostOnline: false,
+    isOwner: true,
+  };
+  const unregisters: (() => void)[] = [];
+  const addProvider = (provider: HostReconnectProvider) => {
+    unregisters.push(hostReconnectProviders.register("test.provider", provider));
+  };
+  afterEach(() => {
+    for (const unregister of unregisters.splice(0)) unregister();
+  });
+
+  it("runs the first provider that claims the host instead of the default behavior", async () => {
+    const reconnect = vi.fn(async () => {});
+    const canReconnect = vi.fn((host: ReconnectHost) => host.name === "devbox");
+    addProvider({ canReconnect, reconnect });
+    const { result } = renderHook(() =>
+      useSessionReconnect({ ...userMachine, hostSandboxProvider: null }),
+    );
+    await act(async () => {
+      await result.current.reconnect();
+    });
+    const expectedHost = {
+      hostId: "host-devbox",
+      name: "devbox",
+      status: "offline",
+      sandboxProvider: null,
+      resumable: false,
+    };
+    expect(canReconnect).toHaveBeenCalledWith(expectedHost);
+    expect(reconnect).toHaveBeenCalledWith(expectedHost, {
+      sessionId: "session",
+      wakeSandbox: expect.any(Function),
+    });
+    expect(getHostIdentity).not.toHaveBeenCalled();
+    expect(controlHost).not.toHaveBeenCalled();
+    expect(result.current.dialogOpen).toBe(false);
+  });
+
+  it("falls back to the default behavior when no provider claims the host", async () => {
+    vi.mocked(isElectronShell).mockReturnValue(false);
+    const reconnect = vi.fn(async () => {});
+    addProvider({ canReconnect: () => false, reconnect });
+    const { result } = renderHook(() => useSessionReconnect(userMachine));
+    await act(async () => {
+      await result.current.reconnect();
+    });
+    expect(reconnect).not.toHaveBeenCalled();
+    expect(result.current.dialogOpen).toBe(true);
+  });
+
+  it("falls back when a provider's canReconnect throws or rejects", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const reconnect = vi.fn(async () => {});
+      addProvider({
+        canReconnect: () => {
+          throw new Error("broken provider");
+        },
+        reconnect,
+      });
+      addProvider({ canReconnect: () => Promise.reject(new Error("broken too")), reconnect });
+      const { result } = renderHook(() => useSessionReconnect(localSession));
+      await act(async () => {
+        await result.current.reconnect();
+      });
+      expect(reconnect).not.toHaveBeenCalled();
+      // The default local reconnect still ran.
+      expect(controlHost).toHaveBeenCalledExactlyOnceWith("start");
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("ignores repeated clicks while an async provider answers", async () => {
+    const answer = deferred<boolean>();
+    const canReconnect = vi.fn(() => answer.promise);
+    const reconnect = vi.fn(async () => {});
+    addProvider({ canReconnect, reconnect });
+    const { result } = renderHook(() => useSessionReconnect(userMachine));
+    let first!: Promise<void>;
+    await act(async () => {
+      first = result.current.reconnect();
+      await result.current.reconnect();
+    });
+    expect(canReconnect).toHaveBeenCalledOnce();
+    await act(async () => {
+      answer.resolve(true);
+      await first;
+    });
+    expect(reconnect).toHaveBeenCalledOnce();
+  });
+
+  it("drops an async answer that lands after the session changed", async () => {
+    const answer = deferred<boolean>();
+    const reconnect = vi.fn(async () => {});
+    addProvider({ canReconnect: () => answer.promise, reconnect });
+    const { result, rerender } = renderHook(useSessionReconnect, { initialProps: userMachine });
+    let first!: Promise<void>;
+    await act(async () => {
+      first = result.current.reconnect();
+    });
+    rerender({ ...userMachine, sessionId: "other-session" });
+    await act(async () => {
+      answer.resolve(true);
+      await first;
+    });
+    expect(reconnect).not.toHaveBeenCalled();
+  });
+
+  it("keeps the built-in server wake ahead of extension providers", async () => {
+    vi.mocked(retrySession).mockResolvedValue({ queued: false, recovered: true });
+    const reconnect = vi.fn(async () => {});
+    addProvider({ canReconnect: () => true, reconnect });
+    const { result } = renderHook(() => useSessionReconnect(asleepSandbox));
+    await act(async () => {
+      await result.current.reconnect();
+    });
+    expect(retrySession).toHaveBeenCalledExactlyOnceWith("session");
+    expect(reconnect).not.toHaveBeenCalled();
+  });
+
+  it("shows an error toast when a provider's reconnect rejects", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      addProvider({
+        canReconnect: () => true,
+        reconnect: async () => {
+          throw new Error("machine refused");
+        },
+      });
+      const { result } = renderHook(() => useSessionReconnect(userMachine));
+      await act(async () => {
+        await result.current.reconnect();
+      });
+      expect(toast.error).toHaveBeenCalledWith("Couldn't reconnect the host: machine refused");
+    } finally {
+      error.mockRestore();
+    }
   });
 });

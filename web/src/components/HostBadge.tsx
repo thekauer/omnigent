@@ -6,6 +6,7 @@ import { useSession } from "@/hooks/useSession";
 import { useSessionActionRestrictions } from "@/hooks/useSessionActionRestrictions";
 import { useSessionHostOnline } from "@/hooks/RunnerHealthProvider";
 import { sandboxOptionLabel } from "@/lib/capabilities";
+import { hostReconnectProviders } from "@/lib/hostReconnectProviders";
 import { isSandboxLaunchStopped, SANDBOX_STAGE_LABELS } from "@/lib/sandboxStatus";
 import type { SandboxStatus } from "@/lib/types";
 import { useChatStore } from "@/store/chatStore";
@@ -211,7 +212,22 @@ export function HostBadge({
     // reconnect also gets a visible label and a one-click Reconnect beside it.
     const showReconnect = reconnectable && !asleep && !hostStarting && !readOnly;
     const hostMenu = (
-      <DropdownMenu modal={appearance !== "header"} onOpenChange={setMenuOpen}>
+      <DropdownMenu
+        modal={appearance !== "header"}
+        onOpenChange={(open) => {
+          setMenuOpen(open);
+          // Lets reconnect providers warm what they decide from before a click.
+          if (open && reconnectable && hostId && badge) {
+            hostReconnectProviders.warm({
+              hostId,
+              name: host?.name ?? hostId,
+              status: badge.status,
+              sandboxProvider: host?.sandbox_provider ?? null,
+              resumable: !!session?.hostResumable,
+            });
+          }
+        }}
+      >
         <ComposerMenuTooltip
           menuOpen={menuOpen}
           content={<ComposerConfigTooltipRows rows={tooltipRows} />}

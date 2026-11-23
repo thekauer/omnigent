@@ -1,7 +1,17 @@
 // Builds the `omnigent` module an extension imports. One instance per extension,
 // like VS Code's per-extension `vscode` module, so every call is attributable.
 import type * as omnigent from "omnigent";
+import type { HostReconnectProviderRegistry, ReconnectHost } from "@/lib/hostReconnectProviders";
 import { Disposable, EventEmitter, disposeAll, type DisposableLike } from "./base";
+import type { CommandHandler, CommandRegistry } from "./commands";
+import type { NodeProgressEvent } from "./nodeCommands";
+import {
+  errorText,
+  runWithProgress,
+  type Notifications,
+  type ProgressNotification,
+  type ProgressReporter,
+} from "./progress";
 import { SessionHeaderItemAlignment, type SessionHeaderItemRegistry } from "./sessionHeaderItems";
 import type { SessionsService } from "./sessionsService";
 
@@ -21,11 +31,20 @@ export const OMNIGENT_API_EXPORT_NAMES = [
   "SessionHeaderItemAlignment",
   "window",
   "sessions",
+  "commands",
+  "hosts",
 ] as const;
 
 export interface HostServices {
   headerItems: SessionHeaderItemRegistry;
   sessions: SessionsService;
+  commands: CommandRegistry;
+  notifications: Notifications;
+  hostReconnect: {
+    registry: HostReconnectProviderRegistry;
+    /** Called after a provider's reconnect succeeded, to refresh host liveness. */
+    onReconnected?: () => void;
+  };
 }
 
 export type ExtensionLogger = (message: string, error?: unknown) => void;
@@ -133,6 +152,149 @@ export function createExtensionApi(
   const onDidChangeUsage = guard(services.sessions.onDidChangeUsage, "onDidChangeUsage");
   const reportEmitterError = (error: unknown) => logError("EventEmitter listener threw", error);
 
+  // Progress this extension shows; a Node command's progress joins the latest one.
+  const openProgress: ProgressReporter[] = [];
+  const trackProgress = (progress: ProgressReporter) => {
+    openProgress.push(progress);
+    return () => {
+      const index = openProgress.lastIndexOf(progress);
+      if (index >= 0) openProgress.splice(index, 1);
+    };
+  };
+
+  function withProgress<R>(
+    options: omnigent.ProgressOptions,
+    task: (progress: omnigent.Progress<omnigent.ProgressReport>) => R | Promise<R>,
+  ): Promise<R> {
+    if (disposed) {
+      refuse("withProgress");
+      return Promise.reject(new Error("the extension was deactivated"));
+    }
+    const title = typeof options?.title === "string" && options.title ? options.title : extensionId;
+    return runWithProgress(services.notifications, title, task, trackProgress);
+  }
+
+  function registerCommand(
+    id: string,
+    handler: (...args: never[]) => unknown,
+  ): omnigent.Disposable {
+    if (disposed) {
+      refuse("registerCommand");
+      return new Disposable(() => {});
+    }
+    const registration = services.commands.register(extensionId, id, handler as CommandHandler);
+    const tracked = track(
+      new Disposable(() => {
+        resources.delete(tracked);
+        registration.dispose();
+      }),
+    );
+    return tracked;
+  }
+
+  /** Shows a Node command's progress in this extension's latest progress, or its own. */
+  const nodeProgressSink = () => {
+    const notifications = new Map<number, ProgressNotification>();
+    const onProgress = (event: NodeProgressEvent) => {
+      const joined = openProgress.at(-1);
+      if (joined) {
+        if (event.kind === "report") {
+          joined.report({ message: event.message, increment: event.increment });
+        }
+        return;
+      }
+      if (event.kind === "start") {
+        notifications.set(
+          event.scope,
+          services.notifications.openProgress(event.title || extensionId),
+        );
+      } else if (event.kind === "report") {
+        notifications.get(event.scope)?.report(event.message);
+      } else {
+        notifications.get(event.scope)?.close(event.error);
+        notifications.delete(event.scope);
+      }
+    };
+    const closeAll = () => {
+      for (const notification of notifications.values()) notification.close();
+      notifications.clear();
+    };
+    return { onProgress, closeAll };
+  };
+
+  async function executeCommand<T = unknown>(id: string, ...args: unknown[]): Promise<T> {
+    if (disposed) {
+      refuse("executeCommand");
+      throw new Error("the extension was deactivated");
+    }
+    const sink = nodeProgressSink();
+    try {
+      return (await services.commands.execute(id, args, sink.onProgress)) as T;
+    } finally {
+      sink.closeAll();
+    }
+  }
+
+  let reconnectProviders = 0;
+  function registerReconnectProvider(
+    provider: omnigent.HostReconnectProvider,
+  ): omnigent.Disposable {
+    if (disposed) {
+      refuse("registerReconnectProvider");
+      return new Disposable(() => {});
+    }
+    reconnectProviders += 1;
+    const providerId = `${extensionId}.hostReconnect#${reconnectProviders}`;
+    const plainHost = (host: ReconnectHost): omnigent.ReconnectHost =>
+      Object.freeze({
+        hostId: host.hostId,
+        name: host.name,
+        status: host.status,
+        sandboxProvider: host.sandboxProvider,
+        resumable: host.resumable,
+      });
+    // One reconnect per host at a time; a second click joins it.
+    const running = new Map<string, Promise<void>>();
+    const unregister = services.hostReconnect.registry.register(providerId, {
+      canReconnect: (host) => !disposed && provider.canReconnect(plainHost(host)),
+      reconnect: (host) => {
+        const existing = running.get(host.hostId);
+        if (existing) return existing;
+        const run = runWithProgress(
+          services.notifications,
+          `Reconnecting ${host.name}`,
+          (progress) => provider.reconnect(plainHost(host), progress),
+          trackProgress,
+        )
+          .then(
+            () => services.hostReconnect.onReconnected?.(),
+            // The progress notification already shows the error to the user.
+            (error: unknown) =>
+              console.info(`[host-reconnect] ${providerId}: ${host.name}: ${errorText(error)}`),
+          )
+          .finally(() => running.delete(host.hostId));
+        running.set(host.hostId, run);
+        return run;
+      },
+    });
+    const tracked = track(
+      new Disposable(() => {
+        resources.delete(tracked);
+        unregister();
+      }),
+    );
+    return tracked;
+  }
+
+  function showMessage(kind: "info" | "error", message: string): Promise<undefined> {
+    if (disposed) {
+      refuse(kind === "info" ? "showInformationMessage" : "showErrorMessage");
+    } else {
+      services.notifications[kind](String(message));
+    }
+    return Promise.resolve(undefined);
+  }
+
   const api: OmnigentApi = {
     version: OMNIGENT_API_VERSION,
     Disposable,
@@ -143,7 +305,14 @@ export function createExtensionApi(
       }
     },
     SessionHeaderItemAlignment,
-    window: Object.freeze({ createSessionHeaderItem }),
+    window: Object.freeze({
+      createSessionHeaderItem,
+      withProgress,
+      showInformationMessage: (message: string) => showMessage("info", message),
+      showErrorMessage: (message: string) => showMessage("error", message),
+    }),
+    commands: Object.freeze({ registerCommand, executeCommand }),
+    hosts: Object.freeze({ registerReconnectProvider }),
     sessions: Object.freeze({
       get activeSession() {
         return services.sessions.activeSession;

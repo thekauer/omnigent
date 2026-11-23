@@ -2,6 +2,12 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "
 import { toast } from "sonner";
 
 import { fetchHosts } from "@/hooks/useHosts";
+import {
+  hostReconnectProviders,
+  isThenable,
+  type ReconnectHost,
+  type SelectedReconnectProvider,
+} from "@/lib/hostReconnectProviders";
 import { onRunnerHealthPolled, refreshRunnerHealth } from "@/hooks/useRunnerHealth";
 import { isArcaHost, readArcaHostId, writeArcaHostId } from "@/lib/arcaHost";
 import {
@@ -86,14 +92,17 @@ function launchKey(launch: SandboxStatus | null): string {
 
 /**
  * Reconnect this desktop's host directly; use the dialog for fallback and retry.
- * A resumable sandbox host is woken by the server instead, with its progress
- * shown by the composer's host status dot rather than a toast.
+ * The host reconnect providers are asked first: the built-in one wakes a
+ * resumable sandbox host through the server, with its progress shown by the
+ * composer's host status dot rather than a toast.
  */
 export function useSessionReconnect({
   sessionId,
   hostId,
   hostName,
   hostResumable = false,
+  hostSandboxProvider = null,
+  hostRecordName,
   hostOnline,
   isOwner,
 }: {
@@ -101,6 +110,10 @@ export function useSessionReconnect({
   hostId: string | null;
   hostName?: string | null;
   hostResumable?: boolean;
+  /** The host record's sandbox provider; `null` for a user-connected host or when unknown. */
+  hostSandboxProvider?: string | null;
+  /** The host record's name, managed hosts included; what reconnect providers match on. */
+  hostRecordName?: string | null;
   /** The session's host liveness; a woken sandbox counts as starting until it is `true`. */
   hostOnline?: boolean | null;
   isOwner: boolean;
@@ -112,6 +125,17 @@ export function useSessionReconnect({
   const [canReconnectArca, setCanReconnectArca] = useState(false);
   const [sandboxWake, setSandboxWake] = useState<"waking" | "awaiting_online" | null>(null);
   const inFlight = useRef<{ progressToast?: string | number } | null>(null);
+  // Set while an async provider answers whether it can reconnect the host.
+  const selectingProvider = useRef<object | null>(null);
+  // What reconnect providers are told about the host, read on the click.
+  const sessionIdRef = useRef(sessionId);
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
+  const providerHostDetails = useRef({ hostName, hostRecordName, hostSandboxProvider, hostOnline });
+  useEffect(() => {
+    providerHostDetails.current = { hostName, hostRecordName, hostSandboxProvider, hostOnline };
+  }, [hostName, hostRecordName, hostSandboxProvider, hostOnline]);
   // The open session's launch stage, compared against its value at the wake's click.
   const launch = useChatStore((s) => (s.conversationId === sessionId ? s.sandboxStatus : null));
   const launchInProgress = launch !== null && !isSandboxLaunchStopped(launch);
@@ -135,6 +159,7 @@ export function useSessionReconnect({
     setCanReconnectArca(false);
     setReconnecting(false);
     setSandboxWake(null);
+    selectingProvider.current = null;
     return () => {
       if (inFlight.current?.progressToast !== undefined) {
         toast.dismiss(inFlight.current.progressToast);
@@ -283,10 +308,43 @@ export function useSessionReconnect({
   }, [sessionId]);
 
   const reconnect = useCallback(async () => {
-    if (inFlight.current) return;
-    if (hostId && hostResumable) {
-      await wakeSandbox();
-      return;
+    if (inFlight.current || selectingProvider.current) return;
+    if (hostId) {
+      const details = providerHostDetails.current;
+      const host: ReconnectHost = {
+        hostId,
+        name: details.hostRecordName || details.hostName || hostId,
+        status:
+          details.hostOnline === true
+            ? "online"
+            : details.hostOnline === false
+              ? "offline"
+              : "unknown",
+        sandboxProvider: details.hostSandboxProvider,
+        resumable: hostResumable,
+      };
+      let selected = hostReconnectProviders.select(host);
+      if (isThenable<SelectedReconnectProvider | undefined>(selected)) {
+        const selecting = {};
+        selectingProvider.current = selecting;
+        selected = await selected;
+        // The session or host changed while a provider answered.
+        if (selectingProvider.current !== selecting) return;
+        selectingProvider.current = null;
+      }
+      if (selected) {
+        try {
+          await selected.provider.reconnect(host, { sessionId: sessionIdRef.current, wakeSandbox });
+        } catch (err) {
+          console.error(`[host-reconnect] ${selected.id}: reconnect failed`, err);
+          toast.error(
+            err instanceof Error && err.message
+              ? `Couldn't reconnect the host: ${err.message}`
+              : "Couldn't reconnect the host. Try again.",
+          );
+        }
+        return;
+      }
     }
     if (!hostId || !isOwner || !isElectronShell()) {
       setDialogOpen(true);

@@ -981,6 +981,12 @@ export function ChatPage() {
   );
   const reconnectHostId = activeSession?.hostId ?? activeConv?.host_id ?? null;
   const reconnectHostOnline = useSessionHostOnline(urlConvId ?? undefined);
+  // Includes managed hosts, which `hostRows` leaves out; shared with the host menu's query.
+  const { data: reconnectHostRecords } = useHosts({
+    includeSandbox: true,
+    enabled: Boolean(reconnectHostId),
+  });
+  const reconnectHostRecord = reconnectHostRecords?.find((row) => row.host_id === reconnectHostId);
   const {
     reconnect,
     reconnectsArca,
@@ -994,6 +1000,8 @@ export function ChatPage() {
     hostId: reconnectHostId,
     hostName: hostRows?.find((row) => row.host_id === reconnectHostId)?.name,
     hostResumable: activeSession?.hostResumable ?? false,
+    hostSandboxProvider: reconnectHostRecord?.sandbox_provider ?? null,
+    hostRecordName: reconnectHostRecord?.name ?? null,
     hostOnline: reconnectHostOnline,
     isOwner: isOwnerLevel(permissionLevel),
   });

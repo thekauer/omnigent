@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { HostBadge, resolveHostBadge } from "./HostBadge";
+import { hostReconnectProviders } from "@/lib/hostReconnectProviders";
 import type { Host } from "@/hooks/useHosts";
 import {
   SANDBOX_SWITCH_HOST_UNSUPPORTED,
@@ -593,6 +594,44 @@ describe("HostBadge", () => {
     fireEvent.pointerDown(screen.getByTestId("composer-host-select"), { button: 0 });
     fireEvent.click(screen.getByRole("menuitem", { name: "Reconnect host" }));
     expect(onReconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it("asks reconnect providers about the host when the menu of an offline host opens", () => {
+    useSessionHostOnlineMock.mockReturnValue(false);
+    const canReconnect = vi.fn(() => false);
+    const unregister = hostReconnectProviders.register("test.warm", {
+      canReconnect,
+      reconnect: async () => {},
+    });
+    try {
+      render(<HostBadge sessionId="conv_1" appearance="composer" onReconnect={vi.fn()} />);
+      expect(canReconnect).not.toHaveBeenCalled();
+      fireEvent.pointerDown(screen.getByTestId("composer-host-select"), { button: 0 });
+      expect(canReconnect).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "mac-laptop", status: "offline", resumable: false }),
+      );
+      // The item keeps its label whatever the providers answer.
+      expect(screen.getByRole("menuitem", { name: "Reconnect host" })).toBeInTheDocument();
+    } finally {
+      unregister();
+    }
+  });
+
+  it("does not ask reconnect providers for an online host", () => {
+    useSessionHostOnlineMock.mockReturnValue(true);
+    const canReconnect = vi.fn(() => true);
+    const unregister = hostReconnectProviders.register("test.warm", {
+      canReconnect,
+      reconnect: async () => {},
+    });
+    try {
+      render(<HostBadge sessionId="conv_1" appearance="composer" onReconnect={vi.fn()} />);
+      fireEvent.pointerDown(screen.getByTestId("composer-host-select"), { button: 0 });
+      expect(canReconnect).not.toHaveBeenCalled();
+      expect(screen.queryByRole("menuitem", { name: "Reconnect host" })).not.toBeInTheDocument();
+    } finally {
+      unregister();
+    }
   });
 
   it("labels a disconnected host beside the composer trigger and reconnects in one click", () => {

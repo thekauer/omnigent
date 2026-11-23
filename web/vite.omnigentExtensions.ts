@@ -21,6 +21,13 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { normalizePath, type Plugin, type ResolvedConfig, type ViteDevServer } from "vite";
+import {
+  COMMAND_TOKEN_HEADER,
+  createCommandEndpoint,
+  createCommandToken,
+  NodeExtensionHost,
+  type NodeExtensionHostOptions,
+} from "./vite.omnigentNodeExtensions";
 
 export const DEV_PATHS_ENV = "OMNIGENT_WEB_EXTENSION_DEV_PATHS";
 export const DEV_EXTENSIONS_MODULE = "virtual:omnigent-dev-extensions";
@@ -36,6 +43,8 @@ export const OMNIGENT_API_EXPORTS = [
   "SessionHeaderItemAlignment",
   "window",
   "sessions",
+  "commands",
+  "hosts",
 ] as const;
 
 const KNOWN_ACTIVATION_EVENTS = new Set(["*", "onStartupFinished"]);
@@ -79,6 +88,8 @@ export interface DevExtension {
   directory: string;
   /** Absolute path of the browser entry. */
   entryPath: string;
+  /** Absolute real path of the Node entry (`main`), run by the dev server; optional. */
+  mainPath?: string;
   /** URL the browser imports the entry from. */
   entryUrl: string;
 }
@@ -158,25 +169,11 @@ export function readDevExtension(folder: string): ManifestResult {
     problems.push(`"engines.omnigent" must be a semver range, got ${JSON.stringify(engineRange)}`);
   }
 
-  let entryPath: string | undefined;
-  if (typeof browser !== "string" || browser.trim() === "") {
-    problems.push('"browser" must name the browser entry file, for example "./src/extension.js"');
-  } else {
-    const resolved = path.resolve(directory, browser);
-    if (!isInside(resolved, directory)) {
-      problems.push(`"browser" must stay inside the extension folder, got ${browser}`);
-    } else if (!existsSync(resolved) || !statSync(resolved).isFile()) {
-      problems.push(`"browser" entry ${browser} does not exist`);
-    } else if (!isInside(realpathSync(resolved), directory)) {
-      problems.push(
-        `"browser" entry ${browser} is a symlink to a file outside the extension folder`,
-      );
-    } else if (!/\.m?js$/.test(resolved)) {
-      problems.push(`"browser" entry ${browser} must be an ES module (.js or .mjs)`);
-    } else {
-      entryPath = realpathSync(resolved);
-    }
-  }
+  const entryPath = validateEntry("browser", browser, directory, problems, true);
+  const mainPath =
+    manifest.main === undefined
+      ? undefined
+      : validateEntry("main", manifest.main, directory, problems, false);
 
   let events: string[] = [];
   if (activationEvents === undefined) {
@@ -208,9 +205,45 @@ export function readDevExtension(folder: string): ManifestResult {
       directory,
       entryPath,
       entryUrl: fsUrl(entryPath),
+      ...(mainPath === undefined ? {} : { mainPath }),
     },
     warnings,
   };
+}
+
+/**
+ * Checks a `browser` or `main` entry: an ES module whose real path is inside the
+ * folder. Returns its real path, or records the problem.
+ */
+function validateEntry(
+  field: "browser" | "main",
+  value: unknown,
+  directory: string,
+  problems: string[],
+  required: boolean,
+): string | undefined {
+  const example = field === "browser" ? "./src/extension.js" : "./src/node/extension.js";
+  if (typeof value !== "string" || value.trim() === "") {
+    problems.push(
+      required
+        ? `"${field}" must name the ${field} entry file, for example "${example}"`
+        : `"${field}" must be a file path such as "${example}" when present`,
+    );
+    return undefined;
+  }
+  const resolved = path.resolve(directory, value);
+  if (!isInside(resolved, directory)) {
+    problems.push(`"${field}" must stay inside the extension folder, got ${value}`);
+  } else if (!existsSync(resolved) || !statSync(resolved).isFile()) {
+    problems.push(`"${field}" entry ${value} does not exist`);
+  } else if (!isInside(realpathSync(resolved), directory)) {
+    problems.push(`"${field}" entry ${value} is a symlink to a file outside the extension folder`);
+  } else if (!/\.m?js$/.test(resolved)) {
+    problems.push(`"${field}" entry ${value} must be an ES module (.js or .mjs)`);
+  } else {
+    return realpathSync(resolved);
+  }
+  return undefined;
 }
 
 export function scanDevExtensions(folders: readonly string[]): DevExtensionScan {
@@ -348,7 +381,12 @@ export interface OmnigentExtensionsDevOptions {
   apiRegistryModule?: string;
   /** Silences the startup summary (tests). */
   quiet?: boolean;
+  /** Options for the child process that runs `main` entries (tests). */
+  nodeHost?: NodeExtensionHostOptions;
 }
+
+/** How long the Node host waits after a file change before restarting. */
+const NODE_RESTART_DEBOUNCE_MS = 300;
 
 export function omnigentExtensionsDev(options: OmnigentExtensionsDevOptions = {}): Plugin {
   const folders = options.paths ?? parseDevPaths(process.env[DEV_PATHS_ENV]);
@@ -360,6 +398,24 @@ export function omnigentExtensionsDev(options: OmnigentExtensionsDevOptions = {}
   // What this plugin added to server.fs.allow, so a rescan can replace it.
   let allowedFiles: string[] = [];
   let viteClient: Set<string> | undefined;
+  // Node entries and the endpoint the page runs their commands through: dev only.
+  const commandToken = createCommandToken();
+  const nodeHost = new NodeExtensionHost(options.nodeHost);
+  let nodeRestartTimer: ReturnType<typeof setTimeout> | undefined;
+  let listeningPort: number | undefined;
+  const nodeExtensions = () =>
+    scan.extensions.flatMap(({ id, version, directory, mainPath }) =>
+      mainPath === undefined ? [] : [{ id, version, directory, mainPath }],
+    );
+  const startNodeHost = () => void nodeHost.start(nodeExtensions());
+  /** Restarts the Node host after edits, once its running commands have finished. */
+  const scheduleNodeRestart = () => {
+    clearTimeout(nodeRestartTimer);
+    nodeRestartTimer = setTimeout(() => {
+      if (nodeHost.callsInFlight > 0) return scheduleNodeRestart();
+      startNodeHost();
+    }, NODE_RESTART_DEBOUNCE_MS);
+  };
 
   const report = () => {
     if (options.quiet) return;
@@ -391,6 +447,8 @@ export function omnigentExtensionsDev(options: OmnigentExtensionsDevOptions = {}
     scan = scanDevExtensions(folders);
     refreshAllowList();
     report();
+    clearTimeout(nodeRestartTimer);
+    startNodeHost();
     const module = server.moduleGraph.getModuleById(RESOLVED_DEV_EXTENSIONS_MODULE);
     if (module) server.moduleGraph.invalidateModule(module);
     server.ws.send({ type: "full-reload" });
@@ -476,12 +534,29 @@ export function omnigentExtensionsDev(options: OmnigentExtensionsDevOptions = {}
     configureServer(server) {
       // Registered before Vite's own middlewares, so it sees every file request.
       server.middlewares.use(guardMiddleware);
+      server.middlewares.use(
+        DEV_EXTENSIONS_ENDPOINT,
+        createCommandEndpoint({
+          token: commandToken,
+          host: nodeHost,
+          port: () => listeningPort,
+        }),
+      );
+      server.httpServer?.on("listening", () => {
+        const address = server.httpServer?.address();
+        listeningPort = typeof address === "object" && address !== null ? address.port : undefined;
+      });
+      server.httpServer?.on("close", () => {
+        clearTimeout(nodeRestartTimer);
+        nodeHost.stop();
+      });
       server.middlewares.use(DEV_EXTENSIONS_ENDPOINT, (req, res, next) => {
         if (req.method !== "GET") return next();
         res.setHeader("Content-Type", "application/json");
         res.end(JSON.stringify(scan));
       });
       if (folders.length === 0) return;
+      startNodeHost();
       const manifests = new Set(folders.map((folder) => path.resolve(folder, "package.json")));
       const isManifest = (file: string) =>
         manifests.has(path.resolve(file)) ||
@@ -494,7 +569,14 @@ export function omnigentExtensionsDev(options: OmnigentExtensionsDevOptions = {}
         if (isManifest(file)) rescan(server);
         // A new, replaced or removed source file changes what the extension may
         // import (a change can turn a file into a symlink); rebuilding is cheap.
-        else if (inFolder(file)) refreshAllowList();
+        else if (inFolder(file)) {
+          refreshAllowList();
+          // Node has no hot reload: edits in a folder with a Node entry restart its host.
+          const resolvedFile = path.resolve(file);
+          if (nodeExtensions().some(({ directory }) => isInside(resolvedFile, directory))) {
+            scheduleNodeRestart();
+          }
+        }
       });
     },
     async resolveId(id, importer) {
@@ -531,8 +613,18 @@ export function omnigentExtensionsDev(options: OmnigentExtensionsDevOptions = {}
       }
       return resolved;
     },
-    load(id) {
+    async load(id) {
       if (id === RESOLVED_DEV_EXTENSIONS_MODULE) {
+        // The page learns which Node commands exist once the Node entries activated.
+        if (serving) await nodeHost.ready;
+        const commandEndpoint = serving
+          ? {
+              url: DEV_EXTENSIONS_ENDPOINT,
+              token: commandToken,
+              tokenHeader: COMMAND_TOKEN_HEADER,
+              nodeCommands: nodeHost.allCommands(),
+            }
+          : null;
         const extensions = serving
           ? scan.extensions.map(({ id: extensionId, version, activationEvents, entryUrl }) => ({
               id: extensionId,
@@ -544,6 +636,7 @@ export function omnigentExtensionsDev(options: OmnigentExtensionsDevOptions = {}
         return [
           `export const devExtensions = ${JSON.stringify(extensions)};`,
           `export const devExtensionErrors = ${JSON.stringify(serving ? scan.errors : [])};`,
+          `export const devCommandEndpoint = ${JSON.stringify(commandEndpoint)};`,
         ].join("\n");
       }
       if (id.startsWith(API_MODULE_PREFIX)) {

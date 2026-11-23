@@ -1,5 +1,9 @@
 // Boots the in-page extension host for the dev-path extensions, if any.
-import { devExtensionErrors, devExtensions } from "virtual:omnigent-dev-extensions";
+import {
+  devCommandEndpoint,
+  devExtensionErrors,
+  devExtensions,
+} from "virtual:omnigent-dev-extensions";
 import type { ExtensionHost } from "./host";
 
 let host: Promise<ExtensionHost | null> | undefined;
@@ -13,16 +17,36 @@ export function startDevExtensions(): Promise<ExtensionHost | null> {
 async function boot(): Promise<ExtensionHost | null> {
   for (const error of devExtensionErrors) console.error(`[omnigent-extensions] ${error}`);
   if (devExtensions.length === 0) return null;
-  const [{ ExtensionHost }, { sessionHeaderItems }, { SessionsService, chatStoreSessionSource }] =
-    await Promise.all([
-      import("./host"),
-      import("./sessionHeaderItems"),
-      import("./sessionsService"),
-    ]);
+  const [
+    { ExtensionHost },
+    { sessionHeaderItems },
+    { SessionsService, chatStoreSessionSource },
+    { CommandRegistry },
+    { createNodeCommandRoute },
+    { toastNotifications },
+    { hostReconnectProviders },
+    { refreshRunnerHealth },
+  ] = await Promise.all([
+    import("./host"),
+    import("./sessionHeaderItems"),
+    import("./sessionsService"),
+    import("./commands"),
+    import("./nodeCommands"),
+    import("./progress"),
+    import("@/lib/hostReconnectProviders"),
+    import("@/hooks/useRunnerHealth"),
+  ]);
   const extensionHost = new ExtensionHost({
     services: {
       headerItems: sessionHeaderItems,
       sessions: new SessionsService(chatStoreSessionSource()),
+      commands: new CommandRegistry(
+        devCommandEndpoint
+          ? createNodeCommandRoute(devCommandEndpoint, (input, init) => window.fetch(input, init))
+          : undefined,
+      ),
+      notifications: toastNotifications,
+      hostReconnect: { registry: hostReconnectProviders, onReconnected: refreshRunnerHealth },
     },
   });
   await extensionHost.start(devExtensions);
