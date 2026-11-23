@@ -162,3 +162,28 @@ export class DevProxyToken {
     return this.current();
   }
 }
+
+export interface StartupCheck {
+  /** Resolves the first token; waits for the CLI (see DevProxyToken.ensure). */
+  ensure: () => Promise<string | null>;
+  /** Asks the CLI again regardless of the failure back-off (DevProxyToken.refresh). */
+  retry: () => Promise<string | null>;
+  /** This process already started a dev server (Vite is restarting it, say after a config edit). */
+  restarted: boolean;
+}
+
+/**
+ * Whether the dev server may start: it waits for the first CLI answer, retries
+ * a failed lookup once, and never stops a restarting server, whose requests
+ * keep retrying the token, over a lookup that failed this time.
+ */
+export async function checkStartupToken({
+  ensure,
+  retry,
+  restarted,
+}: StartupCheck): Promise<"authenticated" | "keep-running" | "exit"> {
+  let token = await ensure();
+  if (!token) token = await retry();
+  if (token) return "authenticated";
+  return restarted ? "keep-running" : "exit";
+}

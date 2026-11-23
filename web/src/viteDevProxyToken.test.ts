@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  checkStartupToken,
   CLI_TIMEOUT,
   DevProxyToken,
   TOKEN_FAILURE_RETRY_MS,
@@ -179,5 +180,57 @@ describe("DevProxyToken", () => {
     await token.refresh();
     expect(runCli).toHaveBeenCalledTimes(2);
     expect(runCli.mock.calls[1]?.[0]).toContain("--force-refresh");
+  });
+});
+
+describe("checkStartupToken", () => {
+  it("waits for the first CLI answer instead of reporting no token", async () => {
+    const pending = deferred<string>();
+    const runCli = vi.fn<RunCli>().mockReturnValue(pending.promise);
+    const { token, now } = setup(runCli);
+    const outcome = checkStartupToken({
+      ensure: () => token.ensure(),
+      retry: () => token.refresh(),
+      restarted: false,
+    });
+    await Promise.resolve();
+    pending.resolve(tokenJson("t1", now() + HOUR));
+    expect(await outcome).toBe("authenticated");
+    expect(runCli).toHaveBeenCalledOnce();
+  });
+
+  it("retries a failed first lookup once, past the back-off", async () => {
+    const runCli = vi
+      .fn<RunCli>()
+      .mockRejectedValueOnce(new Error("flaky"))
+      .mockResolvedValueOnce(tokenJson("t1", 1_000_000 + HOUR));
+    const { token } = setup(runCli);
+    const outcome = await checkStartupToken({
+      ensure: () => token.ensure(),
+      retry: () => token.refresh(),
+      restarted: false,
+    });
+    expect(outcome).toBe("authenticated");
+    expect(runCli).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps a restarting server up when no token can be had, and stops a first start", async () => {
+    const runCli = vi.fn<RunCli>().mockRejectedValue(new Error("not logged in"));
+    const first = setup(runCli);
+    expect(
+      await checkStartupToken({
+        ensure: () => first.token.ensure(),
+        retry: () => first.token.refresh(),
+        restarted: false,
+      }),
+    ).toBe("exit");
+    const restart = setup(runCli);
+    expect(
+      await checkStartupToken({
+        ensure: () => restart.token.ensure(),
+        retry: () => restart.token.refresh(),
+        restarted: true,
+      }),
+    ).toBe("keep-running");
   });
 });

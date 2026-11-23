@@ -4,7 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import type { Plugin, ProxyOptions } from "vite";
 import { defineConfig } from "vitest/config";
-import { DevProxyToken } from "./vite.devProxyToken";
+import { checkStartupToken, DevProxyToken } from "./vite.devProxyToken";
 import { omnigentExtensionsDev } from "./vite.omnigentExtensions";
 import { shikiManualChunk } from "./vite.shiki";
 import { streamdownManualChunk } from "./vite.streamdown";
@@ -42,6 +42,8 @@ const DATABRICKS_PROFILE =
   process.env.OMNIGENT_DATABRICKS_PROFILE || process.env.DATABRICKS_CONFIG_PROFILE || undefined;
 
 let proxyToken: DevProxyToken | undefined;
+// Set once this process served with a token; Vite re-evaluates this config on a restart.
+const DEV_PROXY_STARTED = Symbol.for("omnigent.devProxy.started");
 
 function databricksAuthArgs(host: string): string[] {
   return DATABRICKS_PROFILE ? ["--host", host, "--profile", DATABRICKS_PROFILE] : ["--host", host];
@@ -211,18 +213,30 @@ function devProxyAuth(): Plugin {
         console.log(`[dev-proxy] target=${OMNIGENT_URL}`);
         return;
       }
-      const token = await ensureToken(parsed.origin);
-      if (token) {
+      const started = globalThis as { [DEV_PROXY_STARTED]?: boolean };
+      const outcome = await checkStartupToken({
+        ensure: () => ensureToken(parsed.origin),
+        retry: async () => process.env.OMNIGENT_AUTH_TOKEN ?? tokenFor(parsed.origin).refresh(),
+        restarted: started[DEV_PROXY_STARTED] === true,
+      });
+      if (outcome === "authenticated") {
+        started[DEV_PROXY_STARTED] = true;
         console.log(
           `[dev-proxy] target=${OMNIGENT_URL} (authenticated${isDatabricksWorkspaceEnv ? ", databricks-workspace" : ""})`,
         );
         return;
       }
-      console.error(
-        `\n[dev-proxy] ERROR: No auth token for ${parsed.origin}.\n` +
-          `  Set OMNIGENT_AUTH_TOKEN or run:  databricks auth login ${databricksAuthArgs(parsed.origin).join(" ")}\n` +
-          `  (select a CLI profile with OMNIGENT_DATABRICKS_PROFILE or DATABRICKS_CONFIG_PROFILE)\n`,
-      );
+      const loginHint =
+        `  Set OMNIGENT_AUTH_TOKEN or run:  databricks auth login ${databricksAuthArgs(parsed.origin).join(" ")}\n` +
+        `  (select a CLI profile with OMNIGENT_DATABRICKS_PROFILE or DATABRICKS_CONFIG_PROFILE)\n`;
+      if (outcome === "keep-running") {
+        console.error(
+          `\n[dev-proxy] WARNING: no auth token for ${parsed.origin} after a restart; ` +
+            `keeping the server up, and proxied requests keep retrying.\n${loginHint}`,
+        );
+        return;
+      }
+      console.error(`\n[dev-proxy] ERROR: No auth token for ${parsed.origin}.\n${loginHint}`);
       process.exit(1);
     },
   };
