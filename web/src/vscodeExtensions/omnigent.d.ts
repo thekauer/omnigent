@@ -305,14 +305,24 @@ declare module "omnigent/node" {
     readonly extension: { readonly id: string; readonly version: string };
   }
 
+  /** Options of a Node command. */
+  export interface CommandOptions {
+    /**
+     * How long one call may run before the dev server fails it, in
+     * milliseconds: positive, at most 24 hours; 15 minutes when unset.
+     */
+    timeoutMs?: number;
+  }
+
   export namespace commands {
     /**
      * Register a command the page can run. Arguments arrive and results leave
-     * as JSON. An id that already exists throws.
+     * as JSON (at most 1 MiB). An id that already exists throws.
      */
     export function registerCommand(
       command: string,
       callback: (...args: never[]) => unknown,
+      options?: CommandOptions,
     ): DisposableClass;
   }
 

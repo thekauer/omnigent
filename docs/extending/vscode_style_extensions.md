@@ -209,11 +209,21 @@ Stop after item 4. The rest of the "Later" list waits for the user.
      path is inside the folder).
    - The dev plugin runs every Node entry in one child process (`fork`, IPC),
      like VS Code's extension host process: extension code never runs in, or
-     blocks, the dev server. A crash fails the calls in flight, and the host
-     process is restarted after a crash; a command that hangs times out. A
-     manifest change, or an edit to any file of an extension with a Node
-     entry, restarts the process once no command is running (Node has no hot
-     reload). Dev server shutdown stops it.
+     blocks, the dev server. Dev server shutdown stops it. The host runs in its
+     own process group, so processes it spawned die with it.
+   - A manifest change, or an edit to any file of an extension with a Node
+     entry, restarts the host once its running calls finish, or after a 30
+     second grace that fails the calls still running (Node has no hot reload).
+   - An unexpected exit fails the calls in flight and restarts the host with
+     backoff: 1 second, doubling up to 30, reset after 60 seconds of uptime.
+     While the host is down, the command endpoint answers 503.
+   - `uncaughtException` and `unhandledRejection` are logged against the
+     extension; `process.exit` from extension code is refused.
+   - A call fails when its timeout passes (15 minutes by default;
+     `registerCommand(id, handler, { timeoutMs })` sets it, at most 24 hours)
+     or the page disconnects. There is no cancellation token yet, so the
+     handler keeps running until it finishes or the host restarts. Results are
+     capped at 1 MiB.
    - `import * as omnigent from "omnigent/node"` resolves, through Node module
      hooks in that process, to the extension's Node API: `version`,
      `Disposable`, `commands.registerCommand`, `window.withProgress` and
@@ -419,6 +429,8 @@ Deviations and why:
   builds.
 - `engines.omnigent` enforcement against the running version.
 - More activation events (`onView`, `onCommand`, `onSession...`).
+- A cancellation token for Node commands, and crash-loop detection that
+  disables an extension after a number of Node host crashes.
 - Published typings (`@omnigent/types` or similar) instead of vendored copies.
 - Migrating the V1 extension pages and navigation onto this system, and moving a
   built-in header item onto the header item registry to prove the seam.
