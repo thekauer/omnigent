@@ -307,5 +307,9 @@ describe("createCliRunner", () => {
     expect(token.current()).toBeNull();
     expect(await token.ensure()).toBeNull();
     expect(cli.pids()).toHaveLength(2);
+    for (const pid of cli.pids()) {
+      // oxlint-disable-next-line no-await-in-loop
+      await vi.waitFor(() => expect(alive(pid)).toBe(false), { timeout: 3000 });
+    }
   });
 });
