@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   getCliServerUrl,
   getOmnigentConnectHostCommand,
+  getOmnigentPollIntervals,
   hostFetch,
   hostPollIntervalMs,
   normalizeConnectHostCommand,
@@ -233,6 +234,15 @@ describe("hostPollIntervalMs", () => {
 
   it("keeps the default without overrides", () => {
     expect(hostPollIntervalMs("canvasPullRequests", 300_000)).toBe(300_000);
+  });
+});
+
+describe("getOmnigentPollIntervals", () => {
+  it("returns the host's overrides as configured", () => {
+    expect(getOmnigentPollIntervals()).toBeUndefined();
+    const pollIntervals = { hosts: 90 };
+    setOmnigentHostConfig({ pollIntervals });
+    expect(getOmnigentPollIntervals()).toBe(pollIntervals);
   });
 });
 

@@ -411,6 +411,14 @@ export function getOmnigentMcpConnections(): OmnigentHostConfig["mcpConnections"
 }
 
 /**
+ * The host-provided poll interval overrides, in seconds, or `undefined` when
+ * none are configured. Prefer {@link hostPollIntervalMs}, which validates them.
+ */
+export function getOmnigentPollIntervals(): OmnigentHostConfig["pollIntervals"] {
+  return hostConfig.pollIntervals;
+}
+
+/**
  * The poll interval for `key` in milliseconds: the host's override when it is
  * a positive number of seconds, else `defaultMs`.
  */
@@ -418,7 +426,7 @@ export function hostPollIntervalMs(
   key: keyof NonNullable<OmnigentHostConfig["pollIntervals"]>,
   defaultMs: number,
 ): number {
-  const seconds = hostConfig.pollIntervals?.[key];
+  const seconds = getOmnigentPollIntervals()?.[key];
   return typeof seconds === "number" && Number.isFinite(seconds) && seconds > 0
     ? seconds * 1000
     : defaultMs;
