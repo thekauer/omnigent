@@ -378,6 +378,16 @@ async def test_provider_mcp_services_label_the_session_before_launch(
             {"host_type": "managed", "sandbox_provider": "box", "mcp_services": ["tools.revoked"]},
             403,
         ),
+        # The provider selects the session's services; registry ones don't combine.
+        (
+            {
+                "host_type": "managed",
+                "sandbox_provider": "box",
+                "mcp_services": ["tools.github"],
+                "mcp_registry_services": ["github"],
+            },
+            400,
+        ),
         # Names are bounded: non-empty, at most 128 characters, no whitespace.
         ({"host_type": "managed", "sandbox_provider": "box", "mcp_services": [""]}, 422),
         (
@@ -422,6 +432,8 @@ async def test_unusable_provider_mcp_services_create_no_session(
     # The multipart path reports its metadata's schema errors as 400.
     expected = 400 if upload and status == 422 else status
     assert response.status_code == expected, response.text
+    if metadata.get("mcp_registry_services"):
+        assert "cannot be combined with mcp_services" in response.text
     create.assert_not_called()
     launch.assert_not_awaited()
 

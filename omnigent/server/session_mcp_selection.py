@@ -108,6 +108,21 @@ def mcp_selection_for(sandbox: ManagedSandboxConfig | None) -> SessionMcpSelecti
     return configured if configured is not None else RegistryMcpSelection()
 
 
+def require_one_mcp_selection(registry_services: Sequence[str], services: Sequence[str]) -> None:
+    """Refuse a create that names both registry services and provider services.
+
+    ``mcp_services`` are a sandbox provider's own, and a provider that takes
+    them selects the session's MCP services itself, so registry services do not
+    apply there (the UI stops offering them). Raises ``OmnigentError`` (400).
+    """
+    if registry_services and services:
+        raise OmnigentError(
+            "mcp_registry_services cannot be combined with mcp_services: the sandbox "
+            "provider selects this session's MCP services",
+            code=ErrorCode.INVALID_INPUT,
+        )
+
+
 def session_create_mcp_labels(
     request: Request,
     services: Sequence[str],

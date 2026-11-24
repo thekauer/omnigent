@@ -695,7 +695,9 @@ already uploaded or registered an agent. The response is the full
     in to) otherwise, before any session is created. The multipart
     bundle create takes it in `metadata` the same way. Each name is 1 to
     128 characters with no whitespace or control characters (422 on the
-    JSON create, 400 on the multipart one).
+    JSON create, 400 on the multipart one). Such a provider selects the
+    session's MCP services itself, so a create that also names
+    `mcp_registry_services` fails with 400.
 
   host_id (string or null)
     Host to launch the runner on. When set, `workspace` is required

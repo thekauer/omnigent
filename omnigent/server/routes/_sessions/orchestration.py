@@ -13386,6 +13386,9 @@ async def _create_session_from_existing_agent(
                     inherited_runner_id = None
 
     registry_labels: dict[str, str] = {}
+    from omnigent.server.session_mcp_selection import require_one_mcp_selection
+
+    require_one_mcp_selection(body.mcp_registry_services, body.mcp_services)
     if body.mcp_registry_services:
         from omnigent.mcp_selection import registry_selection_labels
         from omnigent.server.routes.session_mcp_servers import _require_registry_service

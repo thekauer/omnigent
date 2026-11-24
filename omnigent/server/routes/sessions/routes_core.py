@@ -2081,6 +2081,11 @@ def register_core_routes(
             enforce_handler_allowlist=True,
         )
 
+        from omnigent.server.session_mcp_selection import require_one_mcp_selection
+
+        require_one_mcp_selection(
+            parsed_metadata.mcp_registry_services, parsed_metadata.mcp_services
+        )
         if parsed_metadata.mcp_registry_services:
             from omnigent.mcp_selection import registry_selection_labels, selected_mcp_spec
             from omnigent.server.routes.session_mcp_servers import _require_registry_service

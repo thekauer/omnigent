@@ -16,6 +16,7 @@ from omnigent.server.session_mcp_selection import (
     RegistryMcpSelection,
     host_sandbox,
     mcp_selection_for,
+    require_one_mcp_selection,
     session_create_mcp_labels,
     session_mcp_label_keys,
     session_mcp_services,
@@ -452,6 +453,20 @@ def test_a_managed_create_reports_a_service_its_provider_rejects() -> None:
             spec=None,
             user_id="alice",
         )
+
+
+@pytest.mark.parametrize(
+    ("registry_services", "services"),
+    [((), ()), (("github",), ()), ((), ("tools.github",))],
+)
+def test_one_mcp_selection_per_create_is_accepted(registry_services, services) -> None:
+    require_one_mcp_selection(registry_services, services)
+
+
+def test_registry_services_do_not_combine_with_provider_services() -> None:
+    with pytest.raises(OmnigentError, match="cannot be combined") as raised:
+        require_one_mcp_selection(["github"], ["tools.github"])
+    assert raised.value.code == ErrorCode.INVALID_INPUT
 
 
 def _create_bodies(name: str) -> list[tuple[type, dict]]:
