@@ -17,11 +17,11 @@ entries, commands, progress notifications and the host reconnect provider seam,
 with the server wake moved onto it; and queue item 3 (Changes 2): extension views
 in the classic rail, host-rendered tree views, view/title actions with `when`
 clauses and context keys, built-in workspace commands, changed-files events and
-a per-chat-session `workspaceState`; and phases M1 and M2 of queue item 4:
-built-in extensions load in every build, and the Changes, Content search and
-Agents tabs are the built-in `omnigent.changes`, `omnigent.content-search` and
-`omnigent.agents` extensions (Changes 2 retired into the first). Item 2 is
-still open.
+a per-chat-session `workspaceState`; and phases M1, M2 and M3 of queue item 4:
+built-in extensions load in every build, and the Changes, Content search,
+Agents and Tasks tabs are the built-in `omnigent.changes`,
+`omnigent.content-search`, `omnigent.agents` and `omnigent.tasks` extensions
+(Changes 2 retired into the first). Item 2 is still open.
 
 **Queue, in order.** Deployment-specific details (machine and host names, exact
 commands, the private Git host's URL shape) are kept in the personal extensions
@@ -84,15 +84,15 @@ repository's reference policy keeps them out of here.
      tree in `omnigent.sessions`, a graph presentation); ContentSearchPanel,
      SubagentsPanel, SubagentsGraphView and AgentCostTag are gone, and the
      `subagents` and `content-search` scopes route to the extension views.
-   - **Next, in order,** with what each needs from the API (from M1 and M2):
-     1. **Tasks** (`tasks`): the session's todos and workflow runs. Needs a
-        todos/journal source in the API, rows with check states, nested runs
-        (children loaded lazily, which the tree has), and the `when` keys
-        for its visibility (workflows enabled), which today is a core
-        `shown` rule: a view `when` clause on the contribution, as in VS Code.
-        From M2 it can reuse the session rows' status tile (`TreeItem.status`)
-        for workflow runs and `view.<id>.available` for its availability.
-     2. **Files** (`files`): the full tree with lazy directories, browse
+   - **Done, M3: Tasks.** Scope items 27 to 29. `omnigent.tasks` reproduces
+     the classic tab on the API (the session's tasks as plain data in
+     `omnigent.sessions`, the `omnigent.tasks.*` commands, `showInChat`, a
+     host-drawn plan view with Markdown goals, a `picker:workflow` link to the
+     host's Run a workflow menu); TasksPanel is gone, its shared parts moved
+     to `components/workflows/taskParts.tsx` (the workflow pages use them),
+     and the `tasks` scope routes to the extension view.
+   - **Next, in order,** with what each needs from the API (from M1 to M3):
+     1. **Files** (`files`): the full tree with lazy directories, browse
         location bar, search with globs, copy/open-in menus and reveal from
         chat. Needs a directory listing API (`workspace.fs.readDirectory`
         through the host), `TreeView.reveal`, item context menus, the title
@@ -100,7 +100,7 @@ repository's reference policy keeps them out of here.
         with command links), and the same `omnigent.files.*` settings the
         Changes tab already uses. Its search can follow Content search's
         `searchInput` (globs as fields) instead of the filter field.
-     3. **Pull Requests** (`github`): not a tree: PR details, checks, merge
+     2. **Pull Requests** (`github`): not a tree: PR details, checks, merge
         controls. Needs webview-like custom content or a richer host-drawn
         "details" view kind, the git-host provider seam (queue item 2), and
         write commands with confirmation, so it goes last.
@@ -634,6 +634,63 @@ limitHit, message }`; a cancelled token aborts the request and rejects
     drawers draw `ExtensionRailView`; the workspace source publishes the tree
     root, whether costs are reported, a session opener and its query client.
 
+27. **API additions for M3** (`omnigent.d.ts`).
+    - `omnigent.sessions.activeSessionTasks` (`SessionTasks`: `loading`,
+      `error`, `plan` with its name, workflow, workflow name and whether it is
+      complete, `tasks`, `paused`, `working`, `stopping`, the composer's
+      `actions` and `workflowsLinked`), `onDidChangeActiveSessionTasks`
+      (coalesced per microtask) and `watchActiveSessionTasks()`, a
+      `Disposable` that keeps the journal loading while held. Each
+      `SessionTask` carries its id, name, Markdown goal, `dependsOn`, state,
+      newest status, `startedAt`, `native`, `activeForm`, its `history` (each
+      status with `restart` marking a new attempt), `chatMarker`, the
+      `question` its agent waits on and `blockedBy` (failed upstream tasks).
+      Frozen copies, for the workspace on screen (the shell's session or the
+      selected grid cell); the surface publishes them from the hooks the
+      classic panel used (`shell/useWorkspaceTasksSource.ts`), only while
+      watched, keeping the last snapshot while the view is hidden.
+    - Commands, each for the workspace on screen and refusing another
+      session: `omnigent.tasks.runTaskAction(sessionId, action, taskName)`,
+      `.stop(sessionId)`, `.continuePlan(sessionId, planName)`,
+      `.saveAsWorkflow(sessionId, planName)`, `.startWorkflow(sessionId, {
+description?, workflowId? })` and `.reload(sessionId)`; plus
+      `omnigent.showInChat(sessionId, markerId)` (closes the phone's drawer,
+      keeps the route's other params) and `omnigent.openWorkflow(id)`.
+    - `window.createPlanView(viewId)`: a `PlanView` with `content`,
+      `visible`, `onDidChangeVisibility` and `dispose()`. `PlanViewContent`
+      is plain data the host checks (`planContent.ts`) and draws
+      (`shell/extensionViews/ViewPlan.tsx`): `loading`, `error` with a retry
+      command, `empty` with a message whose `[text](picker:workflow)` link
+      opens the host's Run a workflow menu (the composer's menu, unchanged),
+      or `plan`: heading, workflow chip, "Updated" time, summary, counts,
+      paused label, run control (Stop, Stopping…, Continue, the composer's
+      `PlanRunButton`), the graph, the plan's ⋯ menu, the tasks with their
+      ⋯ action and row command, whether they say what they wait on, and the
+      workflow whose runs follow the list. Goals render as Markdown (and
+      mermaid) through the host, as a trusted `MarkdownString` would. Times
+      tick in the host.
+    - The `workflow` icon on the allowlist.
+28. **The built-in Tasks tab** (`builtinExtensions/omnigent.tasks/`). The
+    loading skeleton, the journal error with Retry, "No tasks yet" with "run
+    a workflow" (saved workflows or a new one; a pending check opens nothing
+    in the next session), the sticky header with the plan's name, the
+    Workflow chip (linked with the Workflows page on), "Updated …", Stop,
+    Stopping… and Continue, the graph button and Save as workflow… (disabled
+    once saved), the summary with its counts and paused label, the progress
+    strip with its cards, ⋯ menus and dependency arcs, the rows with their
+    glyphs, details, elapsed and end times, Can't start, the history with
+    "After", the whole goal and restarts, a row's click scrolling the chat to
+    its marker, a chat marker scrolling to and highlighting its row, the
+    question override on Continue, the graph overlay with its ⋯ actions, and
+    the workflow runs below a workflow's run. The tab keeps its id, place,
+    label, icon and ⌃N digit; it has no badge, as before.
+29. **Shell wiring.** `tasks` joins the built-in tabs whose page is the
+    extension view (`resolveWorkspaceActiveView`), still only where its old
+    rule allowed (workflows with session journals, or the agent's own task
+    list); WorkspacePanel, grid cells, the v2 sidebar's Tasks page and the
+    phone drawer draw `ExtensionRailView`; AppShell and each grid cell mount a
+    `WorkspaceTasksPublisher` on their workspace source.
+
 ### Security and trust model
 
 A dev-path extension is trusted local code, like a folder passed to VS Code's
@@ -770,6 +827,8 @@ Plain ESM with `// @ts-check`; no build step.
 | `<view>.focus` and `view.<id>.visible` context keys                  | `<view>.focus` and `view.<id>.available`                      | Available: the tab is in the strip                 |
 | `withProgress({ location: { viewId } })`                             | same                                                          | Per chat session                                   |
 | `TreeItemLabel.highlights`, `AccessibilityInformation`               | same                                                          | Plus `TreeItem.line` for text matches              |
+| `WebviewView` (closest), `MarkdownString`                            | `window.createPlanView`, Markdown goals drawn by the host     | Plain data, host-drawn; see deviations             |
+| (none)                                                               | `sessions.activeSessionTasks`, `watchActiveSessionTasks`      | The tasks of the workspace on screen               |
 
 Deviations and why:
 
@@ -844,6 +903,24 @@ Deviations and why:
 - The "Asleep" tag's tooltip is reworded ("Agent is asleep. Files are shown
   live from the host; send a message to wake it."), because the original
   used a dash this repository's text style avoids.
+- The Tasks tab is a plan view, a host-drawn content kind VS Code has no
+  equivalent for (its closest, a webview view, would not be plain data). The
+  extension decides the words, the controls and the command of every
+  action; the host draws them with the parts the workflow pages share
+  (glyphs, strip, cards, graph), so the two never drift. The workflow runs
+  below a plan stay a host-drawn list (`SessionDescendantRuns`, shared with
+  the Workflow page, with its own paging and nesting), named by
+  `runsOfWorkflow`, not a tree of the extension's.
+- Its availability stays the core `shown` rule (workflows with journals, or
+  the agent's own list), not a view `when` clause: AppShell's tab fallback,
+  the phone's menu and the grid all read that rule.
+- A hidden Tasks view keeps the last tasks it had and stops loading the
+  journal; the classic panel stayed mounted with its query paused. On a
+  workspace switch the extension's content waits ("Loading tasks") until
+  the session on screen's tasks arrive.
+- The phone drawer closes before any task's click scrolls the chat or a
+  workflow starts (one `onLeave` for the surface), where the classic panel
+  had one callback for each.
 
 ## Later
 
@@ -901,7 +978,8 @@ corepack pnpm exec vite build --outDir /tmp/omnigent-build-check && \
   ! grep -rlE "x-omnigent-extension-token|__omnigent/extensions|omnigent/node|virtual:omnigent-dev-extensions|dev-path extension" /tmp/omnigent-build-check && \
   for s in "There is no data provider registered" "omnigent.refreshChangedFiles" \
     "invalid when clause" "omnigent.changes.view" "omnigent.content-search.view" \
-    "omnigent.agents.view" "omnigent.openSubagent"; do grep -rlqF "$s" /tmp/omnigent-build-check || exit 1; done
+    "omnigent.agents.view" "omnigent.openSubagent" "omnigent.tasks.view" \
+    "omnigent.tasks.runTaskAction" "picker:workflow"; do grep -rlqF "$s" /tmp/omnigent-build-check || exit 1; done
 corepack pnpm exec tsc -b   # app and node (vite config) projects
 ```
 
@@ -1014,6 +1092,20 @@ What the suites cover:
 - `agentSessionGraph.test.ts`: the status and label a child session gets
   through the API, the shared dot palette, the root status, and the graph
   layout (`computeSubtreeWidths`, `layoutTree`, `treeFromRows`).
+- `omnigent.tasks/tasksView.test.tsx` (the classic TasksPanel tests, all
+  ported) and `tasksModel.test.ts`: the empty state and Run a workflow, the
+  agent's own list and the plan, steps and states, ready tasks and arcs, the
+  workflow chip, the runs below, cards, Can't start, ⋯ menus on rows, cards
+  and the graph, jumping and highlighting, showing in the chat on a route
+  or the grid, Save as workflow, Run, Continue, Retry and Stop, the
+  question override, Stop, Stopping… and Continue, complete plans, the
+  heading, the graph overlay, elapsed and end times, background work,
+  waiting for you, prompts, paused labels, workers and side chats,
+  restarts, history, Markdown goals; the content, controls and commands
+  of the model. `tasksApi.test.ts`: the tasks snapshot (frozen, coalesced,
+  following the surface in front), watching, the task commands and their
+  refusals, plan views (ownership, checked content, visibility, commands
+  with arguments, teardown) and the content checks.
 - `keybindings.test.ts`, `searchViewsApi.test.ts`, `sessionTreeApi.test.ts`,
   `treeItemKinds.test.ts`: chords and the keybinding service; search inputs
   per session, accepting, validation, presentation, badges, view progress,
@@ -1091,7 +1183,14 @@ OMNI_UI_REPO=<omnigent checkout> ./verify/verify.sh            # mocked + prod
     on that checkout's dev server (port + 2) against the same mock, every
     reading must equal the classic tab's, and `--side-by-side-prefix` names
     the side-by-side screenshots (`search-results`, `agents-list`,
-    `agents-graph`). `--only-tabs` runs just these.
+    `agents-graph`). The same run opens the Tasks tab on a mocked plan
+    (done, stopped, failed and blocked tasks): the tab, header, rows, a
+    segment's card with its dependency arcs, a history with its Markdown
+    goal, the graph's nodes, and a row's click asking the chat for its
+    marker; against the classic checkout every reading must be the same,
+    and the side-by-side screenshots are `tasks`, `card`, `history` and
+    `graph`. `prod` and `live` open the Tasks tab too. `--only-tabs` runs
+    just these.
 - `prod`: starts the dev server (port 5182) against the real backend with CLI
   profile auth, aborts every non-GET request from the page, and checks a real
   session shows a `$` value left of the info button (`prod.png`).
