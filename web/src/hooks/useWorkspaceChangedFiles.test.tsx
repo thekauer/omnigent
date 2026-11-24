@@ -274,6 +274,17 @@ describe("useWorkspaceChangedFiles gating", () => {
     expect(result.current.data?.data[1].untracked_lines).toBeNull();
   });
 
+  it("reports the server's detail for a failed list, such as a git status timeout", async () => {
+    onlineMock.mockReturnValue(true);
+    const detail = "Repository 'app': git status timed out after 8.0s";
+    fetchMock
+      .mockResolvedValueOnce(environmentResponse())
+      .mockResolvedValue(jsonResponse({ detail }, 502));
+    const { result } = renderHook(() => useWorkspaceChangedFiles("conv_slow"), { wrapper: Wrap });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.error?.message).toBe(detail);
+  });
+
   it("does not fetch when the runner is offline and the host is also down", async () => {
     onlineMock.mockReturnValue(false);
     hostOnlineMock.mockReturnValue(false);

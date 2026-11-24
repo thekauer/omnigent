@@ -105,7 +105,7 @@
         },
         {
           "submenu": "omnigent.changes.sortBy",
-          "when": "view == omnigent.changes.view",
+          "when": "view == omnigent.changes.view && !omnigent.changes.loadFailed",
           "group": "filter"
         },
         {
@@ -113,7 +113,7 @@
           "when": "view == omnigent.changes.view && !config.omnigent.files.showHidden && omnigent.changes.hasHiddenFiles",
           "group": "filter",
           "tone": "warning",
-          "tooltip": "Some changed files are in hidden directories. Click to show."
+          "tooltip": "${omnigent.changes.hiddenFilesTooltip}"
         },
         {
           "command": "omnigent.changes.showHiddenFiles",

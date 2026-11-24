@@ -403,6 +403,9 @@ function AppShellImpl() {
     extensionId === undefined &&
     isCanvasPathname(location.pathname, rebasePath("/canvas")) &&
     isFeatureEnabled(serverInfo, "canvas");
+  // A grid route replaces the rail with the grid's own cells and workspaces.
+  const gridRoute =
+    gridId !== undefined && isFeatureEnabled(serverInfo, "grid_sessions_display_ui");
   const [canvasReservedWidth, setCanvasReservedWidth] = useState(0);
   // A client-only temp id (`temp:*`, shown while `createSession` is in flight)
   // has no server session behind it. Feed every server-scoped hook this instead
@@ -1919,7 +1922,8 @@ function AppShellImpl() {
   useWorkspaceBridgeSource({
     sessionId: serverConversationId,
     enabled: showFilesPanel,
-    active: !canvasMode,
+    // On a grid route the cells' workspaces are on screen, not the shell's.
+    active: !canvasMode && !gridRoute,
     openFile: openFileViewer,
     sortOrder: filesPanelSort,
     onSortOrderChange: handleFilesSortChange,
@@ -2237,8 +2241,6 @@ function AppShellImpl() {
   // ⌘B / ⇧⌘B in the desktop app (⌘⌥[ / ⌘⌥] in a browser) toggle the left and
   // right sidebars. Bound here where both panels' open-state lives. A grid route
   // replaces this rail with the grid's own workspace, which binds its own toggle.
-  const gridRoute =
-    gridId !== undefined && isFeatureEnabled(serverInfo, "grid_sessions_display_ui");
   useSidebarToggleHotkeys({
     onToggleLeft: toggleLeftSidebar,
     onToggleRight: gridRoute ? undefined : toggleRightPanelFromHotkey,

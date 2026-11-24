@@ -28,6 +28,7 @@ import { type FileNavigationGuard, FileViewerContext } from "@/shell/FileViewerC
 import type { WorkspacePanel } from "@/shell/WorkspacePanel";
 import { readSessionWorkspaceState, writeSessionWorkspaceState } from "@/lib/sessionWorkspaceState";
 import { workspaceBridge } from "@/shell/workspaceBridge";
+import { useWorkspaceBridgeSource } from "@/shell/useWorkspaceBridgeSource";
 import { RearrangeableGrid } from "./GridWorkspace";
 import { splitGrid } from "./gridLayout";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -1091,4 +1092,38 @@ it("puts the selected cell's workspace in front for extension views, and drops a
   expect(workspaceBridge.getState().sessionId).toBe("second");
   // Extensions have settled without that view, so the cell falls back as AppShell does.
   expect(screen.getByTestId("workspace-second")).toHaveAttribute("data-tab", "files");
+});
+
+/** AppShell's own workspace source around the grid, as on a grid route. */
+function ShellWorkspaceSource({ active, children }: { active: boolean; children: ReactElement }) {
+  useWorkspaceBridgeSource({
+    sessionId: undefined,
+    enabled: false,
+    active,
+    openFile: () => {},
+    sortOrder: "alpha",
+    onSortOrderChange: () => {},
+    showHidden: true,
+    onShowHiddenChange: () => {},
+  });
+  return children;
+}
+
+it("keeps the selected cell's workspace in front of the shell's source on a grid route", () => {
+  const grid = (
+    <MemoryRouter>
+      <TooltipProvider>
+        <RearrangeableGrid
+          grid={{ id: "shell", layout: splitGrid("first", "first", "second", "right")! }}
+        />
+      </TooltipProvider>
+    </MemoryRouter>
+  );
+  // A parent's effects run after its children's: an active shell source would win.
+  const { unmount } = render(<ShellWorkspaceSource active>{grid}</ShellWorkspaceSource>);
+  expect(workspaceBridge.getState().sessionId).toBeNull();
+  unmount();
+  // AppShell's source is inactive on a grid route, so the cell's Changes tab shows its files.
+  render(<ShellWorkspaceSource active={false}>{grid}</ShellWorkspaceSource>);
+  expect(workspaceBridge.getState().sessionId).toBe("first");
 });

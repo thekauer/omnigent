@@ -56,12 +56,6 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
     executeCommand: (command, args) => commands.execute(command, args, () => {}),
     showError: (message) => toastNotifications.error(message),
     workspace,
-    // A view coming on screen after the list failed (a 502 on the first fetch, say)
-    // retries it, as the classic tab's own query did when it mounted.
-    onViewShown: () => {
-      if (workspace.changedFilesError === undefined) return;
-      bridge.refreshChangedFiles().catch(() => {});
-    },
   });
   const host = new ExtensionHost({
     services: {

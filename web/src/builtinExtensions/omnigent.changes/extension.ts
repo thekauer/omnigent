@@ -31,6 +31,10 @@ export const SORT_COMMANDS: Readonly<Record<string, SortOrder>> = Object.freeze(
 /** Context keys the view/title `when` clauses read. */
 export const VIEW_MODE_CONTEXT_KEY = "omnigent.changes.viewMode";
 export const HAS_HIDDEN_CONTEXT_KEY = "omnigent.changes.hasHiddenFiles";
+/** Set while the list could not be loaded: there is nothing to sort. */
+export const LOAD_FAILED_CONTEXT_KEY = "omnigent.changes.loadFailed";
+/** The hidden-files toggle's warning tooltip, naming the count. */
+export const HIDDEN_TOOLTIP_CONTEXT_KEY = "omnigent.changes.hiddenFilesTooltip";
 /** The workspaceState key of the mode, per chat session. */
 export const VIEW_MODE_STATE_KEY = "viewMode";
 const FILES_SECTION = "omnigent.files";
@@ -84,9 +88,12 @@ export function activate(context: Omnigent.ExtensionContext): void {
     view.badge = files?.length
       ? { value: files.length, tooltip: `${files.length} changed` }
       : undefined;
+    const hiddenCount = (files ?? []).filter((file) => isHiddenPath(file.path)).length;
+    setContext(HAS_HIDDEN_CONTEXT_KEY, hiddenCount > 0);
+    setContext(LOAD_FAILED_CONTEXT_KEY, error !== undefined);
     setContext(
-      HAS_HIDDEN_CONTEXT_KEY,
-      (files ?? []).some((file) => isHiddenPath(file.path)),
+      HIDDEN_TOOLTIP_CONTEXT_KEY,
+      `${hiddenCount} file${hiddenCount === 1 ? "" : "s"} in hidden directories. Click to show.`,
     );
     changed.fire();
   };

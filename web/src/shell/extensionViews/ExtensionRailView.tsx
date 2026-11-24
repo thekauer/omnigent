@@ -147,11 +147,8 @@ function TreeRow({
         depth={depth}
         fileStatus={status}
         bytes={null}
-        meta={
-          node.decoration ? (
-            <Decoration decoration={node.decoration} className="group-hover:invisible" />
-          ) : null
-        }
+        // The diffstat before the status letter, as in the list.
+        diffstat={node.decoration ? <Decoration decoration={node.decoration} /> : undefined}
         onFileSelect={() => onRun(node)}
         conversationId={conversationId}
       />

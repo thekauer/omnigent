@@ -343,6 +343,12 @@ describe("Changes tab search, sort and hidden files", () => {
     expect(screen.queryByRole("button", { name: "api/.env" })).toBeNull();
     const toggle = screen.getByRole("button", { name: "Show hidden files" });
     expect(toggle).toHaveClass("text-warning");
+    // The warning names the count, as the classic toggle did.
+    expect(
+      harness.registry
+        .get(VIEW_ID)
+        ?.actions.find((action) => action.id === "omnigent.changes.showHiddenFiles")?.tooltip,
+    ).toBe("1 file in hidden directories. Click to show.");
     expect(toggle.querySelector("svg")).toHaveClass("lucide-eye");
     expect(screen.getByText(/1 file hidden\./)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Click to show" }));

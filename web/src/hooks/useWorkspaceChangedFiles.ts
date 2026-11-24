@@ -278,8 +278,10 @@ async function fetchWorkspaceChangedFiles(
     // the panel shows what actually went wrong rather than a bare status code.
     let message = `${res.status} ${res.statusText}`;
     try {
-      const body = (await res.json()) as { error?: { message?: string } };
+      const body = (await res.json()) as { error?: { message?: string }; detail?: unknown };
       if (body?.error?.message) message = body.error.message;
+      // A runner failure the server relays, such as "Repository 'app': git status timed out".
+      else if (typeof body?.detail === "string" && body.detail) message = body.detail;
     } catch {
       // Non-JSON body (gateway/front-door error) — keep the status line.
     }

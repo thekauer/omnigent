@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
+import ts from "typescript";
 import { describe, expect, it, vi } from "vitest";
 import { BUILT_IN_RAIL_TABS } from "@/shell/railTabs";
 import { RailViewRegistry } from "@/shell/railViews";
@@ -20,6 +21,67 @@ function sourceFiles(directory: string): string[] {
     return /\.tsx?$/.test(entry) && !/\.test\.tsx?$/.test(entry) ? [full] : [];
   });
 }
+
+/** Every module a source names: static, side-effect, type-only and dynamic imports, and re-exports. */
+function importSpecifiers(text: string): string[] {
+  return ts.preProcessFile(text, true, true).importedFiles.map((file) => file.fileName);
+}
+
+/** Why `specifier` in `file` leaves the extension API, if it does. */
+function boundaryViolation(folder: string, file: string, specifier: string): string | undefined {
+  if (specifier === "omnigent" || specifier === "@/vscodeExtensions/builtinApi") return undefined;
+  if (!specifier.startsWith("./") && !specifier.startsWith("../")) return "app or package import";
+  const resolved = path.resolve(path.dirname(file), specifier);
+  const inside = path.relative(folder, resolved);
+  return inside.startsWith("..") || path.isAbsolute(inside)
+    ? "leaves the extension folder"
+    : undefined;
+}
+
+describe("built-in import boundary check", () => {
+  const folder = path.join(ROOT, "omnigent.example");
+  const file = path.join(folder, "extension.ts");
+  const violations = (source: string) =>
+    importSpecifiers(source).flatMap((specifier) => {
+      const why = boundaryViolation(folder, file, specifier);
+      return why === undefined ? [] : [specifier];
+    });
+
+  it("catches every import form that reaches app code", () => {
+    expect(
+      violations(`
+        import { a } from "./../../shell/x";
+        import "@/store/chatStore";
+        import('@/store/chatStore');
+        const lazy = () => import("../omnigent.other/extension");
+        export { b } from "@/lib/utils";
+        export * from 'react';
+        import type { C } from "@/lib/types";
+        import d = require("@/lib/d");
+      `),
+    ).toEqual([
+      "./../../shell/x",
+      "@/store/chatStore",
+      "@/store/chatStore",
+      "../omnigent.other/extension",
+      "@/lib/utils",
+      "react",
+      "@/lib/types",
+      "@/lib/d",
+    ]);
+  });
+
+  it("allows the API, its binding and files of the extension itself", () => {
+    expect(
+      violations(`
+        import type * as Omnigent from "omnigent";
+        import { bindExtensionApi } from "@/vscodeExtensions/builtinApi";
+        import manifest from "./package.json";
+        import { model } from "./lib/../model";
+      `),
+    ).toEqual([]);
+  });
+});
 
 describe("built-in extensions", () => {
   it("has one registry entry per folder, named publisher.name", () => {
@@ -48,16 +110,11 @@ describe("built-in extensions", () => {
   it.each(folders)(
     "%s only uses the extension API: no React, store or other app imports",
     (folder) => {
-      for (const file of sourceFiles(path.join(ROOT, folder))) {
-        const imports = [...readFileSync(file, "utf8").matchAll(/from\s+"([^"]+)"/g)].map(
-          (match) => match[1],
-        );
-        for (const specifier of imports) {
-          const allowed =
-            specifier.startsWith("./") ||
-            specifier === "omnigent" ||
-            specifier === "@/vscodeExtensions/builtinApi";
-          expect(allowed, `${path.relative(ROOT, file)} imports ${specifier}`).toBe(true);
+      const directory = path.join(ROOT, folder);
+      for (const file of sourceFiles(directory)) {
+        for (const specifier of importSpecifiers(readFileSync(file, "utf8"))) {
+          const why = boundaryViolation(directory, file, specifier);
+          expect(why, `${path.relative(ROOT, file)} imports ${specifier}`).toBeUndefined();
         }
       }
     },

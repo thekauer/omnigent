@@ -946,6 +946,7 @@ export function FileRowItem({
   fileStatus,
   bytes,
   meta,
+  diffstat,
   onFileSelect,
   conversationId,
 }: {
@@ -963,6 +964,8 @@ export function FileRowItem({
   bytes: number | null;
   /** Drawn at rest in the trailing column instead of the byte size. */
   meta?: ReactNode;
+  /** Drawn before the status letter in a fixed column, as the Changes list's diffstat. */
+  diffstat?: ReactNode;
   onFileSelect: (path: string) => void;
   conversationId: string | undefined;
 }) {
@@ -1005,6 +1008,11 @@ export function FileRowItem({
           >
             {labelIsPath ? <bdi>{displayLabel}</bdi> : displayLabel}
           </span>
+          {diffstat !== undefined && (
+            <span className={cn("flex shrink-0 items-center justify-end", ROW_META_SLOT_CLASS)}>
+              {diffstat}
+            </span>
+          )}
           {fileStatus && (
             // Centred in the shared status column so the A/M/D badge lands in
             // the same x as a directory row's dirty dot.

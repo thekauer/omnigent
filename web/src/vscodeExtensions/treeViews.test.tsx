@@ -368,7 +368,7 @@ describe("view filter, submenus, notices and visibility", () => {
           command: "pub.rich.show",
           group: "filter",
           tone: "warning",
-          tooltip: "Hidden ones exist",
+          tooltip: "Hidden: ${pub.rich.hiddenCount}",
         },
       ],
       "pub.rich.sortBy": [{ command: "pub.rich.a" }, { command: "pub.rich.b" }],
@@ -446,6 +446,15 @@ describe("view filter, submenus, notices and visibility", () => {
     };
   }
 
+  it("fills a menu tooltip's ${context key} references from the context keys", () => {
+    const { registry, contextKeys } = richSetup();
+    const tooltip = () =>
+      registry.get(RICH_VIEW)?.actions.find((action) => action.id === "pub.rich.show")?.tooltip;
+    expect(tooltip()).toBe("Hidden: ");
+    contextKeys.set("pub.rich.hiddenCount", 3);
+    expect(tooltip()).toBe("Hidden: 3");
+  });
+
   it("keeps the filter text per session and tells the extension", async () => {
     const { tree, ui, workspace, changed } = richSetup();
     const seen: string[] = [];
@@ -496,7 +505,8 @@ describe("view filter, submenus, notices and visibility", () => {
   });
 
   it("draws filter-group buttons next to the field, in the warning tone with their tooltip", async () => {
-    const { ui } = richSetup();
+    const { ui, contextKeys } = richSetup();
+    contextKeys.set("pub.rich.hiddenCount", 2);
     render(ui());
     const show = await screen.findByRole("button", { name: "Show" });
     expect(show).toHaveClass("text-warning");
@@ -504,7 +514,7 @@ describe("view filter, submenus, notices and visibility", () => {
     expect(search.compareDocumentPosition(show) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     fireEvent.pointerMove(show, { pointerType: "mouse" });
     fireEvent.focus(show);
-    expect(await screen.findByRole("tooltip")).toHaveTextContent("Hidden ones exist");
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Hidden: 2");
   });
 
   it("draws command links in messages, error messages, notices and the title tag", async () => {

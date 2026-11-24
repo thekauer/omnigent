@@ -100,6 +100,22 @@ function tagOf(value: unknown): RailViewTag | undefined {
 
 const sessionKey = (sessionId: string | undefined) => sessionId ?? "";
 
+const CONTEXT_REFERENCE = /\$\{([A-Za-z0-9_.:-]{1,128})\}/g;
+
+/** A menu tooltip with each `${context key}` replaced by the key's value, so it can name counts. */
+function interpolate(
+  text: string | undefined,
+  lookup: (key: string) => unknown,
+): string | undefined {
+  if (text === undefined) return undefined;
+  return text
+    .replace(CONTEXT_REFERENCE, (_, key: string) => {
+      const value = lookup(key);
+      return value === undefined || value === null ? "" : String(value);
+    })
+    .slice(0, MAX_VIEW_TEXT);
+}
+
 export class ViewsService {
   private readonly options: ViewsServiceOptions;
   private readonly views = new Map<string, ViewEntry>();
@@ -302,7 +318,7 @@ export class ViewsService {
         actions.push({
           id,
           title: submenu.label,
-          tooltip: item.tooltip ?? submenu.tooltip,
+          tooltip: interpolate(item.tooltip, lookup) ?? submenu.tooltip,
           icon: submenu.icon,
           toggled: undefined,
           tone: item.tone,
@@ -317,7 +333,7 @@ export class ViewsService {
       actions.push({
         id,
         title,
-        tooltip: item.tooltip,
+        tooltip: interpolate(item.tooltip, lookup),
         icon: info?.icon,
         toggled: info?.toggled ? info.toggled.evaluate(lookup) : undefined,
         tone: item.tone,

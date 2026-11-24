@@ -480,8 +480,8 @@ error? }`, coalesced per microtask, also on session switches.
     - `TreeView.visible` / `onDidChangeVisibility` (VS Code), fired as a
       drawn copy mounts, unmounts, or its rail is hidden. The Changes
       extension refetches a list that failed when it comes on screen (the
-      502 on a first fetch), and the host does the same for any view
-      (`onViewShown`), as the classic tab's own query did on mount.
+      502 on a first fetch), as the classic tab's own query did on mount;
+      the host has no second retry of its own.
     - `TreeView.filter` / `onDidChangeFilter` with the view contribution's
       `filter: { placeholder, ariaLabel }`: a host-drawn filter field above
       the rows, its text kept per view and chat session; the extension
@@ -517,6 +517,28 @@ error? }`, coalesced per microtask, also on session switches.
       nesting; tree handles are kept for the current and the previous root
       load only; tree reloads are coalesced per animation frame, no-op view
       updates are skipped, and AppShell subscribes to view ids only.
+    - Fixes from the M1 review: on a grid route AppShell's own workspace
+      source is inactive (a parent's effects run after its children's, so
+      it would otherwise sit in front of the selected cell and leave its
+      Changes tab loading); the built-in import boundary test reads every
+      import form (static, side-effect, type-only, dynamic, re-exports) with
+      the TypeScript scanner and resolves relative paths, which must stay in
+      the extension's folder; a menu entry's `tooltip` may name context keys
+      as `${key}`, so the hidden-files warning names the count again ("3
+      files in hidden directories. Click to show."); tree rows put the
+      diffstat before the A/M/D letter, as list rows do; the Sort menu is
+      hidden while the list failed (`omnigent.changes.loadFailed`); and a
+      failed list shows the server's `detail` (such as a `git status`
+      timeout) rather than "502 Bad Gateway".
+    - Host behavior built-ins rely on, part of the API: a tree item with a
+      `resourceUri` and a `description` and no children is drawn as the
+      Changes list's row (`ChangedFileRow`: name, folder, diffstat, A/M/D,
+      size, with copy, download and reveal on hover); a collapsible item
+      with `iconPath: "folder"` as the Files tree's folder row; any other
+      resource leaf as the Files tree's file row. A built-in tab is looked up
+      by its view's `builtInTab` (WorkspacePanel, FilesPanelDrawer and grid
+      cells all resolve `changes` that way), so the view's id can change
+      without touching the shell.
 
 ### Security and trust model
 
