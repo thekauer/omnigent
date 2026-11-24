@@ -93,8 +93,6 @@ import { FilesPanel } from "./FilesPanel";
 import { resolveWorkspaceActiveView } from "./workspaceActiveView";
 import { FileViewer } from "./FileViewer";
 import { ResponsiveViewerSlot } from "./ResponsiveViewerSlot";
-import { TasksPanel } from "./TasksPanel";
-import { SessionDescendantRuns } from "@/components/workflows/WorkflowRunRow";
 import { PullRequestPanel } from "./PullRequestPanel";
 import type { ChangedSort } from "@/lib/changedSort";
 import { useTerminalStatuses } from "./useTerminalStatuses";
@@ -2130,16 +2128,6 @@ function WorkspacePanelImpl({
             ) : scopeView === "github" ? (
               <RenderErrorBoundary name="pull requests" resetKey={conversationId}>
                 <PullRequestPanel conversationId={conversationId} active={open && !inert} />
-              </RenderErrorBoundary>
-            ) : scopeView === "tasks" && conversationId ? (
-              <RenderErrorBoundary name="tasks" resetKey={conversationId}>
-                <TasksPanel
-                  conversationId={conversationId}
-                  active={open && !inert}
-                  renderWorkflowRuns={(workflowId) => (
-                    <SessionDescendantRuns sessionId={conversationId} workflowId={workflowId} />
-                  )}
-                />
               </RenderErrorBoundary>
             ) : scopeView === "extension" && activeView.extensionViewId !== null ? (
               <RenderErrorBoundary

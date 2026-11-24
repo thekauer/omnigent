@@ -45,7 +45,7 @@ describe("resolveWorkspaceActiveView", () => {
       { showGithubTab: false },
       "files",
     ],
-    ["Tasks", { rightRailTab: "tasks" }, {}, "tasks"],
+    ["Tasks", { rightRailTab: "tasks" }, {}, "extension"],
     ["Tasks where they're hidden", { rightRailTab: "tasks" }, { showTasksTab: false }, "files"],
     ["Agents", { rightRailTab: "subagents" }, {}, "extension"],
     [
@@ -85,6 +85,7 @@ describe("resolveWorkspaceActiveView", () => {
   it.each([
     ["subagents", "omnigent.agents.view"],
     ["content-search", "omnigent.content-search.view"],
+    ["tasks", "omnigent.tasks.view"],
   ] as const)("shows the %s tab as its built-in extension view", (tab, viewId) => {
     expect(
       resolve(

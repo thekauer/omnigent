@@ -1,0 +1,27 @@
+{
+  "name": "tasks",
+  "displayName": "Tasks",
+  "description": "The session's tasks, its plan's steps or the agent's own task list, with their progress and actions, in the workspace rail's Tasks tab.",
+  "publisher": "omnigent",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "omnigent": "*"
+  },
+  "activationEvents": [
+    "*"
+  ],
+  "browser": "./extension.ts",
+  "contributes": {
+    "views": {
+      "omnigent.rightPanel": [
+        {
+          "id": "omnigent.tasks.view",
+          "name": "Tasks",
+          "icon": "list-checks",
+          "builtInTab": "tasks"
+        }
+      ]
+    }
+  }
+}

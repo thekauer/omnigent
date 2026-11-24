@@ -1,3 +1,6 @@
+// The Tasks tab as users see it: the built-in extension in the real host, drawn by
+// the host's plan view, its data published by a workspace surface from the same
+// hooks the app uses. Ported from the classic TasksPanel tests.
 import type * as UseChildSessionsModule from "@/hooks/useChildSessions";
 import type * as UseSavedWorkflowsModule from "@/hooks/useSavedWorkflows";
 import type * as UseSessionJournalModule from "@/hooks/useSessionJournal";
@@ -6,7 +9,7 @@ import type * as CapabilitiesModule from "@/lib/CapabilitiesContext";
 
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { MemoryRouter, useLocation } from "react-router-dom";
+import { useLocation } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { FullscreenIcon } from "@/components/ai-elements/MermaidBlock";
 import { type ChildSessionInfo, useChildSessions } from "@/hooks/useChildSessions";
@@ -32,9 +35,12 @@ import {
   registerTaskAction,
   useSessionTasksActions,
 } from "@/store/sessionTasksActions";
+import { SessionDescendantRuns } from "@/components/workflows/WorkflowRunRow";
 import { journalEntry, journalPlan } from "@/test/journalFixtures";
 import { conversation, conversationPage } from "@/test/sidebarMockHelpers";
-import { TasksPanel, type TaskMenuAction } from "./TasksPanel";
+import type { TaskMenuAction } from "@/components/workflows/taskParts";
+import type { BuiltInHarness } from "@/test/builtInExtensions";
+import { renderTasks as renderTasksPage, settleTasks, startTasks } from "@/test/tasksFixture";
 
 // The graph has its own tests (React Flow runs out of memory in jsdom); here the
 // full-screen view lists the steps it draws, where each task stands, and its ⋯ action.
@@ -67,6 +73,12 @@ vi.mock("@/components/workflows/WorkflowStepsGraph", () => ({
       </button>
     </div>
   ),
+}));
+// The runs list has its own tests; here it shows which workflow's runs it lists.
+vi.mock("@/components/workflows/WorkflowRunRow", () => ({
+  SessionDescendantRuns: vi.fn(({ workflowId }: { workflowId: string }) => (
+    <p data-testid="workflow-runs-slot">{workflowId}</p>
+  )),
 }));
 vi.mock("@/hooks/useChildSessions", async (importOriginal) => ({
   ...(await importOriginal<typeof UseChildSessionsModule>()),
@@ -125,32 +137,36 @@ function SearchProbe() {
   );
 }
 
-function renderPanel(
+let harness: BuiltInHarness | undefined;
+
+// Started before any test switches to fake timers, which the host's start would wait on.
+beforeEach(async () => {
+  harness = await startTasks("conv");
+});
+
+async function renderPanel(
   onStartWorkflow?: () => void,
   onShowInChat?: () => void,
   initialEntry = "/c/conv",
 ) {
-  return render(
-    <>
-      <TasksPanel
-        conversationId="conv"
-        active
-        onStartWorkflow={onStartWorkflow}
-        onShowInChat={onShowInChat}
-      />
-      <SearchProbe />
-    </>,
-    {
-      wrapper: ({ children }) => (
-        <MemoryRouter initialEntries={[initialEntry]}>{children}</MemoryRouter>
-      ),
-    },
-  );
+  return renderTasksPage(harness!, {
+    initialEntry,
+    // A phone's drawer closes before a workflow starts or the chat scrolls.
+    onLeave:
+      onStartWorkflow || onShowInChat
+        ? () => {
+            onStartWorkflow?.();
+            onShowInChat?.();
+          }
+        : undefined,
+    extra: <SearchProbe />,
+  });
 }
 
 /** The session's live state: whether it works, and the agent's own task list. */
-function setSession(state: Partial<ConversationState>) {
+async function setSession(state: Partial<ConversationState>) {
   act(() => conversationRegistry.acquire("conv").setState(state));
+  await settleTasks();
 }
 
 beforeEach(() => {
@@ -173,15 +189,17 @@ beforeEach(() => {
     .setState({ sessionStatus: "idle", todos: [], backgroundTaskCount: 0 });
 });
 
-afterEach(() => {
+afterEach(async () => {
   cleanup();
   conversationRegistry.clear();
+  await harness?.dispose();
+  harness = undefined;
 });
 
-describe("TasksPanel", () => {
+describe("Tasks tab", () => {
   it("says where tasks come from, and links to starting a workflow when the composer can", async () => {
     showJournal([]);
-    renderPanel();
+    await renderPanel();
     expect(screen.getByText("No tasks yet")).toBeTruthy();
     expect(screen.getByText("Tasks show up here when the agent makes a to-do list.")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "run a workflow" })).toBeNull();
@@ -191,7 +209,7 @@ describe("TasksPanel", () => {
     const closeDrawer = vi.fn();
     const withdraw = registerStartWorkflow("conv", start);
     try {
-      renderPanel(closeDrawer);
+      await renderPanel(closeDrawer);
       expect(screen.getByText(/to-do list or you/).textContent).toBe(
         "Tasks show up here when the agent makes a to-do list or you run a workflow.",
       );
@@ -231,7 +249,7 @@ describe("TasksPanel", () => {
     const closeDrawer = vi.fn(() => void calls.push("close drawer"));
     const withdraw = registerStartWorkflow("conv", start);
     try {
-      renderPanel(closeDrawer);
+      await renderPanel(closeDrawer);
       const link = screen.getByRole("button", { name: "run a workflow" });
       fireEvent.pointerDown(link, { button: 0 });
       expect(
@@ -279,22 +297,17 @@ describe("TasksPanel", () => {
       const startNext = vi.fn();
       const withdrawHere = registerStartWorkflow("conv", startHere);
       const withdrawNext = registerStartWorkflow("next", startNext);
-      const panel = (conversationId: string) => (
-        <MemoryRouter>
-          <TasksPanel conversationId={conversationId} active />
-        </MemoryRouter>
-      );
       try {
-        const { rerender } = render(panel("conv"));
+        const { switchTo } = await renderPanel();
         fireEvent.pointerDown(screen.getByRole("button", { name: "run a workflow" }), {
           button: 0,
         });
-        rerender(panel("next"));
+        await switchTo("next");
 
         // The check ends in the next session, with the list then holding what it found.
         vi.mocked(useSavedWorkflows).mockReturnValue(savedWorkflows(found));
         await act(async () => finishReload({ workflows: found, hasMore: false, failed: false }));
-        rerender(panel("next"));
+        await switchTo("next");
 
         expect(screen.queryByTestId("composer-workflow-picker")).toBeNull();
         expect(startHere).not.toHaveBeenCalled();
@@ -307,9 +320,9 @@ describe("TasksPanel", () => {
     },
   );
 
-  it("shows the agent's own task list when the session has no plan", () => {
+  it("shows the agent's own task list when the session has no plan", async () => {
     showJournal([]);
-    setSession({
+    await setSession({
       sessionStatus: "running",
       blocks: [
         {
@@ -339,7 +352,7 @@ describe("TasksPanel", () => {
         { content: "Run the tests", status: "pending", activeForm: "Running the tests" },
       ],
     });
-    renderPanel();
+    await renderPanel();
     const rows = screen.getAllByTestId("tasks-row");
     expect(rows.map((row) => row.dataset.state)).toEqual(["done", "running", "waiting"]);
     expect(rows[1].textContent).toContain("Documenting it");
@@ -354,14 +367,14 @@ describe("TasksPanel", () => {
     expect(screen.getByTestId("tasks-summary").textContent).toBe("1 of 3 finished");
     expect(screen.queryByTestId("tasks-plan-name")).toBeNull();
 
-    setSession({ sessionStatus: "idle" });
+    await setSession({ sessionStatus: "idle" });
     expect(screen.getAllByTestId("tasks-row")[1].dataset.state).toBe("stopped");
   });
 
-  it("shows the plan instead of the agent's own list once the session has one", () => {
+  it("shows the plan instead of the agent's own list once the session has one", async () => {
     showJournal([journalPlan(0, ["profile"], ["ship", ["profile"]])]);
-    setSession({ todos: [{ content: "Scratch item", status: "pending", activeForm: "" }] });
-    renderPanel();
+    await setSession({ todos: [{ content: "Scratch item", status: "pending", activeForm: "" }] });
+    await renderPanel();
     expect(screen.getAllByTestId("tasks-row").map((row) => row.dataset.stepId)).toEqual([
       "profile",
       "ship",
@@ -371,27 +384,27 @@ describe("TasksPanel", () => {
 
   it.each([true, false, undefined])(
     "preserves the agent's own list without a journal on workflows=%s",
-    (workflows) => {
+    async (workflows) => {
       vi.mocked(useServerInfo).mockReturnValue({
         session_journal: false,
         features: workflows === undefined ? {} : { workflows },
       } as never);
       showJournal([journalPlan(0, ["profile"])]);
-      setSession({
+      await setSession({
         todos: [
           { content: "Only item", status: "pending", activeForm: "" },
           { content: "Started item", status: "in_progress", activeForm: "Working" },
           { content: "Finished item", status: "completed", activeForm: "" },
         ],
       });
-      renderPanel();
+      await renderPanel();
       expect(screen.getAllByTestId("tasks-row")[0]).toHaveTextContent("Only item");
       expect(screen.queryAllByTestId("tasks-row-show-in-chat")).toHaveLength(0);
       expect(vi.mocked(useSessionJournal)).toHaveBeenLastCalledWith("conv", false);
     },
   );
 
-  it("lists the plan's steps in order, each once, with where it stands", () => {
+  it("lists the plan's steps in order, each once, with where it stands", async () => {
     showJournal([
       journalPlan(
         0,
@@ -408,7 +421,7 @@ describe("TasksPanel", () => {
       status(5, "pool", "failed", "Reverted"),
       status(6, "tests", "needs_input", "The test database is down: wait, or skip it?"),
     ]);
-    renderPanel();
+    await renderPanel();
     const steps = screen.getAllByTestId("tasks-row");
     expect(steps.map((step) => step.dataset.state)).toEqual([
       "done",
@@ -426,7 +439,7 @@ describe("TasksPanel", () => {
     expect(screen.getByText("1 failed")).toBeTruthy();
   });
 
-  it("marks every step that can start as ready, and shows on the strip what waits on what", () => {
+  it("marks every step that can start as ready, and shows on the strip what waits on what", async () => {
     showJournal([
       journalPlan(
         0,
@@ -437,7 +450,7 @@ describe("TasksPanel", () => {
       ),
       status(1, "profile", "done"),
     ]);
-    renderPanel();
+    await renderPanel();
     const steps = screen.getAllByTestId("tasks-row");
     expect(steps.map((step) => step.dataset.state)).toEqual(["done", "ready", "ready", "waiting"]);
     expect(within(steps[1]).getByRole("img", { name: "Ready" }).textContent).toBe("2");
@@ -469,7 +482,7 @@ describe("TasksPanel", () => {
       pagination: { hasMore: false, loadingMore: false, loadMore: vi.fn() },
     });
     showJournal([{ ...journalPlan(0, ["explore"]), workflow_id: workflowId }]);
-    renderPanel();
+    await renderPanel();
     const chip = screen.getByTestId("tasks-plan-workflow");
     expect(chip).toHaveTextContent("Workflow");
     expect(chip).toHaveAttribute("href", `/workflows/${workflowId}`);
@@ -484,7 +497,7 @@ describe("TasksPanel", () => {
       { ...journalPlan(0, ["explore"]), workflow_id: workflowId },
       journalPlan(1, ["explore"], ["fix", ["explore"]]),
     ]);
-    renderPanel();
+    await renderPanel();
     expect(screen.getByTestId("tasks-plan-workflow")).toHaveAttribute(
       "href",
       `/workflows/${workflowId}`,
@@ -492,12 +505,12 @@ describe("TasksPanel", () => {
     cleanup();
 
     showJournal([journalPlan(0, ["explore"])]);
-    renderPanel();
+    await renderPanel();
     expect(screen.getByTestId("tasks-plan-name")).toHaveTextContent("The plan");
     expect(screen.queryByTestId("tasks-plan-workflow")).toBeNull();
   });
 
-  it("shows the workflow runs below a workflow's run after its tasks", () => {
+  it("shows the workflow runs below a workflow's run after its tasks", async () => {
     const workflowId = "0123456789abcdef0123456789abcdef";
     vi.mocked(useSavedWorkflows).mockReturnValue({
       workflows: [],
@@ -507,33 +520,29 @@ describe("TasksPanel", () => {
       reload: vi.fn(),
       pagination: { hasMore: false, loadingMore: false, loadMore: vi.fn() },
     });
-    const renderWorkflowRuns = vi.fn((id: string) => <p data-testid="workflow-runs-slot">{id}</p>);
-    const renderTasks = (active = true) =>
-      render(
-        <TasksPanel
-          conversationId="conv"
-          active={active}
-          renderWorkflowRuns={renderWorkflowRuns}
-        />,
-        { wrapper: ({ children }) => <MemoryRouter>{children}</MemoryRouter> },
-      );
+    const runs = vi.mocked(SessionDescendantRuns);
+    runs.mockClear();
+    const renderTasks = (visible = true) =>
+      renderTasksPage(harness!, { visible, extra: <SearchProbe /> });
     showJournal([{ ...journalPlan(0, ["explore"]), workflow_id: workflowId }]);
     // A hidden panel leaves the runs out, so their list doesn't keep refreshing.
-    renderTasks(false);
-    expect(renderWorkflowRuns).not.toHaveBeenCalled();
+    await renderTasks(false);
+    expect(runs).not.toHaveBeenCalled();
     cleanup();
-    renderTasks();
+    await renderTasks();
     const slot = screen.getByTestId("workflow-runs-slot");
     expect(slot).toHaveTextContent(workflowId);
+    expect(runs.mock.lastCall?.[0]).toEqual({ sessionId: "conv", workflowId });
     const lastTask = screen.getAllByTestId("tasks-row").at(-1)!;
     expect(lastTask.compareDocumentPosition(slot) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     cleanup();
 
     // A plan of the agent's own names no workflow, so it has no runs to list.
-    renderWorkflowRuns.mockClear();
+    await settleTasks();
+    runs.mockClear();
     showJournal([journalPlan(0, ["explore"])]);
-    renderTasks();
-    expect(renderWorkflowRuns).not.toHaveBeenCalled();
+    await renderTasks();
+    expect(runs).not.toHaveBeenCalled();
   });
 
   it("says on hover which task a progress segment is and where it stands", async () => {
@@ -541,7 +550,7 @@ describe("TasksPanel", () => {
       journalPlan(0, ["profile"], ["cache", ["profile"]], ["ship", ["cache"]]),
       status(1, "profile", "done"),
     ]);
-    renderPanel();
+    await renderPanel();
     const segments = screen.getAllByTestId("tasks-progress-segment");
     fireEvent.focus(segments[1]);
     const ready = await screen.findByTestId("tasks-progress-card");
@@ -564,7 +573,7 @@ describe("TasksPanel", () => {
       journalPlan(0, ["fix"], ["suite", ["fix"]], ["pr", ["suite"]]),
       status(1, "fix", "failed", "Couldn't reproduce the race"),
     ]);
-    renderPanel();
+    await renderPanel();
     const steps = screen.getAllByTestId("tasks-row");
     expect(steps.map((step) => step.dataset.state)).toEqual(["failed", "waiting", "waiting"]);
     // pr waits on fix through suite, and names fix too.
@@ -587,7 +596,7 @@ describe("TasksPanel", () => {
     const taskAction = vi.fn();
     const withdraw = registerTaskAction("conv", taskAction);
     try {
-      renderPanel();
+      await renderPanel();
       const [built, failed] = screen.getAllByTestId("tasks-progress-segment");
       // A done task has nothing to offer.
       fireEvent.focus(built!);
@@ -616,12 +625,12 @@ describe("TasksPanel", () => {
     }
   });
 
-  it("jumps to a task when its progress segment is clicked", () => {
+  it("jumps to a task when its progress segment is clicked", async () => {
     const scrollIntoView = vi.fn();
     Element.prototype.scrollIntoView = scrollIntoView;
     try {
       showJournal([journalPlan(0, ["a"], ["b"], ["c"])]);
-      renderPanel();
+      await renderPanel();
       fireEvent.click(screen.getAllByTestId("tasks-progress-segment")[2]);
       const row = screen.getAllByTestId("tasks-row")[2];
       expect(scrollIntoView.mock.contexts[0]).toBe(row);
@@ -633,7 +642,7 @@ describe("TasksPanel", () => {
 
   it.each(["/c/conv", "/grid"])(
     "takes a started task from %s to its newest chat marker; one not started doesn't link",
-    (initialEntry) => {
+    async (initialEntry) => {
       const onShowInChat = vi.fn();
       showJournal([
         journalPlan(0, ["deploy"], ["verify", ["deploy"]], ["video", ["verify"]]),
@@ -641,7 +650,7 @@ describe("TasksPanel", () => {
         status(2, "deploy", "done", "Pod 1/1"),
         status(3, "verify", "started"),
       ]);
-      renderPanel(undefined, onShowInChat, initialEntry);
+      await renderPanel(undefined, onShowInChat, initialEntry);
       const [deploy, verify, video] = screen.getAllByTestId("tasks-row");
       // A finished task goes to where it ended, a running one to its newest start.
       for (const [row, marker] of [
@@ -666,7 +675,7 @@ describe("TasksPanel", () => {
     Element.prototype.scrollIntoView = scrollIntoView;
     try {
       showJournal([journalPlan(0, ["a"], ["b"], ["c"])]);
-      renderPanel();
+      await renderPanel();
       act(() => openTasksTab("conv", "c"));
       const row = screen.getAllByTestId("tasks-row")[2];
       await waitFor(() => expect(row.dataset.flash).toBe("true"));
@@ -681,14 +690,14 @@ describe("TasksPanel", () => {
     const named = journalPlan(0, ["baseline"]);
     named.content.name = "Cut GET /orders p95 by 20%";
     showJournal([named]);
-    renderPanel();
+    await renderPanel();
     expect(screen.queryByTestId("tasks-plan-menu")).toBeNull();
     cleanup();
 
     const save = vi.fn();
     const withdraw = registerSaveWorkflow("conv", save);
     try {
-      renderPanel();
+      await renderPanel();
       fireEvent.pointerDown(screen.getByTestId("tasks-plan-menu"), { button: 0 });
       fireEvent.click(screen.getByTestId("tasks-save-workflow"));
       await waitFor(() => expect(save).toHaveBeenCalledWith("Cut GET /orders p95 by 20%"));
@@ -709,7 +718,7 @@ describe("TasksPanel", () => {
       const withdraw = registerSaveWorkflow("conv", save);
       const user = userEvent.setup();
       try {
-        renderPanel();
+        await renderPanel();
         await user.click(screen.getByRole("button", { name: "Plan actions" }));
         const item = screen.getByRole("menuitem", { name: "Save as workflow…" });
         expect(item).toHaveAttribute("aria-disabled", "true");
@@ -738,21 +747,21 @@ describe("TasksPanel", () => {
     },
   );
 
-  it("offers Run on a ready task, Continue on a stopped one or one waiting for you, and Retry on a failed one", () => {
+  it("offers Run on a ready task, Continue on a stopped one or one waiting for you, and Retry on a failed one", async () => {
     showJournal([
       journalPlan(0, ["baseline"], ["ship"], ["docs", ["ship"]], ["approve"], ["deploy"]),
       status(1, "baseline", "started"),
       status(2, "approve", "needs_input", "Deploy to prod now?"),
       status(3, "deploy", "failed", "The tests failed"),
     ]);
-    renderPanel();
+    await renderPanel();
     expect(screen.queryByTestId("tasks-row-menu")).toBeNull();
     cleanup();
 
     const taskAction = vi.fn();
     const withdraw = registerTaskAction("conv", taskAction);
     try {
-      renderPanel();
+      await renderPanel();
       const [stopped, ready, waiting, needsYou, failed] = screen.getAllByTestId("tasks-row");
       fireEvent.pointerDown(within(stopped!).getByTestId("tasks-row-menu"), { button: 0 });
       fireEvent.click(screen.getByTestId("tasks-row-continue"));
@@ -773,7 +782,7 @@ describe("TasksPanel", () => {
       expect(taskAction).toHaveBeenLastCalledWith("retry", "deploy");
 
       // Once the agent works on the started task again, it has nothing to continue.
-      setSession({ sessionStatus: "running" });
+      await setSession({ sessionStatus: "running" });
       const [running] = screen.getAllByTestId("tasks-row");
       expect(within(running!).queryByTestId("tasks-row-menu")).toBeNull();
     } finally {
@@ -781,7 +790,7 @@ describe("TasksPanel", () => {
     }
   });
 
-  it("takes Continue to the question a waiting task's agent waits on, rather than messaging it", () => {
+  it("takes Continue to the question a waiting task's agent waits on, rather than messaging it", async () => {
     showJournal([
       journalPlan(0, ["approve"], ["docs"]),
       status(1, "approve", "needs_input", "Deploy to prod now?"),
@@ -794,12 +803,12 @@ describe("TasksPanel", () => {
       phase: "workflow_request_input",
       journalStep: "approve",
     };
-    setSession({ blocks: [question] as unknown as ConversationState["blocks"] });
+    await setSession({ blocks: [question] as unknown as ConversationState["blocks"] });
     const taskAction = vi.fn();
     const onShowInChat = vi.fn();
     const withdraw = registerTaskAction("conv", taskAction);
     try {
-      renderPanel(undefined, onShowInChat);
+      await renderPanel(undefined, onShowInChat);
       const [approve, docs] = screen.getAllByTestId("tasks-row");
       fireEvent.pointerDown(within(approve!).getByTestId("tasks-row-menu"), { button: 0 });
       fireEvent.click(screen.getByTestId("tasks-row-proceed"));
@@ -817,17 +826,17 @@ describe("TasksPanel", () => {
     }
   });
 
-  it("offers Stop on a running task while the composer can stop the agent", () => {
+  it("offers Stop on a running task while the composer can stop the agent", async () => {
     showJournal([journalPlan(0, ["baseline"]), status(1, "baseline", "started")]);
-    setSession({ sessionStatus: "running" });
-    renderPanel();
+    await setSession({ sessionStatus: "running" });
+    await renderPanel();
     expect(screen.queryByTestId("tasks-row-menu")).toBeNull();
     cleanup();
 
     const stop = vi.fn();
     const withdraw = registerStopWork("conv", stop);
     try {
-      renderPanel();
+      await renderPanel();
       fireEvent.pointerDown(screen.getByTestId("tasks-row-menu"), { button: 0 });
       fireEvent.click(screen.getByTestId("tasks-row-stop"));
       expect(stop).toHaveBeenCalledTimes(1);
@@ -836,13 +845,13 @@ describe("TasksPanel", () => {
     }
   });
 
-  it("offers play in the header once the agent stopped with tasks left, and stop while it works", () => {
+  it("offers play in the header once the agent stopped with tasks left, and stop while it works", async () => {
     const named = journalPlan(0, ["baseline"], ["ship", ["baseline"]]);
     named.content.name = "Ship the fix";
     showJournal([named, status(1, "baseline", "started")]);
-    setSession({ sessionStatus: "idle" });
+    await setSession({ sessionStatus: "idle" });
     // Without the composer's action, a viewer gets no play button.
-    renderPanel();
+    await renderPanel();
     expect(screen.queryByTestId("plan-continue")).toBeNull();
     cleanup();
 
@@ -850,18 +859,19 @@ describe("TasksPanel", () => {
     const stop = vi.fn();
     const withdrawContinue = registerContinuePlan("conv", continuePlan);
     try {
-      renderPanel();
+      await renderPanel();
       fireEvent.click(screen.getByTestId("plan-continue"));
       expect(continuePlan).toHaveBeenCalledWith("Ship the fix");
       expect(screen.queryByTestId("plan-stop")).toBeNull();
       cleanup();
 
-      setSession({ sessionStatus: "running" });
+      await setSession({ sessionStatus: "running" });
       const withdrawStop = registerStopWork("conv", stop);
       try {
-        renderPanel();
+        await renderPanel();
         expect(screen.queryByTestId("plan-continue")).toBeNull();
         fireEvent.click(screen.getByTestId("plan-stop"));
+        await settleTasks();
         expect(stop).toHaveBeenCalledTimes(1);
       } finally {
         act(withdrawStop);
@@ -902,10 +912,11 @@ describe("TasksPanel", () => {
 
     it("shows Stopping… until the agent and its background work stop, then Continue", async () => {
       const deliver = registerTrackedStop();
-      setSession({ sessionStatus: "running" });
-      renderPanel();
+      await setSession({ sessionStatus: "running" });
+      await renderPanel();
       expect(screen.getByTestId("tasks-row-menu")).toBeInTheDocument();
       fireEvent.click(screen.getByTestId("plan-stop"));
+      await settleTasks();
 
       expect(screen.getByTestId("plan-stopping")).toBeDisabled();
       expect(screen.getByTestId("plan-stopping")).toHaveTextContent("Stopping…");
@@ -916,9 +927,9 @@ describe("TasksPanel", () => {
       expect(screen.getByTestId("plan-stopping")).toBeInTheDocument();
 
       // The agent's turn ends while its background work still runs.
-      setSession({ sessionStatus: "idle", backgroundTaskCount: 1 });
+      await setSession({ sessionStatus: "idle", backgroundTaskCount: 1 });
       expect(screen.getByTestId("plan-stopping")).toBeInTheDocument();
-      setSession({ backgroundTaskCount: 0 });
+      await setSession({ backgroundTaskCount: 0 });
       expect(screen.queryByTestId("plan-stopping")).toBeNull();
       expect(screen.getByTestId("plan-continue")).toBeInTheDocument();
       expect(screen.getByTestId("tasks-paused")).toHaveTextContent("Stopped");
@@ -926,9 +937,10 @@ describe("TasksPanel", () => {
 
     it("restores Stop when the session doesn't take the stop message", async () => {
       const deliver = registerTrackedStop();
-      setSession({ sessionStatus: "running" });
-      renderPanel();
+      await setSession({ sessionStatus: "running" });
+      await renderPanel();
       fireEvent.click(screen.getByTestId("plan-stop"));
+      await settleTasks();
       expect(screen.getByTestId("plan-stopping")).toBeInTheDocument();
 
       await deliver(false);
@@ -937,7 +949,7 @@ describe("TasksPanel", () => {
     });
   });
 
-  it("hides run controls after the final step finishes, even with unfinished earlier steps", () => {
+  it("hides run controls after the final step finishes, even with unfinished earlier steps", async () => {
     showJournal([
       journalPlan(0, ["explore"], ["work", ["explore"]], ["report", ["work"]]),
       status(1, "explore", "done"),
@@ -946,12 +958,12 @@ describe("TasksPanel", () => {
     const withdrawContinue = registerContinuePlan("conv", vi.fn());
     const withdrawStop = registerStopWork("conv", vi.fn());
     try {
-      setSession({ sessionStatus: "running" });
-      renderPanel();
+      await setSession({ sessionStatus: "running" });
+      await renderPanel();
       expect(screen.queryByTestId("plan-stop")).toBeNull();
       expect(screen.queryByTestId("plan-continue")).toBeNull();
 
-      setSession({ sessionStatus: "idle" });
+      await setSession({ sessionStatus: "idle" });
       expect(screen.queryByTestId("plan-stop")).toBeNull();
       expect(screen.queryByTestId("plan-continue")).toBeNull();
       expect(screen.queryByTestId("tasks-paused")).toBeNull();
@@ -962,9 +974,9 @@ describe("TasksPanel", () => {
         status(2, "report", "done"),
         status(3, "work", "started"),
       ]);
-      setSession({ sessionStatus: "running" });
+      await setSession({ sessionStatus: "running" });
       expect(screen.getByTestId("plan-stop")).toBeInTheDocument();
-      setSession({ sessionStatus: "idle" });
+      await setSession({ sessionStatus: "idle" });
       expect(screen.getByTestId("plan-continue")).toBeInTheDocument();
 
       showJournal([
@@ -973,9 +985,9 @@ describe("TasksPanel", () => {
         status(2, "report", "done"),
         journalPlan(3, ["explore"], ["review", ["explore"]], ["report", ["review"]]),
       ]);
-      setSession({ sessionStatus: "running" });
+      await setSession({ sessionStatus: "running" });
       expect(screen.getByTestId("plan-stop")).toBeInTheDocument();
-      setSession({ sessionStatus: "idle" });
+      await setSession({ sessionStatus: "idle" });
       expect(screen.getByTestId("plan-continue")).toBeInTheDocument();
 
       const dependencyEntries = [
@@ -985,14 +997,14 @@ describe("TasksPanel", () => {
         journalPlan(3, ["review"], ["report", ["review"]]),
       ];
       showJournal(dependencyEntries);
-      setSession({ sessionStatus: "running" });
+      await setSession({ sessionStatus: "running" });
       expect(screen.getByTestId("plan-stop")).toBeInTheDocument();
-      setSession({ sessionStatus: "idle" });
+      await setSession({ sessionStatus: "idle" });
       expect(screen.getByTestId("plan-continue")).toBeInTheDocument();
       showJournal([...dependencyEntries, status(4, "review", "done"), status(5, "report", "done")]);
-      setSession({ sessionStatus: "running" });
+      await setSession({ sessionStatus: "running" });
       expect(screen.queryByTestId("plan-stop")).toBeNull();
-      setSession({ sessionStatus: "idle" });
+      await setSession({ sessionStatus: "idle" });
       expect(screen.queryByTestId("plan-continue")).toBeNull();
     } finally {
       act(withdrawContinue);
@@ -1000,11 +1012,11 @@ describe("TasksPanel", () => {
     }
   });
 
-  it("heads the list with the plan's name", () => {
+  it("heads the list with the plan's name", async () => {
     const named = journalPlan(0, ["baseline"]);
     named.content.name = "Cut GET /orders p95 by 20%";
     showJournal([named]);
-    renderPanel();
+    await renderPanel();
     expect(screen.getByTestId("tasks-plan-name").textContent).toBe("Cut GET /orders p95 by 20%");
     // The name is the heading, level with "Updated …"; the tab already says Tasks.
     expect(screen.getByRole("heading", { name: "Cut GET /orders p95 by 20%" })).toBeTruthy();
@@ -1026,18 +1038,13 @@ describe("TasksPanel", () => {
       phase: "workflow_request_input",
       journalStep: "pool",
     };
-    setSession({ blocks: [question] as unknown as ConversationState["blocks"] });
+    await setSession({ blocks: [question] as unknown as ConversationState["blocks"] });
     const taskAction = vi.fn();
     const withdraw = registerTaskAction("conv", taskAction);
     try {
-      const { rerender } = renderPanel();
+      const { refresh, switchTo } = await renderPanel();
       const showSession = (conversationId: string) =>
-        rerender(
-          <>
-            <TasksPanel conversationId={conversationId} active />
-            <SearchProbe />
-          </>,
-        );
+        conversationId === harness!.state().sessionId ? refresh() : switchTo(conversationId);
       // The fullscreen glyph a run row's graph button shows too.
       const { container: fullscreenGlyph } = render(<FullscreenIcon />);
       expect(screen.getByTestId("tasks-plan-graph").innerHTML).toBe(fullscreenGlyph.innerHTML);
@@ -1050,7 +1057,7 @@ describe("TasksPanel", () => {
       expect(taskAction).toHaveBeenCalledWith("retry", "batch");
       // The open graph follows the journal: once batch starts again, it offers Continue.
       showJournal([...entries, status(4, "batch", "started")]);
-      showSession("conv");
+      await showSession("conv");
       expect(overlay).toHaveTextContent("baseline:done batch:stopped pool:needs_input");
       expect(within(overlay).getByRole("button", { name: "continue batch" })).toBeTruthy();
       // Continue shows the task's question in the chat, which the graph would cover.
@@ -1070,9 +1077,9 @@ describe("TasksPanel", () => {
       // Leaving the session closes the graph, and coming back doesn't reopen it.
       fireEvent.click(screen.getByTestId("tasks-plan-graph"));
       await screen.findByTestId("workflow-graph-overlay");
-      showSession("other");
+      await showSession("other");
       expect(screen.queryByTestId("workflow-graph-overlay")).toBeNull();
-      showSession("conv");
+      await showSession("conv");
       expect(screen.getByTestId("tasks-plan-graph")).toBeTruthy();
       expect(screen.queryByTestId("workflow-graph-overlay")).toBeNull();
     } finally {
@@ -1082,38 +1089,38 @@ describe("TasksPanel", () => {
 
     // Statuses written without a plan say nothing about what waits on what.
     showJournal([status(1, "baseline", "done")]);
-    renderPanel();
+    await renderPanel();
     expect(screen.getByTestId("tasks-row")).toBeTruthy();
     expect(screen.queryByTestId("tasks-plan-graph")).toBeNull();
   });
 
-  it("says every task finished when the last one failed", () => {
+  it("says every task finished when the last one failed", async () => {
     showJournal([journalPlan(0, ["a"], ["b"]), status(1, "a", "done"), status(2, "b", "failed")]);
-    renderPanel();
+    await renderPanel();
     expect(screen.getByTestId("tasks-summary").textContent).toBe("All 2 tasks finished");
     expect(screen.getByText("1 failed")).toBeTruthy();
   });
 
-  it("shows a started task as running only while the session works", () => {
+  it("shows a started task as running only while the session works", async () => {
     showJournal([journalPlan(0, ["baseline"]), status(1, "baseline", "started")]);
-    renderPanel();
+    await renderPanel();
     const step = () => screen.getByTestId("tasks-row");
     expect(step().dataset.state).toBe("stopped");
     expect(step().textContent).toMatch(/Started .+ ago/);
 
-    setSession({ sessionStatus: "running" });
+    await setSession({ sessionStatus: "running" });
     expect(step().dataset.state).toBe("running");
     expect(within(step()).getByRole("img", { name: "Running" })).toBeTruthy();
   });
 
-  it("counts a running task's time up every second", () => {
+  it("counts a running task's time up every second", async () => {
     vi.useFakeTimers();
     try {
       const start = status(1, "build", "started");
       vi.setSystemTime((start.created_at + 10) * 1000);
       showJournal([journalPlan(0, ["build"]), start]);
-      setSession({ sessionStatus: "running" });
-      renderPanel();
+      await setSession({ sessionStatus: "running" });
+      await renderPanel();
       const elapsed = () => within(screen.getByTestId("tasks-row")).getByTitle(/^Started/);
       expect(elapsed().textContent).toBe("10s");
       act(() => vi.advanceTimersByTime(1000));
@@ -1145,10 +1152,10 @@ describe("TasksPanel", () => {
       vi.useRealTimers();
     });
 
-    it("counts its time from the first start while it runs", () => {
+    it("counts its time from the first start while it runs", async () => {
       showJournal([journalPlan(0, ["ci"]), ...starts]);
-      setSession({ sessionStatus: "running" });
-      renderPanel();
+      await setSession({ sessionStatus: "running" });
+      await renderPanel();
       const elapsed = within(screen.getByTestId("tasks-row")).getByTitle(/^Started/);
       expect([elapsed.textContent, elapsed.title]).toEqual([
         "4h 7m",
@@ -1156,15 +1163,15 @@ describe("TasksPanel", () => {
       ]);
     });
 
-    it("says it started at the first start once it stops", () => {
+    it("says it started at the first start once it stops", async () => {
       showJournal([journalPlan(0, ["ci"]), ...starts]);
-      renderPanel();
+      await renderPanel();
       const row = screen.getByTestId("tasks-row");
       expect(row).toHaveAttribute("data-state", "stopped");
       expect(row).toHaveTextContent("Started 4h ago · Pushed fix 7");
     });
 
-    it("spans its finished time from the first start", () => {
+    it("spans its finished time from the first start", async () => {
       const done = journalEntry(starts.length + 1, {
         kind: "status",
         step: "ci",
@@ -1172,7 +1179,7 @@ describe("TasksPanel", () => {
         content: { status: "done", text: "CI is green" },
       });
       showJournal([journalPlan(0, ["ci"]), ...starts, done]);
-      renderPanel();
+      await renderPanel();
       const clock = (seconds: number) =>
         new Date(seconds * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
       const ended = within(screen.getByTestId("tasks-row")).getByText(
@@ -1182,21 +1189,22 @@ describe("TasksPanel", () => {
     });
   });
 
-  it("keeps Stop available while background work runs after the main turn ends", () => {
+  it("keeps Stop available while background work runs after the main turn ends", async () => {
     showJournal([journalPlan(0, ["deploy"]), status(1, "deploy", "started")]);
     const stop = vi.fn();
     const withdraw = registerStopWork("conv", stop);
     try {
-      renderPanel();
+      await renderPanel();
       const step = () => screen.getByTestId("tasks-row");
       expect(step().dataset.state).toBe("stopped");
       expect(screen.queryByTestId("plan-stop")).toBeNull();
       // The agent's turn ended, but the deploy it left running is still going.
-      setSession({ backgroundTaskCount: 1 });
+      await setSession({ backgroundTaskCount: 1 });
       expect(step().dataset.state).toBe("running");
       fireEvent.click(screen.getByTestId("plan-stop"));
+      await settleTasks();
       expect(stop).toHaveBeenCalledOnce();
-      setSession({ backgroundTaskCount: 0 });
+      await setSession({ backgroundTaskCount: 0 });
       expect(step().dataset.state).toBe("stopped");
       expect(screen.queryByTestId("plan-stop")).toBeNull();
     } finally {
@@ -1207,23 +1215,23 @@ describe("TasksPanel", () => {
   it.each([
     { source: "background work", activity: { background_work_running: true } },
     { source: "child activity", activity: { status: "running" as const } },
-  ])("keeps tasks running with an idle parent and sidebar $source", ({ activity }) => {
+  ])("keeps tasks running with an idle parent and sidebar $source", async ({ activity }) => {
     showJournal([journalPlan(0, ["deploy"]), status(1, "deploy", "started")]);
     vi.mocked(useOptionalLoadedConversations).mockReturnValue({
       ...conversationPage([conversation("conv", activity)]).data!,
       pageParams: [undefined],
     });
-    setSession({ sessionStatus: "running" });
-    const { rerender } = renderPanel();
+    await setSession({ sessionStatus: "running" });
+    const { refresh } = await renderPanel();
 
     // An active goal can outlive its turn with no background terminals counted.
-    setSession({ sessionStatus: "idle", backgroundTaskCount: 0 });
+    await setSession({ sessionStatus: "idle", backgroundTaskCount: 0 });
     expect(screen.getByTestId("tasks-row")).toHaveAttribute("data-state", "running");
     expect(screen.queryByTestId("tasks-paused")).toBeNull();
 
     // Native task lists use the same activity as journal plans.
     showJournal([]);
-    setSession({
+    await setSession({
       todos: [{ content: "Deploy", status: "in_progress", activeForm: "Deploying" }],
     });
     expect(screen.getByTestId("tasks-row")).toHaveAttribute("data-state", "running");
@@ -1232,9 +1240,10 @@ describe("TasksPanel", () => {
     act(() => {
       withdrawStop = registerStopWork("conv", vi.fn());
     });
+    await settleTasks();
     try {
       showJournal([status(1, "deploy", "done")]);
-      setSession({
+      await setSession({
         todos: [{ content: "Deploy", status: "completed", activeForm: "Deploying" }],
       });
       // A status without its plan cannot declare the workflow complete.
@@ -1243,7 +1252,7 @@ describe("TasksPanel", () => {
       act(withdrawStop);
     }
     showJournal([]);
-    setSession({
+    await setSession({
       todos: [{ content: "Deploy", status: "in_progress", activeForm: "Deploying" }],
     });
 
@@ -1251,18 +1260,18 @@ describe("TasksPanel", () => {
       ...conversationPage([conversation("conv")]).data!,
       pageParams: [undefined],
     });
-    rerender(<TasksPanel conversationId="conv" active />);
+    await refresh();
     expect(screen.getByTestId("tasks-row")).toHaveAttribute("data-state", "stopped");
   });
 
-  it("shows a task waiting for you in pink, and counts it in the summary", () => {
+  it("shows a task waiting for you in pink, and counts it in the summary", async () => {
     showJournal([
       journalPlan(0, ["build"], ["approve", ["build"]], ["ship", ["approve"]]),
       status(1, "build", "done", "Image built"),
       status(2, "approve", "needs_input", "Approve the deploy to prod?"),
     ]);
-    setSession({ sessionStatus: "running" });
-    renderPanel();
+    await setSession({ sessionStatus: "running" });
+    await renderPanel();
     const [, approve, ship] = screen.getAllByTestId("tasks-row");
     expect(approve.dataset.state).toBe("needs_input");
     expect(approve.textContent).toContain("Waiting for you · Approve the deploy to prod?");
@@ -1277,24 +1286,24 @@ describe("TasksPanel", () => {
     ["own explicit target", { targetSessionId: "conv" }, true],
     ["nonblocking", { isBlocking: false }, false],
     ["mirrored child", { targetSessionId: "child" }, false],
-  ] as const)("only pauses for own blocking chat prompts: %s", (_label, fields, waiting) => {
+  ] as const)("only pauses for own blocking chat prompts: %s", async (_label, fields, waiting) => {
     showJournal([journalPlan(0, ["tests"]), status(1, "tests", "started")]);
-    setSession({ sessionStatus: "running" });
+    await setSession({ sessionStatus: "running" });
     const withdrawStop = registerStopWork("conv", vi.fn());
     const withdrawAction = registerTaskAction("conv", vi.fn());
     try {
-      renderPanel();
+      await renderPanel();
       const row = () => screen.getByTestId("tasks-row");
       expect(row().dataset.state).toBe("running");
       const prompt = { type: "elicitation", elicitationId: "e1", status: "pending", ...fields };
-      setSession({ blocks: [prompt] as unknown as ConversationState["blocks"] });
+      await setSession({ blocks: [prompt] as unknown as ConversationState["blocks"] });
       expect(row().dataset.state).toBe(waiting ? "needs_input" : "running");
       expect(row().textContent?.includes("Waiting for you · Respond in the chat")).toBe(waiting);
       fireEvent.pointerDown(within(row()).getByTestId("tasks-row-menu"), { button: 0 });
       const action = screen.getByTestId(waiting ? "tasks-row-proceed" : "tasks-row-stop");
       expect(action).toHaveTextContent(waiting ? "Continue" : "Stop");
       fireEvent.click(action);
-      setSession({
+      await setSession({
         blocks: [{ ...prompt, status: "responded" }] as unknown as ConversationState["blocks"],
       });
       expect(row().dataset.state).toBe("running");
@@ -1304,7 +1313,7 @@ describe("TasksPanel", () => {
     }
   });
 
-  it("leaves the other running tasks running while a workflow question waits", () => {
+  it("leaves the other running tasks running while a workflow question waits", async () => {
     showJournal([
       journalPlan(0, ["tests"], ["docs"]),
       status(1, "tests", "started"),
@@ -1316,31 +1325,31 @@ describe("TasksPanel", () => {
       status: "pending",
       phase: "workflow_request_input",
     };
-    setSession({
+    await setSession({
       sessionStatus: "running",
       blocks: [question] as unknown as ConversationState["blocks"],
     });
-    renderPanel();
+    await renderPanel();
     const [tests, docs] = screen.getAllByTestId("tasks-row");
     expect(tests.dataset.state).toBe("running");
     expect(docs.dataset.state).toBe("needs_input");
     expect(screen.getByText("1 waiting for you")).toBeTruthy();
   });
 
-  it("says an idle list stopped while a task could run, or that an automation's run ended", () => {
+  it("says an idle list stopped while a task could run, or that an automation's run ended", async () => {
     showJournal([journalPlan(0, ["a"], ["b", ["a"]]), status(1, "a", "done", "ok")]);
-    const { unmount } = renderPanel();
+    const { unmount } = await renderPanel();
     expect(screen.getByTestId("tasks-paused").textContent).toBe("· Stopped");
-    setSession({ sessionStatus: "running" });
+    await setSession({ sessionStatus: "running" });
     expect(screen.queryByTestId("tasks-paused")).toBeNull();
     unmount();
-    setSession({ sessionStatus: "idle" });
+    await setSession({ sessionStatus: "idle" });
     showJournal([journalPlan(0, ["a"], ["b", ["a"]]), status(1, "a", "done", "ok", RUN)]);
-    renderPanel();
+    await renderPanel();
     expect(screen.getByTestId("tasks-paused").textContent).toBe("· Run ended");
   });
 
-  it("counts a busy sub-agent as work, but not a side chat", () => {
+  it("counts a busy sub-agent as work, but not a side chat", async () => {
     showJournal([journalPlan(0, ["deploy"]), status(1, "deploy", "started")]);
     vi.mocked(useOptionalLoadedConversations).mockReturnValue({
       ...conversationPage([conversation("conv", { status: "idle" })]).data!,
@@ -1354,28 +1363,29 @@ describe("TasksPanel", () => {
     const withdraw = registerStopWork("conv", stop);
     try {
       busy({ "omnigent.side_chat": "1", "omnigent.fork.source_id": "conv" });
-      const { unmount } = renderPanel();
+      const { unmount } = await renderPanel();
       expect(screen.getByTestId("tasks-row").dataset.state).toBe("stopped");
       expect(screen.queryByTestId("plan-stop")).toBeNull();
       unmount();
       busy({});
-      renderPanel();
+      await renderPanel();
       expect(screen.getByTestId("tasks-row").dataset.state).toBe("running");
       fireEvent.click(screen.getByTestId("plan-stop"));
+      await settleTasks();
       expect(stop).toHaveBeenCalledOnce();
     } finally {
       act(withdraw);
     }
   });
 
-  it("marks where a task restarted in its history", () => {
+  it("marks where a task restarted in its history", async () => {
     showJournal([
       journalPlan(0, ["deploy"]),
       status(1, "deploy", "started"),
       status(2, "deploy", "failed", "Stopped during the build"),
       status(3, "deploy", "started", "Redeploying"),
     ]);
-    renderPanel();
+    await renderPanel();
     fireEvent.click(within(screen.getByTestId("tasks-row")).getByTestId("tasks-row-history"));
     const history = screen.getByRole("list", { name: "deploy history" });
     expect(
@@ -1390,13 +1400,13 @@ describe("TasksPanel", () => {
     ]);
   });
 
-  it("opens a task's history: what it waits on, then its entries, oldest first", () => {
+  it("opens a task's history: what it waits on, then its entries, oldest first", async () => {
     showJournal([
       journalPlan(0, ["profile"], ["batch"], ["pool", ["profile", "batch"]]),
       status(1, "pool", "started"),
       status(2, "pool", "failed", "Reverted"),
     ]);
-    renderPanel();
+    await renderPanel();
     const pool = screen.getAllByTestId("tasks-row")[2];
     fireEvent.click(within(pool).getByTestId("tasks-row-history"));
     expect(within(pool).getByText(/^After/).textContent).toBe("After profile and batch");
@@ -1437,7 +1447,7 @@ describe("TasksPanel", () => {
         },
       }),
     ]);
-    renderPanel();
+    await renderPanel();
     const [ready, waiting] = screen.getAllByTestId("tasks-row");
     expect(ready).toHaveTextContent(`Ready · ${preview}`);
     expect(waiting).toHaveTextContent(preview);
@@ -1472,7 +1482,7 @@ describe("TasksPanel", () => {
         },
       }),
     ]);
-    renderPanel();
+    await renderPanel();
     fireEvent.focus(screen.getByTestId("tasks-progress-segment"));
     const card = await screen.findByTestId("tasks-progress-card");
     expect(card).toHaveTextContent("Ready to start");
@@ -1491,7 +1501,7 @@ describe("TasksPanel", () => {
       failed,
       doneWithoutStart,
     ]);
-    renderPanel();
+    await renderPanel();
     // ICU may put a narrow no-break space before AM/PM; queries collapse it.
     const ended = (entry: JournalEntry) =>
       formatMessageTimestamp(entry.created_at).replace(/\s/g, " ");
@@ -1507,14 +1517,14 @@ describe("TasksPanel", () => {
     );
   });
 
-  it("leaves out the agent's notes, under a task, in its history and on their own", () => {
+  it("leaves out the agent's notes, under a task, in its history and on their own", async () => {
     showJournal([
       journalPlan(0, ["pool"]),
       status(1, "pool", "started"),
       journalEntry(2, { step: "pool", content: { body: "Cold connects are the slowest" } }),
       journalEntry(3, { content: { body: "Measure first" } }),
     ]);
-    renderPanel();
+    await renderPanel();
     fireEvent.click(within(screen.getByTestId("tasks-row")).getByTestId("tasks-row-history"));
     const history = screen.getByRole("list", { name: "pool history" });
     expect(
@@ -1526,24 +1536,24 @@ describe("TasksPanel", () => {
     expect(screen.queryByRole("region", { name: "Notes" })).toBeNull();
   });
 
-  it("has no tasks yet when the agent wrote only notes, and no Runs section", () => {
+  it("has no tasks yet when the agent wrote only notes, and no Runs section", async () => {
     showJournal([
       journalEntry(0, { content: { body: "Measure first" } }),
       journalEntry(1, { scheduled_task_run_id: RUN, content: { body: "Stopped at the try cap" } }),
     ]);
-    renderPanel();
+    await renderPanel();
     expect(screen.getByText("No tasks yet")).toBeTruthy();
     expect(screen.queryByText(/Measure first|try cap/)).toBeNull();
     expect(screen.queryByRole("region", { name: "Runs" })).toBeNull();
   });
 
-  it("offers no older entries, and names no workers", () => {
+  it("offers no older entries, and names no workers", async () => {
     // Busy sub-agents show in the Agents tab; the Tasks tab lists only tasks.
     vi.mocked(useChildSessions).mockReturnValue({
       children: [{ id: "c1", busy: true, task_summary: "fix-3", title: "codex:fix-3" }],
     } as never);
     showJournal([journalPlan(0, ["a"])], { hasOlder: true });
-    renderPanel();
+    await renderPanel();
     expect(screen.queryByText(/workers? running/)).toBeNull();
     expect(screen.queryByRole("button", { name: /older/ })).toBeNull();
   });

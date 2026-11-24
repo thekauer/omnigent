@@ -10,6 +10,7 @@ import {
   type WorkspaceBridge,
   type WorkspaceBridgeState,
   type WorkspaceFileSettings,
+  type WorkspaceSource,
   workspaceBridge,
 } from "@/shell/workspaceBridge";
 import { createExtensionRuntime, type ExtensionRuntime } from "@/vscodeExtensions/extensionHost";
@@ -30,6 +31,8 @@ export interface BuiltInHarness {
   readonly runtime: ExtensionRuntime;
   readonly registry: RailViewRegistry;
   readonly bridge: WorkspaceBridge;
+  /** The workspace source in front, for code under test that publishes on it (tasks). */
+  readonly source: WorkspaceSource;
   /** What the workspace on screen shows; settings changes go through `actions`. */
   publish: (patch: Partial<WorkspaceBridgeState>) => Promise<void>;
   readonly state: () => WorkspaceBridgeState;
@@ -107,6 +110,7 @@ export async function startBuiltIns(
     runtime,
     registry,
     bridge,
+    source,
     publish: async (patch) => {
       state = { ...state, ...patch };
       source.update(state);

@@ -6,7 +6,7 @@ import { extensionRailTabViewId, type RightRailTab } from "./railTabs";
 
 /** The page beneath any open shell or file. */
 export type WorkspaceScopeView =
-  "sidechat" | "browser" | "github" | "tasks" | "empty" | "files" | "extension";
+  "sidechat" | "browser" | "github" | "empty" | "files" | "extension";
 
 export interface WorkspaceSelection {
   rightRailTab: RightRailTab | null;
@@ -36,6 +36,7 @@ export const EXTENSION_BACKED_TABS: readonly RightRailTab[] = [
   "changes",
   "content-search",
   "subagents",
+  "tasks",
 ];
 
 /** Whether an extension-backed tab has its page here; otherwise it falls back like an unavailable tab. */
@@ -45,6 +46,7 @@ function extensionTabAvailable(
 ): boolean {
   if (tab === "content-search") return availability.showContentSearch;
   if (tab === "subagents") return availability.hasAgentTree;
+  if (tab === "tasks") return availability.showTasksTab;
   return true;
 }
 
@@ -93,13 +95,11 @@ export function resolveWorkspaceActiveView(
         ? "browser"
         : rightRailTab === "github" && availability.showGithubTab
           ? "github"
-          : rightRailTab === "tasks" && availability.showTasksTab
-            ? "tasks"
-            : rightRailTab === null
-              ? "empty"
-              : extensionViewId !== null || extensionBacked
-                ? "extension"
-                : "files";
+          : rightRailTab === null
+            ? "empty"
+            : extensionViewId !== null || extensionBacked
+              ? "extension"
+              : "files";
   return {
     terminalKey,
     filePath: terminalKey === null ? selectedFilePath : null,

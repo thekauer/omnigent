@@ -33,7 +33,7 @@ import {
   TaskCardDetails,
   TaskMenu,
   type TaskMenuAction,
-} from "@/shell/TasksPanel";
+} from "@/components/workflows/taskParts";
 
 import "@xyflow/react/dist/style.css";
 

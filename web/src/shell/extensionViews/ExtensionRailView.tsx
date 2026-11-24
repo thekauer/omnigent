@@ -56,6 +56,7 @@ import {
 } from "./treeRows";
 import { SessionTreeRow } from "./SessionTreeRow";
 import { ViewSearchForm } from "./ViewSearchForm";
+import { ViewPlan } from "./ViewPlan";
 
 const ViewGraph = lazy(() =>
   import("./ViewGraph").then((module) => ({ default: module.ViewGraph })),
@@ -840,6 +841,23 @@ export function ExtensionRailView({
     return settled ? null : (
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-muted-foreground">
         <Spinner />
+      </div>
+    );
+  }
+  if (view.plan) {
+    // A plan draws its own heading, as the classic Tasks tab did: no title bar.
+    return (
+      <div
+        data-testid={`extension-view-${view.id}`}
+        className="@container/filespanel flex min-h-0 flex-1 flex-col overflow-hidden bg-card"
+      >
+        <ViewPlan
+          key={`plan:${conversationId}`}
+          view={view}
+          content={view.plan}
+          conversationId={conversationId}
+          visible={visible}
+        />
       </div>
     );
   }

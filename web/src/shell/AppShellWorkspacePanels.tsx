@@ -9,8 +9,6 @@ import type { ChangedSort } from "@/lib/changedSort";
 import { InlineTerminalsSection } from "./InlineTerminalsSection";
 import { MobilePanelDrawer } from "./MobilePanelDrawer";
 import { PullRequestPanel } from "./PullRequestPanel";
-import { TasksPanel } from "./TasksPanel";
-import { SessionDescendantRuns } from "@/components/workflows/WorkflowRunRow";
 import { TerminalsPanel } from "./TerminalsPanel";
 
 export interface AppShellWorkspacePanelsProps {
@@ -182,19 +180,7 @@ export function AppShellWorkspacePanels({
           onClose={() => setTasksPanelOpen(false)}
           testId="tasks-panel-drawer"
         >
-          <RenderErrorBoundary name="tasks" resetKey={conversationId}>
-            <TasksPanel
-              conversationId={conversationId}
-              active={tasksPanelOpen}
-              // Close the drawer so the workflow dialog opens over the chat.
-              onStartWorkflow={() => setTasksPanelOpen(false)}
-              // And so the chat a task's click scrolls to shows.
-              onShowInChat={() => setTasksPanelOpen(false)}
-              renderWorkflowRuns={(workflowId) => (
-                <SessionDescendantRuns sessionId={conversationId} workflowId={workflowId} />
-              )}
-            />
-          </RenderErrorBoundary>
+          <BuiltInTabView tab="tasks" conversationId={conversationId} visible={tasksPanelOpen} />
         </MobilePanelDrawer>
       )}
       {conversationId && mobileViewport && railTabsAvailable["content-search"] && (
@@ -216,13 +202,13 @@ export function AppShellWorkspacePanels({
   );
 }
 
-/** A built-in tab's extension view in a phone's drawer (Agents, Content search). */
+/** A built-in tab's extension view in a phone's drawer (Agents, Content search, Tasks). */
 function BuiltInTabView({
   tab,
   conversationId,
   visible,
 }: {
-  tab: "subagents" | "content-search";
+  tab: "subagents" | "content-search" | "tasks";
   conversationId: string;
   visible: boolean;
 }) {

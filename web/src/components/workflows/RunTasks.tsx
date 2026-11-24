@@ -15,7 +15,11 @@ import { parseEvent } from "@/lib/sse";
 import { cn } from "@/lib/utils";
 import { continuePlanMessage, stopPlanMessage, taskActionMessage } from "@/lib/workflow";
 import { PlanRunButton, type PlanRunButtonState } from "@/shell/PlanRunButton";
-import { ProgressStrip, taskMenuAction, type TaskMenuAction } from "@/shell/TasksPanel";
+import {
+  ProgressStrip,
+  taskMenuAction,
+  type TaskMenuAction,
+} from "@/components/workflows/taskParts";
 import { supersedePlanStop, trackPlanStop } from "@/store/planStops";
 import { openTasksTab } from "@/store/sessionTasksActions";
 

@@ -130,6 +130,7 @@ describe("built-in extensions", () => {
       "omnigent.agents",
       "omnigent.changes",
       "omnigent.content-search",
+      "omnigent.tasks",
     ]);
     expect(error).toHaveBeenCalledWith(expect.stringContaining("invalid built-in extension"));
     error.mockRestore();
@@ -153,6 +154,9 @@ describe("built-in extensions", () => {
     expect(registry.get("omnigent.changes.view")?.tree).toBeDefined();
     expect(runtime.host.isActive("omnigent.agents")).toBe(true);
     expect(runtime.host.isActive("omnigent.content-search")).toBe(true);
+    expect(runtime.host.isActive("omnigent.tasks")).toBe(true);
+    expect(registry.get("omnigent.tasks.view")).toMatchObject({ builtInTab: "tasks" });
+    expect(registry.get("omnigent.tasks.view")?.plan).toBeDefined();
     await runtime.dispose();
     expect(registry.get("omnigent.changes.view")).toBeUndefined();
   });

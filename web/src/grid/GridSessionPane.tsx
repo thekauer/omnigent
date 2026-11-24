@@ -79,6 +79,7 @@ import { WorkspacePanel } from "@/shell/WorkspacePanel";
 import { extensionRailTabViewId } from "@/shell/railTabs";
 import { useRailViewIds } from "@/shell/railViews";
 import { useWorkspaceBridgeSource } from "@/shell/useWorkspaceBridgeSource";
+import { WorkspaceTasksPublisher } from "@/shell/useWorkspaceTasksSource";
 import { revealFolderInFilesPanel } from "@/shell/FilesPanel";
 import { selectPullRequestInPanel } from "@/shell/PullRequestPanel";
 import { citedFilePosition } from "@/shell/filePositionState";
@@ -427,7 +428,12 @@ export function GridSessionPane({
     ],
   );
   // The selected cell's workspace is the one extension views (the Changes tab) show.
-  useWorkspaceBridgeSource({
+  const showTasksTab =
+    (isFeatureEnabled(serverInfo, "workflows") &&
+      serverInfo !== "loading" &&
+      serverInfo.session_journal === true) ||
+    (state.todos?.length ?? 0) > 0;
+  const workspaceSource = useWorkspaceBridgeSource({
     sessionId,
     enabled: showFiles,
     active: selected,
@@ -464,6 +470,7 @@ export function GridSessionPane({
       }}
     >
       <FileViewerContext.Provider value={fileContext}>
+        <WorkspaceTasksPublisher source={workspaceSource} sessionId={sessionId} active={selected} />
         <section
           ref={setPaneRef}
           style={{ gridArea: area }}
@@ -619,12 +626,7 @@ export function GridSessionPane({
                     inert={!selected || !workspacePanel.open}
                     showFilesPanel={showFiles}
                     showGithubTab={showFiles}
-                    showTasksTab={
-                      (isFeatureEnabled(serverInfo, "workflows") &&
-                        serverInfo !== "loading" &&
-                        serverInfo.session_journal === true) ||
-                      (state.todos?.length ?? 0) > 0
-                    }
+                    showTasksTab={showTasksTab}
                     showBrowserTab={supportsBrowser()}
                     onReveal={onOpenWorkspace}
                     changedCount={changedCount}
@@ -674,12 +676,7 @@ export function GridSessionPane({
                   }}
                   showFilesPanel={showFiles}
                   showGithubTab={showFiles}
-                  showTasksTab={
-                    (isFeatureEnabled(serverInfo, "workflows") &&
-                      serverInfo !== "loading" &&
-                      serverInfo.session_journal === true) ||
-                    (state.todos?.length ?? 0) > 0
-                  }
+                  showTasksTab={showTasksTab}
                   showBrowserTab={supportsBrowser()}
                   onReveal={onOpenWorkspace}
                   rootSessionId={rootSessionId}

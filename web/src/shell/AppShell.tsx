@@ -198,6 +198,7 @@ import {
 import { extensionRailTabViewId, type RightRailTab } from "./railTabs";
 import { useRailViewIds } from "./railViews";
 import { useWorkspaceBridgeSource } from "./useWorkspaceBridgeSource";
+import { WorkspaceTasksPublisher } from "./useWorkspaceTasksSource";
 import { sessionNavigationSearch } from "@/lib/sessionNavigation";
 
 /**
@@ -1921,7 +1922,7 @@ function AppShellImpl() {
   const openSubagentInPanelRef = useRef<(childSessionId: string) => boolean>(() => false);
   // Extension views (the built-in Changes tab among them) read this session's
   // workspace through the bridge, unless a grid cell's workspace is in front.
-  useWorkspaceBridgeSource({
+  const workspaceSource = useWorkspaceBridgeSource({
     sessionId: serverConversationId,
     enabled: showFilesPanel,
     // On a grid route the cells' workspaces are on screen, not the shell's.
@@ -3770,6 +3771,13 @@ function AppShellImpl() {
                 contentSearchPanelOpen={contentSearchPanelOpen}
                 setContentSearchPanelOpen={setContentSearchPanelOpen}
                 setMobileFileTarget={setMobileFileTarget}
+              />
+              <WorkspaceTasksPublisher
+                source={workspaceSource}
+                sessionId={serverConversationId}
+                active={!canvasMode && !gridRoute}
+                // A task's click or a workflow started from the phone's drawer shows the chat.
+                onLeave={() => setTasksPanelOpen(false)}
               />
             </GridWorkspace>
           </div>

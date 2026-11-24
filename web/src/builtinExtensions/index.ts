@@ -9,6 +9,8 @@ import * as changes from "./omnigent.changes/extension";
 import changesManifest from "./omnigent.changes/package.json";
 import * as contentSearch from "./omnigent.content-search/extension";
 import contentSearchManifest from "./omnigent.content-search/package.json";
+import * as tasks from "./omnigent.tasks/extension";
+import tasksManifest from "./omnigent.tasks/package.json";
 
 export interface BuiltInExtension {
   readonly manifest: unknown;
@@ -19,6 +21,7 @@ export const BUILT_IN_EXTENSIONS: readonly BuiltInExtension[] = Object.freeze([
   { manifest: agentsManifest, module: agents },
   { manifest: changesManifest, module: changes },
   { manifest: contentSearchManifest, module: contentSearch },
+  { manifest: tasksManifest, module: tasks },
 ]);
 
 /** The built-ins as the host loads them; a manifest that fails its checks is logged and left out. */

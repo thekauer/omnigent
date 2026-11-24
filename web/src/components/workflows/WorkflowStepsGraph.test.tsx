@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { JournalEntry, StepProgress } from "@/lib/sessionJournal";
 import type { WorkflowStep } from "@/lib/workflowGraphLayout";
-import { taskMenuAction } from "@/shell/TasksPanel";
+import { taskMenuAction } from "@/components/workflows/taskParts";
 
 import {
   HOVER_CARD_OPEN_DELAY_MS,

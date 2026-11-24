@@ -34,7 +34,7 @@ import {
   type WorkflowRunState,
 } from "@/lib/workflowRuns";
 import { planRunButtonState, planRunControl } from "@/shell/PlanRunButton";
-import { StepGlyph } from "@/shell/TasksPanel";
+import { StepGlyph } from "@/components/workflows/taskParts";
 
 // A run's glyph: the Tasks tab's, for the step state its run state matches.
 const RUN_GLYPHS: Record<WorkflowRunState["kind"], StepState> = {

@@ -3,7 +3,7 @@
 // changed files, why they cannot load, and its file settings.
 
 import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useSessionHostOnline, useSessionRunnerOnline } from "@/hooks/RunnerHealthProvider";
 import { useSandboxStarting } from "@/hooks/useSessionReconnect";
 import {
@@ -59,7 +59,7 @@ export function useWorkspaceBridgeSource({
   rootSessionId = null,
   openSession,
   bridge = workspaceBridge,
-}: WorkspaceBridgeSourceOptions): void {
+}: WorkspaceBridgeSourceOptions): WorkspaceSource | null {
   const queryClient = useQueryClient();
   const agentCostsEnabled = isFeatureEnabled(useServerInfo(), "session_overview");
   const changedQuery = useWorkspaceChangedFiles(sessionId, { enabled });
@@ -109,6 +109,8 @@ export function useWorkspaceBridgeSource({
   });
   latest.current = { openFile, onSortOrderChange, onShowHiddenChange, sessionId, openSession };
   const sourceRef = useRef<WorkspaceSource | null>(null);
+  // Also as state, so a surface's tasks publisher can share the source.
+  const [registered, setRegistered] = useState<WorkspaceSource | null>(null);
   useEffect(() => {
     const source = bridge.createSource();
     source.setActions({
@@ -132,9 +134,11 @@ export function useWorkspaceBridgeSource({
       },
     });
     sourceRef.current = source;
+    setRegistered(source);
     return () => {
       source.dispose();
       if (sourceRef.current === source) sourceRef.current = null;
+      setRegistered((current) => (current === source ? null : current));
     };
   }, [bridge, queryClient]);
   // Publishing waits for the commit, so a surface never reports a render it threw away.
@@ -153,4 +157,5 @@ export function useWorkspaceBridgeSource({
     });
     source.setActive(active);
   });
+  return registered;
 }

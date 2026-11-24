@@ -124,8 +124,6 @@ import {
 } from "./workspaceTabsSessions";
 import type { DefaultWorkspaceTab } from "@/lib/workspaceTabPreferences";
 import { WORKSPACE_TEXT_SEARCH_COPY } from "@/lib/workspaceTextSearchCopy";
-import { SessionDescendantRuns } from "@/components/workflows/WorkflowRunRow";
-import { TasksPanel } from "../TasksPanel";
 import { WORKSPACE_PANEL_TABS } from "../workspacePanelTabs";
 
 export interface WorkspaceTabsPanelProps {
@@ -287,7 +285,7 @@ function WorkspaceTabsPanelImpl({
   const { session, tabs, selectedTabId } = useWorkspaceTabs(conversationId);
   const { views: extensionViews, settled: extensionViewsSettled } = useRailViews();
   // The built-in extension view a page draws (Agents, Content search), as the classic rail does.
-  const builtInView = (tab: "subagents" | "content-search", active: boolean) => {
+  const builtInView = (tab: "subagents" | "content-search" | "tasks", active: boolean) => {
     const view = builtInTabView(extensionViews, tab);
     return view ? (
       <ExtensionRailView
@@ -897,17 +895,7 @@ function WorkspaceTabsPanelImpl({
         );
       }
       case "tasks":
-        return (
-          <RenderErrorBoundary name="tasks" resetKey={conversationId}>
-            <TasksPanel
-              conversationId={conversationId}
-              active={active}
-              renderWorkflowRuns={(workflowId) => (
-                <SessionDescendantRuns sessionId={conversationId} workflowId={workflowId} />
-              )}
-            />
-          </RenderErrorBoundary>
-        );
+        return builtInView("tasks", active);
       case "agents":
         if (!rootSessionId) return <Unavailable text="This session has no agents yet." />;
         return builtInView("subagents", active);
