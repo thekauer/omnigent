@@ -231,7 +231,12 @@ import {
   type ProjectPrefillConfig,
   type ProjectPrefillState,
 } from "./projectPrefill";
-import { getCliServerUrl, getOmnigentHostConfig, getOmnigentServerIdentity } from "@/lib/host";
+import {
+  getCliServerUrl,
+  getOmnigentConnectHostCommand,
+  getOmnigentHostConfig,
+  getOmnigentServerIdentity,
+} from "@/lib/host";
 import { quoteShellArgument } from "@/lib/shell";
 import { readLastAgentId, writeLastAgentId } from "@/lib/agentPreferences";
 import {
@@ -618,6 +623,12 @@ export function ConnectHostInstructions({
   // Lakebox option never flashes in.
   const databricksFeatures = info !== "loading" && info.databricks_features;
   const quotedServerUrl = quoteShellArgument(serverUrl);
+  // A host-configured wrapper command replaces the whole `omni host` line.
+  const connectHostCommand = getOmnigentConnectHostCommand();
+  const hostCommand =
+    connectHostCommand && connectHostCommand.trim() !== ""
+      ? connectHostCommand
+      : `omni host --server ${quotedServerUrl}`;
   const sshConnectAvailable = useSshConnectAvailable();
   return (
     <div className="flex flex-col gap-4 rounded-lg border border-dashed border-border p-4">
@@ -633,10 +644,7 @@ export function ConnectHostInstructions({
             </TabsTrigger>
           </TabsList>
           <TabsContent value="local">
-            <CliCommandBlock
-              command={`omni host --server ${quotedServerUrl}`}
-              testIdPrefix="connect-host"
-            />
+            <CliCommandBlock command={hostCommand} testIdPrefix="connect-host" />
           </TabsContent>
           <TabsContent value="lakebox" className="flex flex-col gap-1.5">
             <CliCommandBlock
@@ -650,10 +658,7 @@ export function ConnectHostInstructions({
           </TabsContent>
         </Tabs>
       ) : (
-        <CliCommandBlock
-          command={`omni host --server ${quotedServerUrl}`}
-          testIdPrefix="connect-host"
-        />
+        <CliCommandBlock command={hostCommand} testIdPrefix="connect-host" />
       )}
       {sshConnectAvailable && <SshConnectForm onConnected={onSshConnected} />}
     </div>

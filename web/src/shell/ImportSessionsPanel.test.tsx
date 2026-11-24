@@ -1,10 +1,11 @@
 import type { ReactNode } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 
-import { ImportSessionsPanel } from "./ImportSessionsPanel";
+import { buildImportConnectHostCommand, ImportSessionsPanel } from "./ImportSessionsPanel";
+import { setOmnigentHostConfig } from "@/lib/host";
 import { useHosts } from "@/hooks/useHosts";
 import { importLocalSessions, type LocalImportResult } from "@/lib/sessionsApi";
 import { useSessionImportStore } from "@/store/sessionImport";
@@ -88,12 +89,43 @@ beforeEach(() => {
 
 afterEach(() => cleanup());
 
+describe("buildImportConnectHostCommand", () => {
+  it("appends the quoted server URL to a host's connect command", () => {
+    expect(
+      buildImportConnectHostCommand({
+        serverUrl: "https://omnigent.example.com/api?x=1",
+        connectHostCommand: " acme-cli host ",
+      }),
+    ).toBe("acme-cli host --server 'https://omnigent.example.com/api?x=1'");
+  });
+
+  it.each([undefined, null, "", "  "])("falls back to omnigent host for %j", (command) => {
+    expect(
+      buildImportConnectHostCommand({
+        serverUrl: "https://omnigent.example.com",
+        connectHostCommand: command,
+      }),
+    ).toBe("omnigent host --server 'https://omnigent.example.com'");
+  });
+});
+
 describe("ImportSessionsPanel", () => {
   it("prompts to start a host when none are online", () => {
     useHostsMock.mockReturnValue({ data: [] } as unknown as ReturnType<typeof useHosts>);
     renderPanel();
     expect(screen.getByTestId("import-no-hosts")).toBeInTheDocument();
     expect(screen.queryByTestId("import-submit")).toBeNull();
+  });
+
+  it.each([
+    [undefined, `omnigent host --server '${window.location.origin}'`],
+    ["acme-cli host", `acme-cli host --server '${window.location.origin}'`],
+  ])("shows the command that brings a machine online (connect command %j)", (command, shown) => {
+    setOmnigentHostConfig(command === undefined ? {} : { connectHostCommand: command });
+    onTestFinished(() => setOmnigentHostConfig({}));
+    useHostsMock.mockReturnValue({ data: [] } as unknown as ReturnType<typeof useHosts>);
+    renderPanel();
+    expect(screen.getByTestId("import-connect-host-command")).toHaveTextContent(shown);
   });
 
   it("renders each row as its Settings catalog entry, in the recent-sessions mode", () => {

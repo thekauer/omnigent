@@ -6431,6 +6431,31 @@ describe("NewChatLandingScreen", () => {
     );
   });
 
+  it.each([
+    ["the plain instructions", false],
+    ["the local-machine tab", true],
+  ])("shows a host's connect command in place of omni host in %s", (_name, managed) => {
+    setOmnigentHostConfig({ connectHostCommand: "acme-cli host --background" });
+    renderLanding({ databricks_features: managed });
+    fireEvent.pointerDown(screen.getByTestId("new-chat-landing-host-chip"), { button: 0 });
+    fireEvent.click(screen.getByTestId("new-chat-landing-connect-host"));
+
+    expect(screen.getByTestId("connect-host-command")).toHaveTextContent(
+      /^acme-cli host --background$/,
+    );
+  });
+
+  it("keeps omni host when the host's connect command is blank", () => {
+    setOmnigentHostConfig({ connectHostCommand: "  " });
+    renderLanding();
+    fireEvent.pointerDown(screen.getByTestId("new-chat-landing-host-chip"), { button: 0 });
+    fireEvent.click(screen.getByTestId("new-chat-landing-connect-host"));
+
+    expect(screen.getByTestId("connect-host-command")).toHaveTextContent(
+      `omni host --server '${window.location.origin}'`,
+    );
+  });
+
   const sshDesktop = { kind: "electron", connectSshHost: vi.fn() };
   it.each([
     ["the browser", undefined, null, false],

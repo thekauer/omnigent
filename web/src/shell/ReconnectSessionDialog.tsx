@@ -13,6 +13,7 @@ import { useSessionActionRestrictions } from "@/hooks/useSessionActionRestrictio
 import { SESSION_ACTIONS_LOADING } from "@/lib/sessionCapabilities";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { quoteShellArgument } from "@/lib/shell";
+import { getOmnigentConnectHostCommand } from "@/lib/host";
 import { CliCommandBlock } from "./CliCommandBlock";
 import { ForkSessionForm } from "./ForkSessionDialog";
 import { SwitchHostDialog } from "./SwitchHostDialog";
@@ -70,6 +71,10 @@ export type ReconnectState = "host_offline" | "local_stranded";
  *
  * The Databricks profile stays a placeholder in every form — it's
  * per-deployment and not knowable from the browser.
+ *
+ * A host-configured `connectHostCommand` (a wrapper CLI that already targets
+ * this server) replaces the whole `host_offline` command; `local_stranded`
+ * keeps its resume form.
  */
 export function buildReconnectCommand({
   conversationId,
@@ -77,17 +82,20 @@ export function buildReconnectCommand({
   wrapper,
   harness,
   state,
+  connectHostCommand,
 }: {
   conversationId: string;
   serverUrl: string;
   wrapper?: string | null;
   harness?: string | null;
   state: ReconnectState;
+  connectHostCommand?: string | null;
 }): string {
   // Backslash-continued so the command stays readable inside a narrow
   // dialog AND remains valid when pasted into a shell.
   const quotedServerUrl = quoteShellArgument(serverUrl);
   if (state === "host_offline") {
+    if (connectHostCommand && connectHostCommand.trim() !== "") return connectHostCommand;
     return ["omnigent host \\", `  --server ${quotedServerUrl}`].join("\n");
   }
   // Every native TUI wrapper resumes through its own verb (`omnigent devin
@@ -211,7 +219,14 @@ export function ReconnectSessionDialog({
   const showCommand = isOwner || !isHostReconnect;
   const defaultTab = showCommand ? "reconnect" : "clone";
   const resolvedTab = forkRestriction ? "reconnect" : (selectedTab ?? defaultTab);
-  const command = buildReconnectCommand({ conversationId, serverUrl, wrapper, harness, state });
+  const command = buildReconnectCommand({
+    conversationId,
+    serverUrl,
+    wrapper,
+    harness,
+    state,
+    connectHostCommand: getOmnigentConnectHostCommand(),
+  });
   // Titles mirror the unreachable banner's wording ("Host is offline —
   // click to reconnect" / "Agent disconnected — click to reconnect").
   const title = isHostReconnect ? "Host is offline" : LOCAL_RECONNECT_TITLE;

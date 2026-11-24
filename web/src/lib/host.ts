@@ -228,8 +228,10 @@ export interface OmnigentHostConfig {
    * Optional replacement for the whole "connect a host" command shown in the
    * UI (e.g. `"acme-cli host --background"`), for a host that hands users a
    * wrapper CLI which already targets this server and signs in on first use.
-   * The UI appends `--server <url>` where the command needs it. When omitted,
-   * the UI builds `omni host --server <url>` from {@link getCliServerUrl}.
+   * The connect and reconnect instructions show it as given; the session
+   * import panel appends `--server <url>`, so a machine registers with this
+   * server. When omitted, the UI builds `omni host --server <url>` from
+   * {@link getCliServerUrl}.
    */
   connectHostCommand?: string;
   /**

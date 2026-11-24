@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { getOmnigentConnectHostCommand } from "@/lib/host";
 import { AlertTriangleIcon, GitBranchIcon } from "lucide-react";
 import {
   Dialog,
@@ -298,6 +299,7 @@ export function ResumeWithDirectoryDialog({
                 // the runner is relaunched directly via the wrapper's resume
                 // form.
                 state: sourceHostId ? "host_offline" : "local_stranded",
+                connectHostCommand: getOmnigentConnectHostCommand(),
               })}
               testIdPrefix="resume-dir"
             />

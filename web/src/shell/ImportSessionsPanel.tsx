@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useHosts } from "@/hooks/useHosts";
+import { getCliServerUrl, getOmnigentConnectHostCommand } from "@/lib/host";
 import { Link } from "@/lib/routing";
+import { quoteShellArgument } from "@/lib/shell";
+import { CliCommandBlock } from "./CliCommandBlock";
 import { HostLabel } from "./HostLabel";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -51,6 +54,26 @@ const ROW_CLASS = "flex flex-wrap items-center justify-between gap-x-6 gap-y-3";
  * host, then refreshes the sidebar. Already-imported sessions are skipped
  * server-side; progress and results show aggregate counts.
  */
+/**
+ * The command that brings a machine online so its sessions can be imported.
+ * A host-configured wrapper CLI gets an explicit `--server`, so the machine
+ * registers with this server rather than the wrapper's default; without one,
+ * `omnigent host --server <url>`.
+ */
+export function buildImportConnectHostCommand({
+  serverUrl,
+  connectHostCommand,
+}: {
+  serverUrl: string;
+  connectHostCommand?: string | null;
+}): string {
+  const quotedServerUrl = quoteShellArgument(serverUrl);
+  if (connectHostCommand && connectHostCommand.trim() !== "") {
+    return `${connectHostCommand.trim()} --server ${quotedServerUrl}`;
+  }
+  return `omnigent host --server ${quotedServerUrl}`;
+}
+
 export function ImportSessionsPanel() {
   const queryClient = useQueryClient();
   const { data: hosts } = useHosts({ refetchOnFocus: true });
@@ -96,11 +119,19 @@ export function ImportSessionsPanel() {
 
   if (onlineHosts.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground" data-testid="import-no-hosts">
-        None of your machines are online. Start one with{" "}
-        <code className="rounded bg-muted px-1 py-0.5 font-mono">omnigent host</code> from your
-        terminal, then return here.
-      </p>
+      <div className="flex flex-col gap-2" data-testid="import-no-hosts">
+        <p className="text-sm text-muted-foreground">
+          None of your machines are online. Run this on the machine you want to import from, then
+          return here:
+        </p>
+        <CliCommandBlock
+          command={buildImportConnectHostCommand({
+            serverUrl: getCliServerUrl(),
+            connectHostCommand: getOmnigentConnectHostCommand(),
+          })}
+          testIdPrefix="import-connect-host"
+        />
+      </div>
     );
   }
 
