@@ -46,6 +46,14 @@ repository's reference policy keeps them out of here.
    - Real test: passed against a fresh machine that was stopped, resumed by
      Reconnect, and ran the start command (exit code and output in the personal
      extensions README). The machine was stopped again and kept.
+   - **Done, follow-up: inline progress.** After user feedback, Reconnect host
+     shows its steps inline at the host (a small spinner and the latest step in
+     place of the Reconnect item and the inline "Offline · Reconnect"), not as
+     a toast, waits for the host to come online with quick liveness checks, and
+     shows a failure inline ("Reconnect failed", with the detail in a tooltip).
+     This adds the host progress location (scope item 11). Real test against
+     the same machine: the host read online about a second after the start
+     command (times in the personal extensions README).
 2. **Private Git host PR links** in the Pull Requests tab (a GitHub
    Enterprise-style host with numbered shards, such as
    `https://N.git.example.com/<org>/<repo>/pull/<number>` with any N).
@@ -311,13 +319,26 @@ Stop after item 4. The rest of the "Later" list waits for the user.
    built-in owners (page and Node alike); the shell's bridge
    (`omnigent.revealInFiles` from the file viewer) runs only built-in
    commands.
-10. **Progress and messages** (`progress.ts`, on the app's sonner toasts).
+10. **Progress and messages** (`progress.ts`, on the app's sonner toasts;
+    `web/src/lib/hostProgress.ts` for the host location).
     `window.withProgress({ title }, task)` shows a loading toast with the
     latest reported message; it is dismissed when the task resolves and
     turns into an error toast with the error's message when it rejects (the
     promise rejects too). `showInformationMessage` and `showErrorMessage`
     show plain toasts. Progress a Node command reports joins the calling
     extension's latest open progress, or gets its own toast when none is open.
+    - Progress locations, as VS Code's `ProgressOptions.location`:
+      notification (no `location`, the toast above); `{ viewId }` (scope item
+      21: above a view's rows); and `{ hostId }`, VS Code's
+      `ProgressLocation.Window` scoped to one host: a small spinner (the app's
+      `Spinner`) and the title, then the latest message, drawn by the host in
+      that host's badge: in the host menu in place of "Reconnect host", and
+      beside the composer's host trigger in place of "Offline · Reconnect", in
+      the same text style. The newest open progress at a host is shown. A
+      failure is not shown at either location; Node progress joins a
+      host-located progress like a notification's.
+    - `HostProgressLocations` also keeps a host's last reconnect failure
+      (short text and detail), set and cleared only by Reconnect host.
 11. **Host reconnect providers** (`web/src/lib/hostReconnectProviders.ts`,
     shipped in builds; like VS Code's remote authority resolvers).
     - `hosts.registerReconnectProvider({ canReconnect(host), reconnect(host,
@@ -338,9 +359,33 @@ sandboxProvider, resumable }`.
       global `Promise`.
     - The host menu asks every provider about an offline host when it opens,
       and ignores the answers, so providers can warm caches before the click.
-    - An extension provider's `reconnect` runs inside a "Reconnecting
-      <name>" progress toast; a second click for the same host joins the run;
-      success refreshes host liveness.
+    - Reconnect host runs every provider, built-in or extension, the same
+      way, with no toast: its progress is the host location above, starting
+      with "Reconnecting...". The provider's `progress` (and a Node command's
+      progress while it runs) reports the next steps, such as "Starting
+      machine..." and "Starting omni...". The menu stays open on the click, so
+      the steps replace the item there.
+    - Clicking again while it runs does nothing new: it joins the run (the
+      item and the inline button are replaced by the spinner anyway), and a
+      joined run's reporters all get the progress so far and the rest.
+    - When `reconnect` resolves, the host shows "Waiting for host...",
+      re-polls the session's `/health` and invalidates the hosts query every
+      2 seconds, and clears the progress as soon as the host reads online, so
+      the badge shows the normal online state and Reconnect host disappears.
+      After 90 seconds it shows "Host didn't come online" instead, with the
+      provider's `{ detail }` (a summary of what ran) in the tooltip.
+    - A rejection shows "Reconnect failed" inline, red, with the error (and
+      any sign-in hint it carries) in a tooltip and the detail in an
+      `aria-describedby` text; Reconnect host stays next to it as the retry,
+      which clears the failure. With the menu closed it shows beside the
+      composer trigger as "Reconnect failed · Reconnect".
+    - The built-in wake reports the same steps ("Reconnecting...", the
+      server's launch stage, then "Waiting for host...") and keeps its own
+      end conditions (online, the health-poll count, the stage limit, a
+      stopped stage); its error toasts became the same inline failures.
+    - Inline state belongs to the session on screen: a session or host switch
+      and an unmount end the progress and clear the failure, and a late answer
+      of the old run shows nothing.
 
 12. **Rail view registry** (`web/src/shell/railViews.ts`, `railTabs.ts`,
     `railViewIcons.ts`, `workspacePanelTabs.ts`; shipped in builds).
@@ -1008,7 +1053,8 @@ Plain ESM with `// @ts-check`; no build step.
 | `window.activeTextEditor`, `onDidChangeActiveTextEditor`             | `sessions.activeSession`, `onDidChangeActiveSession`          |                                                     |
 | (none)                                                               | `sessions.onDidChangeUsage`, `sessions.activeSessionUsage`    | Plain-data usage of the active session              |
 | `commands.registerCommand`, `commands.executeCommand`                | same                                                          | JSON args and results; page or Node                 |
-| `window.withProgress`                                                | same                                                          | Notification only; `{ title }`                      |
+| `window.withProgress`                                                | same                                                          | Notification by default; `{ title }`                |
+| `ProgressLocation.Window`                                            | `withProgress({ location: { hostId } })`                      | Inline at one host's badge and menu                 |
 | `window.showInformationMessage`, `showErrorMessage`                  | same                                                          | Toasts; no buttons                                  |
 | `window.createOutputChannel(name, { log: true })`                    | `window.createOutputChannel(name)` (Node only)                | Lines go to the dev server output                   |
 | `workspace.registerRemoteAuthorityResolver`                          | `hosts.registerReconnectProvider`                             | For "Reconnect host"; plain host data               |
@@ -1059,9 +1105,14 @@ Deviations and why:
 - The Node API has its own specifier, `omnigent/node`, because it is a different
   and smaller API than the page's; one module would type Node code against
   page-only calls.
-- `withProgress` has no `location` or cancellation: progress always shows as
-  a notification. It shows a rejected task's error, which VS Code leaves to the
-  extension.
+- `withProgress` has no cancellation, and its locations are a notification,
+  a view (`{ viewId }`) or a host (`{ hostId }`); VS Code's window location is
+  one status bar for the whole window, so here it is scoped to a host, the
+  only place a host's progress makes sense. The notification shows a rejected
+  task's error, which VS Code leaves to the extension.
+- Reconnect host shows a provider's progress, its wait for the host and its
+  failure inline at the host, not as notifications; VS Code's remote
+  resolvers report through a notification.
 - A Node command's progress is shown in the page: it joins the calling
   extension's latest open progress (for example a reconnect's), or gets its
   own notification. VS Code has no such bridge.
@@ -1226,7 +1277,7 @@ From `web/` (use `corepack pnpm exec` or `node_modules/.bin`):
 # Unit and RTL tests for the host, API, header slot, dev plugin, Node entries,
 # commands, progress, reconnect providers and store seam
 corepack pnpm exec vitest run src/vscodeExtensions src/shell/ChatHeader.test.tsx \
-  src/store/chatStore.test.ts src/lib/hostReconnectProviders.test.ts \
+  src/store/chatStore.test.ts src/lib/hostReconnectProviders.test.ts src/lib/hostProgress.test.ts \
   src/hooks/useSessionReconnect.test.ts src/components/HostBadge.test.tsx \
   src/viteDevProxyToken.test.ts src/shell/railViews.test.ts \
   src/lib/sessionWorkspaceState.test.ts src/shell/WorkspacePanel.test.tsx \
@@ -1240,7 +1291,8 @@ corepack pnpm exec vitest run src/shell src/grid src/components/AgentInfo src/vs
 # Static checks
 corepack pnpm exec prettier --check vite.config.ts vite.omnigentExtensions.ts \
   vite.omnigentNodeExtensions.ts vite.omnigentNodeHost.mjs vite.devProxyToken.ts \
-  src/vscodeExtensions src/lib/hostReconnectProviders.ts src/hooks/useSessionReconnect.ts \
+  src/vscodeExtensions src/lib/hostReconnectProviders.ts src/lib/hostProgress.ts \
+  src/hooks/useSessionReconnect.ts \
   src/components/HostBadge.tsx src/pages/ChatPage.tsx src/shell/ChatHeader.tsx src/main.tsx \
   src/store/chatStore.ts src/store/conversationState.ts
 corepack pnpm exec oxlint --deny-warnings --report-unused-disable-directives .
@@ -1299,17 +1351,27 @@ What the suites cover:
   (page and Node), JSON copies, routing to Node, unknown commands, handler
   errors; the NDJSON client with chunk-split lines, progress, results, errors,
   refused requests and a stream without a result.
-- `progress.test.ts`, `api.test.ts`: `withProgress` success and failure,
-  messages, the sonner toasts; the API's commands, Node progress joining the
-  open progress or getting its own, reconnect providers (plain frozen host,
-  progress title, failure shown, a second click joining, unregistering).
+- `progress.test.ts`, `api.test.ts`, `hostProgress.test.ts`: `withProgress`
+  success and failure, messages, the sonner toasts; the host location (inline
+  steps, no notification, a failure ending it, a bad host id); the API's
+  commands, Node progress joining the open progress or getting its own,
+  reconnect providers (plain frozen host, steps to the host's progress, Node
+  steps joining, a rejection passed on without a toast, a second click joining
+  with the progress so far, unregistering); the location store (newest open
+  progress, failure owners, stable snapshots).
 - `hostReconnectProviders.test.ts`, `useSessionReconnect.test.ts`,
   `HostBadge.test.tsx`: provider order, sync and async answers, throwing,
   rejecting, slow and non-Promise thenable answers, warm-up; the built-in wake
   first and unchanged (the existing wake tests pass as they were), fallback to
   the dialog and to the desktop reconnect, ignored repeat clicks, a late
   answer after a session switch, a failing `reconnect`; the menu warming
-  providers for an offline host only, the item label unchanged.
+  providers for an offline host only, the item label unchanged. Inline
+  progress: steps in the menu and beside the trigger, the menu kept open,
+  step updates, a joined second click, a rejection shown inline with its hint
+  in a tooltip and retried, "Waiting for host..." with 2-second polls until
+  online (then nothing inline and no Reconnect host), the 90-second "Host
+  didn't come online", cleanup on a session switch or unmount, the wake's
+  steps inline, and no toast.
 - `viteDevProxyToken.test.ts`: the async token cache of the dev proxy.
 - `railViews.test.ts`: tab ids (`ext:` accepted, malformed dropped), registry
   order, updates, duplicates, loading state; built-in descriptors unchanged,
@@ -1476,11 +1538,16 @@ OMNI_UI_REPO=<omnigent checkout> ./verify/verify.sh            # mocked + prod
   - Reconnect host, with a fake machine CLI first on the dev server's `PATH`
     (its argv logged to a file): on a session bound to an offline host named
     like one of the fake machines, the menu has "Reconnect host" and opening
-    it fetches the list; clicking it shows the progress toast with each step
-    and the result toast, and the fake ran resume, then the start command over
-    SSH, with the exact argv. A host that is not one of the machines opens the
-    existing reconnect dialog, and a resumable managed host still sends the
-    server wake (`retry_session`, captured by the mock).
+    it fetches the list; clicking it keeps the menu open with a spinner and
+    each step in place of the item, and beside the trigger. A first start that
+    fails on sign-in shows "Reconnect failed" inline with the hint in its
+    tooltip; the inline Reconnect retries, shows "Waiting for host...", and
+    the mock reports the host online a few seconds after the fake's SSH step,
+    so the badge goes online and Reconnect host is gone. No toast shows, and
+    the fake ran resume, then the start command over SSH twice, with the exact
+    argv. A host that is not one of the machines opens the existing reconnect
+    dialog, and a resumable managed host still sends the server wake
+    (`retry_session`, captured by the mock), with its steps inline.
   - The built-in Changes tab, on mocked changed files, directory listings and
     file contents: the tab opens with the flat list and its badge; title bar,
     search field, Sort and hidden toggle; rows read as the classic list did
