@@ -154,6 +154,15 @@ let disposing: Promise<void> | undefined;
 /** Created after `disposing` settles, for a hold taken meanwhile. */
 let restarting = false;
 
+/**
+ * How long a runtime started by {@link ensureExtensionHost} waits for a hold
+ * before it is disposed. A render React discards before commit (it suspended or
+ * threw) starts the runtime but never runs the effect that holds it; a render
+ * that commits holds it well within this time, even when React yields between
+ * render and effects.
+ */
+export const UNRETAINED_DISPOSE_MS = 1_000;
+
 // Embeds share the window with their host page: their keybindings dispatch only
 // from inside a mounted app root. The standalone app owns the page.
 const EMBED_KEYBINDING_SCOPE = "appRoot" satisfies KeybindingScope;
@@ -183,6 +192,24 @@ function cancelScheduledDispose(): void {
   disposeTimer = undefined;
 }
 
+/** Disposes the runtime after `delayMs` unless a hold or the page keeps it meanwhile. */
+function scheduleDispose(delayMs: number): void {
+  cancelScheduledDispose();
+  disposeTimer = setTimeout(() => {
+    disposeTimer = undefined;
+    if (holds > 0 || pinned || !runtime) return;
+    const current = runtime;
+    runtime = undefined;
+    const done = current.dispose().catch((error: unknown) => {
+      console.error("[omnigent-extensions] could not dispose the extension host", error);
+    });
+    disposing = done;
+    void done.finally(() => {
+      if (disposing === done) disposing = undefined;
+    });
+  }, delayMs);
+}
+
 /**
  * The window's extension runtime, kept for the page's lifetime; created, with
  * the built-ins started, on first call. For the standalone app and the dev loader.
@@ -202,12 +229,14 @@ export function startExtensionHost(): ExtensionRuntime {
  * Starts the window's extension runtime, with the built-ins, unless it already
  * runs. Idempotent and synchronous, so a caller can run it before its first
  * render and the built-in views are registered by then. It takes no hold: pair
- * it with {@link retainExtensionHost}. Started here, for embeds, its keybindings
- * dispatch only from inside a mounted `.omnigent-app` root.
+ * it with {@link retainExtensionHost}. A runtime nothing holds or keeps within
+ * {@link UNRETAINED_DISPOSE_MS} is disposed. Started here, for embeds, its
+ * keybindings dispatch only from inside a mounted `.omnigent-app` root.
  */
 export function ensureExtensionHost(): void {
-  cancelScheduledDispose();
   ensureRuntime();
+  if (holds > 0 || pinned) cancelScheduledDispose();
+  else scheduleDispose(UNRETAINED_DISPOSE_MS);
 }
 
 /**
@@ -225,20 +254,7 @@ export function retainExtensionHost(): () => void {
     released = true;
     holds -= 1;
     if (holds > 0 || pinned) return;
-    cancelScheduledDispose();
-    disposeTimer = setTimeout(() => {
-      disposeTimer = undefined;
-      if (holds > 0 || pinned || !runtime) return;
-      const current = runtime;
-      runtime = undefined;
-      const done = current.dispose().catch((error: unknown) => {
-        console.error("[omnigent-extensions] could not dispose the extension host", error);
-      });
-      disposing = done;
-      void done.finally(() => {
-        if (disposing === done) disposing = undefined;
-      });
-    }, 0);
+    scheduleDispose(0);
   };
 }
 

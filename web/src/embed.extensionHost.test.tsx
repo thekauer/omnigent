@@ -1,7 +1,7 @@
 // The embed runs the window's extension host, so the built-in right-panel tabs
 // (now built-in extensions) exist in an embedded OmnigentApp as they do standalone.
 import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
-import { StrictMode } from "react";
+import { Component, type ReactNode, StrictMode, Suspense } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { OmnigentApp } from "./embed";
@@ -9,7 +9,8 @@ import { useRailViews } from "./shell/railViews";
 import { ExtensionRailView } from "./shell/extensionViews/ExtensionRailView";
 import { flushMicrotasks } from "./test/builtInExtensions";
 import { useChatStore } from "./store/chatStore";
-import { currentExtensionHost } from "./vscodeExtensions/extensionHost";
+import { currentExtensionHost, UNRETAINED_DISPOSE_MS } from "./vscodeExtensions/extensionHost";
+import { useWindowExtensionHost } from "./vscodeExtensions/useWindowExtensionHost";
 
 const BUILT_IN_TABS = ["Agents", "Changes", "Content search", "Files", "Pull Requests", "Tasks"];
 
@@ -68,6 +69,7 @@ async function settleDisposal(): Promise<void> {
 
 afterEach(async () => {
   vi.restoreAllMocks();
+  vi.useRealTimers();
   cleanup();
   await settleDisposal();
   localStorage.clear();
@@ -253,5 +255,90 @@ describe("embedded extension host", () => {
     } finally {
       hostInput.remove();
     }
+  });
+
+  it("disposes a host started by a render React discards before mount", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    function Doomed(): ReactNode {
+      useWindowExtensionHost();
+      throw new Error("render failed");
+    }
+    class Boundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+      override state = { failed: false };
+      static getDerivedStateFromError() {
+        return { failed: true };
+      }
+      override render() {
+        return this.state.failed ? <p>failed</p> : this.props.children;
+      }
+    }
+    // jsdom reports the render error as uncaught; it is the point of the test.
+    const quiet = (event: ErrorEvent) => event.preventDefault();
+    window.addEventListener("error", quiet);
+    try {
+      render(
+        <Boundary>
+          <Doomed />
+        </Boundary>,
+      );
+    } finally {
+      window.removeEventListener("error", quiet);
+    }
+    expect(screen.getByText("failed")).toBeDefined();
+    const runtime = currentExtensionHost();
+    expect(runtime).toBeDefined();
+    const dispose = vi.spyOn(runtime!, "dispose");
+    // Not within a tick: a render that commits late still finds it.
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(currentExtensionHost()).toBe(runtime);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(UNRETAINED_DISPOSE_MS);
+    });
+    expect(dispose).toHaveBeenCalledTimes(1);
+    expect(currentExtensionHost()).toBeUndefined();
+  });
+
+  it("disposes a host started by a suspended first render that never commits", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const never = new Promise<void>(() => {});
+    function Suspends(): ReactNode {
+      useWindowExtensionHost();
+      throw never;
+    }
+    const { unmount } = render(
+      <Suspense fallback={<p>loading</p>}>
+        <Suspends />
+      </Suspense>,
+    );
+    const runtime = currentExtensionHost();
+    expect(runtime).toBeDefined();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(screen.getByText("loading")).toBeDefined();
+    expect(currentExtensionHost()).toBe(runtime);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(UNRETAINED_DISPOSE_MS);
+    });
+    expect(currentExtensionHost()).toBeUndefined();
+    unmount();
+  });
+
+  it("keeps a host a committed render holds past the unretained grace", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    const { unmount } = render(app());
+    const runtime = currentExtensionHost();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(UNRETAINED_DISPOSE_MS * 2);
+    });
+    expect(currentExtensionHost()).toBe(runtime);
+    unmount();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(currentExtensionHost()).toBeUndefined();
   });
 });
