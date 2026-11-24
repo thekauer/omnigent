@@ -463,11 +463,17 @@ declare module "omnigent" {
     /** Shown for the whole task, with the latest reported message below it. */
     title: string;
     /**
-     * Show the progress in a view the extension contributes instead, as
-     * `vscode.ProgressLocation` with a view id: a spinner and the title above
-     * its rows, which are marked busy. A failure is not shown there.
+     * Where the progress shows instead of a notification. A failure is not
+     * shown at either location.
+     *
+     * - `{ viewId }`: in a view the extension contributes, as
+     *   `vscode.ProgressLocation` with a view id: a spinner and the title above
+     *   its rows, which are marked busy.
+     * - `{ hostId }`: inline at a host, as `vscode.ProgressLocation.Window`
+     *   scoped to one host: a small spinner and the title, then the latest
+     *   reported message, in the host's badge and host menu.
      */
-    location?: { readonly viewId: string };
+    location?: { readonly viewId: string } | { readonly hostId: string };
   }
 
   /** A progress report; only `message` is shown so far. */
@@ -805,11 +811,23 @@ declare module "omnigent" {
      */
     canReconnect: (host: ReconnectHost) => boolean | Promise<boolean>;
     /**
-     * Reconnect `host`. The host shows a "Reconnecting <name>" notification
-     * with each reported message while this runs; a rejection's message is
-     * shown as the error.
+     * Reconnect `host`. `progress` shows inline at the host (its badge and host
+     * menu): "Reconnecting...", then each reported message. When this resolves,
+     * the host shows "Waiting for host..." and checks its liveness until it is
+     * online (then the badge shows it online) or 90 seconds pass ("Host didn't
+     * come online", with `detail` in the tooltip). A rejection shows "Reconnect
+     * failed" inline, with its message in the tooltip. No notification is shown.
      */
-    reconnect: (host: ReconnectHost, progress: Progress<ProgressReport>) => Promise<void>;
+    reconnect: (
+      host: ReconnectHost,
+      progress: Progress<ProgressReport>,
+    ) => Promise<void | ReconnectResult>;
+  }
+
+  /** What a successful {@link HostReconnectProvider.reconnect} may return. Plain data. */
+  export interface ReconnectResult {
+    /** A short summary of what ran, shown if the host does not come online. */
+    readonly detail?: string;
   }
 
   export namespace hosts {

@@ -19,17 +19,47 @@ export interface ReconnectHost {
   readonly resumable: boolean;
 }
 
+/** Reports a reconnect's steps; each message is shown inline at the host. */
+export interface ReconnectProgress {
+  report: (value: { message?: string; increment?: number }) => void;
+}
+
+/** What a provider's successful reconnect may tell Reconnect host. Plain data. */
+export interface ReconnectOutcome {
+  /** A summary of what ran, shown if the host does not come online afterwards. */
+  readonly detail?: string;
+  /**
+   * Reconnect host's own sandbox wake tracking follows the host from here, so
+   * the generic wait for it to come online is skipped. Only the built-in wake sets it.
+   */
+  readonly tracked?: boolean;
+}
+
 /** What Reconnect host gives a provider besides the host: the session's built-in actions. */
 export interface ReconnectSession {
   readonly sessionId: string | null;
-  /** Sends `retry_session` and tracks the wake as the host status dot shows it. */
-  readonly wakeSandbox: () => Promise<void>;
+  /**
+   * Sends `retry_session` and tracks the wake as the host status dot shows it.
+   * Resolves once the server answered, with `tracked`; rejects when the request fails.
+   */
+  readonly wakeSandbox: () => Promise<ReconnectOutcome>;
+  /** Shows each step inline at the host, in its badge and host menu. */
+  readonly progress: ReconnectProgress;
 }
 
 export interface HostReconnectProvider {
   /** Cheap and side-effect free; also called when the host menu opens, to warm caches. */
   canReconnect: (host: ReconnectHost) => boolean | Promise<boolean>;
-  reconnect: (host: ReconnectHost, session: ReconnectSession) => Promise<void>;
+  /**
+   * Reconnects the host. After it resolves, Reconnect host waits for the host
+   * to come online; a rejection is shown as the reconnect's failure.
+   */
+  reconnect: (host: ReconnectHost, session: ReconnectSession) => Promise<void | ReconnectOutcome>;
+}
+
+/** A reconnect whose host did not come online; its message is the detail shown. */
+export class HostOfflineError extends Error {
+  override name = "HostOfflineError";
 }
 
 interface Registration {

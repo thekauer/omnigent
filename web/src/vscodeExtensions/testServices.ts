@@ -1,4 +1,5 @@
 // Host services for tests: real registries, recorded notifications.
+import { HostProgressLocations } from "@/lib/hostProgress";
 import { HostReconnectProviderRegistry } from "@/lib/hostReconnectProviders";
 import type { HostServices } from "./api";
 import { CommandRegistry } from "./commands";
@@ -87,6 +88,7 @@ export function hostServices(overrides: Partial<HostServices> = {}): HostService
     commands,
     notifications: overrides.notifications ?? recordingNotifications(),
     hostReconnect: overrides.hostReconnect ?? { registry: new HostReconnectProviderRegistry() },
+    hostProgress: overrides.hostProgress ?? new HostProgressLocations(),
     views: overrides.views ?? testViewsService(commands),
     workspace: overrides.workspace ?? new WorkspaceService(new WorkspaceBridge()),
     sessionTree: overrides.sessionTree ?? new SessionTreeService(new WorkspaceBridge()),

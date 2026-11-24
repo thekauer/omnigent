@@ -172,11 +172,13 @@ describe("the window's registry", () => {
 
   it("the server wake handles only resumable hosts and runs the session's wake", async () => {
     expect(serverWakeReconnectProvider.canReconnect(userHost)).toBe(false);
-    const wakeSandbox = vi.fn(async () => {});
-    await serverWakeReconnectProvider.reconnect(
-      { ...userHost, resumable: true },
-      { sessionId: "s1", wakeSandbox },
-    );
+    const wakeSandbox = vi.fn(async () => ({ tracked: true }));
+    await expect(
+      serverWakeReconnectProvider.reconnect(
+        { ...userHost, resumable: true },
+        { sessionId: "s1", wakeSandbox, progress: { report: () => {} } },
+      ),
+    ).resolves.toEqual({ tracked: true });
     expect(wakeSandbox).toHaveBeenCalledOnce();
   });
 });

@@ -1,6 +1,11 @@
 import type * as omnigent from "omnigent";
 import { describe, expect, it, vi } from "vitest";
-import { HostReconnectProviderRegistry, type ReconnectHost } from "@/lib/hostReconnectProviders";
+import { HostProgressLocations } from "@/lib/hostProgress";
+import {
+  HostReconnectProviderRegistry,
+  type ReconnectHost,
+  type ReconnectSession,
+} from "@/lib/hostReconnectProviders";
 import { createExtensionApi } from "./api";
 import { CommandRegistry } from "./commands";
 import type { NodeCommandRoute, NodeProgressListener } from "./nodeCommands";
@@ -13,7 +18,16 @@ const offlineHost: ReconnectHost = {
   sandboxProvider: null,
   resumable: false,
 };
-const session = { sessionId: "s1", wakeSandbox: async () => {} };
+/** A reconnect session whose progress reports are recorded. */
+function reconnectSession(): ReconnectSession & { reports: string[] } {
+  const reports: string[] = [];
+  return {
+    sessionId: "s1",
+    wakeSandbox: async () => ({}),
+    progress: { report: (value) => reports.push(value.message ?? "") },
+    reports,
+  };
+}
 
 function deferred<T = void>() {
   let resolve!: (value: T) => void;
@@ -44,13 +58,23 @@ function setup(node?: NodeCommandRoute, commands = new CommandRegistry(node)) {
   const registry = new HostReconnectProviderRegistry({ report: vi.fn() });
   const onReconnected = vi.fn();
   const logError = vi.fn();
+  const hostProgress = new HostProgressLocations();
   const services = hostServices({
     commands,
     notifications,
     hostReconnect: { registry, onReconnected },
+    hostProgress,
   });
   const handle = createExtensionApi("pub.a", services, logError);
-  return { api: handle.api, handle, notifications, registry, onReconnected, logError };
+  return {
+    api: handle.api,
+    handle,
+    notifications,
+    registry,
+    onReconnected,
+    logError,
+    hostProgress,
+  };
 }
 
 describe("commands API", () => {
@@ -137,8 +161,48 @@ describe("window API", () => {
   });
 });
 
+describe("window.withProgress at a host", () => {
+  it("shows the title, then each message, inline at the host, without a notification", async () => {
+    const { api, notifications, hostProgress } = setup();
+    const running = deferred<number>();
+    let progress!: omnigent.Progress<omnigent.ProgressReport>;
+    const result = api.window.withProgress(
+      { title: "Syncing", location: { hostId: "host-1" } },
+      (reporter) => {
+        progress = reporter;
+        return running.promise;
+      },
+    );
+    expect(hostProgress.get("host-1").progress).toBe("Syncing");
+    progress.report({ message: "Copying files" });
+    expect(hostProgress.get("host-1").progress).toBe("Copying files");
+    running.resolve(7);
+    expect(await result).toBe(7);
+    expect(hostProgress.get("host-1")).toEqual({ progress: null, failure: null });
+    expect(notifications.shown).toEqual([]);
+  });
+
+  it("ends on a failure without showing it there, and rejects", async () => {
+    const { api, notifications, hostProgress } = setup();
+    await expect(
+      api.window.withProgress({ title: "T", location: { hostId: "host-1" } }, () => {
+        throw new Error("boom");
+      }),
+    ).rejects.toThrow("boom");
+    expect(hostProgress.get("host-1")).toEqual({ progress: null, failure: null });
+    expect(notifications.shown).toEqual([]);
+  });
+
+  it("refuses a host id that is not a non-empty string", async () => {
+    const { api } = setup();
+    await expect(
+      api.window.withProgress({ title: "T", location: { hostId: "" } }, () => 1),
+    ).rejects.toThrow("location.hostId");
+  });
+});
+
 describe("hosts.registerReconnectProvider", () => {
-  it("adds a provider that gets plain host data and a progress notification", async () => {
+  it("adds a provider that gets plain host data and reports to the host's progress", async () => {
     const { api, registry, notifications, onReconnected } = setup();
     let seen: omnigent.ReconnectHost | undefined;
     api.hosts.registerReconnectProvider({
@@ -146,22 +210,49 @@ describe("hosts.registerReconnectProvider", () => {
       async reconnect(host, progress) {
         seen = host;
         progress.report({ message: "Starting..." });
+        return { detail: "started it" };
       },
     });
     const selected = registry.select(offlineHost);
     if (!selected || selected instanceof Promise) throw new Error("expected a sync selection");
     expect(selected.id).toBe("pub.a.hostReconnect#1");
-    await selected.provider.reconnect(offlineHost, session);
+    const session = reconnectSession();
+    await expect(selected.provider.reconnect(offlineHost, session)).resolves.toEqual({
+      detail: "started it",
+    });
     expect(seen).toEqual(offlineHost);
     expect(seen).not.toBe(offlineHost);
     expect(Object.isFrozen(seen)).toBe(true);
-    expect(notifications.shown).toEqual([
-      { kind: "progress", title: "Reconnecting my-box", messages: ["Starting..."], closed: true },
-    ]);
+    expect(session.reports).toEqual(["Starting..."]);
+    // Reconnect shows its progress at the host, not as a notification.
+    expect(notifications.shown).toEqual([]);
     expect(onReconnected).toHaveBeenCalledOnce();
   });
 
-  it("shows a failed reconnect's error and resolves, without refreshing liveness", async () => {
+  it("routes a Node command's progress to the reconnect's", async () => {
+    const { api, registry, notifications } = setup(
+      nodeRoute([
+        { scope: 1, kind: "start", title: "Reconnecting my-box" },
+        { scope: 1, kind: "report", message: "Starting machine..." },
+        { scope: 1, kind: "report", message: "Starting omni..." },
+        { scope: 1, kind: "end" },
+      ]),
+    );
+    api.hosts.registerReconnectProvider({
+      canReconnect: () => true,
+      reconnect: async () => {
+        await api.commands.executeCommand("pub.node.run");
+      },
+    });
+    const selected = registry.select(offlineHost);
+    if (!selected || selected instanceof Promise) throw new Error("expected a sync selection");
+    const session = reconnectSession();
+    await selected.provider.reconnect(offlineHost, session);
+    expect(session.reports).toEqual(["Starting machine...", "Starting omni..."]);
+    expect(notifications.shown).toEqual([]);
+  });
+
+  it("rejects with a failed reconnect's error, without a notification or refresh", async () => {
     const { api, registry, notifications, onReconnected } = setup();
     api.hosts.registerReconnectProvider({
       canReconnect: () => true,
@@ -171,26 +262,36 @@ describe("hosts.registerReconnectProvider", () => {
     });
     const selected = registry.select(offlineHost);
     if (!selected || selected instanceof Promise) throw new Error("expected a sync selection");
-    const info = vi.spyOn(console, "info").mockImplementation(() => {});
-    await expect(selected.provider.reconnect(offlineHost, session)).resolves.toBeUndefined();
-    info.mockRestore();
-    expect(notifications.shown[0]).toMatchObject({ error: "Sign in on the machine first." });
+    await expect(selected.provider.reconnect(offlineHost, reconnectSession())).rejects.toThrow(
+      "Sign in on the machine first.",
+    );
+    expect(notifications.shown).toEqual([]);
     expect(onReconnected).not.toHaveBeenCalled();
   });
 
-  it("joins a second reconnect of the same host while the first runs", async () => {
+  it("joins a second reconnect of the same host, giving it the progress so far and the rest", async () => {
     const { api, registry } = setup();
     const running = deferred();
-    const reconnect = vi.fn(() => running.promise);
+    let progress!: omnigent.Progress<omnigent.ProgressReport>;
+    const reconnect = vi.fn((_host: omnigent.ReconnectHost, reporter: typeof progress) => {
+      progress = reporter;
+      return running.promise;
+    });
     api.hosts.registerReconnectProvider({ canReconnect: () => true, reconnect });
     const selected = registry.select(offlineHost);
     if (!selected || selected instanceof Promise) throw new Error("expected a sync selection");
-    const first = selected.provider.reconnect(offlineHost, session);
-    const second = selected.provider.reconnect(offlineHost, session);
+    const firstSession = reconnectSession();
+    const secondSession = reconnectSession();
+    const first = selected.provider.reconnect(offlineHost, firstSession);
+    progress.report({ message: "Starting machine..." });
+    const second = selected.provider.reconnect(offlineHost, secondSession);
     expect(second).toBe(first);
+    progress.report({ message: "Starting omni..." });
     running.resolve();
     await first;
     expect(reconnect).toHaveBeenCalledOnce();
+    expect(firstSession.reports).toEqual(["Starting machine...", "Starting omni..."]);
+    expect(secondSession.reports).toEqual(["Starting machine...", "Starting omni..."]);
   });
 
   it("is unregistered by its Disposable and by deactivation", () => {

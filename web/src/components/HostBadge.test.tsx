@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { HostBadge, resolveHostBadge } from "./HostBadge";
 import { hostReconnectProviders } from "@/lib/hostReconnectProviders";
+import { hostProgress, type HostProgressHandle } from "@/lib/hostProgress";
 import type { Host } from "@/hooks/useHosts";
 import {
   SANDBOX_SWITCH_HOST_UNSUPPORTED,
@@ -888,6 +889,143 @@ describe("HostBadge", () => {
     useSessionHostOnlineMock.mockReturnValue(false);
     rerender(<HostBadge sessionId="conv_1" />);
     expect(screen.getByTestId("host-badge").textContent).toBe("new-box, offline");
+  });
+});
+
+describe("HostBadge with progress at its host", () => {
+  const open: HostProgressHandle[] = [];
+  const owner = {};
+  const begin = (message: string) => {
+    let handle!: HostProgressHandle;
+    act(() => {
+      handle = hostProgress.begin("host_a1b2", message);
+    });
+    open.push(handle);
+    return handle;
+  };
+  const fail = (message: string, detail: string | null) =>
+    act(() => hostProgress.setFailure("host_a1b2", { message, detail }, owner));
+  afterEach(() => {
+    act(() => {
+      for (const handle of open.splice(0)) handle.end();
+      hostProgress.clearFailure("host_a1b2");
+    });
+  });
+  const offline = () => {
+    useSessionHostOnlineMock.mockReturnValue(false);
+  };
+
+  it("keeps the menu open on Reconnect host and shows the steps in its place", () => {
+    offline();
+    const onReconnect = vi.fn(() => {
+      begin("Reconnecting...");
+    });
+    render(<HostBadge sessionId="conv_1" appearance="composer" onReconnect={onReconnect} />);
+    fireEvent.pointerDown(screen.getByTestId("composer-host-select"), { button: 0 });
+    fireEvent.click(screen.getByRole("menuitem", { name: "Reconnect host" }));
+    expect(onReconnect).toHaveBeenCalledOnce();
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "Reconnect host" })).not.toBeInTheDocument();
+    const menuStep = screen.getByTestId("composer-host-menu-reconnect-progress");
+    expect(menuStep).toHaveTextContent("Reconnecting...");
+    expect(menuStep.querySelector("svg.animate-spin")).not.toBeNull();
+    // The inline Offline · Reconnect is replaced too, so a second click can't start another.
+    const inline = screen.getByTestId("composer-host-reconnect-progress");
+    expect(inline).toHaveTextContent("Reconnecting...");
+    expect(screen.queryByTestId("composer-host-reconnect")).not.toBeInTheDocument();
+
+    act(() => open[0]!.report("Starting machine..."));
+    expect(menuStep).toHaveTextContent("Starting machine...");
+    expect(inline).toHaveTextContent("Starting machine...");
+    act(() => open[0]!.report("Waiting for host..."));
+    expect(inline).toHaveTextContent("Waiting for host...");
+    expect(screen.getByTestId("composer-host-status")).toHaveAttribute("data-status", "offline");
+  });
+
+  it("draws the inline step at the size of the reconnect text it replaces", () => {
+    offline();
+    begin("Starting omni...");
+    render(<HostBadge sessionId="conv_1" appearance="composer" onReconnect={vi.fn()} />);
+    const chip = screen.getByTestId("composer-host-offline");
+    expect(chip).toHaveTextContent(/^Starting omni\.\.\.$/);
+    expect(screen.getByTestId("composer-host-reconnect-progress")).toHaveClass(
+      "text-ui",
+      "leading-5",
+    );
+    expect(screen.getByTestId("composer-host-select")).toHaveAccessibleName(
+      "Host mac-laptop, Starting omni...",
+    );
+    // The step's spinner shows the progress; the dot keeps the host's status.
+    expect(screen.getByTestId("composer-host-status")).toHaveAttribute("data-status", "offline");
+  });
+
+  it("shows a failure inline with its hint in a tooltip, and Reconnect retries", async () => {
+    offline();
+    const hint = "omni start on mac-laptop exited 1. Run `omni login` and try again.";
+    fail("Reconnect failed", hint);
+    const onReconnect = vi.fn();
+    render(<HostBadge sessionId="conv_1" appearance="composer" onReconnect={onReconnect} />);
+    const failed = screen.getByTestId("composer-host-reconnect-failed");
+    expect(failed).toHaveTextContent("Reconnect failed");
+    expect(failed).toHaveClass("text-destructive");
+    expect(failed).toHaveAccessibleDescription(hint);
+    fireEvent.focus(failed);
+    expect(await screen.findByTestId("composer-host-reconnect-failed-tooltip")).toHaveTextContent(
+      "omni login",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Reconnect host" }));
+    expect(onReconnect).toHaveBeenCalledOnce();
+
+    fireEvent.pointerDown(screen.getByTestId("composer-host-select"), { button: 0 });
+    expect(screen.getByTestId("composer-host-menu-reconnect-failed")).toHaveTextContent(
+      "Reconnect failed",
+    );
+    fireEvent.click(screen.getByRole("menuitem", { name: "Reconnect host" }));
+    expect(onReconnect).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows the host as online once it is, with no Reconnect or leftover failure", () => {
+    offline();
+    fail("Host didn't come online", "Not online after 90 seconds.");
+    const badge = () => (
+      <HostBadge sessionId="conv_1" appearance="composer" onReconnect={vi.fn()} />
+    );
+    const { rerender } = render(badge());
+    expect(screen.getByTestId("composer-host-reconnect-failed")).toHaveTextContent(
+      "Host didn't come online",
+    );
+    useSessionHostOnlineMock.mockReturnValue(true);
+    rerender(badge());
+    expect(screen.queryByTestId("composer-host-offline")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("composer-host-reconnect-failed")).not.toBeInTheDocument();
+    expect(screen.getByTestId("composer-host-status")).toHaveAttribute("data-status", "online");
+    fireEvent.pointerDown(screen.getByTestId("composer-host-select"), { button: 0 });
+    expect(screen.queryByRole("menuitem", { name: "Reconnect host" })).not.toBeInTheDocument();
+  });
+
+  it("shows a woken sandbox's steps inline too", () => {
+    useSessionMock.mockReturnValue({
+      session: { hostId: "host_a1b2", hostResumable: true },
+      isLoading: false,
+      error: null,
+    });
+    offline();
+    begin("Provisioning sandbox...");
+    render(<HostBadge sessionId="conv_1" appearance="composer" onReconnect={vi.fn()} starting />);
+    expect(screen.getByTestId("composer-host-reconnect-progress")).toHaveTextContent(
+      "Provisioning sandbox...",
+    );
+    fireEvent.pointerDown(screen.getByTestId("composer-host-select"), { button: 0 });
+    expect(screen.getByTestId("composer-host-menu-reconnect-progress")).toHaveTextContent(
+      "Provisioning sandbox...",
+    );
+  });
+
+  it("shows no inline state to a read-only viewer", () => {
+    offline();
+    begin("Reconnecting...");
+    render(<HostBadge sessionId="conv_1" appearance="composer" readOnly onReconnect={vi.fn()} />);
+    expect(screen.queryByTestId("composer-host-offline")).not.toBeInTheDocument();
   });
 });
 

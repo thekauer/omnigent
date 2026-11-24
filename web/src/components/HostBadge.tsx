@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 
 import { useHosts } from "@/hooks/useHosts";
 import type { Host } from "@/hooks/useHosts";
@@ -7,6 +7,7 @@ import { useSessionActionRestrictions } from "@/hooks/useSessionActionRestrictio
 import { useSessionHostOnline } from "@/hooks/RunnerHealthProvider";
 import { sandboxOptionLabel } from "@/lib/capabilities";
 import { hostReconnectProviders } from "@/lib/hostReconnectProviders";
+import { useHostProgress, type HostProgressFailure } from "@/lib/hostProgress";
 import { isSandboxLaunchStopped, SANDBOX_STAGE_LABELS } from "@/lib/sandboxStatus";
 import type { SandboxStatus } from "@/lib/types";
 import { useChatStore } from "@/store/chatStore";
@@ -21,6 +22,8 @@ import {
   ComposerMenuTooltip,
   HostStatusDot,
 } from "@/components/composer/ComposerControls";
+import { Spinner } from "@/components/ui/spinner";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -85,6 +88,74 @@ const CONNECTION_WORD: Record<HostBadgeStatus, string> = {
   offline: "Disconnected",
   unknown: "Unknown",
 };
+
+/** A small spinner and the latest step of the progress shown at the host. */
+function HostProgressText({
+  message,
+  testId,
+  className,
+  textClassName,
+}: {
+  message: string;
+  testId: string;
+  className?: string;
+  textClassName?: string;
+}) {
+  return (
+    <span
+      role="status"
+      aria-live="polite"
+      className={cn("flex min-w-0 items-center gap-1.5 text-muted-foreground", className)}
+      data-testid={testId}
+    >
+      <Spinner aria-hidden="true" role="presentation" className="size-3.5 shrink-0" />
+      <span className={cn("truncate", textClassName)}>{message}</span>
+    </span>
+  );
+}
+
+/** The host's failed reconnect: short destructive text, the detail in its tooltip. */
+function HostProgressFailureText({
+  failure,
+  testId,
+  className,
+}: {
+  failure: HostProgressFailure;
+  testId: string;
+  className?: string;
+}) {
+  const detailId = useId();
+  return (
+    <TooltipProvider delayDuration={200}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            tabIndex={0}
+            aria-describedby={failure.detail ? detailId : undefined}
+            className={cn("cursor-default font-medium text-destructive", className)}
+            data-testid={testId}
+          >
+            {failure.message}
+            {failure.detail && (
+              <span id={detailId} className="sr-only">
+                {failure.detail}
+              </span>
+            )}
+          </span>
+        </TooltipTrigger>
+        {failure.detail && (
+          <TooltipContent
+            side="top"
+            className="max-w-80 whitespace-pre-wrap break-words"
+            data-testid={`${testId}-tooltip`}
+          >
+            {failure.detail}
+          </TooltipContent>
+        )}
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
 
 /** Composer status for a sandbox that is still launching, or failed to launch. */
 function launchStatusWord(launch: SandboxStatus): string {
@@ -162,6 +233,13 @@ export function HostBadge({
       : liveOnline;
 
   const badge = resolveHostBadge({ hostId, host, online });
+  // Progress shown at this host (a reconnect's steps), and its last reconnect's failure.
+  const hostProgressState = useHostProgress(hostId);
+  const progressMessage = badge ? hostProgressState.progress : null;
+  const reconnectFailure =
+    progressMessage === null && badge && badge.status !== "online"
+      ? hostProgressState.failure
+      : null;
   const { switchHostDisabledReason } = useSessionActionRestrictions(sessionId);
   const canSwitch =
     (host !== undefined || (session !== null && hostId === null && launch === null)) &&
@@ -178,18 +256,25 @@ export function HostBadge({
     const launchInProgress = launch !== null && !isSandboxLaunchStopped(launch);
     // The wake's owner ends `starting` when the launch reports a stop.
     const localWakeRunning = starting && !!badge;
-    const hostStarting = (localWakeRunning || launchInProgress) && badge?.status !== "online";
+    const hostStarting =
+      (localWakeRunning || launchInProgress || progressMessage !== null) &&
+      badge?.status !== "online";
     const startingWord = launch && launchInProgress ? launchStatusWord(launch) : "Starting";
-    const dotStatus = hostStarting ? "starting" : (badge?.status ?? "unknown");
+    // Beside the composer trigger, the step's own spinner shows the progress, so the dot doesn't spin too.
+    const progressInline = appearance === "composer" && progressMessage !== null && !readOnly;
+    const dotStatus = hostStarting && !progressInline ? "starting" : (badge?.status ?? "unknown");
     // Only this tab's own wake hides Reconnect: a server-reported stage can go stale.
     const reconnectable =
       !launchStatus && !localWakeRunning && badge?.status === "offline" && !!onReconnect;
-    const statusWord = hostStarting ? startingWord : STATUS_WORD[badge?.status ?? "unknown"];
+    const statusWord =
+      progressMessage ?? (hostStarting ? startingWord : STATUS_WORD[badge?.status ?? "unknown"]);
     let label = badge ? `Host ${badge.label}, ${statusWord}` : "No host bound";
     // A dormant resumable host wakes on the next message; it isn't disconnected.
     const asleep = badge?.status === "offline" && !!session?.hostResumable;
     let connectionWord = CONNECTION_WORD[badge?.status ?? "unknown"];
-    if (hostStarting) connectionWord = startingWord;
+    if (progressMessage !== null) connectionWord = progressMessage;
+    else if (reconnectFailure) connectionWord = reconnectFailure.message;
+    else if (hostStarting) connectionWord = startingWord;
     else if (asleep) connectionWord = "Asleep — wakes on next message";
     let tooltipRows = badge
       ? [
@@ -211,6 +296,10 @@ export function HostBadge({
     // The composer trigger is icon-only, so a disconnected host the user can
     // reconnect also gets a visible label and a one-click Reconnect beside it.
     const showReconnect = reconnectable && !asleep && !hostStarting && !readOnly;
+    // A reconnect's steps and failure take the label's place, so they show with the menu closed.
+    const showInlineProgress = progressInline;
+    const showInlineFailure = !showInlineProgress && !!reconnectFailure && !readOnly;
+    const inlineChip = showReconnect || showInlineProgress || showInlineFailure;
     const hostMenu = (
       <DropdownMenu
         modal={appearance !== "header"}
@@ -260,10 +349,37 @@ export function HostBadge({
             )}
             <span>{launchStatus ? launchHost : (badge?.label ?? "No host bound")}</span>
           </DropdownMenuItem>
-          {reconnectable && (
-            <DropdownMenuItem disabled={readOnly} onSelect={onReconnect}>
-              Reconnect host
-            </DropdownMenuItem>
+          {progressMessage !== null ? (
+            // Stands in for Reconnect host while it runs; a click joins the running one.
+            <div className="px-2 py-1.5 text-sm">
+              <HostProgressText
+                message={progressMessage}
+                testId="composer-host-menu-reconnect-progress"
+              />
+            </div>
+          ) : (
+            <>
+              {reconnectFailure && (
+                <div className="px-2 py-1.5 text-sm">
+                  <HostProgressFailureText
+                    failure={reconnectFailure}
+                    testId="composer-host-menu-reconnect-failed"
+                  />
+                </div>
+              )}
+              {reconnectable && (
+                <DropdownMenuItem
+                  disabled={readOnly}
+                  // The menu stays open, so its steps show in place of this item.
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    onReconnect?.();
+                  }}
+                >
+                  Reconnect host
+                </DropdownMenuItem>
+              )}
+            </>
           )}
           {!readOnly && (canSwitch || switchHostDisabledReason) && (
             <SessionActionMenuItem
@@ -286,11 +402,54 @@ export function HostBadge({
         {appearance === "composer" ? (
           // One stable wrapper, so the menu and its trigger stay mounted as the label toggles.
           <div
-            className={cn("flex shrink-0 items-center rounded-lg", showReconnect && "bg-muted")}
-            data-testid={showReconnect ? "composer-host-offline" : undefined}
+            className={cn("flex shrink-0 items-center rounded-lg", inlineChip && "bg-muted")}
+            data-testid={inlineChip ? "composer-host-offline" : undefined}
           >
             {hostMenu}
-            {showReconnect && (
+            {showInlineProgress && (
+              <HostProgressText
+                message={progressMessage}
+                testId="composer-host-reconnect-progress"
+                className="h-8 pr-2 pl-0.5 text-ui leading-5 md:h-7"
+                textClassName={COMPOSER_COLLAPSED_LABEL_CLASS}
+              />
+            )}
+            {showInlineFailure && (
+              <>
+                <HostProgressFailureText
+                  failure={reconnectFailure}
+                  testId="composer-host-reconnect-failed"
+                  className={cn(
+                    "text-ui leading-5",
+                    !reconnectable && "pr-2",
+                    COMPOSER_COLLAPSED_LABEL_CLASS,
+                  )}
+                />
+                {reconnectable && (
+                  <>
+                    <span
+                      aria-hidden
+                      className={cn(
+                        "pl-1 text-ui leading-5 text-muted-foreground",
+                        COMPOSER_COLLAPSED_LABEL_CLASS,
+                      )}
+                    >
+                      ·
+                    </span>
+                    <button
+                      type="button"
+                      onClick={onReconnect}
+                      aria-label="Reconnect host"
+                      className="flex h-8 mobile-touch-target cursor-pointer items-center rounded-lg px-1.5 text-ui leading-5 font-medium text-foreground transition-colors hover:bg-muted md:h-7"
+                      data-testid="composer-host-reconnect"
+                    >
+                      Reconnect
+                    </button>
+                  </>
+                )}
+              </>
+            )}
+            {showReconnect && !showInlineProgress && !showInlineFailure && (
               <>
                 <span
                   className={cn(

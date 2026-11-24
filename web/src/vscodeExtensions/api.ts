@@ -2,7 +2,12 @@
 // like VS Code's per-extension `vscode` module, so every call is attributable.
 import type * as omnigent from "omnigent";
 import type { GitHostProviderRegistry } from "@/lib/gitHostProviders";
-import type { HostReconnectProviderRegistry, ReconnectHost } from "@/lib/hostReconnectProviders";
+import type { HostProgressLocations } from "@/lib/hostProgress";
+import type {
+  HostReconnectProviderRegistry,
+  ReconnectHost,
+  ReconnectOutcome,
+} from "@/lib/hostReconnectProviders";
 import { isThenable } from "@/lib/thenable";
 import {
   CancellationTokenSource,
@@ -14,10 +19,10 @@ import {
 import type { CommandHandler, CommandRegistry } from "./commands";
 import type { NodeProgressEvent } from "./nodeCommands";
 import {
-  errorText,
   runWithProgress,
   type Notifications,
   type ProgressNotification,
+  type ProgressReport,
   type ProgressReporter,
 } from "./progress";
 import { SessionHeaderItemAlignment, type SessionHeaderItemRegistry } from "./sessionHeaderItems";
@@ -67,6 +72,8 @@ export interface HostServices {
     /** Called after a provider's reconnect succeeded, to refresh host liveness. */
     onReconnected?: () => void;
   };
+  /** Progress shown inline at a host (`withProgress({ location: { hostId } })`). */
+  hostProgress: HostProgressLocations;
   views: ViewsService;
   workspace: WorkspaceService;
   sessionTree: SessionTreeService;
@@ -377,7 +384,34 @@ export function createExtensionApi(
       return Promise.reject(new Error("the extension was deactivated"));
     }
     const title = typeof options?.title === "string" && options.title ? options.title : extensionId;
-    const viewId = options?.location?.viewId;
+    const location = options?.location as { viewId?: unknown; hostId?: unknown } | undefined;
+    const hostId = location?.hostId;
+    if (hostId !== undefined) {
+      if (typeof hostId !== "string" || !hostId) {
+        return Promise.reject(new Error("withProgress: location.hostId must be a host id"));
+      }
+      // Inline at the host, as VS Code's window progress; a failure is not shown there.
+      const handle = services.hostProgress.begin(hostId, title);
+      const progress: omnigent.Progress<omnigent.ProgressReport> = Object.freeze({
+        report(value: omnigent.ProgressReport) {
+          if (typeof value?.message === "string") handle.report(value.message);
+        },
+      });
+      const untrack = trackProgress(progress);
+      let result: R | Promise<R>;
+      try {
+        result = task(progress);
+      } catch (error) {
+        untrack();
+        handle.end();
+        return Promise.reject(error);
+      }
+      return Promise.resolve(result).finally(() => {
+        untrack();
+        handle.end();
+      });
+    }
+    const viewId = location?.viewId;
     if (typeof viewId === "string") {
       let end: () => void;
       try {
@@ -479,28 +513,46 @@ export function createExtensionApi(
         sandboxProvider: host.sandboxProvider,
         resumable: host.resumable,
       });
-    // One reconnect per host at a time; a second click joins it.
-    const running = new Map<string, Promise<void>>();
+    // One reconnect per host at a time; a second click joins it, and its progress
+    // goes to every caller's reporter (the host shows it inline at the host).
+    const running = new Map<
+      string,
+      { result: Promise<void | ReconnectOutcome>; reporters: Set<ProgressReporter>; last?: string }
+    >();
     const unregister = services.hostReconnect.registry.register(providerId, {
       canReconnect: (host) => !disposed && provider.canReconnect(plainHost(host)),
-      reconnect: (host) => {
+      reconnect: (host, session) => {
         const existing = running.get(host.hostId);
-        if (existing) return existing;
-        const run = runWithProgress(
-          services.notifications,
-          `Reconnecting ${host.name}`,
-          (progress) => provider.reconnect(plainHost(host), progress),
-          trackProgress,
-        )
-          .then(
-            () => services.hostReconnect.onReconnected?.(),
-            // The progress notification already shows the error to the user.
-            (error: unknown) =>
-              console.info(`[host-reconnect] ${providerId}: ${host.name}: ${errorText(error)}`),
-          )
-          .finally(() => running.delete(host.hostId));
-        running.set(host.hostId, run);
-        return run;
+        if (existing) {
+          existing.reporters.add(session.progress);
+          if (existing.last !== undefined) session.progress.report({ message: existing.last });
+          return existing.result;
+        }
+        const entry: {
+          result: Promise<void | ReconnectOutcome>;
+          reporters: Set<ProgressReporter>;
+          last?: string;
+        } = { result: Promise.resolve(), reporters: new Set([session.progress]) };
+        const progress: ProgressReporter = Object.freeze({
+          report(value: ProgressReport) {
+            if (typeof value?.message !== "string") return;
+            entry.last = value.message;
+            for (const reporter of entry.reporters) reporter.report({ message: value.message });
+          },
+        });
+        // A Node command's progress joins this reconnect's.
+        const untrack = trackProgress(progress);
+        entry.result = (async () => {
+          const outcome = await provider.reconnect(plainHost(host), progress);
+          services.hostReconnect.onReconnected?.();
+          const detail = (outcome as { detail?: unknown } | undefined)?.detail;
+          return typeof detail === "string" && detail ? { detail: detail.slice(0, 2000) } : {};
+        })().finally(() => {
+          untrack();
+          running.delete(host.hostId);
+        });
+        running.set(host.hostId, entry);
+        return entry.result;
       },
     });
     const tracked = track(

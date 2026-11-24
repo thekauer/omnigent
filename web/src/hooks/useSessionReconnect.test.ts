@@ -1,5 +1,7 @@
 import type * as SessionsApiModule from "@/lib/sessionsApi";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, renderHook } from "@testing-library/react";
+import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
 
@@ -8,7 +10,9 @@ import type { Host } from "@/hooks/useHosts";
 import { refreshRunnerHealth } from "@/hooks/useRunnerHealth";
 import type { SessionLiveness } from "@/hooks/useRunnerHealth";
 import { readArcaHostId, writeArcaHostId } from "@/lib/arcaHost";
+import { hostProgress } from "@/lib/hostProgress";
 import {
+  HostOfflineError,
   hostReconnectProviders,
   type HostReconnectProvider,
   type ReconnectHost,
@@ -26,6 +30,8 @@ import type { PostEventResponse } from "@/lib/sessionsApi";
 import { useChatStore } from "@/store/chatStore";
 import { conversationRegistry } from "@/store/conversationRegistry";
 import {
+  RECONNECT_ONLINE_POLL_MS,
+  RECONNECT_ONLINE_TIMEOUT_MS,
   SANDBOX_WAKE_ONLINE_GRACE_POLLS,
   SANDBOX_WAKE_STAGE_LIMIT_MS,
   useSandboxStarting,
@@ -67,6 +73,13 @@ const asleepSandbox = {
   hostId: "arclet-host",
   hostResumable: true,
   isOwner: false,
+};
+
+/** What the sandbox host's badge shows inline. */
+const sandboxInline = () => hostProgress.get(asleepSandbox.hostId);
+const SANDBOX_OFFLINE = {
+  message: "Host didn't come online",
+  detail: "The sandbox didn't come online. Try Reconnect host again.",
 };
 
 function hostRow(hostId: string, status: Host["status"]): Host {
@@ -547,9 +560,11 @@ describe("useSessionReconnect", () => {
       let reconnect!: Promise<void>;
       await act(async () => {
         reconnect = result.current.reconnect();
-        await result.current.reconnect();
+        // A second click joins the running reconnect.
+        void result.current.reconnect();
       });
       expect(retrySession).toHaveBeenCalledExactlyOnceWith("session");
+      expect(sandboxInline().progress).toBe("Reconnecting...");
       expect(result.current.sandboxStarting).toBe(true);
       expect(result.current.dialogOpen).toBe(false);
       expect(getHostIdentity).not.toHaveBeenCalled();
@@ -562,9 +577,11 @@ describe("useSessionReconnect", () => {
       // Liveness hasn't caught up yet: still starting, with a re-poll requested.
       expect(result.current.sandboxStarting).toBe(true);
       expect(refreshRunnerHealth).toHaveBeenCalledOnce();
+      expect(sandboxInline().progress).toBe("Waiting for host...");
 
       rerender({ ...asleepSandbox, hostOnline: true });
       expect(result.current.sandboxStarting).toBe(false);
+      expect(sandboxInline()).toEqual({ progress: null, failure: null });
       expect(toast.loading).not.toHaveBeenCalled();
       expect(toast.success).not.toHaveBeenCalled();
       expect(toast.error).not.toHaveBeenCalled();
@@ -604,24 +621,23 @@ describe("useSessionReconnect", () => {
       // Liveness settling to another not-online value must not restart the count.
       rerender({ hostOnline: null });
       expect(result.current.sandboxStarting).toBe(true);
-      expect(toast.error).not.toHaveBeenCalled();
+      expect(sandboxInline().failure).toBeNull();
       finishHealthPolls(1, { hostOnline: null });
       expect(result.current.sandboxStarting).toBe(false);
-      expect(toast.error).toHaveBeenCalledExactlyOnceWith(
-        "The sandbox didn't come online. Try Reconnect host again.",
-      );
+      expect(sandboxInline()).toEqual({ progress: null, failure: SANDBOX_OFFLINE });
+      expect(toast.error).not.toHaveBeenCalled();
 
-      // Retrying after the timeout gets its own full count.
+      // Retrying after the timeout gets its own full count, and clears the failure.
       await act(async () => {
         await result.current.reconnect();
       });
       expect(retrySession).toHaveBeenCalledTimes(2);
+      expect(sandboxInline().failure).toBeNull();
       finishHealthPolls(2);
       expect(result.current.sandboxStarting).toBe(true);
-      expect(toast.error).toHaveBeenCalledOnce();
       finishHealthPolls(1);
       expect(result.current.sandboxStarting).toBe(false);
-      expect(toast.error).toHaveBeenCalledTimes(2);
+      expect(sandboxInline().failure).toEqual(SANDBOX_OFFLINE);
     } finally {
       vi.useRealTimers();
     }
@@ -668,6 +684,8 @@ describe("useSessionReconnect", () => {
       act(() => useChatStore.setState({ sandboxStatus: { stage } }));
       finishHealthPolls(SANDBOX_WAKE_ONLINE_GRACE_POLLS);
     }
+    // The server's stage is the inline step meanwhile.
+    expect(sandboxInline().progress).toBe("Starting agent...");
     expect(result.current.sandboxStarting).toBe(true);
     expect(toast.error).not.toHaveBeenCalled();
 
@@ -675,12 +693,11 @@ describe("useSessionReconnect", () => {
     act(() => useChatStore.setState({ sandboxStatus: null }));
     finishHealthPolls(SANDBOX_WAKE_ONLINE_GRACE_POLLS - 1);
     expect(result.current.sandboxStarting).toBe(true);
-    expect(toast.error).not.toHaveBeenCalled();
+    expect(sandboxInline().progress).toBe("Waiting for host...");
     finishHealthPolls(1);
     expect(result.current.sandboxStarting).toBe(false);
-    expect(toast.error).toHaveBeenCalledExactlyOnceWith(
-      "The sandbox didn't come online. Try Reconnect host again.",
-    );
+    expect(sandboxInline().failure).toEqual(SANDBOX_OFFLINE);
+    expect(toast.error).not.toHaveBeenCalled();
   });
 
   it("sends a fresh wake after the stage limit even if the old answer never arrives", async () => {
@@ -813,7 +830,7 @@ describe("useSessionReconnect", () => {
       expect(result.current.sandboxStarting).toBe(true);
       finishHealthPolls(SANDBOX_WAKE_ONLINE_GRACE_POLLS);
       expect(result.current.sandboxStarting).toBe(false);
-      expect(toast.error).toHaveBeenCalledOnce();
+      expect(sandboxInline().failure).toEqual(SANDBOX_OFFLINE);
     } finally {
       vi.useRealTimers();
     }
@@ -841,9 +858,11 @@ describe("useSessionReconnect", () => {
 
       for (const sandboxStatus of stages) act(() => useChatStore.setState({ sandboxStatus }));
       expect(result.current.sandboxStarting).toBe(false);
+      // The chat's launch banner explains the stop; nothing stays inline.
+      expect(sandboxInline()).toEqual({ progress: null, failure: null });
       // The stopped wake leaves no count behind.
       finishHealthPolls(SANDBOX_WAKE_ONLINE_GRACE_POLLS);
-      expect(toast.error).not.toHaveBeenCalled();
+      expect(sandboxInline().failure).toBeNull();
 
       await act(async () => {
         await result.current.reconnect();
@@ -851,9 +870,8 @@ describe("useSessionReconnect", () => {
       expect(retrySession).toHaveBeenCalledTimes(2);
       expect(result.current.sandboxStarting).toBe(true);
       finishHealthPolls(SANDBOX_WAKE_ONLINE_GRACE_POLLS);
-      expect(toast.error).toHaveBeenCalledExactlyOnceWith(
-        "The sandbox didn't come online. Try Reconnect host again.",
-      );
+      expect(sandboxInline().failure).toEqual(SANDBOX_OFFLINE);
+      expect(toast.error).not.toHaveBeenCalled();
     },
   );
 
@@ -914,12 +932,19 @@ describe("useSessionReconnect", () => {
     const { result } = renderHook(() =>
       useSessionReconnect({ ...asleepSandbox, hostOnline: false }),
     );
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
     await act(async () => {
       await result.current.reconnect();
     });
-    expect(toast.error).toHaveBeenCalledExactlyOnceWith(
-      "Couldn't reconnect the sandbox: managed host wake timed out",
-    );
+    info.mockRestore();
+    expect(toast.error).not.toHaveBeenCalled();
+    expect(sandboxInline()).toEqual({
+      progress: null,
+      failure: {
+        message: "Reconnect failed",
+        detail: "Couldn't wake the sandbox: managed host wake timed out",
+      },
+    });
     expect(result.current.sandboxStarting).toBe(false);
     expect(refreshRunnerHealth).not.toHaveBeenCalled();
     expect(result.current.dialogOpen).toBe(false);
@@ -1169,6 +1194,7 @@ describe("useSessionReconnect host reconnect providers", () => {
     hostOnline: false,
     isOwner: true,
   };
+  const devbox = () => hostProgress.get("host-devbox");
   const unregisters: (() => void)[] = [];
   const addProvider = (provider: HostReconnectProvider) => {
     unregisters.push(hostReconnectProviders.register("test.provider", provider));
@@ -1198,6 +1224,7 @@ describe("useSessionReconnect host reconnect providers", () => {
     expect(reconnect).toHaveBeenCalledWith(expectedHost, {
       sessionId: "session",
       wakeSandbox: expect.any(Function),
+      progress: { report: expect.any(Function) },
     });
     expect(getHostIdentity).not.toHaveBeenCalled();
     expect(controlHost).not.toHaveBeenCalled();
@@ -1287,22 +1314,207 @@ describe("useSessionReconnect host reconnect providers", () => {
     expect(reconnect).not.toHaveBeenCalled();
   });
 
-  it("shows an error toast when a provider's reconnect rejects", async () => {
-    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+  it("shows each step inline at the host and joins a second click", async () => {
+    const running = deferred<void>();
+    let progress!: { report: (value: { message?: string }) => void };
+    const reconnect = vi.fn<HostReconnectProvider["reconnect"]>((_host, session) => {
+      progress = session.progress;
+      return running.promise;
+    });
+    addProvider({ canReconnect: () => true, reconnect });
+    const { result } = renderHook(() => useSessionReconnect(userMachine));
+    let first!: Promise<void>;
+    let second!: Promise<void>;
+    await act(async () => {
+      first = result.current.reconnect();
+    });
+    expect(devbox()).toEqual({ progress: "Reconnecting...", failure: null });
+    act(() => progress.report({ message: "Starting machine..." }));
+    expect(devbox().progress).toBe("Starting machine...");
+    act(() => progress.report({ message: "Starting omni..." }));
+    expect(devbox().progress).toBe("Starting omni...");
+
+    await act(async () => {
+      second = result.current.reconnect();
+    });
+    expect(reconnect).toHaveBeenCalledOnce();
+    let joinedSettled = false;
+    void second.then(() => {
+      joinedSettled = true;
+    });
+    await act(async () => {
+      running.resolve();
+      await first;
+      await second;
+    });
+    expect(joinedSettled).toBe(true);
+    expect(devbox().progress).toBe("Waiting for host...");
+    expect(toast.loading).not.toHaveBeenCalled();
+    expect(toast.success).not.toHaveBeenCalled();
+  });
+
+  it("polls quickly after a successful reconnect until the host reads online", async () => {
+    vi.useFakeTimers();
+    try {
+      addProvider({ canReconnect: () => true, reconnect: async () => ({ detail: "started" }) });
+      const queryClient = new QueryClient();
+      const invalidate = vi.spyOn(queryClient, "invalidateQueries");
+      const { result, rerender } = renderHook(useSessionReconnect, {
+        initialProps: userMachine as Parameters<typeof useSessionReconnect>[0],
+        wrapper: ({ children }) =>
+          createElement(QueryClientProvider, { client: queryClient }, children),
+      });
+      await act(async () => {
+        await result.current.reconnect();
+      });
+      expect(devbox().progress).toBe("Waiting for host...");
+      vi.mocked(refreshRunnerHealth).mockClear();
+      act(() => vi.advanceTimersByTime(RECONNECT_ONLINE_POLL_MS * 3));
+      expect(refreshRunnerHealth).toHaveBeenCalledTimes(3);
+      expect(invalidate).toHaveBeenCalledWith({ queryKey: ["hosts"] });
+
+      // Liveness settling to another not-online value keeps waiting.
+      rerender({ ...userMachine, hostOnline: null });
+      expect(devbox().progress).toBe("Waiting for host...");
+      rerender({ ...userMachine, hostOnline: true });
+      expect(devbox()).toEqual({ progress: null, failure: null });
+      vi.mocked(refreshRunnerHealth).mockClear();
+      act(() => vi.advanceTimersByTime(RECONNECT_ONLINE_TIMEOUT_MS * 2));
+      expect(refreshRunnerHealth).not.toHaveBeenCalled();
+      expect(devbox().failure).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("says inline that the host didn't come online, with the provider's summary", async () => {
+    vi.useFakeTimers();
+    try {
+      addProvider({
+        canReconnect: () => true,
+        reconnect: async () => ({ detail: "omni start on devbox exited 0. Started." }),
+      });
+      const { result } = renderHook(() => useSessionReconnect(userMachine));
+      await act(async () => {
+        await result.current.reconnect();
+      });
+      act(() => vi.advanceTimersByTime(RECONNECT_ONLINE_TIMEOUT_MS - 1));
+      expect(devbox().progress).toBe("Waiting for host...");
+      act(() => vi.advanceTimersByTime(1));
+      expect(devbox()).toEqual({
+        progress: null,
+        failure: {
+          message: "Host didn't come online",
+          detail: "Not online after 90 seconds. omni start on devbox exited 0. Started.",
+        },
+      });
+      expect(toast.error).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows a HostOfflineError as the host not coming online", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
     try {
       addProvider({
         canReconnect: () => true,
         reconnect: async () => {
-          throw new Error("machine refused");
+          throw new HostOfflineError("no heartbeat");
         },
       });
       const { result } = renderHook(() => useSessionReconnect(userMachine));
       await act(async () => {
         await result.current.reconnect();
       });
-      expect(toast.error).toHaveBeenCalledWith("Couldn't reconnect the host: machine refused");
+      expect(devbox().failure).toEqual({
+        message: "Host didn't come online",
+        detail: "no heartbeat",
+      });
     } finally {
-      error.mockRestore();
+      info.mockRestore();
+    }
+  });
+
+  it.each(["session switch", "unmount"] as const)(
+    "leaves no inline reconnect state behind after a %s",
+    async (ending) => {
+      const info = vi.spyOn(console, "info").mockImplementation(() => {});
+      try {
+        const running = deferred<void>();
+        const reconnect = vi
+          .fn<HostReconnectProvider["reconnect"]>()
+          .mockRejectedValueOnce(new Error("refused"))
+          .mockReturnValueOnce(running.promise);
+        addProvider({ canReconnect: () => true, reconnect });
+        const { result, rerender, unmount } = renderHook(useSessionReconnect, {
+          initialProps: userMachine as Parameters<typeof useSessionReconnect>[0],
+        });
+        await act(async () => {
+          await result.current.reconnect();
+        });
+        expect(devbox().failure?.message).toBe("Reconnect failed");
+        let second!: Promise<void>;
+        await act(async () => {
+          second = result.current.reconnect();
+        });
+        expect(devbox().progress).toBe("Reconnecting...");
+
+        if (ending === "unmount") unmount();
+        else rerender({ ...userMachine, sessionId: "other-session" });
+        expect(devbox()).toEqual({ progress: null, failure: null });
+        // The old run's late answer shows nothing.
+        await act(async () => {
+          running.reject(new Error("late failure"));
+          await second;
+        });
+        expect(devbox()).toEqual({ progress: null, failure: null });
+        if (ending === "session switch") {
+          // The new session's click starts afresh rather than joining the old run.
+          reconnect.mockResolvedValueOnce(undefined);
+          await act(async () => {
+            await result.current.reconnect();
+          });
+          expect(reconnect).toHaveBeenCalledTimes(3);
+          expect(devbox().progress).toBe("Waiting for host...");
+        }
+      } finally {
+        info.mockRestore();
+      }
+    },
+  );
+
+  it("shows a provider's rejection inline at the host, with no toast, and retries it", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    try {
+      const reconnect = vi
+        .fn<HostReconnectProvider["reconnect"]>()
+        .mockRejectedValueOnce(
+          new Error("omni start on devbox exited 1. Run `omni login` and try again."),
+        )
+        .mockResolvedValueOnce(undefined);
+      addProvider({ canReconnect: () => true, reconnect });
+      const { result } = renderHook(() => useSessionReconnect(userMachine));
+      await act(async () => {
+        await result.current.reconnect();
+      });
+      expect(devbox()).toEqual({
+        progress: null,
+        failure: {
+          message: "Reconnect failed",
+          detail: "omni start on devbox exited 1. Run `omni login` and try again.",
+        },
+      });
+      expect(toast.error).not.toHaveBeenCalled();
+      expect(toast.loading).not.toHaveBeenCalled();
+      // The retry is Reconnect host again; the failure goes as it starts.
+      await act(async () => {
+        await result.current.reconnect();
+      });
+      expect(reconnect).toHaveBeenCalledTimes(2);
+      expect(devbox()).toEqual({ progress: "Waiting for host...", failure: null });
+    } finally {
+      info.mockRestore();
     }
   });
 });

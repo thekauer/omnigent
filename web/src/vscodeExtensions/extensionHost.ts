@@ -5,6 +5,7 @@
 import { builtInExtensions } from "@/builtinExtensions";
 import { refreshRunnerHealth } from "@/hooks/useRunnerHealth";
 import { type GitHostProviderRegistry, gitHostProviders } from "@/lib/gitHostProviders";
+import { hostProgress } from "@/lib/hostProgress";
 import { hostReconnectProviders } from "@/lib/hostReconnectProviders";
 import { type RailViewRegistry, railViews } from "@/shell/railViews";
 import { type WorkspaceBridge, workspaceBridge } from "@/shell/workspaceBridge";
@@ -97,6 +98,7 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
       commands,
       notifications: toastNotifications,
       hostReconnect: { registry: hostReconnectProviders, onReconnected: refreshRunnerHealth },
+      hostProgress,
       views,
       workspace,
       sessionTree,
