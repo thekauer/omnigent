@@ -6,6 +6,7 @@
 // the query cache.
 
 import type { QueryClient } from "@tanstack/react-query";
+import type * as omnigent from "omnigent";
 import type { WorkspaceChangedFile } from "@/hooks/useWorkspaceChangedFiles";
 import type { ChangedSort } from "@/lib/changedSort";
 
@@ -51,6 +52,23 @@ export interface WorkspaceActions {
   readonly queryClient?: QueryClient;
 }
 
+/** A task action the composer takes: run, continue, proceed with or retry a task. */
+export type WorkspaceTaskAction = "run" | "continue" | "proceed" | "retry";
+
+/** What a workspace surface does for its session's tasks; each throws when it cannot. */
+export interface WorkspaceTasksActions {
+  /** Scrolls the session's chat to a marker (a task's status, a question). */
+  showInChat: (markerId: string) => void;
+  startWorkflow: (choice: { description?: string; workflowId?: string }) => void;
+  saveWorkflow: (planName: string) => void;
+  continuePlan: (planName: string | null) => void;
+  stopWork: () => void;
+  taskAction: (action: WorkspaceTaskAction, taskName: string) => void;
+  /** Loads the journal again after a failure. */
+  reload: () => void;
+  openWorkflow: (workflowId: string) => void;
+}
+
 /**
  * The workspace rail of a session on screen: which extension views it can show
  * now (their tabs are in its strip), and how to bring one to the front.
@@ -84,6 +102,9 @@ export const EMPTY_WORKSPACE_STATE: WorkspaceBridgeState = Object.freeze({
 export interface WorkspaceSource {
   /** Replace what the surface shows; a no-op when nothing changed. */
   update: (state: WorkspaceBridgeState) => void;
+  /** Replace the session's tasks, a plain snapshot (`undefined` without a Tasks tab). */
+  updateTasks: (tasks: omnigent.SessionTasks | undefined) => void;
+  setTasksActions: (actions: WorkspaceTasksActions | null) => void;
   setActions: (actions: WorkspaceActions | null) => void;
   /** An active source can be the one on screen; activating it brings it to the front. */
   setActive: (active: boolean) => void;
@@ -93,6 +114,8 @@ export interface WorkspaceSource {
 interface SourceEntry {
   state: WorkspaceBridgeState;
   actions: WorkspaceActions | null;
+  tasks: omnigent.SessionTasks | undefined;
+  tasksActions: WorkspaceTasksActions | null;
   active: boolean;
   /** When it was last activated; the highest active one is in front. */
   order: number;
@@ -120,6 +143,10 @@ export class WorkspaceBridge {
   private state: WorkspaceBridgeState = EMPTY_WORKSPACE_STATE;
   private readonly rails = new Map<object, { rail: WorkspaceRail; order: number }>();
   private readonly railListeners = new Set<() => void>();
+  private tasks: omnigent.SessionTasks | undefined;
+  private readonly tasksListeners = new Set<() => void>();
+  private tasksWatchers = 0;
+  private readonly tasksWatchListeners = new Set<() => void>();
 
   /** The workspace on screen; empty without an active source. */
   getState = (): WorkspaceBridgeState => this.state;
@@ -134,6 +161,8 @@ export class WorkspaceBridge {
     const entry: SourceEntry = {
       state: EMPTY_WORKSPACE_STATE,
       actions: null,
+      tasks: undefined,
+      tasksActions: null,
       active: false,
       order: 0,
     };
@@ -147,6 +176,14 @@ export class WorkspaceBridge {
       },
       setActions: (actions) => {
         if (!disposed) entry.actions = actions;
+      },
+      updateTasks: (tasks) => {
+        if (disposed || entry.tasks === tasks) return;
+        entry.tasks = tasks;
+        if (this.front === entry) this.publishTasks();
+      },
+      setTasksActions: (actions) => {
+        if (!disposed) entry.tasksActions = actions;
       },
       setActive: (active) => {
         if (disposed || entry.active === active) return;
@@ -169,10 +206,65 @@ export class WorkspaceBridge {
       if (entry.active && (front === null || entry.order > front.order)) front = entry;
     }
     this.front = front;
+    this.publishTasks();
     const next = front?.state ?? EMPTY_WORKSPACE_STATE;
     if (next === this.state) return;
     this.state = next;
     for (const listener of [...this.listeners]) listener();
+  }
+
+  private publishTasks(): void {
+    const next = this.front?.tasks;
+    if (next === this.tasks) return;
+    this.tasks = next;
+    for (const listener of [...this.tasksListeners]) listener();
+  }
+
+  /** The tasks of the workspace on screen, as its surface published them. */
+  getTasks = (): omnigent.SessionTasks | undefined => this.tasks;
+
+  subscribeTasks = (listener: () => void): (() => void) => {
+    this.tasksListeners.add(listener);
+    return () => this.tasksListeners.delete(listener);
+  };
+
+  /** Whether something on screen wants the tasks loaded (the Tasks view showing). */
+  tasksWatched = (): boolean => this.tasksWatchers > 0;
+
+  subscribeTasksWatch = (listener: () => void): (() => void) => {
+    this.tasksWatchListeners.add(listener);
+    return () => this.tasksWatchListeners.delete(listener);
+  };
+
+  /** Keeps the tasks of the workspace on screen loaded until the returned function is called. */
+  watchTasks(): () => void {
+    let done = false;
+    this.tasksWatchers += 1;
+    if (this.tasksWatchers === 1) this.notifyTasksWatch();
+    return () => {
+      if (done) return;
+      done = true;
+      this.tasksWatchers -= 1;
+      if (this.tasksWatchers === 0) this.notifyTasksWatch();
+    };
+  }
+
+  private notifyTasksWatch(): void {
+    for (const listener of [...this.tasksWatchListeners]) listener();
+  }
+
+  /**
+   * The task actions of the workspace on screen; with `sessionId`, throws when
+   * another session's workspace is on screen.
+   */
+  tasksActions(sessionId?: string): WorkspaceTasksActions {
+    const front = this.front;
+    if (!front) throw new Error("no workspace is open");
+    if (sessionId !== undefined && front.state.sessionId !== sessionId) {
+      throw new Error(`session ${sessionId} is not the workspace on screen`);
+    }
+    if (!front.tasksActions) throw new Error("this workspace has no tasks");
+    return front.tasksActions;
   }
 
   private actions(): WorkspaceActions {

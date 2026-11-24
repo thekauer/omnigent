@@ -2,6 +2,7 @@
 // view is plain data plus a host-owned tree model; the rail draws the tab and
 // the content area itself, so extension code never touches React or the DOM.
 
+import type * as omnigent from "omnigent";
 import { useMemo, useSyncExternalStore } from "react";
 import type { WorkspaceChangedFile } from "@/hooks/useWorkspaceChangedFiles";
 
@@ -131,8 +132,8 @@ export interface RailViewHost {
   setFilter: (sessionId: string | undefined, text: string) => void;
   /** The view is on screen until the returned function is called. */
   reportVisible: () => () => void;
-  /** Runs a command a message link names. */
-  runCommand: (command: string) => void;
+  /** Runs a command a message link or a plan's content names, with JSON arguments. */
+  runCommand: (command: string, args?: readonly unknown[]) => void;
   /** The search input's value kept for `sessionId`. */
   getSearchInput: (sessionId: string | undefined) => RailSearchInputValue;
   setSearchInput: (sessionId: string | undefined, value: RailSearchInputValue) => void;
@@ -187,6 +188,8 @@ export interface RailViewState {
   /** Whether the search input can be submitted. */
   readonly searchEnabled: boolean;
   readonly presentation: "tree" | "graph";
+  /** A plan view's content (`window.createPlanView`), checked plain data the host draws. */
+  readonly plan: omnigent.PlanViewContent | undefined;
   /** Running tasks the view shows progress for, latest last. */
   readonly progress: readonly RailViewProgress[];
 }
@@ -242,6 +245,7 @@ const INITIAL_STATE: RailViewState = {
   searchValidation: undefined,
   searchEnabled: true,
   presentation: "tree",
+  plan: undefined,
   progress: [],
 };
 

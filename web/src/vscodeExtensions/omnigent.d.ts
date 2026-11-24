@@ -407,6 +407,186 @@ declare module "omnigent" {
     report: (value: T) => void;
   }
 
+  /** Where a task stands, as the Tasks tab draws it. */
+  export type TaskState =
+    "waiting" | "ready" | "running" | "stopped" | "needs_input" | "done" | "failed";
+
+  /** One status a task recorded: started, done, waiting for the user or failed. */
+  export interface TaskStatus {
+    readonly id: string;
+    readonly status: "started" | "done" | "needs_input" | "failed";
+    /** What the agent wrote with it, if anything. */
+    readonly text: string | null;
+    /** Epoch seconds. */
+    readonly createdAt: number;
+    /** It starts a new attempt: a start after the task was done or failed. */
+    readonly restart: boolean;
+  }
+
+  /** One of a session's tasks: a plan's step, or an item of the agent's own task list. Plain data. */
+  export interface SessionTask {
+    readonly id: string;
+    readonly name: string;
+    /** The task's goal, as Markdown. */
+    readonly goal: string | null;
+    /** The tasks it waits on, by id. */
+    readonly dependsOn: readonly string[];
+    readonly state: TaskState;
+    /** Its newest status; `null` until it has one. */
+    readonly status: TaskStatus | null;
+    /** When its current attempt first started, in epoch seconds, if it wrote a start. */
+    readonly startedAt: number | null;
+    /** An item of the agent's own task list, which has no history. */
+    readonly native: boolean;
+    /** What the agent says it is doing, for an item of its own list in progress. */
+    readonly activeForm: string | null;
+    /** Every status it recorded, oldest first; empty for the agent's own items. */
+    readonly history: readonly TaskStatus[];
+    /** The chat marker of its newest status, for `omnigent.showInChat`; none before it starts. */
+    readonly chatMarker: string | undefined;
+    /** The chat message of a question its agent waits on, while it waits for the user. */
+    readonly question: string | undefined;
+    /** The failed tasks it waits on, by id, when that is why it cannot start. */
+    readonly blockedBy: readonly string[];
+  }
+
+  /** The plan a session's tasks come from. */
+  export interface SessionPlan {
+    /** Its goal in a few words, or `null`. */
+    readonly name: string | null;
+    /** Epoch seconds. */
+    readonly createdAt: number;
+    /** The saved workflow it runs or was saved as, or `null`. */
+    readonly workflowId: string | null;
+    /** That workflow's name, when the user can see it. */
+    readonly workflowName: string | undefined;
+    /** Its last task finished, so no Stop or Continue applies. */
+    readonly complete: boolean;
+  }
+
+  /** What the session's composer can do for its tasks, through the `omnigent.tasks.*` commands. */
+  export interface SessionTaskActions {
+    readonly startWorkflow: boolean;
+    readonly saveWorkflow: boolean;
+    readonly continuePlan: boolean;
+    readonly stopWork: boolean;
+    readonly taskAction: boolean;
+  }
+
+  /** A session's tasks: its plan's steps, or the agent's own task list without a plan. Plain data. */
+  export interface SessionTasks {
+    readonly sessionId: string;
+    /** True until it is known whether the session has a plan. */
+    readonly loading: boolean;
+    /** Why the session's journal could not be loaded. */
+    readonly error: string | undefined;
+    readonly plan: SessionPlan | undefined;
+    readonly tasks: readonly SessionTask[];
+    /** What an idle list says ("Stopped", "Run ended") while tasks could run. */
+    readonly paused: string | undefined;
+    /** The session's work is in flight: its turn, a background task or a sub-agent. */
+    readonly working: boolean;
+    /** A Stop was sent and the session has not stopped yet. */
+    readonly stopping: boolean;
+    readonly actions: SessionTaskActions;
+    /** The Workflows page is on, so a workflow can be opened. */
+    readonly workflowsLinked: boolean;
+  }
+
+  /** A task's menu entry in a {@link PlanView}: the action its state offers. */
+  export interface PlanTaskAction {
+    /** Names the entry ("Run", "Continue", "Retry", "Stop") and its icon. */
+    readonly action: "run" | "continue" | "proceed" | "retry" | "stop";
+    readonly command: Command;
+  }
+
+  /** A task as a {@link PlanView} draws it. */
+  export interface PlanViewTask {
+    readonly task: SessionTask;
+    /** Its ⋯ menu, on its row, its card and its graph node. */
+    readonly action?: PlanTaskAction;
+    /** Runs when its row is clicked ("Show in the chat"). */
+    readonly command?: Command;
+  }
+
+  /** An entry of a plan's ⋯ menu. */
+  export interface PlanMenuItem {
+    readonly title: string;
+    /** An icon name from the allowlist. */
+    readonly icon?: string;
+    readonly command: Command;
+    /** Shown instead of running it; the entry is drawn disabled. */
+    readonly disabledReason?: string;
+  }
+
+  /**
+   * What a {@link PlanView} shows, drawn by the host. A message may link
+   * `[text](command:<id>)` to a command, and `[text](picker:workflow)` to the
+   * host's Run a workflow menu, whose choice runs `omnigent.tasks.startWorkflow`.
+   */
+  export type PlanViewContent =
+    | { readonly kind: "loading"; readonly label: string }
+    | {
+        readonly kind: "error";
+        /** The session it is for; a view drawn for another one waits instead. */
+        readonly sessionId?: string;
+        readonly message: string;
+        readonly retry?: Command;
+      }
+    | {
+        readonly kind: "empty";
+        readonly sessionId?: string;
+        readonly title: string;
+        readonly message: string;
+        /** An icon name from the allowlist. */
+        readonly icon?: string;
+      }
+    | {
+        readonly kind: "plan";
+        readonly sessionId: string;
+        /** The heading; without one the tab's name is. */
+        readonly title?: string;
+        /** A chip naming the saved workflow the plan comes from. */
+        readonly workflow?: {
+          readonly id: string;
+          readonly tooltip: string;
+          readonly linked: boolean;
+        };
+        /** When anything last changed, in epoch seconds ("Updated 3m ago"). */
+        readonly updatedAt?: number;
+        /** "2 of 5 finished". */
+        readonly summary: string;
+        /** Counts after the summary, in the order given. */
+        readonly counts?: readonly { readonly state: TaskState; readonly count: number }[];
+        /** "Stopped" or "Run ended". */
+        readonly paused?: string;
+        /** The plan's Stop, Stopping… or Continue button. */
+        readonly runControl?:
+          | { readonly kind: "stop" | "play"; readonly command: Command }
+          | { readonly kind: "stopping" };
+        /** Offers the plan on a graph of its tasks. */
+        readonly graph?: boolean;
+        readonly menu?: readonly PlanMenuItem[];
+        readonly tasks: readonly PlanViewTask[];
+        /** The tasks say what they wait on (a plan's steps), so hovering one links them. */
+        readonly dependencies: boolean;
+        /** Lists the workflow runs below the session's run of this workflow. */
+        readonly runsOfWorkflow?: string;
+      };
+
+  /**
+   * A view drawn by the host from plain data: a session's tasks, their progress
+   * strip and their history. No VS Code equivalent; see the plan doc.
+   */
+  export interface PlanView {
+    content: PlanViewContent;
+    /** Whether the view is on screen, as {@link TreeView.visible}. */
+    readonly visible: boolean;
+    readonly onDidChangeVisibility: Event<TreeViewVisibilityChangeEvent>;
+    /** Removes the content; the view stays, without data. */
+    dispose: () => void;
+  }
+
   export namespace window {
     /**
      * Show progress while `task` runs, as a notification with `title` and the
@@ -451,6 +631,13 @@ declare module "omnigent" {
      * chat session. Throws for a view the extension did not contribute.
      */
     export function createTreeView<T>(viewId: string, options: TreeViewOptions<T>): TreeView<T>;
+
+    /**
+     * Give a view the extension contributes a plan's content, drawn by the
+     * host. Throws for a view the extension did not contribute, or one that
+     * already has a tree or plan view.
+     */
+    export function createPlanView(viewId: string): PlanView;
   }
 
   /**
@@ -466,6 +653,18 @@ declare module "omnigent" {
    * - `omnigent.openSubagent(sessionId)` opens a sub-agent of the session on
    *   screen: as a tab beside the chat when the user's setting asks for it and
    *   the workspace can, otherwise like `omnigent.openSession`.
+   * - `omnigent.showInChat(sessionId, markerId)` scrolls the session's chat to a
+   *   marker, such as a task's (`SessionTask.chatMarker`) or a question.
+   * - `omnigent.openWorkflow(workflowId)` opens a saved workflow's page.
+   * - For the tasks of the workspace on screen ({@link sessions.activeSessionTasks}),
+   *   each rejecting for another session: `omnigent.tasks.runTaskAction(sessionId,
+   *   action, taskName)` asks the agent to run, continue, proceed with or retry a
+   *   task; `omnigent.tasks.stop(sessionId)` asks it to stop the work and its
+   *   workers; `omnigent.tasks.continuePlan(sessionId, planName)`;
+   *   `omnigent.tasks.saveAsWorkflow(sessionId, planName)` opens the composer's
+   *   Save as workflow dialog; `omnigent.tasks.startWorkflow(sessionId, { description?,
+   *   workflowId? })` opens its workflow dialog; `omnigent.tasks.reload(sessionId)`
+   *   loads the journal again after a failure.
    * - `<view id>.focus` for every contributed view: shows its tab in the
    *   workspace on screen and focuses its search input, as VS Code's
    *   `<view>.focus`; resolves to whether it could.
@@ -770,6 +969,19 @@ declare module "omnigent" {
     export function getSession(sessionId: string): SessionDetails | undefined;
     /** Fires when lists or details asked for change, coalesced per microtask. */
     export const onDidChangeChildSessions: Event<ChildSessionsChangeEvent>;
+    /**
+     * The tasks of the session whose workspace is on screen (see
+     * {@link workspace.activeSessionId}); `undefined` without one. Its journal loads only while some extension
+     * holds {@link watchActiveSessionTasks}; until then it is `loading`.
+     */
+    export const activeSessionTasks: SessionTasks | undefined;
+    /** Fires when {@link activeSessionTasks} changes, coalesced per microtask. */
+    export const onDidChangeActiveSessionTasks: Event<SessionTasks | undefined>;
+    /**
+     * Keep the tasks of the workspace on screen loaded and live while held, as
+     * the Tasks tab does while it shows; dispose it to stop.
+     */
+    export function watchActiveSessionTasks(): Disposable;
     /** The session on screen, or `undefined` on pages without one. */
     export const activeSession: Session | undefined;
     /** Current usage of {@link activeSession}, so late activators need not wait for an event. */

@@ -35,6 +35,7 @@ import {
   RefreshCwIcon,
   ScanSearchIcon,
   SearchIcon,
+  WorkflowIcon,
 } from "lucide-react";
 
 export const RAIL_VIEW_ICONS: Readonly<Record<string, LucideIcon>> = Object.freeze({
@@ -70,6 +71,7 @@ export const RAIL_VIEW_ICONS: Readonly<Record<string, LucideIcon>> = Object.free
   "refresh-cw": RefreshCwIcon,
   "scan-search": ScanSearchIcon,
   search: SearchIcon,
+  workflow: WorkflowIcon,
 });
 
 /** Shown for a view whose icon is missing or not on the allowlist. */

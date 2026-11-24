@@ -6,6 +6,7 @@ import type { Notifications } from "./progress";
 import { SessionHeaderItemRegistry } from "./sessionHeaderItems";
 import { SessionsService } from "./sessionsService";
 import { SessionTreeService } from "./sessionTreeService";
+import { TasksService } from "./tasksService";
 import { RailViewRegistry } from "@/shell/railViews";
 import { WorkspaceBridge } from "@/shell/workspaceBridge";
 import { ContextKeyService } from "./contextKeys";
@@ -87,5 +88,6 @@ export function hostServices(overrides: Partial<HostServices> = {}): HostService
     views: overrides.views ?? testViewsService(commands),
     workspace: overrides.workspace ?? new WorkspaceService(new WorkspaceBridge()),
     sessionTree: overrides.sessionTree ?? new SessionTreeService(new WorkspaceBridge()),
+    tasks: overrides.tasks ?? new TasksService(new WorkspaceBridge()),
   };
 }

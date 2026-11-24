@@ -22,6 +22,7 @@ import {
 import { SessionHeaderItemAlignment, type SessionHeaderItemRegistry } from "./sessionHeaderItems";
 import type { SessionsService } from "./sessionsService";
 import type { SessionTreeService } from "./sessionTreeService";
+import type { TasksService } from "./tasksService";
 import type { KeybindingService } from "./keybindings";
 import type { ViewsService } from "./viewsService";
 import { textSearchQueryProblem, type WorkspaceService } from "./workspaceService";
@@ -65,6 +66,7 @@ export interface HostServices {
   views: ViewsService;
   workspace: WorkspaceService;
   sessionTree: SessionTreeService;
+  tasks: TasksService;
   /** Contributed keybindings; without it, `contributes.keybindings` is ignored. */
   keybindings?: KeybindingService;
 }
@@ -191,6 +193,44 @@ export function createExtensionApi(
     services.sessionTree.onDidChangeChildSessions,
     "onDidChangeChildSessions",
   );
+  const onDidChangeActiveSessionTasks = guard(
+    services.tasks.onDidChangeActiveSessionTasks,
+    "onDidChangeActiveSessionTasks",
+  );
+
+  function watchActiveSessionTasks(): omnigent.Disposable {
+    if (disposed) {
+      refuse("watchActiveSessionTasks");
+      return new Disposable(() => {});
+    }
+    const watch = services.tasks.watch();
+    const tracked = track(
+      new Disposable(() => {
+        resources.delete(tracked);
+        watch.dispose();
+      }),
+    );
+    return tracked;
+  }
+
+  function createPlanView(viewId: string): omnigent.PlanView {
+    if (disposed) {
+      refuse("createPlanView");
+      return {
+        content: { kind: "loading", label: "" },
+        visible: false,
+        onDidChangeVisibility: () => new Disposable(() => {}),
+        dispose: () => {},
+      };
+    }
+    const view = services.views.createPlanView(extensionId, viewId, logError);
+    const dispose = view.dispose;
+    view.dispose = () => {
+      resources.delete(view);
+      dispose();
+    };
+    return track(view);
+  }
 
   function createTreeView<T>(
     viewId: string,
@@ -401,6 +441,7 @@ export function createExtensionApi(
     window: Object.freeze({
       createSessionHeaderItem,
       createTreeView,
+      createPlanView,
       withProgress,
       showInformationMessage: (message: string) => showMessage("info", message),
       showErrorMessage: (message: string) => showMessage("error", message),
@@ -453,6 +494,11 @@ export function createExtensionApi(
       getChildSessions: (sessionId: string) => services.sessionTree.getChildSessions(sessionId),
       getSession: (sessionId: string) => services.sessionTree.getSession(sessionId),
       onDidChangeChildSessions,
+      get activeSessionTasks() {
+        return services.tasks.activeSessionTasks;
+      },
+      onDidChangeActiveSessionTasks,
+      watchActiveSessionTasks,
     }),
     CancellationTokenSource,
   };

@@ -26,6 +26,7 @@ import type {
   SubmenuContribution,
 } from "./contributions";
 import { createTreeViewModel } from "./treeView";
+import { planContentOf } from "./planContent";
 
 const MAX_VIEW_TEXT = 200;
 // Room for a status line that quotes a long search query.
@@ -120,6 +121,8 @@ interface ViewEntry {
   /** JSON of the actions last published, to skip no-op updates. */
   actionsKey: string;
   tree: TreeViewEntry | undefined;
+  /** The plan view's visibility events, while it has one. */
+  plan: { readonly visibility: EventEmitter<omnigent.TreeViewVisibilityChangeEvent> } | undefined;
   /** How many drawn copies of the view are on screen. */
   shown: number;
   /** Filter text per chat session ("" key without one). */
@@ -268,18 +271,24 @@ export class ViewsService {
         const view = entry();
         if (!view) return () => {};
         view.shown += 1;
-        if (view.shown === 1) view.tree?.visibility.fire({ visible: true });
+        if (view.shown === 1) {
+          view.tree?.visibility.fire({ visible: true });
+          view.plan?.visibility.fire({ visible: true });
+        }
         this.options.onViewShown?.(viewId);
         let done = false;
         return () => {
           if (done) return;
           done = true;
           view.shown -= 1;
-          if (view.shown === 0) view.tree?.visibility.fire({ visible: false });
+          if (view.shown === 0) {
+            view.tree?.visibility.fire({ visible: false });
+            view.plan?.visibility.fire({ visible: false });
+          }
         };
       },
-      runCommand: (command: string) => {
-        this.options.executeCommand(command, []).catch((error: unknown) => {
+      runCommand: (command: string, args: readonly unknown[] = []) => {
+        this.options.executeCommand(command, args).catch((error: unknown) => {
           this.options.showError(`${command}: ${errorText(error)}`);
         });
       },
@@ -354,6 +363,7 @@ export class ViewsService {
         handle,
         actionsKey: "",
         tree: undefined,
+        plan: undefined,
         shown: 0,
         filters: new Map(),
         searchInput: view.searchInput,
@@ -527,8 +537,8 @@ export class ViewsService {
     if (!entry || entry.extensionId !== extensionId) {
       throw new Error(`no view with id '${viewId}' is contributed by ${extensionId}`);
     }
-    if (entry.tree !== undefined) {
-      throw new Error(`view '${viewId}' already has a tree view`);
+    if (entry.tree !== undefined || entry.plan !== undefined) {
+      throw new Error(`view '${viewId}' already has a tree or plan view`);
     }
     const provider = options?.treeDataProvider;
     if (
@@ -736,6 +746,53 @@ export class ViewsService {
       },
     };
     return view;
+  }
+
+  /** `window.createPlanView` for `extensionId`; throws for a view it did not contribute. */
+  createPlanView(
+    extensionId: string,
+    viewId: string,
+    logError: (message: string, error?: unknown) => void,
+  ): omnigent.PlanView {
+    const entry = this.views.get(viewId);
+    if (!entry || entry.extensionId !== extensionId) {
+      throw new Error(`no view with id '${viewId}' is contributed by ${extensionId}`);
+    }
+    if (entry.tree !== undefined || entry.plan !== undefined) {
+      throw new Error(`view '${viewId}' already has a tree or plan view`);
+    }
+    const planEntry = {
+      visibility: new EventEmitter<omnigent.TreeViewVisibilityChangeEvent>((error) =>
+        logError("onDidChangeVisibility listener threw", error),
+      ),
+    };
+    entry.plan = planEntry;
+    let content = planContentOf(undefined);
+    let disposed = false;
+    entry.handle.update({ plan: content });
+    return {
+      get content() {
+        return content;
+      },
+      set content(value) {
+        if (disposed) return;
+        content = planContentOf(value);
+        entry.handle.update({ plan: content });
+      },
+      get visible() {
+        return !disposed && entry.shown > 0;
+      },
+      onDidChangeVisibility: planEntry.visibility.event,
+      dispose: () => {
+        if (disposed) return;
+        disposed = true;
+        planEntry.visibility.dispose();
+        if (entry.plan === planEntry) {
+          entry.plan = undefined;
+          entry.handle.update({ plan: undefined });
+        }
+      },
+    };
   }
 
   dispose(): void {

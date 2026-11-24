@@ -17,6 +17,7 @@ import { toastNotifications } from "./progress";
 import { sessionHeaderItems } from "./sessionHeaderItems";
 import { chatStoreSessionSource, SessionsService } from "./sessionsService";
 import { SessionTreeService } from "./sessionTreeService";
+import { TasksService } from "./tasksService";
 import { ViewsService } from "./viewsService";
 import { WorkspaceService } from "./workspaceService";
 
@@ -81,6 +82,7 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
     logError: (message, error) => console.error(`[omnigent-extensions] ${message}`, error),
   });
   const sessionTree = new SessionTreeService(bridge);
+  const tasks = new TasksService(bridge);
   const host = new ExtensionHost({
     services: {
       headerItems: sessionHeaderItems,
@@ -91,6 +93,7 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
       views,
       workspace,
       sessionTree,
+      tasks,
       keybindings,
     },
     ...options.hostOptions,
@@ -111,6 +114,7 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
       views.dispose();
       workspace.dispose();
       sessionTree.dispose();
+      tasks.dispose();
     },
   };
 }
