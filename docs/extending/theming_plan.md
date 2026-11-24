@@ -10,8 +10,8 @@ the same commit that lands each milestone.
 | # | State | Notes |
 |---|---|---|
 | Step 0 | Done | This plan saved in the fork and linked from `vscode_style_extensions.md`. |
-| M0 | Next | Screenshot and token-dump harness in `my-extensions/dev/verify`. |
-| M1 | Queued | Token registry and generator; non-palette colours moved. |
+| M0 | Done | `verify.sh --screens --token-dump --embed` and `--compare` in `my-extensions/dev/verify/screens.py`; baselines of `0c1afd2594` in `my-extensions/dev/verify/baselines/` (96 screens, 16 standalone and 14 embed dumps). Two runs: 0 px, identical dumps. |
+| M1 | Next | Token registry and generator; non-palette colours moved. |
 | M2 to M11 | Queued | Wait for the user after M1. |
 
 Resume notes:
@@ -19,6 +19,18 @@ Resume notes:
 - Work happens in a worktree of `extensible-ui`, landed with a rebase and a push to
   `origin/extensible-ui`, then `git merge --ff-only` in the main checkout.
 - The harness and its baselines live in `my-extensions/dev/verify/` (decision 6).
+- No-change check for a Layer 0 step: from `my-extensions/dev`, run
+  `OMNI_UI_REPO=<checkout> ./verify/verify.sh --screens --token-dump --embed --compare verify/baselines`
+  (about 4 minutes). It needs 0 px per screen and identical `tokens.json` and
+  `tokens-embed.json`. The only tolerance (at most 0.01% of a screen's pixels, 2 per
+  channel, with identical dumps) covers one known flake: the dark session's code-block
+  copy icon flips by one LSB at a few pixels in about one run of four.
+- Refresh the baselines (`--save-baselines`) only on a commit that is meant to change
+  the look, and say so in its message.
+- The terminal screen is the transcript's shell output; the xterm panel needs a live
+  terminal socket the mock does not serve (M4 can add one). The embed dump uses the
+  embed build's scoped stylesheet on a harness page with the embed's two roots, not a
+  mounted `OmnigentApp`.
 
 Paths are relative to the omnigent repo root unless they start with `my-extensions/`.
 

@@ -1650,6 +1650,10 @@ OMNI_UI_REPO=<omnigent checkout> ./verify/verify.sh            # mocked + prod
   default the omni-ui server on `127.0.0.1:$OMNI_UI_PORT` (30000 when unset;
   `--live-url` overrides it). `prod` and `live` also open the built-in Changes
   tab as list and tree (reads only).
+- `--screens`, `--token-dump`, `--embed` and `--compare DIR`: the theming
+  harness (see [theming_plan.md](theming_plan.md)), a screen matrix and a dump
+  of every CSS custom property on the theme roots, on the mock backend, compared
+  against the baselines kept in the dev extension.
 - Screenshots go to `$OMNI_EXT_VERIFY_DIR` (default `/tmp/omni-ext-verify/`).
 - Every run also checks that the extension's vendored `omnigent.d.ts` matches this
   checkout's copy, and that the ports it used are free afterwards.
