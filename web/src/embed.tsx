@@ -68,6 +68,7 @@ import "./index.css";
 import { QueueFlushProvider } from "./hooks/QueueFlushProvider";
 import { ExtensionProvider } from "./extensions/ExtensionProvider";
 import { SessionUpdatesProvider } from "./hooks/SessionUpdatesProvider";
+import { useWindowExtensionHost } from "./vscodeExtensions/useWindowExtensionHost";
 
 export type { HtmlPreviewFrameProps, OmnigentHostConfig } from "./lib/host";
 export type { RoutingApi } from "./lib/routing";
@@ -282,6 +283,10 @@ export function OmnigentApp({
     setOmnigentHostConfig(hostConfig);
     return null;
   });
+  // The built-in extensions (the Changes, Files, Pull Requests, Tasks, Agents and
+  // Content search tabs) run in the window's extension host, as standalone. It is
+  // shared by every OmnigentApp on the page. Dev-path extensions stay standalone only.
+  useWindowExtensionHost();
 
   const routingApi = useMemo<RoutingApi>(() => {
     // Host overrides compose UNDER the basename wrapper: merge the host's

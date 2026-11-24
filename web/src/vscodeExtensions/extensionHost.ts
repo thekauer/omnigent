@@ -135,10 +135,101 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
   };
 }
 
+// The window's one runtime, shared by the standalone app and every embedded
+// OmnigentApp on the page. The standalone app keeps it for the page's lifetime;
+// embeds hold it while mounted, and the last one to unmount disposes it.
 let runtime: ExtensionRuntime | undefined;
+/** Set once a caller keeps the runtime for the page's lifetime. */
+let pinned = false;
+/** Mounted embeds holding the runtime. */
+let holds = 0;
+let disposeTimer: ReturnType<typeof setTimeout> | undefined;
+/** A disposal still removing the previous runtime's views. */
+let disposing: Promise<void> | undefined;
+/** Created after `disposing` settles, for a hold taken meanwhile. */
+let restarting = false;
 
-/** The window's extension runtime; created, with the built-ins started, on first call. */
+function ensureRuntime(): void {
+  if (runtime || restarting) return;
+  if (!disposing) {
+    runtime = createExtensionRuntime();
+    return;
+  }
+  // The previous runtime's views keep their ids until its disposal finishes, so
+  // the next one starts after it; a restored extension tab waits meanwhile.
+  restarting = true;
+  const viewsLoaded = railViews.beginLoading();
+  void disposing.finally(() => {
+    restarting = false;
+    if (holds > 0 || pinned) runtime ??= createExtensionRuntime();
+    viewsLoaded();
+  });
+}
+
+function cancelScheduledDispose(): void {
+  if (disposeTimer === undefined) return;
+  clearTimeout(disposeTimer);
+  disposeTimer = undefined;
+}
+
+/**
+ * The window's extension runtime, kept for the page's lifetime; created, with
+ * the built-ins started, on first call. For the standalone app and the dev loader.
+ */
 export function startExtensionHost(): ExtensionRuntime {
-  runtime ??= createExtensionRuntime();
+  pinned = true;
+  cancelScheduledDispose();
+  if (!runtime) {
+    if (disposing) throw new Error("the extension host is still being disposed");
+    runtime = createExtensionRuntime();
+  }
+  return runtime;
+}
+
+/**
+ * Starts the window's extension runtime, with the built-ins, unless it already
+ * runs. Idempotent and synchronous, so a caller can run it before its first
+ * render and the built-in views are registered by then. It takes no hold: pair
+ * it with {@link retainExtensionHost}.
+ */
+export function ensureExtensionHost(): void {
+  cancelScheduledDispose();
+  ensureRuntime();
+}
+
+/**
+ * Holds the window's extension runtime, starting it if needed, until the
+ * returned release runs. When the last hold is released and nothing keeps the
+ * runtime for the page's lifetime, it is disposed after the current task, so an
+ * immediate remount (React StrictMode, a host re-rendering its route) reuses it.
+ */
+export function retainExtensionHost(): () => void {
+  holds += 1;
+  ensureExtensionHost();
+  let released = false;
+  return () => {
+    if (released) return;
+    released = true;
+    holds -= 1;
+    if (holds > 0 || pinned) return;
+    cancelScheduledDispose();
+    disposeTimer = setTimeout(() => {
+      disposeTimer = undefined;
+      if (holds > 0 || pinned || !runtime) return;
+      const current = runtime;
+      runtime = undefined;
+      const done = current.dispose().catch((error: unknown) => {
+        console.error("[omnigent-extensions] could not dispose the extension host", error);
+      });
+      disposing = done;
+      void done.finally(() => {
+        if (disposing === done) disposing = undefined;
+      });
+    }, 0);
+  };
+}
+
+/** The window's runtime, if one runs. */
+export function currentExtensionHost(): ExtensionRuntime | undefined {
   return runtime;
 }

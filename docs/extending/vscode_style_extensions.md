@@ -525,6 +525,13 @@ error? }`, coalesced per microtask, also on session switches.
       to the same host and sets the Node command route
       (`CommandRegistry.setNodeRoute`), still only under
       `import.meta.env.DEV`.
+    - The embed (`OmnigentApp` in `embed.tsx`) runs the same host through
+      `useWindowExtensionHost()`: it starts the host and the built-ins
+      before its first render and holds it while mounted. Every
+      `OmnigentApp` on the page shares the one host; after the last one
+      unmounts it is disposed (deferred a task, so a StrictMode or route
+      remount keeps it), unless the standalone app keeps it for the page.
+      Dev-path extensions never load in the embed.
     - Built-ins have no load timeout (the module is in the bundle) and 60
       seconds to activate. When one fails, its views show an error state
       ("<name> could not be loaded") and the failure is logged; a built-in
