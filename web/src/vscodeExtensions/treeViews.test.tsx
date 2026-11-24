@@ -455,6 +455,41 @@ describe("view filter, submenus, notices and visibility", () => {
     expect(tooltip()).toBe("Hidden: 3");
   });
 
+  it("lets a tooltip read only its extension's keys, the view and the host's settings", () => {
+    const registry = new RailViewRegistry();
+    const contextKeys = new ContextKeyService();
+    const views = new ViewsService({
+      registry,
+      contextKeys,
+      executeCommand: () => Promise.resolve(undefined),
+      showError: () => {},
+    });
+    const view = "pub.peek.view";
+    const { contributions } = parseContributions("pub.peek", {
+      views: { "omnigent.rightPanel": [{ id: view, name: "Peek" }] },
+      commands: [{ command: "pub.peek.go", title: "Go", icon: "list" }],
+      menus: {
+        "view/title": [
+          {
+            command: "pub.peek.go",
+            when: `view == ${view}`,
+            group: "navigation",
+            tooltip:
+              "${pub.peek.count}|${pub.rich.hiddenCount}|${config.omnigent.files.showHidden}|${config.other.secret}|${view}|${pub.peeker.x}",
+          },
+        ],
+      },
+    });
+    views.addExtension("pub.peek", contributions);
+    views.extensionSettled("pub.peek");
+    contextKeys.set("pub.peek.count", 2);
+    contextKeys.set("pub.rich.hiddenCount", 3);
+    contextKeys.set("config.omnigent.files.showHidden", true);
+    contextKeys.set("config.other.secret", "s3cret");
+    contextKeys.set("pub.peeker.x", "x");
+    expect(registry.get(view)?.actions[0]?.tooltip).toBe(`2||true||${view}|`);
+  });
+
   it("keeps the filter text per session and tells the extension", async () => {
     const { tree, ui, workspace, changed } = richSetup();
     const seen: string[] = [];

@@ -19,7 +19,11 @@ import { parseContributions } from "./contributions";
 import { createExtensionRuntime } from "./extensionHost";
 import { hostServices, testViewsService } from "./testServices";
 import { ViewsService } from "./viewsService";
-import { textSearchQueryProblem, WorkspaceService } from "./workspaceService";
+import {
+  MAX_TEXT_SEARCH_RESULTS,
+  textSearchQueryProblem,
+  WorkspaceService,
+} from "./workspaceService";
 
 vi.mock("@/lib/identity", () => ({ authenticatedFetch: vi.fn() }));
 
@@ -339,6 +343,49 @@ describe("workspace text search", () => {
       "verbose",
     );
     expect(textSearchQueryProblem({ pattern: "a)|(b", isRegExp: true })).toBeUndefined();
+  });
+
+  it("refuses include or exclude globs that are not strings or are too long, never cutting them", async () => {
+    const workspace = workspaceOn("s1");
+    const refused = [
+      { include: 3 },
+      { exclude: ["*.ts"] },
+      { include: "a".repeat(4097) },
+      { exclude: "b".repeat(4097) },
+    ].map((options) =>
+      expect(
+        workspace.findTextInFiles({ pattern: "x" }, options as never, undefined),
+      ).rejects.toThrow(TypeError),
+    );
+    await Promise.all(refused);
+    expect(authenticatedFetch).not.toHaveBeenCalled();
+    respond({ matches: [], truncated: false, warning: null });
+    await workspace.findTextInFiles({ pattern: "x" }, { include: "a".repeat(4096) }, undefined);
+    const url = new URL(String(vi.mocked(authenticatedFetch).mock.calls[0][0]), "http://test");
+    expect(url.searchParams.get("include")).toHaveLength(4096);
+  });
+
+  it("caps the matches it hands out and says the limit was hit", async () => {
+    const match = (line: number) => ({
+      path: "a.ts",
+      line,
+      column: 1,
+      text: "x",
+      match_start: 0,
+      match_end: 1,
+    });
+    respond({
+      matches: Array.from({ length: MAX_TEXT_SEARCH_RESULTS + 5 }, (_, i) => match(i + 1)),
+      truncated: false,
+      warning: null,
+    });
+    const result = await workspaceOn("s1").findTextInFiles({ pattern: "x" }, {}, undefined);
+    expect(result.matches).toHaveLength(MAX_TEXT_SEARCH_RESULTS);
+    expect(result.limitHit).toBe(true);
+    respond({ matches: [match(1)], truncated: false, warning: null });
+    expect(
+      (await workspaceOn("s1").findTextInFiles({ pattern: "x" }, {}, undefined)).limitHit,
+    ).toBe(false);
   });
 
   it("cancels a running search: the request is aborted and the promise rejects as Canceled", async () => {

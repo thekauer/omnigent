@@ -27,6 +27,7 @@ import type {
 } from "./contributions";
 import { createTreeViewModel } from "./treeView";
 import { planContentOf } from "./planContent";
+import { WORKSPACE_SETTING_NAMES } from "./workspaceService";
 
 const MAX_VIEW_TEXT = 200;
 // Room for a status line that quotes a long search query.
@@ -180,6 +181,24 @@ function tagOf(value: unknown): RailViewTag | undefined {
 const sessionKey = (sessionId: string | undefined) => sessionId ?? "";
 
 const CONTEXT_REFERENCE = /\$\{([A-Za-z0-9_.:-]{1,128})\}/g;
+
+/** The `config.*` keys every extension's tooltips may read: the host's own settings. */
+const SHARED_TOOLTIP_KEYS: ReadonlySet<string> = new Set(
+  WORKSPACE_SETTING_NAMES.map((name) => `config.${name}`),
+);
+
+/**
+ * What an extension's tooltips may read: its own keys (`<extension id>.*`), the
+ * `view` being drawn and the host's settings, never another extension's keys.
+ */
+function tooltipLookup(
+  extensionId: string,
+  lookup: (key: string) => unknown,
+): (key: string) => unknown {
+  const own = `${extensionId}.`;
+  return (key) =>
+    key === "view" || key.startsWith(own) || SHARED_TOOLTIP_KEYS.has(key) ? lookup(key) : undefined;
+}
 
 /** A menu tooltip with each `${context key}` replaced by the key's value, so it can name counts. */
 function interpolate(
@@ -451,7 +470,8 @@ export class ViewsService {
   titleActions(viewId: string): RailViewTitleAction[] {
     const lookup = this.options.contextKeys.lookup({ view: viewId });
     const actions: RailViewTitleAction[] = [];
-    for (const { item } of this.menus) {
+    for (const { extensionId, item } of this.menus) {
+      const tooltipKeys = tooltipLookup(extensionId, lookup);
       // "navigation" is the title bar and "filter" the filter row; other groups
       // would need an overflow menu.
       if (item.group !== "navigation" && item.group !== "filter") continue;
@@ -479,7 +499,7 @@ export class ViewsService {
         actions.push({
           id,
           title: submenu.label,
-          tooltip: interpolate(item.tooltip, lookup) ?? submenu.tooltip,
+          tooltip: interpolate(item.tooltip, tooltipKeys) ?? submenu.tooltip,
           icon: submenu.icon,
           toggled: undefined,
           tone: item.tone,
@@ -494,7 +514,7 @@ export class ViewsService {
       actions.push({
         id,
         title,
-        tooltip: interpolate(item.tooltip, lookup),
+        tooltip: interpolate(item.tooltip, tooltipKeys),
         icon: info?.icon,
         toggled: info?.toggled ? info.toggled.evaluate(lookup) : undefined,
         tone: item.tone,

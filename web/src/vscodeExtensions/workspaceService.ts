@@ -19,6 +19,20 @@ import type {
 import { EventEmitter } from "./base";
 
 const MAX_GLOBS_LENGTH = 4096;
+/** At most this many matches reach an extension; more set `limitHit`. */
+export const MAX_TEXT_SEARCH_RESULTS = 2000;
+
+/** An include or exclude option as sent: absent as empty, otherwise a string within the limit. */
+function globsOption(name: "include" | "exclude", value: unknown): string {
+  if (value === undefined || value === null) return "";
+  if (typeof value !== "string") {
+    throw new TypeError(`findTextInFiles: "${name}" must be a string of comma-separated globs`);
+  }
+  if (value.length > MAX_GLOBS_LENGTH) {
+    throw new TypeError(`findTextInFiles: "${name}" is longer than ${MAX_GLOBS_LENGTH} characters`);
+  }
+  return value;
+}
 
 /** Why a text search cannot be sent, as the Content search tab checked it. */
 export function textSearchQueryProblem(
@@ -39,9 +53,10 @@ export function textSearchQueryProblem(
 }
 
 function toSearchComplete(result: ContentSearchResult): omnigent.TextSearchComplete {
+  const capped = result.matches.length > MAX_TEXT_SEARCH_RESULTS;
   return Object.freeze({
     matches: Object.freeze(
-      result.matches.map((match) =>
+      result.matches.slice(0, MAX_TEXT_SEARCH_RESULTS).map((match) =>
         Object.freeze({
           path: match.path,
           line: match.line,
@@ -55,7 +70,7 @@ function toSearchComplete(result: ContentSearchResult): omnigent.TextSearchCompl
         }),
       ),
     ),
-    limitHit: result.truncated === true,
+    limitHit: capped || result.truncated === true,
     message: result.warning || undefined,
   });
 }
@@ -102,6 +117,7 @@ function affects(changed: readonly string[], section: string): boolean {
 export class WorkspaceService {
   private readonly filesEmitter = new EventEmitter<omnigent.ChangedFilesChangeEvent>();
   private readonly configurationEmitter = new EventEmitter<omnigent.ConfigurationChangeEvent>();
+  private readonly sessionEmitter = new EventEmitter<string | undefined>();
   private readonly unsubscribe: () => void;
   private readonly bridge: WorkspaceBridge;
   private source: WorkspaceBridgeState;
@@ -113,6 +129,8 @@ export class WorkspaceService {
   readonly onDidChangeChangedFiles = this.filesEmitter.event;
   /** Fires when a setting of the workspace on screen changes, also on a switch. */
   readonly onDidChangeConfiguration = this.configurationEmitter.event;
+  /** Fires with the new {@link activeSessionId} when another workspace comes on screen. */
+  readonly onDidChangeActiveSessionId = this.sessionEmitter.event;
 
   constructor(bridge: WorkspaceBridge) {
     this.bridge = bridge;
@@ -163,14 +181,14 @@ export class WorkspaceService {
     }
     const problem = textSearchQueryProblem(query);
     if (problem !== undefined) throw new Error(`the query cannot be searched (${problem})`);
+    const include = globsOption("include", options?.include);
+    const exclude = globsOption("exclude", options?.exclude);
     if (token?.isCancellationRequested) throw canceledError();
     const sent = contentSearchPattern({
       query: query.pattern,
       regex: query.isRegExp === true,
       wholeWord: query.isWordMatch === true,
     });
-    const globs = (value: unknown) =>
-      typeof value === "string" ? value.slice(0, MAX_GLOBS_LENGTH) : "";
     const controller = new AbortController();
     const subscription = token?.onCancellationRequested(() => controller.abort());
     try {
@@ -180,8 +198,8 @@ export class WorkspaceService {
         {
           caseSensitive: query.isCaseSensitive === true,
           regex: sent.regex,
-          include: globs(options?.include),
-          exclude: globs(options?.exclude),
+          include,
+          exclude,
         },
         controller.signal,
       );
@@ -247,6 +265,7 @@ export class WorkspaceService {
         next.availability !== previous.availability ||
         next.servedFromHost !== previous.servedFromHost;
       if (next.changedFiles !== previous.changedFiles) this.snapshot = this.copy(next);
+      const sessionChanged = next.sessionId !== previous.sessionId;
       const changedSettings = Object.entries(SETTINGS)
         .filter(([, { field }]) => next.settings[field] !== previous.settings[field])
         .map(([name]) => name);
@@ -257,6 +276,7 @@ export class WorkspaceService {
           }),
         );
       }
+      if (sessionChanged) this.sessionEmitter.fire(next.sessionId ?? undefined);
       if (!filesChanged) return;
       this.filesEmitter.fire(
         Object.freeze({
@@ -275,5 +295,6 @@ export class WorkspaceService {
     this.unsubscribe();
     this.filesEmitter.dispose();
     this.configurationEmitter.dispose();
+    this.sessionEmitter.dispose();
   }
 }

@@ -12,7 +12,7 @@ import {
 } from "@/shell/workspaceBridge";
 import { childInfo, rootSession } from "@/test/agentSessionFixtures";
 import { createExtensionApi } from "./api";
-import { SessionTreeService } from "./sessionTreeService";
+import { MAX_OBSERVED, SessionTreeService } from "./sessionTreeService";
 import { hostServices } from "./testServices";
 
 vi.mock("@/lib/identity", () => ({ authenticatedFetch: vi.fn() }));
@@ -225,5 +225,87 @@ describe("sessions API: the session tree", () => {
     expect(events).toEqual([{ sessionIds: ["conv_root"] }]);
     sessionTree.dispose();
     expect(query.getObserversCount()).toBe(0);
+  });
+
+  const observers = (client: QueryClient, id: string) =>
+    client
+      .getQueryCache()
+      .find({ queryKey: childSessionsQueryKey(id) })
+      ?.getObserversCount() ?? 0;
+  const listResponse = (ids: string[]) =>
+    new Response(
+      JSON.stringify({ object: "list", data: ids.map((id) => childInfo({ id })), has_more: false }),
+    );
+
+  it("keeps following a root whose tree has more lists than the cap (261 lists)", async () => {
+    const { api, client } = setup();
+    const kids = Array.from({ length: 260 }, (_, i) => `conv_k${i}`);
+    client.setQueryData(
+      childSessionsQueryKey("conv_root"),
+      kids.map((id) => childInfo({ id })),
+    );
+    for (const id of kids) client.setQueryData(childSessionsQueryKey(id), []);
+    // What the Agents view does: the root's list, then every node's list.
+    api.sessions.getChildSessions("conv_root");
+    for (const id of kids) api.sessions.getChildSessions(id);
+    expect(observers(client, "conv_root")).toBe(1);
+    expect(observers(client, kids[0])).toBe(1);
+    const changed: string[] = [];
+    api.sessions.onDidChangeChildSessions((event) => changed.push(...event.sessionIds));
+    vi.mocked(authenticatedFetch).mockImplementation(async (input) =>
+      String(input).includes("/conv_root/")
+        ? listResponse([...kids, "conv_new"])
+        : listResponse([]),
+    );
+    await client.invalidateQueries({ queryKey: childSessionsQueryKey("conv_root") });
+    await vi.waitFor(() =>
+      expect(api.sessions.getChildSessions("conv_root").sessions).toHaveLength(261),
+    );
+    expect(changed).toContain("conv_root");
+  });
+
+  it("caps lists outside the active tree and refetches a released one that went stale", async () => {
+    const { api, client } = setup();
+    client.setQueryData(childSessionsQueryKey("conv_root"), []);
+    api.sessions.getChildSessions("conv_root");
+    const outside = Array.from({ length: MAX_OBSERVED + 20 }, (_, i) => `conv_o${i}`);
+    for (const id of outside) {
+      client.setQueryData(childSessionsQueryKey(id), []);
+      api.sessions.getChildSessions(id);
+    }
+    expect(observers(client, "conv_root")).toBe(1);
+    expect(observers(client, outside[0])).toBe(0);
+    expect(observers(client, outside.at(-1)!)).toBe(1);
+    // Invalidated while released: asking again catches up.
+    vi.mocked(authenticatedFetch).mockImplementation(async () => listResponse(["conv_late"]));
+    await client.invalidateQueries({ queryKey: childSessionsQueryKey(outside[0]) });
+    expect(authenticatedFetch).not.toHaveBeenCalled();
+    api.sessions.getChildSessions(outside[0]);
+    await vi.waitFor(() =>
+      expect(api.sessions.getChildSessions(outside[0]).sessions.map((s) => s.id)).toEqual([
+        "conv_late",
+      ]),
+    );
+  });
+
+  it("releases the old tree's observers when the root changes", () => {
+    const { api, client, publish } = setup();
+    client.setQueryData(childSessionsQueryKey("conv_root"), [childInfo({ id: "conv_a" })]);
+    client.setQueryData(childSessionsQueryKey("conv_a"), []);
+    client.setQueryData(childSessionsQueryKey("conv_other"), [childInfo({ id: "conv_b" })]);
+    client.setQueryData(childSessionsQueryKey("conv_b"), []);
+    client.setQueryData(["session", "conv_root"], rootSession());
+    api.sessions.getChildSessions("conv_root");
+    api.sessions.getChildSessions("conv_a");
+    api.sessions.getChildSessions("conv_b");
+    api.sessions.getSession("conv_root");
+    const rootQuery = client.getQueryCache().find({ queryKey: ["session", "conv_root"] })!;
+    expect(rootQuery.getObserversCount()).toBe(1);
+    publish({ sessionId: "conv_other", rootSessionId: "conv_other" });
+    expect(observers(client, "conv_root")).toBe(0);
+    expect(observers(client, "conv_a")).toBe(0);
+    expect(rootQuery.getObserversCount()).toBe(0);
+    // A list the new tree shows stays observed.
+    expect(observers(client, "conv_b")).toBe(1);
   });
 });

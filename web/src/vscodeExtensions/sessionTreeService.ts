@@ -17,8 +17,13 @@ import { toChildSession, toSessionDetails } from "@/shell/agentSessions";
 import type { WorkspaceBridge } from "@/shell/workspaceBridge";
 import { EventEmitter } from "./base";
 
-/** Observed sessions per kind; the least recently asked for is released first. */
-const MAX_OBSERVED = 100;
+/**
+ * Observed sessions per kind outside the active tree; the least recently asked
+ * for is released first. The active tree (its root and every session reachable
+ * through its cached child lists) is never released while it is active, so a
+ * tree with more lists than this still follows its invalidations.
+ */
+export const MAX_OBSERVED = 100;
 const AGENT_COSTS_POLL_MS = 15_000;
 const EMPTY_LIST: omnigent.ChildSessionList = Object.freeze({
   sessions: Object.freeze([]),
@@ -85,7 +90,59 @@ export class SessionTreeService {
       this.costsEnabled = costsEnabled;
       this.syncCosts();
     }
-    if (rootChanged) this.treeEmitter.fire(root);
+    if (rootChanged) {
+      this.releaseOutsideTree();
+      this.treeEmitter.fire(root);
+    }
+  }
+
+  /**
+   * The active root and every session reachable from it through cached child
+   * lists: the sessions the active tree shows, which are never evicted.
+   */
+  private activeTree(): Set<string> {
+    const tree = new Set<string>();
+    const client = this.client;
+    if (this.root === undefined) return tree;
+    const queue = [this.root];
+    tree.add(this.root);
+    while (queue.length > 0) {
+      const id = queue.shift()!;
+      const list = client?.getQueryData<ChildSessionInfo[]>(childSessionsQueryKey(id));
+      for (const child of list ?? []) {
+        if (typeof child?.id !== "string" || tree.has(child.id)) continue;
+        tree.add(child.id);
+        queue.push(child.id);
+      }
+    }
+    return tree;
+  }
+
+  /** After a switch, drops what the old tree observed and the new one does not show. */
+  private releaseOutsideTree(): void {
+    const tree = this.activeTree();
+    for (const map of [this.children, this.sessions] as Map<string, Observed<unknown>>[]) {
+      for (const [id, entry] of map) {
+        if (tree.has(id)) continue;
+        entry.unsubscribe();
+        map.delete(id);
+      }
+    }
+  }
+
+  /** Keeps at most MAX_OBSERVED entries outside the active tree, oldest out first. */
+  private evict<T>(map: Map<string, Observed<T>>): void {
+    if (map.size <= MAX_OBSERVED) return;
+    const tree = this.activeTree();
+    let outside = 0;
+    for (const id of map.keys()) if (!tree.has(id)) outside += 1;
+    for (const [id, entry] of map) {
+      if (outside <= MAX_OBSERVED) break;
+      if (tree.has(id)) continue;
+      entry.unsubscribe();
+      map.delete(id);
+      outside -= 1;
+    }
   }
 
   private releaseAll(): void {
@@ -133,11 +190,7 @@ export class SessionTreeService {
       entry.memo = undefined;
       onChange();
     });
-    while (map.size > MAX_OBSERVED) {
-      const [oldest, oldestEntry] = map.entries().next().value as [string, Observed<T>];
-      oldestEntry.unsubscribe();
-      map.delete(oldest);
-    }
+    this.evict(map);
     return entry;
   }
 
@@ -200,7 +253,10 @@ export class SessionTreeService {
           queryFn: () => fetchChildSessions(sessionId),
           staleTime: 60_000,
           retry: false,
-          refetchOnMount: false,
+          // Unlike the app's hook (mounted once per row), a list asked for again
+          // after it was released must catch up on what it missed meanwhile: an
+          // invalidated or stale entry refetches, a fresh one is reused.
+          refetchOnMount: true,
         }),
       () => {
         // Whether a direct child of the root works decides how often costs poll.

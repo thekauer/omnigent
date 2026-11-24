@@ -521,7 +521,8 @@ error? }`, coalesced per microtask, also on session switches.
       import form (static, side-effect, type-only, dynamic, re-exports) with
       the TypeScript scanner and resolves relative paths, which must stay in
       the extension's folder; a menu entry's `tooltip` may name context keys
-      as `${key}`, so the hidden-files warning names the count again ("3
+      as `${key}` (its own `<extension id>.*` keys, `view` and the host's
+      `config.*` settings only), so the hidden-files warning names the count again ("3
       files in hidden directories. Click to show."); tree rows put the
       diffstat before the A/M/D letter, as list rows do; the Sort menu is
       hidden while the list failed (`omnigent.changes.loadFailed`); and a
@@ -557,11 +558,23 @@ limitHit, message }`; a cancelled token aborts the request and rejects
       with an error named "Canceled". `workspace.validateTextSearchQuery`
       says why a query cannot run (`tooLong`, `unopenedGroup`, `verbose`),
       the whole-word checks the classic form made before sending.
+      `include` and `exclude` must be strings of at most 4096 characters
+      (otherwise a TypeError, never a silent cut), and at most 2000 matches
+      come back, with `limitHit` set past that.
+      `workspace.onDidChangeActiveSessionId` fires when another workspace
+      comes on screen, for views that keep per-session state without
+      following every changed-files update.
       `CancellationTokenSource` is exported, as in VS Code.
     - `contributes.keybindings`: `{ command, key, mac?, when? }` with keys like
       `ctrl+shift+f` (letters, digits, F1 to F12), matched on the physical key
       by one capture listener on the window, so they work from editors and
-      terminals; a match runs the command and stops the event.
+      terminals; a match runs the command and stops the event. A chord must
+      hold Ctrl, Cmd or Alt or press an F-key, and one the app already owns
+      (its shortcut registries, window and text-editing keys) is refused with
+      a warning; built-ins override an app chord only through an allowlist
+      (`appKeyChords.ts`: content search's ⌘⇧F). While a text field has
+      focus (the `inputFocus` context key), only Ctrl or Cmd chords run, and
+      AltGr off macOS is typing, not Ctrl+Alt.
     - Every contributed view gets VS Code's `<view id>.focus` command. It asks
       the workspace rail of the session on screen (`useWorkspaceRail`,
       registered by WorkspacePanel) to select the view's tab, reveal the rail

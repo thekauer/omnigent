@@ -41,9 +41,11 @@ describe("Content search model", () => {
   });
 
   it("words each problem as the classic alerts did", () => {
-    expect(problemMessage("tooLong")).toBe(
+    expect(problemMessage("tooLong", true)).toBe(
       "This search is too long to match whole words. Shorten it, or turn off Whole word.",
     );
+    // Without Whole word, a long search is simply too long.
+    expect(problemMessage("tooLong")).toBe("This search is too long. Shorten it.");
     expect(problemMessage("unopenedGroup")).toMatch(
       /^This expression closes a group it never opened/,
     );

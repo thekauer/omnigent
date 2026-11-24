@@ -45,6 +45,7 @@ export function activate(context: Omnigent.ExtensionContext): void {
     const form = formOf(input.value);
     input.validationMessage = problemMessage(
       omnigent.workspace.validateTextSearchQuery(queryOf(form)),
+      form.wholeWord,
     );
     input.enabled = form.query.trim() !== "" && current()?.running === undefined;
   };
@@ -102,8 +103,9 @@ export function activate(context: Omnigent.ExtensionContext): void {
     changed,
     input.onDidChangeValue(validate),
     input.onDidAccept(run),
-    // Another workspace on screen: its own results.
-    omnigent.workspace.onDidChangeChangedFiles(rebuild),
+    // Another workspace on screen: its own results. Not on changed-files updates,
+    // which would rebuild (and jump) the results while the agent edits files.
+    omnigent.workspace.onDidChangeActiveSessionId(rebuild),
     {
       dispose: () => {
         for (const search of searches.values()) search.running?.cancel();

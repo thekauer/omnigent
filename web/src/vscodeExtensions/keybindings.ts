@@ -1,9 +1,15 @@
 // Contributed keybindings, as VS Code's keybinding service: one capture listener
 // on the window runs the command of the first binding whose key and `when`
-// clause match, so a binding also works from editors and terminals.
-import { isMacPlatform } from "@/lib/hotkeys";
+// clause match, so a binding also works from editors and terminals. While focus
+// is in a text field (`inputFocus`), only Ctrl or Cmd chords run, so typing,
+// including Option and AltGr characters, reaches the field.
+import { isMacPlatform, isTextEntry } from "@/lib/hotkeys";
+import { canonicalKeyChord } from "./appKeyChords";
 import type { ContextKeyService } from "./contextKeys";
 import type { KeybindingContribution } from "./contributions";
+
+/** Context key set while keyboard focus is in a field that takes typed text. */
+export const INPUT_FOCUS_CONTEXT_KEY = "inputFocus";
 
 export interface KeybindingServiceOptions {
   contextKeys: ContextKeyService;
@@ -16,11 +22,16 @@ export interface KeybindingServiceOptions {
 type KeyEventLike = Pick<
   KeyboardEvent,
   "code" | "ctrlKey" | "shiftKey" | "altKey" | "metaKey" | "repeat" | "isComposing"
->;
+> &
+  Partial<Pick<KeyboardEvent, "getModifierState">>;
 
-/** The chord of a key event in keybinding terms (`ctrl+shift+f`), from its physical key. */
-export function chordOfEvent(event: KeyEventLike): string | undefined {
+/**
+ * The chord of a key event in keybinding terms (`ctrl+shift+f`), from its physical key.
+ * Off macOS, AltGr reports as Ctrl+Alt but types a character, so it is no chord.
+ */
+export function chordOfEvent(event: KeyEventLike, mac = false): string | undefined {
   const { code } = event;
+  if (!mac && event.getModifierState?.("AltGraph")) return undefined;
   let key: string | undefined;
   if (/^Key[A-Z]$/.test(code)) key = code.slice(3).toLowerCase();
   else if (/^Digit[0-9]$/.test(code)) key = code.slice(5);
@@ -35,15 +46,15 @@ export function chordOfEvent(event: KeyEventLike): string | undefined {
   return [...modifiers, key].join("+");
 }
 
-/** A chord with its modifiers in a fixed order, to compare with {@link chordOfEvent}. */
-function canonical(chord: string): string {
-  const parts = chord.split("+");
-  const key = parts.at(-1) ?? "";
-  const modifiers = new Set(parts.slice(0, -1));
-  return [
-    ...["ctrl", "shift", "alt", "cmd"].filter((modifier) => modifiers.has(modifier)),
-    key,
-  ].join("+");
+/** Whether a chord holds Ctrl or Cmd, which typing never does. */
+function holdsCommandModifier(chord: string): boolean {
+  return chord.startsWith("ctrl+") || chord.includes("cmd+");
+}
+
+function takesText(element: unknown): boolean {
+  return (
+    typeof HTMLElement !== "undefined" && element instanceof HTMLElement && isTextEntry(element)
+  );
 }
 
 interface Binding {
@@ -66,12 +77,29 @@ export class KeybindingService {
     this.target = options.target ?? (typeof window === "undefined" ? undefined : window);
   }
 
+  /** Keeps `inputFocus` in step with focus: set while a text field has it. */
+  private readonly onFocusIn = (event: FocusEvent): void => {
+    this.setInputFocus(takesText(event.target));
+  };
+
+  private readonly onFocusOut = (event: FocusEvent): void => {
+    this.setInputFocus(takesText(event.relatedTarget));
+  };
+
+  private setInputFocus(focused: boolean): void {
+    this.options.contextKeys.set(INPUT_FOCUS_CONTEXT_KEY, focused ? true : undefined);
+  }
+
   private readonly onKeyDown = (event: KeyboardEvent): void => {
     if (event.repeat || event.isComposing) return;
-    const chord = chordOfEvent(event);
-    if (chord === undefined) return;
-    const lookup = this.options.contextKeys.lookup();
     const mac = this.options.isMac ?? isMacPlatform();
+    const chord = chordOfEvent(event, mac);
+    if (chord === undefined) return;
+    // The event's own target decides, so a stale or extension-set key can't let typing through.
+    const inputFocus = takesText(event.target);
+    this.setInputFocus(inputFocus);
+    if (inputFocus && !holdsCommandModifier(chord)) return;
+    const lookup = this.options.contextKeys.lookup();
     const binding = this.bindings.find(
       (candidate) =>
         (mac ? candidate.macChord : candidate.chord) === chord &&
@@ -90,14 +118,16 @@ export class KeybindingService {
     const added = contributions.map((contribution) => ({
       extensionId,
       command: contribution.command,
-      chord: canonical(contribution.key),
-      macChord: canonical(contribution.mac ?? contribution.key),
+      chord: canonicalKeyChord(contribution.key),
+      macChord: canonicalKeyChord(contribution.mac ?? contribution.key),
       when: contribution.when,
     }));
     this.bindings.push(...added);
     if (added.length > 0 && !this.listening && this.target) {
       this.listening = true;
       this.target.addEventListener("keydown", this.onKeyDown, true);
+      this.target.addEventListener("focusin", this.onFocusIn as EventListener, true);
+      this.target.addEventListener("focusout", this.onFocusOut as EventListener, true);
     }
     return () => {
       for (const binding of added) {
@@ -109,7 +139,11 @@ export class KeybindingService {
 
   dispose(): void {
     this.bindings.length = 0;
-    if (this.listening) this.target?.removeEventListener("keydown", this.onKeyDown, true);
+    if (this.listening) {
+      this.target?.removeEventListener("keydown", this.onKeyDown, true);
+      this.target?.removeEventListener("focusin", this.onFocusIn as EventListener, true);
+      this.target?.removeEventListener("focusout", this.onFocusOut as EventListener, true);
+    }
     this.listening = false;
   }
 }

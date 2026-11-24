@@ -2,6 +2,7 @@
 // into checked plain data. Problems are warnings: the rest still loads.
 import { isExtensionViewId } from "@/shell/railTabs";
 import { isRailViewIconName } from "@/shell/railViewIcons";
+import { appShortcutOwning, BUILT_IN_CHORD_OVERRIDES } from "./appKeyChords";
 import { parseWhen, type WhenClause } from "./when";
 
 /** The view container of the classic workspace rail. */
@@ -133,6 +134,33 @@ export function normalizeKeyChord(value: unknown): string | undefined {
   if (new Set(modifiers).size !== modifiers.length) return undefined;
   if (!modifiers.every((modifier) => KEY_MODIFIERS.has(modifier))) return undefined;
   return chord;
+}
+
+/**
+ * Whether a normalized chord leaves typing alone: it holds Ctrl, Cmd or Alt, or
+ * presses an F-key. A bare or Shift-only letter or digit would swallow text.
+ */
+export function isCommandChord(chord: string): boolean {
+  const parts = chord.split("+");
+  const key = parts.at(-1) ?? "";
+  if (/^f(?:[1-9]|1[0-2])$/.test(key)) return true;
+  return parts.slice(0, -1).some((modifier) => modifier !== "shift");
+}
+
+/** Why a chord can't be contributed (a bare key, or one the app owns), or undefined when it can. */
+function keyChordProblem(
+  chord: string,
+  mac: boolean,
+  allowed: readonly string[],
+): string | undefined {
+  if (!isCommandChord(chord)) {
+    return `needs Ctrl, Cmd or Alt, or an F-key, so it doesn't swallow typing`;
+  }
+  const owner = appShortcutOwning(chord, mac);
+  if (owner && !allowed.includes(owner.id)) {
+    return `is the app's "${owner.label}" shortcut (${owner.id})`;
+  }
+  return undefined;
 }
 
 function searchInputOf(
@@ -475,6 +503,17 @@ export function parseContributions(
         const mac = entry.mac === undefined ? undefined : normalizeKeyChord(entry.mac);
         if (entry.mac !== undefined && mac === undefined) {
           warnings.push(`${where}: invalid mac key ${JSON.stringify(entry.mac)}`);
+          return;
+        }
+        const allowed = options.builtIn
+          ? (BUILT_IN_CHORD_OVERRIDES[`${extensionId} ${entry.command}`] ?? [])
+          : [];
+        const otherProblem = keyChordProblem(key, false, allowed);
+        const macProblem = keyChordProblem(mac ?? key, true, allowed);
+        if (otherProblem !== undefined || macProblem !== undefined) {
+          const [chord, problem] =
+            otherProblem !== undefined ? [key, otherProblem] : [mac ?? key, macProblem];
+          warnings.push(`${where}: key "${chord}" ${problem}; the keybinding is ignored`);
           return;
         }
         keybindings.push({

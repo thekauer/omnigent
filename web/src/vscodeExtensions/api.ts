@@ -181,6 +181,10 @@ export function createExtensionApi(
     services.workspace.onDidChangeChangedFiles,
     "onDidChangeChangedFiles",
   );
+  const onDidChangeActiveSessionId = guard(
+    services.workspace.onDidChangeActiveSessionId,
+    "onDidChangeActiveSessionId",
+  );
   const onDidChangeConfiguration = guard(
     services.workspace.onDidChangeConfiguration,
     "onDidChangeConfiguration",
@@ -463,6 +467,7 @@ export function createExtensionApi(
         return services.workspace.servedFromHost;
       },
       onDidChangeChangedFiles,
+      onDidChangeActiveSessionId,
       getConfiguration: (section?: string) => services.workspace.getConfiguration(section),
       onDidChangeConfiguration,
       findTextInFiles: (

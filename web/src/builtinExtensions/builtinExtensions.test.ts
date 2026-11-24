@@ -14,12 +14,31 @@ import { BUILT_IN_EXTENSIONS, builtInExtensions } from ".";
 const ROOT = path.dirname(new URL(import.meta.url).pathname);
 const folders = readdirSync(ROOT).filter((entry) => statSync(path.join(ROOT, entry)).isDirectory());
 
-function sourceFiles(directory: string): string[] {
+const TEST_FILE = /\.test\.[^/]+$/;
+const SOURCE_FILE = /\.tsx?$/;
+const MANIFEST = "package.json";
+
+/** Every file under `directory`. */
+function allFiles(directory: string): string[] {
   return readdirSync(directory).flatMap((entry) => {
     const full = path.join(directory, entry);
-    if (statSync(full).isDirectory()) return sourceFiles(full);
-    return /\.tsx?$/.test(entry) && !/\.test\.tsx?$/.test(entry) ? [full] : [];
+    return statSync(full).isDirectory() ? allFiles(full) : [full];
   });
+}
+
+/** The extension's own modules: TypeScript sources other than tests. */
+function isSource(file: string): boolean {
+  return SOURCE_FILE.test(file) && !TEST_FILE.test(file);
+}
+
+/**
+ * What the bundle may load from an extension folder: its TypeScript sources and
+ * manifest. Tests run only under vitest; any other file is a way around the check.
+ */
+function fileViolation(folder: string, file: string): string | undefined {
+  if (isSource(file) || TEST_FILE.test(file)) return undefined;
+  if (path.relative(folder, file) === MANIFEST) return undefined;
+  return "a file the boundary check can't read; only .ts/.tsx sources, tests and package.json";
 }
 
 /** Every module a source names: static, side-effect, type-only and dynamic imports, and re-exports. */
@@ -27,23 +46,119 @@ function importSpecifiers(text: string): string[] {
   return ts.preProcessFile(text, true, true).importedFiles.map((file) => file.fileName);
 }
 
+/**
+ * Loads the import scanner doesn't see as a plain string: `import.meta.glob`,
+ * `import()` of anything but a string literal, `new URL(..., import.meta.url)`
+ * and triple-slash references.
+ */
+function hiddenLoads(text: string): string[] {
+  const found: string[] = [];
+  const info = ts.preProcessFile(text, true, true);
+  for (const reference of info.referencedFiles) {
+    found.push(`/// <reference path="${reference.fileName}">`);
+  }
+  for (const reference of info.typeReferenceDirectives) {
+    found.push(`/// <reference types="${reference.fileName}">`);
+  }
+  const source = ts.createSourceFile("source.tsx", text, ts.ScriptTarget.Latest, true);
+  const isImportMeta = (node: ts.Node): node is ts.MetaProperty =>
+    ts.isMetaProperty(node) &&
+    node.keywordToken === ts.SyntaxKind.ImportKeyword &&
+    node.name.text === "meta";
+  const visit = (node: ts.Node): void => {
+    if (ts.isPropertyAccessExpression(node) && isImportMeta(node.expression)) {
+      if (node.name.text.startsWith("glob")) found.push(`import.meta.${node.name.text}`);
+    }
+    if (ts.isCallExpression(node) && node.expression.kind === ts.SyntaxKind.ImportKeyword) {
+      const [argument] = node.arguments;
+      if (!argument || !ts.isStringLiteral(argument)) {
+        found.push(`import(${argument ? argument.getText(source) : ""})`);
+      }
+    }
+    if (
+      ts.isNewExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      node.expression.text === "URL" &&
+      node.arguments?.some(
+        (argument) =>
+          ts.isPropertyAccessExpression(argument) &&
+          isImportMeta(argument.expression) &&
+          argument.name.text === "url",
+      )
+    ) {
+      found.push(`new URL(..., import.meta.url)`);
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return found;
+}
+
+/** The file a relative import loads: as written, or with a TypeScript extension or index added. */
+function resolveImport(resolved: string, exists: (file: string) => boolean): string {
+  const candidates = [
+    resolved,
+    ...[".ts", ".tsx"].map((extension) => resolved + extension),
+    ...["index.ts", "index.tsx"].map((index) => path.join(resolved, index)),
+  ];
+  return candidates.find(exists) ?? resolved;
+}
+
+const isFile = (file: string) => {
+  try {
+    return statSync(file).isFile();
+  } catch {
+    return false;
+  }
+};
+
 /** Why `specifier` in `file` leaves the extension API, if it does. */
-function boundaryViolation(folder: string, file: string, specifier: string): string | undefined {
+function boundaryViolation(
+  folder: string,
+  file: string,
+  specifier: string,
+  exists: (file: string) => boolean = isFile,
+): string | undefined {
   if (specifier === "omnigent" || specifier === "@/vscodeExtensions/builtinApi") return undefined;
   if (!specifier.startsWith("./") && !specifier.startsWith("../")) return "app or package import";
-  const resolved = path.resolve(path.dirname(file), specifier);
-  const inside = path.relative(folder, resolved);
-  return inside.startsWith("..") || path.isAbsolute(inside)
-    ? "leaves the extension folder"
-    : undefined;
+  const target = resolveImport(path.resolve(path.dirname(file), specifier), exists);
+  const inside = path.relative(folder, target);
+  if (inside.startsWith("..") || path.isAbsolute(inside)) return "leaves the extension folder";
+  if (TEST_FILE.test(target)) return "loads a test file, which the check doesn't scan";
+  if (inside !== MANIFEST && !SOURCE_FILE.test(target)) {
+    return "loads a file that isn't TypeScript, which the check doesn't scan";
+  }
+  return undefined;
+}
+
+/** Every way a source in `folder` reaches past the API. */
+function sourceViolations(
+  folder: string,
+  file: string,
+  text: string,
+  exists: (file: string) => boolean = isFile,
+): string[] {
+  return [
+    ...importSpecifiers(text).flatMap((specifier) => {
+      const why = boundaryViolation(folder, file, specifier, exists);
+      return why === undefined ? [] : [`imports ${specifier}: ${why}`];
+    }),
+    ...hiddenLoads(text).map((load) => `uses ${load}`),
+  ];
 }
 
 describe("built-in import boundary check", () => {
   const folder = path.join(ROOT, "omnigent.example");
   const file = path.join(folder, "extension.ts");
+  const existing = new Set(
+    ["model.ts", "view.tsx", "lib/index.ts", "model.test.ts", "helper.js", "data.json"].map(
+      (name) => path.join(folder, name),
+    ),
+  );
+  const exists = (candidate: string) => existing.has(candidate);
   const violations = (source: string) =>
     importSpecifiers(source).flatMap((specifier) => {
-      const why = boundaryViolation(folder, file, specifier);
+      const why = boundaryViolation(folder, file, specifier, exists);
       return why === undefined ? [] : [specifier];
     });
 
@@ -73,13 +188,53 @@ describe("built-in import boundary check", () => {
 
   it("allows the API, its binding and files of the extension itself", () => {
     expect(
-      violations(`
+      sourceViolations(
+        folder,
+        file,
+        `
         import type * as Omnigent from "omnigent";
         import { bindExtensionApi } from "@/vscodeExtensions/builtinApi";
         import manifest from "./package.json";
         import { model } from "./lib/../model";
-      `),
+        import { View } from "./view";
+        import { lib } from "./lib";
+        const later = () => import("./model");
+      `,
+        exists,
+      ),
     ).toEqual([]);
+  });
+
+  it.each([
+    ["a test file", `import { fixture } from "./model.test";`, /loads a test file/],
+    ["a test file by extension", `import "./model.test.ts";`, /loads a test file/],
+    ["a JavaScript file", `import { helper } from "./helper.js";`, /isn't TypeScript/],
+    ["a JSON file other than the manifest", `import data from "./data.json";`, /isn't TypeScript/],
+    ["import.meta.glob", `const all = import.meta.glob("../../store/*.ts");`, /import\.meta\.glob/],
+    ["import.meta.globEager", `const all = import.meta.globEager("../*.ts");`, /globEager/],
+    ["a template-literal import()", "const m = import(`@/store/chatStore`);", /import\(`/],
+    ["a computed import()", `const name = "@/store"; const m = import(name);`, /import\(name\)/],
+    [
+      "new URL(..., import.meta.url)",
+      `const url = new URL("../../store/chatStore.ts", import.meta.url);`,
+      /new URL/,
+    ],
+    ["/// <reference path>", `/// <reference path="../../store/chatStore.ts" />`, /reference path/],
+    ["/// <reference types>", `/// <reference types="vite/client" />`, /reference types/],
+  ])("rejects %s", (_name, source, expected) => {
+    // A template literal also reads as a plain import, so it can be reported twice.
+    expect(sourceViolations(folder, file, source, exists)).toContainEqual(
+      expect.stringMatching(expected),
+    );
+  });
+
+  it("accepts only sources, tests and the manifest as files", () => {
+    expect(fileViolation(folder, path.join(folder, "model.ts"))).toBeUndefined();
+    expect(fileViolation(folder, path.join(folder, "view.test.tsx"))).toBeUndefined();
+    expect(fileViolation(folder, path.join(folder, "package.json"))).toBeUndefined();
+    for (const name of ["helper.js", "helper.mjs", "data.json", "lib/package.json", "style.css"]) {
+      expect(fileViolation(folder, path.join(folder, name)), name).toBeDefined();
+    }
   });
 });
 
@@ -111,11 +266,11 @@ describe("built-in extensions", () => {
     "%s only uses the extension API: no React, store or other app imports",
     (folder) => {
       const directory = path.join(ROOT, folder);
-      for (const file of sourceFiles(directory)) {
-        for (const specifier of importSpecifiers(readFileSync(file, "utf8"))) {
-          const why = boundaryViolation(directory, file, specifier);
-          expect(why, `${path.relative(ROOT, file)} imports ${specifier}`).toBeUndefined();
-        }
+      for (const file of allFiles(directory)) {
+        const where = path.relative(ROOT, file);
+        expect(fileViolation(directory, file), where).toBeUndefined();
+        if (!isSource(file)) continue;
+        expect(sourceViolations(directory, file, readFileSync(file, "utf8")), where).toEqual([]);
       }
     },
   );

@@ -814,10 +814,17 @@ declare module "omnigent" {
     readonly isWordMatch?: boolean;
   }
 
-  /** Why a {@link TextSearchQuery} cannot run: too long, or a whole-word regular expression that could escape its boundaries. */
+  /**
+   * Why a {@link TextSearchQuery} cannot run: too long for the server (whole word
+   * lengthens the pattern it sends), or a whole-word regular expression that could
+   * escape its boundaries.
+   */
   export type TextSearchQueryProblem = "tooLong" | "unopenedGroup" | "verbose";
 
-  /** Which files {@link workspace.findTextInFiles} searches. */
+  /**
+   * Which files {@link workspace.findTextInFiles} searches. Each is a string of at
+   * most 4096 characters; anything else rejects with a TypeError.
+   */
   export interface FindTextInFilesOptions {
     /** Comma-separated globs of files to search, such as `src/**, *.{ts,tsx}`. */
     readonly include?: string;
@@ -840,7 +847,7 @@ declare module "omnigent" {
   /** The result of {@link workspace.findTextInFiles}. */
   export interface TextSearchComplete {
     readonly matches: readonly TextSearchMatch[];
-    /** True when there were more matches than the search returns. */
+    /** True when there were more matches than the search returns (at most 2000). */
     readonly limitHit: boolean;
     /** A message from the searcher, such as a skipped part of the workspace. */
     readonly message: string | undefined;
@@ -868,6 +875,8 @@ declare module "omnigent" {
      * window, or the selected grid cell. `workspaceState` follows it.
      */
     export const activeSessionId: string | undefined;
+    /** Fires with the new {@link activeSessionId} when another workspace comes on screen. */
+    export const onDidChangeActiveSessionId: Event<string | undefined>;
     /**
      * That session's changed files, frozen; `undefined` while they load, when
      * they cannot be loaded, or without a session.

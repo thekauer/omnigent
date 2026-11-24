@@ -12,7 +12,12 @@ import { authenticatedFetch } from "@/lib/identity";
 import { ExtensionRailView } from "@/shell/extensionViews/ExtensionRailView";
 import { RailViewRegistry } from "@/shell/railViews";
 import { WorkspaceBridge } from "@/shell/workspaceBridge";
-import { type BuiltInHarness, startBuiltIns } from "@/test/builtInExtensions";
+import {
+  type BuiltInHarness,
+  changedFile,
+  flushMicrotasks,
+  startBuiltIns,
+} from "@/test/builtInExtensions";
 import { VIEW_ID } from "./extension";
 
 vi.mock("@/lib/identity", () => ({ authenticatedFetch: vi.fn() }));
@@ -375,4 +380,38 @@ it("groups matches by file in the order their first match came, each file once",
   expect(
     screen.getAllByRole("button", { name: /^Open / }).map((row) => row.getAttribute("aria-label")),
   ).toEqual(["Open b.ts at line 2", "Open b.ts at line 7", "Open a.ts at line 9"]);
+});
+
+it("keeps its results still while the changed files update, and redraws on a session switch", async () => {
+  vi.mocked(authenticatedFetch).mockImplementation(
+    async () =>
+      new Response(
+        JSON.stringify({
+          matches: [
+            { path: "a.ts", line: 1, column: 1, text: "needle", match_start: 0, match_end: 6 },
+          ],
+          truncated: false,
+          warning: null,
+        }),
+      ),
+  );
+  await start();
+  render(view("session-one"));
+  fireEvent.change(searchbox(), { target: { value: "needle" } });
+  submit();
+  expect(await screen.findByRole("heading", { name: "a.ts" })).toBeInTheDocument();
+  const redrawn = vi.fn();
+  const unsubscribe = harness.registry.get(VIEW_ID)!.tree!.subscribe(redrawn);
+  await act(async () => {
+    await harness.publish({ changedFiles: [changedFile("b.ts")] });
+    await harness.publish({ changedFiles: [changedFile("b.ts"), changedFile("c.ts")] });
+    await flushMicrotasks();
+  });
+  expect(redrawn).not.toHaveBeenCalled();
+  await act(async () => {
+    await harness.publish({ sessionId: "session-two" });
+    await flushMicrotasks();
+  });
+  expect(redrawn).toHaveBeenCalled();
+  unsubscribe();
 });

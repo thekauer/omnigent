@@ -36,17 +36,23 @@ export function queryOf(form: SearchForm): Omnigent.TextSearchQuery {
 }
 
 const PROBLEM_MESSAGES: Readonly<Record<Omnigent.TextSearchQueryProblem, string>> = {
-  tooLong: "This search is too long to match whole words. Shorten it, or turn off Whole word.",
+  tooLong: "This search is too long. Shorten it.",
   unopenedGroup:
     "This expression closes a group it never opened, so it can’t match whole words. Balance its parentheses, or turn off Whole word.",
   verbose:
     "Whole word can’t be used with verbose mode (?x). Remove that flag, or turn off Whole word.",
 };
 
+/** Whole word lengthens what is sent, so there a long search can also turn it off. */
+const TOO_LONG_WHOLE_WORD =
+  "This search is too long to match whole words. Shorten it, or turn off Whole word.";
+
 export function problemMessage(
   problem: Omnigent.TextSearchQueryProblem | undefined,
+  wholeWord = false,
 ): string | undefined {
-  return problem === undefined ? undefined : PROBLEM_MESSAGES[problem];
+  if (problem === undefined) return undefined;
+  return problem === "tooLong" && wholeWord ? TOO_LONG_WHOLE_WORD : PROBLEM_MESSAGES[problem];
 }
 
 /** A finished search of one chat session: what was asked and what came back. */
