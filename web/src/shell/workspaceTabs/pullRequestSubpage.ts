@@ -3,6 +3,7 @@
 // Azure DevOps. Pure URL syntax, so the link parser can apply it
 // before an explicit `view` would be indistinguishable from the default.
 
+import { githubPullRequestPath } from "@/lib/gitHostProviders";
 import { canonicalPullRequestUrl } from "@/lib/pullRequestReference";
 
 import type { PullRequestView, WorkspacePlace } from "./workspacePlace";
@@ -14,7 +15,6 @@ export interface PullRequestSubpage {
   commit?: string;
 }
 
-const GITHUB_PULL = /^(\/[^/]+\/[^/]+\/pull\/\d+)(\/.*)?$/;
 const GITLAB_MERGE_REQUEST = /^(.*\/-\/merge_requests\/\d+)(\/.*)?$/;
 const AZURE_PULL_REQUEST = /^(.*\/pullrequest\/\d+)\/?$/i;
 
@@ -31,10 +31,10 @@ export function foldPullRequestSubpage(url: string): PullRequestSubpage {
     return { url };
   }
   const origin = parsed.origin;
-  const github = GITHUB_PULL.exec(parsed.pathname);
+  const github = githubPullRequestPath(parsed.pathname);
   if (github) {
-    const rest = trimSlashes(github[2]);
-    const own = `${origin}${github[1]}`;
+    const rest = trimSlashes(github.rest);
+    const own = `${origin}/${github.owner}/${github.repo}/pull/${github.number}`;
     if (rest === "files") return { url: own, view: "changes" };
     if (rest === "commits") return { url: own, view: "commits" };
     if (rest === "checks") return { url: own, view: "summary", focus: "checks" };

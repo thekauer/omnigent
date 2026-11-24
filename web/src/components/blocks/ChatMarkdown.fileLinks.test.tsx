@@ -11,11 +11,12 @@
 // Both should instead open the FileViewer, exactly as an inline-code path does.
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { FileViewerContext } from "@/shell/FileViewerContext";
 import { mentionPillMarkdown } from "@/lib/mentionPills";
 import { FilePathAwareMessageResponse } from "./ChatMarkdown";
+import { gitHostProviders } from "@/lib/gitHostProviders";
 
 vi.mock("@/components/ui/toast", () => ({ showToast: vi.fn() }));
 import { showToast } from "@/components/ui/toast";
@@ -213,6 +214,24 @@ describe("markdown links to workspace files", () => {
     renderMarkdown(href);
 
     expect(screen.getByRole("link", { name: "app#42" })).toHaveAttribute("href", href);
+  });
+
+  it("shortens a link a git host provider recognizes, also once it registers late", () => {
+    const href = "https://forge.example.com/org/tool/pull/9";
+    renderMarkdown(href);
+    expect(screen.getByRole("link", { name: href })).toHaveAttribute("href", href);
+    let unregister = () => {};
+    act(() => {
+      unregister = gitHostProviders.register({
+        id: "test.forge",
+        matchUrl: (url) =>
+          url === href
+            ? { host: "forge.example.com", owner: "org", repo: "tool", number: 9 }
+            : undefined,
+      });
+    });
+    onTestFinished(() => unregister());
+    expect(screen.getByRole("link", { name: "tool#9" })).toHaveAttribute("href", href);
   });
 
   it("preserves formatting and surrounding prose in a descriptive PR link", () => {

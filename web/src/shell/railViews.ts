@@ -238,6 +238,10 @@ export interface RailViewState {
    * session is not the one on screen (a grid cell not in front) draws its own.
    */
   readonly planBySession: ReadonlyMap<string, omnigent.PlanViewContent>;
+  /** A pull request view's content (`window.createPullRequestView`), checked plain data. */
+  readonly pullRequests: omnigent.PullRequestViewContent | undefined;
+  /** The last pull request content published for each session, latest last. */
+  readonly pullRequestsBySession: ReadonlyMap<string, omnigent.PullRequestViewContent>;
   /** Running tasks the view shows progress for, latest last. */
   readonly progress: readonly RailViewProgress[];
   /** The folder the view browses, drawn as its location bar. */
@@ -301,6 +305,8 @@ const INITIAL_STATE: RailViewState = {
   presentation: "tree",
   plan: undefined,
   planBySession: new Map(),
+  pullRequests: undefined,
+  pullRequestsBySession: new Map(),
   progress: [],
   location: undefined,
   filterRevision: 0,

@@ -30,6 +30,7 @@ import {
 } from "./contributions";
 import { createTreeViewModel } from "./treeView";
 import { planContentOf } from "./planContent";
+import { pullRequestContentOf } from "./pullRequestContent";
 import { WORKSPACE_SETTING_NAMES } from "./workspaceService";
 
 const MAX_VIEW_TEXT = 200;
@@ -943,6 +944,72 @@ export class ViewsService {
     if (entry.tree !== undefined || entry.plan !== undefined) {
       throw new Error(`view '${viewId}' already has a tree or plan view`);
     }
+    return this.createPlanContent(entry, logError);
+  }
+
+  /** `window.createPullRequestView` for `extensionId`; throws for a view it did not contribute. */
+  createPullRequestView(
+    extensionId: string,
+    viewId: string,
+    logError: (message: string, error?: unknown) => void,
+  ): omnigent.PullRequestView {
+    const entry = this.views.get(viewId);
+    if (!entry || entry.extensionId !== extensionId) {
+      throw new Error(`no view with id '${viewId}' is contributed by ${extensionId}`);
+    }
+    if (entry.tree !== undefined || entry.plan !== undefined) {
+      throw new Error(`view '${viewId}' already has content`);
+    }
+    // The plan slot carries any host-drawn content's visibility.
+    const contentEntry = {
+      visibility: new EventEmitter<omnigent.TreeViewVisibilityChangeEvent>((error) =>
+        logError("onDidChangeVisibility listener threw", error),
+      ),
+    };
+    entry.plan = contentEntry;
+    let content = pullRequestContentOf(undefined);
+    let disposed = false;
+    let bySession: ReadonlyMap<string, omnigent.PullRequestViewContent> = new Map();
+    entry.handle.update({ pullRequests: content, pullRequestsBySession: bySession });
+    return {
+      get content() {
+        return content;
+      },
+      set content(value) {
+        if (disposed) return;
+        content = pullRequestContentOf(value, logError);
+        if (content.kind === "pullRequests") {
+          const next = new Map(bySession);
+          next.delete(content.sessionId);
+          next.set(content.sessionId, content);
+          for (const oldest of next.keys()) {
+            if (next.size <= MAX_PLAN_SNAPSHOTS) break;
+            next.delete(oldest);
+          }
+          bySession = next;
+        }
+        entry.handle.update({ pullRequests: content, pullRequestsBySession: bySession });
+      },
+      get visible() {
+        return !disposed && entry.shown > 0;
+      },
+      onDidChangeVisibility: contentEntry.visibility.event,
+      dispose: () => {
+        if (disposed) return;
+        disposed = true;
+        contentEntry.visibility.dispose();
+        if (entry.plan === contentEntry) {
+          entry.plan = undefined;
+          entry.handle.update({ pullRequests: undefined, pullRequestsBySession: new Map() });
+        }
+      },
+    };
+  }
+
+  private createPlanContent(
+    entry: ViewEntry,
+    logError: (message: string, error?: unknown) => void,
+  ): omnigent.PlanView {
     const planEntry = {
       visibility: new EventEmitter<omnigent.TreeViewVisibilityChangeEvent>((error) =>
         logError("onDidChangeVisibility listener threw", error),

@@ -6,6 +6,8 @@ import type { Notifications } from "./progress";
 import { SessionHeaderItemRegistry } from "./sessionHeaderItems";
 import { SessionsService } from "./sessionsService";
 import { SessionTreeService } from "./sessionTreeService";
+import { GitHostProviderRegistry } from "@/lib/gitHostProviders";
+import { PullRequestsService } from "./pullRequestsService";
 import { TasksService } from "./tasksService";
 import { RailViewRegistry } from "@/shell/railViews";
 import { WorkspaceBridge } from "@/shell/workspaceBridge";
@@ -89,5 +91,7 @@ export function hostServices(overrides: Partial<HostServices> = {}): HostService
     workspace: overrides.workspace ?? new WorkspaceService(new WorkspaceBridge()),
     sessionTree: overrides.sessionTree ?? new SessionTreeService(new WorkspaceBridge()),
     tasks: overrides.tasks ?? new TasksService(new WorkspaceBridge()),
+    pullRequests: overrides.pullRequests ?? new PullRequestsService(new WorkspaceBridge()),
+    gitHosts: overrides.gitHosts ?? new GitHostProviderRegistry(),
   };
 }

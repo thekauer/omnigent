@@ -106,6 +106,42 @@ export interface WorkspaceTasksActions {
   openWorkflow: (workflowId: string) => void;
 }
 
+/** A merge, as the merge dialog sends it. */
+export interface WorkspacePullRequestMerge {
+  readonly method: "merge" | "squash" | "rebase";
+  /** The head commit shown; the provider refuses the merge if the branch moved. */
+  readonly expectedHead: string;
+  readonly account?: string;
+}
+
+/** What a workspace surface does for its session's pull requests; each rejects when it cannot. */
+export interface WorkspacePullRequestsActions {
+  /** Links a pull request; resolves to the one the host selected. */
+  link: (url: string) => Promise<{ selectedUrl: string | undefined }>;
+  /** Unlinks one; resolves to the urls still linked. */
+  unlink: (url: string) => Promise<{ remaining: string[] }>;
+  /** Reads every pull request query of the session again. */
+  refresh: () => Promise<void>;
+  merge: (url: string, merge: WorkspacePullRequestMerge) => Promise<void>;
+  updateLabels: (url: string, change: { add: string[]; remove: string[] }) => Promise<void>;
+  updateReviewers: (
+    url: string,
+    change: {
+      add: { login: string; kind: "user" | "team" }[];
+      remove: { login: string; kind: "user" | "team" }[];
+    },
+  ) => Promise<void>;
+  postComment: (url: string, body: string) => Promise<void>;
+}
+
+/** What the views watching the pull requests want read: how many, and the latest focus. */
+export interface WorkspacePullRequestsWatch {
+  readonly watchers: number;
+  /** Some watcher has them on screen, so they poll; passive watchers only read. */
+  readonly polling: boolean;
+  readonly focus: omnigent.PullRequestsFocus | undefined;
+}
+
 /**
  * The workspace rail of a session on screen: which extension views it can show
  * now (their tabs are in its strip), and how to bring one to the front.
@@ -142,6 +178,9 @@ export interface WorkspaceSource {
   /** Replace the session's tasks, a plain snapshot (`undefined` without a Tasks tab). */
   updateTasks: (tasks: omnigent.SessionTasks | undefined) => void;
   setTasksActions: (actions: WorkspaceTasksActions | null) => void;
+  /** Replace the session's pull requests, a plain snapshot (`undefined` without the tab). */
+  updatePullRequests: (pullRequests: omnigent.SessionPullRequests | undefined) => void;
+  setPullRequestsActions: (actions: WorkspacePullRequestsActions | null) => void;
   setActions: (actions: WorkspaceActions | null) => void;
   /** An active source can be the one on screen; activating it brings it to the front. */
   setActive: (active: boolean) => void;
@@ -153,6 +192,8 @@ interface SourceEntry {
   actions: WorkspaceActions | null;
   tasks: omnigent.SessionTasks | undefined;
   tasksActions: WorkspaceTasksActions | null;
+  pullRequests: omnigent.SessionPullRequests | undefined;
+  pullRequestsActions: WorkspacePullRequestsActions | null;
   active: boolean;
   /** When it was last activated; the highest active one is in front. */
   order: number;
@@ -186,6 +227,21 @@ export class WorkspaceBridge {
   private readonly tasksListeners = new Set<() => void>();
   private tasksWatchers = 0;
   private readonly tasksWatchListeners = new Set<() => void>();
+  private pullRequests: omnigent.SessionPullRequests | undefined;
+  private readonly pullRequestsListeners = new Set<() => void>();
+  private readonly pullRequestsWatchers: {
+    focus: omnigent.PullRequestsFocus | undefined;
+    list: boolean;
+    passive: boolean;
+  }[] = [];
+  private pullRequestsWatchState: WorkspacePullRequestsWatch = Object.freeze({
+    watchers: 0,
+    polling: false,
+    focus: undefined,
+  });
+  private readonly pullRequestsWatchListeners = new Set<() => void>();
+  /** The latest focus any watch set, kept for passive watches once that watch ends. */
+  private lastPullRequestsFocus: omnigent.PullRequestsFocus | undefined;
 
   /** The workspace on screen; empty without an active source. */
   getState = (): WorkspaceBridgeState => this.state;
@@ -202,6 +258,8 @@ export class WorkspaceBridge {
       actions: null,
       tasks: undefined,
       tasksActions: null,
+      pullRequests: undefined,
+      pullRequestsActions: null,
       active: false,
       order: 0,
     };
@@ -223,6 +281,14 @@ export class WorkspaceBridge {
       },
       setTasksActions: (actions) => {
         if (!disposed) entry.tasksActions = actions;
+      },
+      updatePullRequests: (pullRequests) => {
+        if (disposed || entry.pullRequests === pullRequests) return;
+        entry.pullRequests = pullRequests;
+        if (this.front === entry) this.publishPullRequests();
+      },
+      setPullRequestsActions: (actions) => {
+        if (!disposed) entry.pullRequestsActions = actions;
       },
       setActive: (active) => {
         if (disposed || entry.active === active) return;
@@ -246,6 +312,7 @@ export class WorkspaceBridge {
     }
     this.front = front;
     this.publishTasks();
+    this.publishPullRequests();
     const next = front?.state ?? EMPTY_WORKSPACE_STATE;
     if (next === this.state) return;
     this.state = next;
@@ -304,6 +371,105 @@ export class WorkspaceBridge {
     }
     if (!front.tasksActions) throw new Error("this workspace has no tasks");
     return front.tasksActions;
+  }
+
+  private publishPullRequests(): void {
+    const next = this.front?.pullRequests;
+    if (next === this.pullRequests) return;
+    this.pullRequests = next;
+    for (const listener of [...this.pullRequestsListeners]) listener();
+  }
+
+  /** The pull requests of the workspace on screen, as its surface published them. */
+  getPullRequests = (): omnigent.SessionPullRequests | undefined => this.pullRequests;
+
+  subscribePullRequests = (listener: () => void): (() => void) => {
+    this.pullRequestsListeners.add(listener);
+    return () => this.pullRequestsListeners.delete(listener);
+  };
+
+  /** How many views watch the pull requests, and the latest focus any of them set. */
+  pullRequestsWatch = (): WorkspacePullRequestsWatch => this.pullRequestsWatchState;
+
+  subscribePullRequestsWatch = (listener: () => void): (() => void) => {
+    this.pullRequestsWatchListeners.add(listener);
+    return () => this.pullRequestsWatchListeners.delete(listener);
+  };
+
+  /**
+   * Keeps the pull requests of the workspace on screen read and polled until
+   * disposed. A `list` watch (a page that lists them and opens each on its own)
+   * keeps every listed one read, whatever the latest focus shows. A `passive`
+   * watch (a view drawn but hidden, such as in a collapsed rail) reads them
+   * without polling.
+   */
+  watchPullRequests(options: { list?: boolean; passive?: boolean } = {}): {
+    setFocus: (focus: omnigent.PullRequestsFocus | undefined) => void;
+    dispose: () => void;
+  } {
+    const watcher = {
+      focus: undefined as omnigent.PullRequestsFocus | undefined,
+      list: options.list === true,
+      passive: options.passive === true,
+    };
+    this.pullRequestsWatchers.push(watcher);
+    this.notifyPullRequestsWatch();
+    let done = false;
+    return {
+      setFocus: (focus) => {
+        if (done) return;
+        watcher.focus = focus;
+        if (focus) this.lastPullRequestsFocus = focus;
+        // The latest focus wins, as the last view to choose a pull request does.
+        const index = this.pullRequestsWatchers.indexOf(watcher);
+        this.pullRequestsWatchers.splice(index, 1);
+        this.pullRequestsWatchers.push(watcher);
+        this.notifyPullRequestsWatch();
+      },
+      dispose: () => {
+        if (done) return;
+        done = true;
+        this.pullRequestsWatchers.splice(this.pullRequestsWatchers.indexOf(watcher), 1);
+        this.notifyPullRequestsWatch();
+      },
+    };
+  }
+
+  private notifyPullRequestsWatch(): void {
+    let focus: omnigent.PullRequestsFocus | undefined;
+    for (const watcher of this.pullRequestsWatchers) focus = watcher.focus ?? focus;
+    focus ??= this.pullRequestsWatchers.length > 0 ? this.lastPullRequestsFocus : undefined;
+    if (focus?.details && this.pullRequestsWatchers.some((watcher) => watcher.list)) {
+      focus = { ...focus, details: false };
+    }
+    const previous = this.pullRequestsWatchState;
+    const watchers = this.pullRequestsWatchers.length;
+    const polling = this.pullRequestsWatchers.some((watcher) => !watcher.passive);
+    if (
+      previous.watchers === watchers &&
+      previous.polling === polling &&
+      previous.focus?.sessionId === focus?.sessionId &&
+      previous.focus?.url === focus?.url &&
+      previous.focus?.details === focus?.details
+    ) {
+      return;
+    }
+    this.pullRequestsWatchState = Object.freeze({ watchers, polling, focus });
+    for (const listener of [...this.pullRequestsWatchListeners]) listener();
+  }
+
+  /**
+   * The pull request actions of the workspace on screen; throws when another
+   * session's workspace is on screen.
+   */
+  pullRequestsActions(sessionId: string): WorkspacePullRequestsActions {
+    const front = this.front;
+    if (!front) throw new Error("no workspace is open");
+    if (front.state.sessionId !== sessionId) {
+      throw new Error(`session ${sessionId} is not the workspace on screen`);
+    }
+    if (!front.pullRequestsActions) throw new Error("this workspace has no pull requests");
+    return front.pullRequestsActions;
   }
 
   private actions(): WorkspaceActions {

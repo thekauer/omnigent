@@ -31,10 +31,12 @@ import {
   type LucideIcon,
   MoonIcon,
   NetworkIcon,
+  PlusIcon,
   PuzzleIcon,
   RefreshCwIcon,
   ScanSearchIcon,
   SearchIcon,
+  Trash2Icon,
   WorkflowIcon,
 } from "lucide-react";
 
@@ -67,10 +69,12 @@ export const RAIL_VIEW_ICONS: Readonly<Record<string, LucideIcon>> = Object.free
   "list-tree": ListTreeIcon,
   moon: MoonIcon,
   network: NetworkIcon,
+  plus: PlusIcon,
   puzzle: PuzzleIcon,
   "refresh-cw": RefreshCwIcon,
   "scan-search": ScanSearchIcon,
   search: SearchIcon,
+  "trash-2": Trash2Icon,
   workflow: WorkflowIcon,
 });
 

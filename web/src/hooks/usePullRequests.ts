@@ -739,10 +739,10 @@ export function usePullRequestInfo(
  * entry still loads, with the context's retries; a failed one waits for another
  * reader such as {@link usePullRequestInfo} or an invalidation.
  */
-export function usePullRequestInfoSnapshot(rawConversationId: string | undefined) {
+export function usePullRequestInfoSnapshot(rawConversationId: string | undefined, prUrl?: string) {
   const context = usePullRequestQueryContext(rawConversationId);
   return useQuery({
-    ...pullRequestInfoQueryOptions(context),
+    ...pullRequestInfoQueryOptions(context, prUrl ? { prUrl } : undefined),
     refetchOnMount: false,
     // Otherwise every newly mounted reader refetches a failed query.
     retryOnMount: false,
@@ -1734,6 +1734,25 @@ export function usePullRequestCommentComposer(
       mutation.mutate({ body: current.body, conversationId, prUrl, threadId });
     },
   };
+}
+
+/** Post a top-level comment on `prUrl`, as the comment composer does; resolves to the comment. */
+export async function postPullRequestComment(
+  conversationId: string,
+  prUrl: string,
+  body: string,
+): Promise<PullRequestComment> {
+  if (pullRequestCommentTooLong(body)) {
+    throw new Error(
+      `A comment can have at most ${MAX_PULL_REQUEST_COMMENT_CHARACTERS.toLocaleString()} characters.`,
+    );
+  }
+  const { comment } = await fetchPullRequestEditResource<{ comment: PullRequestComment }>(
+    conversationId,
+    "comments",
+    { body: { pr_url: prUrl, body } },
+  );
+  return comment;
 }
 
 /** Keep a new conversation's text and coordinates together until the write settles. */

@@ -1,12 +1,11 @@
 // Which code host serves a pull request link. Hosts are only recognized from
-// evidence: github.com by name, a GitHub Enterprise host only when the caller
-// already knows it serves GitHub.
+// evidence: github.com through the built-in GitHub host provider, a GitHub
+// Enterprise host only when the caller already knows it serves GitHub.
+
+import { GITHUB_DOT_COM, githubShapedPullRequest } from "./gitHostProviders";
 
 /** A code host the workspace links pull requests and files to. */
 export type CodeHostProviderId = "github";
-
-const GITHUB_DOT_COM = "github.com";
-const PULL_PATH = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)\/?$/;
 
 /**
  * The provider serving `host`: github.com by name, any host in `githubHosts`
@@ -44,27 +43,16 @@ export function parseCodeHostPullRequestUrl(
   githubHosts: Iterable<string> = [],
 ): CodeHostPullRequest | null {
   if (!url) return null;
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return null;
-  }
-  // A port or credentials would make this a different server than the one recognized.
-  if (parsed.protocol !== "https:" || parsed.port || parsed.username || parsed.password) {
-    return null;
-  }
-  const match = PULL_PATH.exec(parsed.pathname);
-  if (!match) return null;
-  const host = parsed.hostname.toLowerCase();
-  const provider = codeHostProvider(host, githubHosts);
+  const location = githubShapedPullRequest(url);
+  if (!location) return null;
+  const provider = codeHostProvider(location.host, githubHosts);
   if (!provider) return null;
-  const [, owner, repo, number] = match;
+  const repository = `${location.owner}/${location.repo}`;
   return {
     provider,
-    host,
-    repository: `${owner}/${repo}`,
-    number: Number(number),
-    url: `https://${host}/${owner}/${repo}/pull/${number}`,
+    host: location.host,
+    repository,
+    number: location.number,
+    url: `https://${location.host}/${repository}/pull/${location.number}`,
   };
 }

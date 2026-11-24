@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, onTestFinished } from "vitest";
+import { gitHostProviders } from "./gitHostProviders";
 
 import {
   canonicalPullRequestUrl,
@@ -386,6 +387,25 @@ describe("parsePullRequestReference: links", () => {
     });
     expect(parsePullRequestReference("github.com/acme/web/pull/42", github)).toMatchObject({
       url: "https://github.com/acme/web/pull/42",
+    });
+  });
+
+  it("reads a link a git host provider recognizes as its pull request", () => {
+    const unregister = gitHostProviders.register({
+      id: "test.forge",
+      matchUrl: (url) =>
+        url.startsWith("https://forge.example.com/")
+          ? { host: "forge.example.com", owner: "org", repo: "tool", number: 9 }
+          : undefined,
+    });
+    onTestFinished(unregister);
+    expect(
+      parsePullRequestReference("https://forge.example.com/org/tool/changes/9?tab=diff", github),
+    ).toEqual({
+      kind: "link",
+      url: "https://forge.example.com/org/tool/changes/9",
+      repository: "org/tool",
+      number: 9,
     });
   });
 

@@ -1,6 +1,7 @@
 // Builds the `omnigent` module an extension imports. One instance per extension,
 // like VS Code's per-extension `vscode` module, so every call is attributable.
 import type * as omnigent from "omnigent";
+import type { GitHostProviderRegistry } from "@/lib/gitHostProviders";
 import type { HostReconnectProviderRegistry, ReconnectHost } from "@/lib/hostReconnectProviders";
 import { isThenable } from "@/lib/thenable";
 import {
@@ -22,6 +23,7 @@ import {
 import { SessionHeaderItemAlignment, type SessionHeaderItemRegistry } from "./sessionHeaderItems";
 import type { SessionsService } from "./sessionsService";
 import type { SessionTreeService } from "./sessionTreeService";
+import type { PullRequestsService } from "./pullRequestsService";
 import type { TasksService } from "./tasksService";
 import type { KeybindingService } from "./keybindings";
 import type { ViewsService } from "./viewsService";
@@ -46,6 +48,8 @@ export const OMNIGENT_API_EXPORT_NAMES = [
   "commands",
   "hosts",
   "workspace",
+  "git",
+  "pullRequests",
   "TreeItemCollapsibleState",
   "CancellationTokenSource",
 ] as const;
@@ -67,6 +71,8 @@ export interface HostServices {
   workspace: WorkspaceService;
   sessionTree: SessionTreeService;
   tasks: TasksService;
+  pullRequests: PullRequestsService;
+  gitHosts: GitHostProviderRegistry;
   /** Contributed keybindings; without it, `contributes.keybindings` is ignored. */
   keybindings?: KeybindingService;
 }
@@ -236,6 +242,80 @@ export function createExtensionApi(
       dispose();
     };
     return track(view);
+  }
+
+  const onDidChangeActiveSessionPullRequests = guard(
+    services.pullRequests.onDidChangeActiveSessionPullRequests,
+    "onDidChangeActiveSessionPullRequests",
+  );
+
+  function watchActiveSessionPullRequests(): omnigent.PullRequestsWatch {
+    if (disposed) {
+      refuse("watchActiveSessionPullRequests");
+      return { focus: undefined, dispose: () => {} };
+    }
+    const watch = services.pullRequests.watch();
+    const dispose = watch.dispose;
+    watch.dispose = () => {
+      resources.delete(watch);
+      dispose();
+    };
+    return track(watch);
+  }
+
+  function createPullRequestView(viewId: string): omnigent.PullRequestView {
+    if (disposed) {
+      refuse("createPullRequestView");
+      return {
+        content: { kind: "loading" },
+        visible: false,
+        onDidChangeVisibility: () => new Disposable(() => {}),
+        dispose: () => {},
+      };
+    }
+    const view = services.views.createPullRequestView(extensionId, viewId, logError);
+    const dispose = view.dispose;
+    view.dispose = () => {
+      resources.delete(view);
+      dispose();
+    };
+    return track(view);
+  }
+
+  function registerHostProvider(provider: omnigent.GitHostProvider): omnigent.Disposable {
+    if (disposed) {
+      refuse("registerHostProvider");
+      return new Disposable(() => {});
+    }
+    if (
+      typeof provider !== "object" ||
+      provider === null ||
+      typeof provider.id !== "string" ||
+      provider.id === "" ||
+      typeof provider.matchUrl !== "function"
+    ) {
+      throw new TypeError("a git host provider needs an id and a matchUrl function");
+    }
+    const id = provider.id;
+    const matchUrl = provider.matchUrl.bind(provider);
+    const unregister = services.gitHosts.register({
+      id,
+      matchUrl: (url) => {
+        const result = matchUrl(url);
+        if (isThenable(result)) {
+          logError(`git host provider ${id} returned a promise; matchUrl must answer at once`);
+          return undefined;
+        }
+        return result;
+      },
+    });
+    const tracked = track(
+      new Disposable(() => {
+        resources.delete(tracked);
+        unregister();
+      }),
+    );
+    return tracked;
   }
 
   function createTreeView<T>(
@@ -457,12 +537,27 @@ export function createExtensionApi(
       createSessionHeaderItem,
       createTreeView,
       createPlanView,
+      createPullRequestView,
       withProgress,
       showInformationMessage: (message: string) => showMessage("info", message),
       showErrorMessage: (message: string) => showMessage("error", message),
     }),
     commands: Object.freeze({ registerCommand, executeCommand }),
     hosts: Object.freeze({ registerReconnectProvider }),
+    git: Object.freeze({
+      registerHostProvider,
+      matchPullRequestUrl: (url: string) => {
+        const match = services.gitHosts.match(String(url));
+        return match ? Object.freeze({ ...match }) : undefined;
+      },
+    }),
+    pullRequests: Object.freeze({
+      get activeSessionPullRequests() {
+        return services.pullRequests.activeSessionPullRequests;
+      },
+      onDidChangeActiveSessionPullRequests,
+      watchActiveSessionPullRequests,
+    }),
     workspace: Object.freeze({
       get activeSessionId() {
         return services.workspace.activeSessionId;

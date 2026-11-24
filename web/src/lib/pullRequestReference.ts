@@ -1,6 +1,8 @@
 // Turns what a user types or pastes into the pull request to link: a full
 // link, or a number such as `#123` resolved against the session's repository.
 
+import { githubPullRequestPath, matchPullRequestUrl } from "./gitHostProviders";
+
 /** A PR already associated with this session, with the identity its host reported. */
 export interface SessionPullRequestIdentity {
   url: string;
@@ -55,7 +57,6 @@ export type PullRequestReference =
 
 const NUMBER_INPUT = /^[#!]?(\d+)$/;
 const SCHEMELESS_LINK = /^[\w-]+(\.[\w-]+)+(:\d+)?\//;
-const GITHUB_PULL_PATH = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)(?:\/.*)?$/;
 const TRAILING_NUMBER = /\/(\d+)\/?$/;
 const GITHUB = "github";
 
@@ -123,14 +124,25 @@ function parseLink(input: string, context: PullRequestReferenceContext): PullReq
     return { kind: "invalid", error: "Paste a link that starts with https://." };
   }
   const host = parsed.host.toLowerCase();
-  const github = GITHUB_PULL_PATH.exec(parsed.pathname);
+  // A host provider's own link (an extension's private host) reads as its pull request.
+  const recognized = matchPullRequestUrl(input);
+  if (recognized && recognized.host === host) {
+    const { owner, repo, number } = recognized;
+    return {
+      kind: "link",
+      url: canonicalPullRequestUrl(input),
+      repository: `${owner}/${repo}`,
+      number,
+    };
+  }
+  const github = githubPullRequestPath(parsed.pathname);
   if (github) {
-    const [, owner, repo, number] = github;
+    const { owner, repo, number } = github;
     return {
       kind: "link",
       url: `${parsed.protocol}//${host}/${owner}/${repo}/pull/${number}`,
       repository: `${owner}/${repo}`,
-      number: Number(number),
+      number,
     };
   }
   if (githubHosts(context).has(host)) {

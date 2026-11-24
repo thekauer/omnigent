@@ -717,6 +717,13 @@ declare module "omnigent" {
      * already has a tree or plan view.
      */
     export function createPlanView(viewId: string): PlanView;
+
+    /**
+     * Give a view the extension contributes a session's pull requests, drawn
+     * by the host. Throws for a view the extension did not contribute, or one
+     * that already has content.
+     */
+    export function createPullRequestView(viewId: string): PullRequestView;
   }
 
   /**
@@ -1129,6 +1136,352 @@ declare module "omnigent" {
   export interface ChildSessionsChangeEvent {
     /** The sessions whose sub-agent lists or details changed. */
     readonly sessionIds: readonly string[];
+  }
+
+  /** A pull request a git host provider recognizes in a link. Plain data. */
+  export interface PullRequestLocation {
+    /** The host, lowercase, such as `github.com`. */
+    readonly host: string;
+    readonly owner: string;
+    readonly repo: string;
+    readonly number: number;
+  }
+
+  /**
+   * Recognizes the pull request links of one git host, like a VS Code
+   * `DocumentLinkProvider` for one scheme. Providers are asked in
+   * registration order, after the built-in GitHub one; the first match wins.
+   */
+  export interface GitHostProvider {
+    /** Unique among providers, such as `publisher.name.host`. */
+    readonly id: string;
+    /** The pull request `url` links to, or `undefined` when it is not one of this host's. */
+    matchUrl: (url: string) => PullRequestLocation | undefined;
+  }
+
+  /** A provider's match, with the provider's id. */
+  export interface PullRequestMatch extends PullRequestLocation {
+    readonly providerId: string;
+  }
+
+  export namespace git {
+    /**
+     * Recognize a git host's pull request links in chats and link inputs. A
+     * throw or a malformed answer counts as no match and is logged.
+     *
+     * @returns A {@link Disposable} that unregisters the provider.
+     */
+    export function registerHostProvider(provider: GitHostProvider): Disposable;
+    /** The first provider's match for `url`, or `undefined`. */
+    export function matchPullRequestUrl(url: string): PullRequestMatch | undefined;
+  }
+
+  /** Why a session's pull requests cannot be shown, or `ready` when one can. */
+  export type PullRequestStatus =
+    | "loading"
+    | "runner-offline"
+    | "sandbox-offline"
+    | "error"
+    | "host-outdated"
+    | "unavailable"
+    | "not-a-git-repo"
+    | "unsupported-remote"
+    | "no-cli"
+    | "repo-unresolved"
+    | "no-pr"
+    | "ready";
+
+  /** One CI check of a pull request. */
+  export interface PullRequestCheckRun {
+    readonly name: string;
+    readonly bucket: "passing" | "failing" | "pending" | "cancelled" | "skipped";
+    readonly url: string | null;
+  }
+
+  export interface PullRequestChecks {
+    readonly passing: number;
+    readonly failing: number;
+    readonly pending: number;
+    readonly cancelled: number;
+    readonly skipped: number;
+    readonly total: number;
+    readonly runs: readonly PullRequestCheckRun[];
+    /** Some checks could not be read; the counts cover the rest. */
+    readonly partial: boolean;
+  }
+
+  export interface PullRequestReviewer {
+    /** A user's login or a team's slug. */
+    readonly login: string;
+    readonly kind: "user" | "team";
+    readonly state: string;
+  }
+
+  /** What the host last read of a pull request, live. */
+  export interface PullRequestDetails {
+    readonly url: string;
+    readonly number: number;
+    readonly title: string;
+    /** `OPEN`, `MERGED` or `CLOSED`. */
+    readonly state: string;
+    readonly isDraft: boolean;
+    readonly author: string | null;
+    readonly baseRef: string | null;
+    readonly headRef: string | null;
+    readonly headSha: string | undefined;
+    readonly checks: PullRequestChecks;
+    /** False when the signed-in account cannot read checks, so `checks` is empty. */
+    readonly checksSupported: boolean;
+    /** `undefined` where the host does not report them. */
+    readonly reviewers: readonly PullRequestReviewer[] | undefined;
+    readonly labels:
+      readonly { readonly name: string; readonly color: string | null }[] | undefined;
+    readonly mergeStateStatus: string | null | undefined;
+    readonly commentCount: number;
+    /** Whether the merge button would merge now, and why not when it would not. */
+    readonly mergeable: { readonly ready: boolean; readonly hint: string | undefined };
+  }
+
+  /** One of a session's pull requests. Plain data. */
+  export interface SessionPullRequest {
+    readonly url: string;
+    readonly host: string;
+    /** `owner/repo`. */
+    readonly repository: string;
+    readonly number: number;
+    readonly title: string | null;
+    /** How it came to the session; `inferred` is the branch's own, not linked. */
+    readonly relationship: "created" | "worked_on" | "attached" | "inferred";
+    /** Its git provider, such as `github`. */
+    readonly provider: string | undefined;
+    readonly providerDisplay: GitProviderDisplay | undefined;
+    /** The provider's name ("GitHub"), its number prefix ("#") and the host its labels leave out. */
+    readonly providerLabel: string;
+    readonly numberPrefix: string;
+    readonly defaultHost: string | null;
+    /** As the server last stored it; `null` before the host read it. */
+    readonly state: string | null;
+    readonly isDraft: boolean;
+    /** Epoch seconds of that read, or `null`. */
+    readonly stateCheckedAt: number | null;
+    /** Its live read: still loading, failed, or the details. */
+    readonly live: {
+      readonly loading: boolean;
+      readonly error: string | undefined;
+      /** The host could not answer for it (asleep, offline). */
+      readonly offline: boolean;
+      /** Why, and when it was last read, while offline. */
+      readonly offlineHint: string | undefined;
+      readonly details: PullRequestDetails | undefined;
+      /** An earlier read is cached, so the host can draw its merge control. */
+      readonly cached: boolean;
+      /** The host can merge it from here. */
+      readonly canMerge: boolean;
+    };
+  }
+
+  /** A git provider as the host names it. */
+  export interface GitProviderDisplay {
+    readonly id: string;
+    readonly displayName: string;
+    readonly requestName: string;
+    readonly numberPrefix: string;
+  }
+
+  /** The workspace on screen's pull requests, as its surface reads them. Plain data. */
+  export interface SessionPullRequests {
+    readonly sessionId: string;
+    /** For the pull request in focus (see {@link PullRequestsWatch.focus}), or the branch's. */
+    readonly status: PullRequestStatus;
+    /** {@link status} once an empty linked list leaves no pull request to read. */
+    readonly listStatus: PullRequestStatus;
+    /** The session's provider; `null` when none is known. */
+    readonly provider: string | null | undefined;
+    readonly providerDisplay: GitProviderDisplay | undefined;
+    /** Its label ("GitHub") and the example link of its link input. */
+    readonly providerLabel: string;
+    readonly linkPlaceholder: string;
+    /** The provider named by the session's pull requests, even outside a git checkout. */
+    readonly listProviderLabel: string;
+    /** The host links and unlinks pull requests for the session. */
+    readonly trackingAvailable: boolean;
+    /** Neither the session's runner nor its host can answer now. */
+    readonly hostOffline: boolean;
+    /** The server keeps the session's pull requests, so linking needs the host online. */
+    readonly linkNeedsHost: boolean;
+    readonly sandbox: "awake" | "asleep" | "starting";
+    /** Offline before the server imported the session's pull requests. */
+    readonly notSynced: boolean;
+    /** The viewer may change the session. */
+    readonly canEdit: boolean;
+    /** The session's pull requests, in display order. */
+    readonly pullRequests: readonly SessionPullRequest[];
+    /** The branch's own pull request, while none is linked. */
+    readonly branchPullRequest: SessionPullRequest | undefined;
+    /** The one the host would show first. */
+    readonly selectedUrl: string | undefined;
+    /** The listed pull requests come from the server's list. */
+    readonly listedByServer: boolean;
+    /** The host read the pull request in focus. */
+    readonly hasDetails: boolean;
+    readonly warnings: readonly string[];
+    /** A review comment asked to be shown in its pull request's changes, newest first. */
+    readonly reviewTarget: { readonly id: string; readonly pullRequestUrl: string } | undefined;
+  }
+
+  /** What a watch of the session's pull requests reads first. */
+  export interface PullRequestsFocus {
+    readonly sessionId: string;
+    /** The pull request shown or selected. */
+    readonly url: string | undefined;
+    /** Its details are on screen, so it reads first and at the details' pace. */
+    readonly details: boolean;
+  }
+
+  /** Keeps the session's pull requests live; see {@link pullRequests.watchActiveSessionPullRequests}. */
+  export interface PullRequestsWatch extends Disposable {
+    focus: PullRequestsFocus | undefined;
+  }
+
+  export namespace pullRequests {
+    /**
+     * The pull requests of the session whose workspace is on screen;
+     * `undefined` without one. They are read only while some extension holds
+     * {@link watchActiveSessionPullRequests}.
+     */
+    export const activeSessionPullRequests: SessionPullRequests | undefined;
+    /** Fires when {@link activeSessionPullRequests} changes, coalesced per microtask. */
+    export const onDidChangeActiveSessionPullRequests: Event<SessionPullRequests | undefined>;
+    /** Read and poll the session's pull requests while held, as the tab does while it shows. */
+    export function watchActiveSessionPullRequests(): PullRequestsWatch;
+  }
+
+  /** A button of a {@link PullRequestView}'s bar. */
+  export interface PullRequestViewAction {
+    readonly title: string;
+    /** An icon name from the allowlist (`refresh-cw`, `plus`, `trash-2`). */
+    readonly icon: string;
+    readonly command: Command;
+    readonly disabled?: boolean;
+    /** Its icon spins (a refresh running). */
+    readonly busy?: boolean;
+  }
+
+  /** A pull request's row in a {@link PullRequestView}'s list. */
+  export interface PullRequestViewRow {
+    readonly pullRequest: SessionPullRequest;
+    /** "acme/app #12", the muted part of its label. */
+    readonly identity: string;
+    readonly title: string | undefined;
+    /** Runs when the row is clicked. */
+    readonly command: Command;
+    /** What its trailing area says. */
+    readonly status:
+      | { readonly kind: "offline"; readonly label: string; readonly hint: string }
+      | {
+          readonly kind: "checks";
+          readonly incomplete: boolean;
+          readonly noChecks?: string;
+          readonly draft: boolean;
+        }
+      | { readonly kind: "state"; readonly state: string }
+      | { readonly kind: "text"; readonly text: string; readonly tooltip?: string }
+      | { readonly kind: "none" };
+    /** Draws the host's compact merge control; `trigger` shows its button. */
+    readonly merge?: { readonly trigger: boolean; readonly unavailable: boolean };
+    /** Its ⋯ menu: unlink (when it can be), open on the provider, copy the link. */
+    readonly unlink?: { readonly command: Command; readonly disabled: boolean };
+    readonly openUrl?: { readonly url: string; readonly label: string };
+  }
+
+  /** The bar above a {@link PullRequestView}'s body. */
+  export type PullRequestViewBar =
+    /** The tab's heading (visible, or for screen readers only) with the actions. */
+    | { readonly kind: "toolbar"; readonly showTitle: boolean }
+    /** The heading and a Refresh button. */
+    | { readonly kind: "refresh"; readonly busy: boolean; readonly command: Command };
+
+  /** A {@link PullRequestView}'s body: a list of pull requests, or one's details. */
+  export type PullRequestViewBody =
+    | { readonly kind: "list"; readonly rows: readonly PullRequestViewRow[] }
+    | {
+        readonly kind: "details";
+        /** The pull request; `undefined` for the branch's. */
+        readonly url: string | undefined;
+        /** The session links none, so the branch's own pull request is not shown. */
+        readonly branchHidden: boolean;
+        readonly section: "summary" | "comments" | "changes";
+        /** Runs with the section picked appended. */
+        readonly selectSection: Command;
+        /** The pull request as the server stored it, while the host is offline. */
+        readonly stored?: SessionPullRequest;
+        readonly notSynced: boolean;
+        /** The details draw the heading and a Refresh button themselves. */
+        readonly refresh?: { readonly busy: boolean; readonly command: Command };
+        /** Below an empty state: how to link one, a note, or where to open it. */
+        readonly emptyState?:
+          | { readonly kind: "link"; readonly command: Command }
+          | { readonly kind: "message"; readonly text: string }
+          | { readonly kind: "open"; readonly url: string; readonly label: string };
+      };
+
+  /**
+   * What a {@link PullRequestView} shows: the bar, the link form, notes, and a
+   * list of pull requests or one pull request's details, which the host draws
+   * (its header, checks, reviewers, labels, merge, comments with their
+   * composer, and the diff with its review threads).
+   */
+  export type PullRequestViewContent =
+    | { readonly kind: "loading" }
+    | {
+        readonly kind: "pullRequests";
+        readonly sessionId: string;
+        /** The pull request selected, which a drawn view reads first even while hidden. */
+        readonly selectedUrl?: string;
+        /** The bar's buttons; a phone draws them in its drawer's header. */
+        readonly actions: readonly PullRequestViewAction[];
+        /** "All pull requests (3)", back to the list. */
+        readonly back?: { readonly title: string; readonly command: Command };
+        readonly bar?: PullRequestViewBar;
+        /** The link form; its submit runs `submit` with the typed link appended. */
+        readonly linkForm?: {
+          readonly open: boolean;
+          readonly placeholder: string;
+          readonly disabled: boolean;
+          readonly pending: boolean;
+          readonly error: string | undefined;
+          readonly submit: Command;
+          readonly cancel: Command;
+        };
+        /** A failed unlink, shown as an alert. */
+        readonly alert?: string;
+        /** Warnings from the host, one line. */
+        readonly note?: string;
+        readonly body: PullRequestViewBody;
+        /**
+         * The same view on a page that shows each pull request on its own (a
+         * sidebar's tab): always a list while there are any, whose rows the
+         * page opens itself.
+         */
+        readonly page?: {
+          readonly actions: readonly PullRequestViewAction[];
+          readonly bar?: PullRequestViewBar;
+          readonly body: PullRequestViewBody;
+        };
+      };
+
+  /**
+   * A view drawn by the host from plain data: a session's pull requests. The
+   * host draws each pull request's details, diff and review threads, like
+   * VS Code's diff editor, and the merge, label, reviewer and comment
+   * controls. No VS Code equivalent; see the plan doc.
+   */
+  export interface PullRequestView {
+    content: PullRequestViewContent;
+    readonly visible: boolean;
+    readonly onDidChangeVisibility: Event<TreeViewVisibilityChangeEvent>;
+    /** Removes the content; the view stays, without data. */
+    dispose: () => void;
   }
 
   export namespace sessions {

@@ -4,6 +4,7 @@
 // render and core tabs never show a blank panel.
 import { builtInExtensions } from "@/builtinExtensions";
 import { refreshRunnerHealth } from "@/hooks/useRunnerHealth";
+import { type GitHostProviderRegistry, gitHostProviders } from "@/lib/gitHostProviders";
 import { hostReconnectProviders } from "@/lib/hostReconnectProviders";
 import { type RailViewRegistry, railViews } from "@/shell/railViews";
 import { type WorkspaceBridge, workspaceBridge } from "@/shell/workspaceBridge";
@@ -17,6 +18,7 @@ import { toastNotifications } from "./progress";
 import { sessionHeaderItems } from "./sessionHeaderItems";
 import { chatStoreSessionSource, SessionsService } from "./sessionsService";
 import { SessionTreeService } from "./sessionTreeService";
+import { PullRequestsService } from "./pullRequestsService";
 import { TasksService } from "./tasksService";
 import { ViewsService } from "./viewsService";
 import { WorkspaceService } from "./workspaceService";
@@ -35,6 +37,8 @@ export interface ExtensionRuntimeOptions {
   registry?: RailViewRegistry;
   bridge?: WorkspaceBridge;
   builtIns?: readonly ExtensionDescription[];
+  /** The window's git host providers by default. */
+  gitHosts?: GitHostProviderRegistry;
   hostOptions?: Partial<ExtensionHostOptions>;
 }
 
@@ -85,6 +89,7 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
   });
   const sessionTree = new SessionTreeService(bridge);
   const tasks = new TasksService(bridge);
+  const pullRequests = new PullRequestsService(bridge);
   const host = new ExtensionHost({
     services: {
       headerItems: sessionHeaderItems,
@@ -96,6 +101,8 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
       workspace,
       sessionTree,
       tasks,
+      pullRequests,
+      gitHosts: options.gitHosts ?? gitHostProviders,
       keybindings,
     },
     ...options.hostOptions,
@@ -121,6 +128,7 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
       workspace.dispose();
       sessionTree.dispose();
       tasks.dispose();
+      pullRequests.dispose();
     },
   };
 }

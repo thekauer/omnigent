@@ -47,6 +47,8 @@ export const OMNIGENT_API_EXPORTS = [
   "commands",
   "hosts",
   "workspace",
+  "git",
+  "pullRequests",
   "TreeItemCollapsibleState",
   "CancellationTokenSource",
 ] as const;

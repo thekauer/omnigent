@@ -13,7 +13,7 @@
 import type React from "react";
 import { useInRouterContext } from "react-router-dom";
 import { Link } from "@/lib/routing";
-import { useContext, useMemo } from "react";
+import { useContext, useMemo, useSyncExternalStore } from "react";
 import {
   BotIcon,
   CopyIcon,
@@ -57,6 +57,7 @@ import { withBasePath } from "@/lib/basePath";
 import { copyText } from "@/lib/clipboard";
 import { absoluteWorkspacePath } from "@/lib/composerContext";
 import { followLinkWithPopupFallback } from "@/lib/openLinkInApp";
+import { gitHostProviders, matchPullRequestUrl } from "@/lib/gitHostProviders";
 import { cn } from "@/lib/utils";
 import { parseMentionPillTitle } from "@/lib/mentionPills";
 import {
@@ -273,16 +274,11 @@ function WorkspacePathInlineCode({
 // (which stops a link-only table column collapsing to ~2ch) on the attribute.
 const STREAMDOWN_LINK_CLASS = "wrap-anywhere font-medium text-link underline";
 
-function githubPullRequest(href: string | undefined): string | null {
-  if (!href) return null;
-  try {
-    const url = new URL(href);
-    if (url.protocol !== "https:" || url.hostname !== "github.com") return null;
-    const match = url.pathname.match(/^\/[^/]+\/([^/]+)\/pull\/(\d+)\/?$/);
-    return match ? `${match[1]}#${match[2]}` : null;
-  } catch {
-    return null;
-  }
+/** `repo#12` for a link to a pull request a git host provider recognizes (github.com built in). */
+function recognizedPullRequest(href: string | undefined): string | null {
+  if (!href || !/^https:/i.test(href)) return null;
+  const match = matchPullRequestUrl(href);
+  return match ? `${match.repo}#${match.number}` : null;
 }
 
 function PullRequestLinkLabel({ children }: { children: React.ReactNode }) {
@@ -367,6 +363,8 @@ function WorkspaceFileLink({
   // Scopes the desktop in-app browser route to this conversation's view.
   const conversationId = useFileViewerConversationId();
   const { root, home } = useWorkspacePaths();
+  // A provider registered after the message drew (an extension activating) labels its links.
+  useSyncExternalStore(gitHostProviders.subscribe, gitHostProviders.getRevision);
 
   if (!path) {
     const pullRequestRef = parsePullRequestRefHref(href);
@@ -407,7 +405,7 @@ function WorkspaceFileLink({
     // Streamdown renders external links with target="_blank"; those need the
     // popup fallback so a click still works where new tabs can't open.
     const blankHref = props.target === "_blank" && typeof rebased === "string" ? rebased : null;
-    const pullRequest = githubPullRequest(rebased);
+    const pullRequest = recognizedPullRequest(rebased);
     return (
       <a
         href={rebased}

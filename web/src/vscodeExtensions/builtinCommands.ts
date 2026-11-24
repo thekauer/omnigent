@@ -22,6 +22,50 @@ export const TASKS_CONTINUE_PLAN_COMMAND = "omnigent.tasks.continuePlan";
 export const TASKS_SAVE_AS_WORKFLOW_COMMAND = "omnigent.tasks.saveAsWorkflow";
 export const TASKS_START_WORKFLOW_COMMAND = "omnigent.tasks.startWorkflow";
 export const TASKS_RELOAD_COMMAND = "omnigent.tasks.reload";
+export const PULL_REQUESTS_LINK_COMMAND = "omnigent.pullRequests.link";
+export const PULL_REQUESTS_UNLINK_COMMAND = "omnigent.pullRequests.unlink";
+export const PULL_REQUESTS_REFRESH_COMMAND = "omnigent.pullRequests.refresh";
+export const PULL_REQUESTS_MERGE_COMMAND = "omnigent.pullRequests.merge";
+export const PULL_REQUESTS_UPDATE_LABELS_COMMAND = "omnigent.pullRequests.updateLabels";
+export const PULL_REQUESTS_UPDATE_REVIEWERS_COMMAND = "omnigent.pullRequests.updateReviewers";
+export const PULL_REQUESTS_POST_COMMENT_COMMAND = "omnigent.pullRequests.postComment";
+
+const MERGE_METHODS = new Set(["merge", "squash", "rebase"]);
+const MAX_LIST = 100;
+
+function urlOf(command: string, value: unknown): string {
+  if (typeof value !== "string" || !/^https?:\/\//i.test(value) || value.length > 4096) {
+    throw new TypeError(`${command} needs a pull request link`);
+  }
+  return value;
+}
+
+function namesOf(command: string, name: string, value: unknown): string[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > MAX_LIST) {
+    throw new TypeError(`${command} needs ${name} as a list of names`);
+  }
+  return value.map((item) => textOf(command, name, item));
+}
+
+function reviewersOf(
+  command: string,
+  name: string,
+  value: unknown,
+): { login: string; kind: "user" | "team" }[] {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > MAX_LIST) {
+    throw new TypeError(`${command} needs ${name} as a list of reviewers`);
+  }
+  return value.map((item) => {
+    const record =
+      typeof item === "object" && item !== null ? (item as Record<string, unknown>) : {};
+    const login = textOf(command, `${name} logins`, record.login);
+    const kind = record.kind === "team" ? "team" : record.kind === "user" ? "user" : undefined;
+    if (!login || !kind) throw new TypeError(`${command} needs each reviewer's login and kind`);
+    return { login, kind };
+  });
+}
 
 const TASK_ACTIONS: readonly WorkspaceTaskAction[] = ["run", "continue", "proceed", "retry"];
 const MAX_TEXT = 4096;
@@ -147,6 +191,74 @@ export function registerBuiltInCommands(
     }),
     register(TASKS_RELOAD_COMMAND, (sessionId) => {
       services.workspace.tasksActions(sessionIdOf(TASKS_RELOAD_COMMAND, sessionId)).reload();
+    }),
+    // The pull requests of the workspace on screen; each refuses another session.
+    register(PULL_REQUESTS_LINK_COMMAND, (sessionId, url) => {
+      const id = sessionIdOf(PULL_REQUESTS_LINK_COMMAND, sessionId);
+      const link = textOf(PULL_REQUESTS_LINK_COMMAND, "a pull request link", url).trim();
+      if (!link) throw new TypeError(`${PULL_REQUESTS_LINK_COMMAND} needs a pull request link`);
+      return services.workspace.pullRequestsActions(id).link(link);
+    }),
+    register(PULL_REQUESTS_UNLINK_COMMAND, (sessionId, url) =>
+      services.workspace
+        .pullRequestsActions(sessionIdOf(PULL_REQUESTS_UNLINK_COMMAND, sessionId))
+        .unlink(urlOf(PULL_REQUESTS_UNLINK_COMMAND, url)),
+    ),
+    register(PULL_REQUESTS_REFRESH_COMMAND, (sessionId) =>
+      services.workspace
+        .pullRequestsActions(sessionIdOf(PULL_REQUESTS_REFRESH_COMMAND, sessionId))
+        .refresh(),
+    ),
+    register(PULL_REQUESTS_MERGE_COMMAND, (sessionId, url, options) => {
+      const command = PULL_REQUESTS_MERGE_COMMAND;
+      const id = sessionIdOf(command, sessionId);
+      const record =
+        typeof options === "object" && options !== null ? (options as Record<string, unknown>) : {};
+      const method = record.method;
+      if (typeof method !== "string" || !MERGE_METHODS.has(method)) {
+        throw new TypeError(`${command} needs a method: merge, squash or rebase`);
+      }
+      const expectedHead = textOf(command, "the expected head commit", record.expectedHead);
+      if (!expectedHead) throw new TypeError(`${command} needs the expected head commit`);
+      const account = optionalText(command, "an account", record.account);
+      return services.workspace.pullRequestsActions(id).merge(urlOf(command, url), {
+        method: method as "merge" | "squash" | "rebase",
+        expectedHead,
+        ...(account === undefined ? {} : { account }),
+      });
+    }),
+    register(PULL_REQUESTS_UPDATE_LABELS_COMMAND, (sessionId, url, change) => {
+      const command = PULL_REQUESTS_UPDATE_LABELS_COMMAND;
+      const record =
+        typeof change === "object" && change !== null ? (change as Record<string, unknown>) : {};
+      return services.workspace
+        .pullRequestsActions(sessionIdOf(command, sessionId))
+        .updateLabels(urlOf(command, url), {
+          add: namesOf(command, "labels to add", record.add),
+          remove: namesOf(command, "labels to remove", record.remove),
+        });
+    }),
+    register(PULL_REQUESTS_UPDATE_REVIEWERS_COMMAND, (sessionId, url, change) => {
+      const command = PULL_REQUESTS_UPDATE_REVIEWERS_COMMAND;
+      const record =
+        typeof change === "object" && change !== null ? (change as Record<string, unknown>) : {};
+      return services.workspace
+        .pullRequestsActions(sessionIdOf(command, sessionId))
+        .updateReviewers(urlOf(command, url), {
+          add: reviewersOf(command, "reviewers to add", record.add),
+          remove: reviewersOf(command, "reviewers to remove", record.remove),
+        });
+    }),
+    register(PULL_REQUESTS_POST_COMMENT_COMMAND, (sessionId, url, body) => {
+      const command = PULL_REQUESTS_POST_COMMENT_COMMAND;
+      // The host refuses comments past its limit with the reason; this only bounds the copy.
+      if (typeof body !== "string" || !body.trim() || body.length > 262_144) {
+        throw new TypeError(`${command} needs a comment`);
+      }
+      const text = body;
+      return services.workspace
+        .pullRequestsActions(sessionIdOf(command, sessionId))
+        .postComment(urlOf(command, url), text);
     }),
   );
 }
