@@ -3346,10 +3346,12 @@ describe("Right workspace card visibility", () => {
       fireEvent.click(screen.getByRole("button", { name: "files: select README.md" }));
       expect(screen.getByTestId("file-viewer-inline")).toBeInTheDocument();
       fireEvent.keyDown(document, chord);
-      await waitFor(() => expect(input).toHaveFocus());
+      // The tab's page draws again; its form keeps the session's query.
+      const again = await screen.findByRole("searchbox", { name: "Search file contents" });
+      await waitFor(() => expect(again).toHaveFocus());
       expect(screen.queryByTestId("file-viewer-inline")).toBeNull();
       expect(screen.getByTestId("url-params")).not.toHaveTextContent("file=");
-      expect(input).toHaveValue("keep my query");
+      expect(again).toHaveValue("keep my query");
     },
   );
 

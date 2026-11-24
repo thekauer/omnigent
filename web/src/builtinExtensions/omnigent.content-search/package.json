@@ -1,0 +1,72 @@
+{
+  "name": "content-search",
+  "displayName": "Content search",
+  "description": "Search the workspace's file contents, in the workspace rail's Content search tab.",
+  "publisher": "omnigent",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "omnigent": "*"
+  },
+  "activationEvents": [
+    "*"
+  ],
+  "browser": "./extension.ts",
+  "contributes": {
+    "views": {
+      "omnigent.rightPanel": [
+        {
+          "id": "omnigent.content-search.view",
+          "name": "Content search",
+          "icon": "search",
+          "builtInTab": "content-search",
+          "searchInput": {
+            "placeholder": "Search file contents",
+            "ariaLabel": "Search file contents",
+            "submitTitle": "Search",
+            "options": [
+              {
+                "id": "caseSensitive",
+                "title": "Match case"
+              },
+              {
+                "id": "wholeWord",
+                "title": "Whole word"
+              },
+              {
+                "id": "regex",
+                "title": "Regular expression"
+              }
+            ],
+            "fields": [
+              {
+                "id": "include",
+                "label": "Include",
+                "placeholder": "e.g. src/**, *.{ts,tsx}"
+              },
+              {
+                "id": "exclude",
+                "label": "Exclude",
+                "placeholder": "e.g. **/tests/**, *.min.js"
+              }
+            ],
+            "fieldsToggle": {
+              "title": "Include / exclude files",
+              "ariaLabel": "Filter files"
+            },
+            "fieldsHint": "Comma-separated globs. Exclude takes precedence.",
+            "hint": "Searches workspace contents on disk. Respects readable ignore files unless explicitly included; skips binary files and .git."
+          }
+        }
+      ]
+    },
+    "keybindings": [
+      {
+        "command": "omnigent.content-search.view.focus",
+        "key": "ctrl+shift+f",
+        "mac": "cmd+shift+f",
+        "when": "view.omnigent.content-search.view.available"
+      }
+    ]
+  }
+}

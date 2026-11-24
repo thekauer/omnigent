@@ -38,7 +38,6 @@ import {
   workspaceTabShortcutKeys,
 } from "@/components/KeyboardShortcut";
 import { useDesktopCommand } from "@/lib/desktopCommands";
-import { hasCommandModifier } from "@/lib/hotkeys";
 import { focusedBrowserView, supportsDesktopCommands } from "@/lib/nativeBridge";
 import {
   type DefaultWorkspaceTab,
@@ -93,7 +92,6 @@ import { readPreferredShell, resolveDefaultShell, writePreferredShell } from "./
 import { scrollTabIntoView, WorkspaceTabsScroller } from "./WorkspaceTabsScroller";
 import { FilesPanel } from "./FilesPanel";
 import { resolveWorkspaceActiveView } from "./workspaceActiveView";
-import { ContentSearchPanel } from "./ContentSearchPanel";
 import { FileViewer } from "./FileViewer";
 import { ResponsiveViewerSlot } from "./ResponsiveViewerSlot";
 import { TasksPanel } from "./TasksPanel";
@@ -942,9 +940,7 @@ function WorkspacePanelImpl({
   onHasSideChatTabsChange,
   subagentPanelOpener,
 }: WorkspacePanelProps) {
-  const contentSearchInputRef = useRef<HTMLInputElement>(null);
-  const [contentSearchFocusSession, setContentSearchFocusSession] = useState<string | null>(null);
-  // A view's input to focus once its tab shows, through `<view>.focus`.
+  // A view's input to focus once its tab shows (⌘⇧F for Content search, through `<view>.focus`).
   const [viewFocusRequest, setViewFocusRequest] = useState<{
     session: string;
     tab: RightRailTab;
@@ -1227,59 +1223,6 @@ function WorkspacePanelImpl({
     });
   // The selected side chat's pane, shown in the rail or the mobile drawer. A
   // `pending:` tab has no child yet; its first send creates the fork.
-  useEffect(() => {
-    if (!showContentSearch || !showFilesPanel || pending || isMobile) return;
-    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
-      if (
-        event.code !== "KeyF" ||
-        !hasCommandModifier(event) ||
-        !event.shiftKey ||
-        event.altKey ||
-        event.repeat ||
-        event.isComposing
-      )
-        return;
-      event.preventDefault();
-      event.stopPropagation();
-      onRightRailTabChange("content-search");
-      onReveal?.();
-      setContentSearchFocusSession(conversationId);
-    };
-    // Capture so workspace search also works from Monaco and terminal inputs.
-    window.addEventListener("keydown", handleKeyDown, true);
-    return () => window.removeEventListener("keydown", handleKeyDown, true);
-  }, [
-    showContentSearch,
-    showFilesPanel,
-    pending,
-    isMobile,
-    onRightRailTabChange,
-    onReveal,
-    conversationId,
-  ]);
-  useEffect(() => {
-    if (contentSearchFocusSession === null) return;
-    if (
-      contentSearchFocusSession !== conversationId ||
-      rightRailTab !== "content-search" ||
-      selectedFilePath !== null ||
-      terminalShown
-    ) {
-      setContentSearchFocusSession(null);
-      return;
-    }
-    if (!open || inert) return;
-    contentSearchInputRef.current?.focus();
-    setContentSearchFocusSession(null);
-  }, [
-    contentSearchFocusSession,
-    conversationId,
-    open,
-    inert,
-    rightRailTab,
-    selectedFilePath,
-    terminalShown,
-  ]);
   const subagentTabLabels = useSubagentTabLabels(sideChats.tabs);
   // Number only side chats so their labels stay put as sub-agent tabs open and close.
   const chatTabLabels: Record<string, string> = {};
@@ -2122,29 +2065,6 @@ function WorkspacePanelImpl({
               browsers.viewId,
             ])}
           >
-            {/* Phones use AppShell's drawer instead; one mounted panel keeps the input state single-owner. */}
-            {showContentSearch && showFilesPanel && !pending && !isMobile && (
-              <div
-                className={cn(
-                  "min-h-0 flex-1 flex-col",
-                  rightRailTab === "content-search" && selectedFilePath === null && !terminalShown
-                    ? "flex"
-                    : "hidden",
-                )}
-              >
-                <RenderErrorBoundary
-                  name="this workspace pane"
-                  resetKey={JSON.stringify([conversationId, rightRailTab === "content-search"])}
-                >
-                  <ContentSearchPanel
-                    inputRef={contentSearchInputRef}
-                    key={conversationId}
-                    conversationId={conversationId}
-                    onFileSelect={openFileViewer}
-                  />
-                </RenderErrorBoundary>
-              </div>
-            )}
             {filesPanelMounted && (
               <div
                 className={cn(

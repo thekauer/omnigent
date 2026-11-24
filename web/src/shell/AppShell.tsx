@@ -1927,7 +1927,9 @@ function AppShellImpl() {
     enabled: showFilesPanel,
     // On a grid route the cells' workspaces are on screen, not the shell's.
     active: !canvasMode && !gridRoute,
-    openFile: openFileViewer,
+    // A match opened from the phone's Content search drawer returns to it when closed.
+    openFile: (path, position) =>
+      (contentSearchPanelOpen ? openContentSearchResult : openFileViewer)(path, position),
     sortOrder: filesPanelSort,
     onSortOrderChange: handleFilesSortChange,
     showHidden: filesPanelShowHidden,
@@ -3772,7 +3774,6 @@ function AppShellImpl() {
                 railTabsAvailable={railTabsAvailable}
                 contentSearchPanelOpen={contentSearchPanelOpen}
                 setContentSearchPanelOpen={setContentSearchPanelOpen}
-                openContentSearchResult={openContentSearchResult}
                 setMobileFileTarget={setMobileFileTarget}
               />
             </GridWorkspace>

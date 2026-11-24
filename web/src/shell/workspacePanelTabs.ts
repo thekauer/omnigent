@@ -68,6 +68,7 @@ export interface WorkspacePanelTabDescriptor {
 }
 
 export const WORKSPACE_PANEL_TABS: Record<WorkspacePanelTab, WorkspacePanelTabDescriptor> = {
+  // Its page comes from the built-in Content search extension's view.
   "content-search": {
     label: "Content search",
     icon: SearchIcon,

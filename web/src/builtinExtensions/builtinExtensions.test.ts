@@ -126,7 +126,10 @@ describe("built-in extensions", () => {
       { manifest: { name: "Bad Name" }, module: { activate: () => {} } },
       ...BUILT_IN_EXTENSIONS,
     ]);
-    expect(descriptions.map((description) => description.id)).toEqual(["omnigent.changes"]);
+    expect(descriptions.map((description) => description.id)).toEqual([
+      "omnigent.changes",
+      "omnigent.content-search",
+    ]);
     expect(error).toHaveBeenCalledWith(expect.stringContaining("invalid built-in extension"));
     error.mockRestore();
   });
@@ -138,11 +141,15 @@ describe("built-in extensions", () => {
       bridge: new WorkspaceBridge(),
       hostOptions: { extensionState: memoryExtensionState() },
     });
-    // No await yet: the first render already finds the Changes view.
+    // No await yet: the first render already finds the built-in tabs' views.
     expect(registry.get("omnigent.changes.view")).toMatchObject({ builtInTab: "changes" });
+    expect(registry.get("omnigent.content-search.view")).toMatchObject({
+      builtInTab: "content-search",
+    });
     await runtime.builtInsStarted;
     expect(runtime.host.isActive("omnigent.changes")).toBe(true);
     expect(registry.get("omnigent.changes.view")?.tree).toBeDefined();
+    expect(runtime.host.isActive("omnigent.content-search")).toBe(true);
     await runtime.dispose();
     expect(registry.get("omnigent.changes.view")).toBeUndefined();
   });
@@ -150,7 +157,7 @@ describe("built-in extensions", () => {
   it("shows a failed built-in as an error state, with the failure logged", async () => {
     const registry = new RailViewRegistry();
     const logged = vi.fn();
-    const [changes] = builtInExtensions();
+    const changes = builtInExtensions().find((extension) => extension.id === "omnigent.changes")!;
     const runtime = createExtensionRuntime({
       registry,
       bridge: new WorkspaceBridge(),

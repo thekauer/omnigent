@@ -6,15 +6,7 @@ import { extensionRailTabViewId, type RightRailTab } from "./railTabs";
 
 /** The page beneath any open shell or file. */
 export type WorkspaceScopeView =
-  | "sidechat"
-  | "browser"
-  | "github"
-  | "tasks"
-  | "subagents"
-  | "empty"
-  | "content-search"
-  | "files"
-  | "extension";
+  "sidechat" | "browser" | "github" | "tasks" | "subagents" | "empty" | "files" | "extension";
 
 export interface WorkspaceSelection {
   rightRailTab: RightRailTab | null;
@@ -40,7 +32,16 @@ export interface WorkspaceViewAvailability {
 }
 
 /** Built-in tabs whose page is a built-in extension's view. */
-export const EXTENSION_BACKED_TABS: readonly RightRailTab[] = ["changes"];
+export const EXTENSION_BACKED_TABS: readonly RightRailTab[] = ["changes", "content-search"];
+
+/** Whether an extension-backed tab has its page here; otherwise it falls back like an unavailable tab. */
+function extensionTabAvailable(
+  tab: RightRailTab,
+  availability: WorkspaceViewAvailability,
+): boolean {
+  if (tab === "content-search") return availability.showContentSearch;
+  return true;
+}
 
 export interface WorkspaceActiveView {
   /** The shell shown in front, when its terminal is present. */
@@ -73,7 +74,10 @@ export function resolveWorkspaceActiveView(
     rightRailTab === "sidechat" && nothingInFront && selection.selectedSideChatId !== null;
   const browserSelected =
     rightRailTab === "browser" && nothingInFront && selection.selectedBrowserId !== null;
-  const extensionBacked = rightRailTab !== null && EXTENSION_BACKED_TABS.includes(rightRailTab);
+  const extensionBacked =
+    rightRailTab !== null &&
+    EXTENSION_BACKED_TABS.includes(rightRailTab) &&
+    extensionTabAvailable(rightRailTab, availability);
   const extensionViewId = extensionBacked
     ? (availability.builtInTabViewId?.(rightRailTab) ?? null)
     : extensionRailTabViewId(rightRailTab);
@@ -92,9 +96,7 @@ export function resolveWorkspaceActiveView(
                 ? "empty"
                 : extensionViewId !== null || extensionBacked
                   ? "extension"
-                  : rightRailTab === "content-search" && availability.showContentSearch
-                    ? "content-search"
-                    : "files";
+                  : "files";
   return {
     terminalKey,
     filePath: terminalKey === null ? selectedFilePath : null,

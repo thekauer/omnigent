@@ -73,7 +73,8 @@ import { isCommandAvailable } from "@/store/paletteCommands";
 import { usePullRequestListCount } from "@/store/pullRequestListCounts";
 
 import { commandRegionProps } from "../commandContext";
-import { ContentSearchPanel } from "../ContentSearchPanel";
+import { ExtensionRailView } from "../extensionViews/ExtensionRailView";
+import { builtInTabView, useRailViews } from "../railViews";
 import type { WorkspaceChangedFile } from "@/hooks/useWorkspaceChangedFiles";
 import type { ChangedSort } from "@/lib/changedSort";
 import { groupChangedFiles } from "../changedFilesOrder";
@@ -117,7 +118,6 @@ import { isUnknownTab, type WorkspaceTab, type WorkspaceTabRecord } from "./work
 import { isOnlyEmptyNewTab, LAST_NEW_TAB_REASON, type RecentPlace } from "./workspaceTabsStore";
 import {
   type LeaveGuard,
-  openWorkspaceFile,
   openWorkspaceLink,
   openWorkspaceNewTab,
   openWorkspacePage,
@@ -289,6 +289,21 @@ function WorkspaceTabsPanelImpl({
   onHistoryGo,
 }: WorkspaceTabsPanelProps) {
   const { session, tabs, selectedTabId } = useWorkspaceTabs(conversationId);
+  const { views: extensionViews, settled: extensionViewsSettled } = useRailViews();
+  // The built-in extension view a page draws (Content search), as the classic rail does.
+  const builtInView = (tab: "content-search", active: boolean) => {
+    const view = builtInTabView(extensionViews, tab);
+    return view ? (
+      <ExtensionRailView
+        viewId={view.id}
+        settled={extensionViewsSettled}
+        conversationId={conversationId}
+        visible={active}
+      />
+    ) : (
+      <Unavailable text={`The ${WORKSPACE_PANEL_TABS[tab].label} tab could not be loaded.`} />
+    );
+  };
   const { store } = session;
   const knownTabs = tabs.filter((tab): tab is WorkspaceTab => !isUnknownTab(tab));
   const selectedTab = knownTabs.find((tab) => tab.id === selectedTabId);
@@ -912,14 +927,7 @@ function WorkspaceTabsPanelImpl({
             />
           );
         }
-        return (
-          <ContentSearchPanel
-            conversationId={conversationId}
-            onFileSelect={(path, fileOptions) =>
-              void openWorkspaceFile(conversationId, path, fileOptions, "user").then(reportRefusal)
-            }
-          />
-        );
+        return builtInView("content-search", active);
       case "terminal": {
         const shellState = store.resourceState(tab.id);
         // Until the shell list confirms it, a shell isn't ended; an attached one stays put.

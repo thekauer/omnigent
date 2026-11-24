@@ -10,7 +10,7 @@ import {
 } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import userEvent from "@testing-library/user-event";
-import type { ReactNode, RefObject } from "react";
+import type { ReactNode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";
@@ -84,12 +84,6 @@ vi.mock("./FilesPanel", () => ({
 }));
 vi.mock("./SubagentsPanel", () => ({
   SubagentsPanel: () => <div data-testid="subagents-stub" />,
-}));
-vi.mock("./ContentSearchPanel", () => ({
-  ContentSearchPanel: ({ inputRef }: { inputRef: RefObject<HTMLInputElement | null> }) => {
-    paneRenders("search");
-    return <input data-testid="content-search-stub" ref={inputRef} />;
-  },
 }));
 vi.mock("@/components/BrowserPane/BrowserPane", () => ({
   BrowserPane: ({
@@ -369,9 +363,7 @@ describe("WorkspacePanel render failures", () => {
   it.each([
     ["file", { selectedFilePath: "results.csv", openFiles: ["results.csv"] }],
     ["files", {}],
-    ["search", { rightRailTab: "content-search", showContentSearch: true }],
     ["files", { selectedFilePath: "results.csv", openFiles: ["results.csv"] }],
-    ["search", { selectedFilePath: "results.csv", showContentSearch: true }],
   ] satisfies [string, Parameters<typeof renderWorkspace>[0]][])(
     "contains a %s failure while keeping pane navigation available (%j)",
     (pane, overrides) => {
@@ -400,7 +392,6 @@ describe("WorkspacePanel render failures", () => {
         paneRenders.mockReset();
         rerender({ rightRailTab: "changes", selectedFilePath: null });
         expect(screen.getByTestId("extension-view-omnigent.changes.view")).toBeInTheDocument();
-        if (pane === "search") rerender({ rightRailTab: "content-search" });
         expect(screen.queryByRole("alert")).not.toBeInTheDocument();
       } finally {
         paneRenders.mockReset();
@@ -463,7 +454,7 @@ describe("WorkspacePanel surface presentation", () => {
 
   it.each(["tab", "conversation"])(
     "cancels a deferred search focus after changing %s",
-    (changed) => {
+    async (changed) => {
       const { rerender } = renderWorkspace({
         showContentSearch: true,
         rightRailTab: "content-search",
@@ -472,11 +463,20 @@ describe("WorkspacePanel surface presentation", () => {
       });
       const chord = { code: "KeyF", ctrlKey: true, shiftKey: true };
       fireEvent.keyDown(window, chord);
-      rerender(changed === "tab" ? { rightRailTab: "files" } : { conversationId: "other" });
+      if (changed === "tab") {
+        rerender({ rightRailTab: "files" });
+      } else {
+        // The shell brings the other session's workspace on screen with it.
+        await builtIns.publish({ sessionId: "other" });
+        rerender({ conversationId: "other" });
+      }
       rerender({ rightRailTab: "content-search", inert: false });
-      expect(screen.getByTestId("content-search-stub")).not.toHaveFocus();
+      const search = await screen.findByRole("searchbox", { name: "Search file contents" });
+      expect(search).not.toHaveFocus();
       fireEvent.keyDown(window, chord);
-      expect(screen.getByTestId("content-search-stub")).toHaveFocus();
+      await waitFor(() =>
+        expect(screen.getByRole("searchbox", { name: "Search file contents" })).toHaveFocus(),
+      );
     },
   );
 
@@ -524,10 +524,13 @@ describe("WorkspacePanel surface presentation", () => {
   it("gates content search and exposes it in the tab strip and panel picker", async () => {
     const disabled = renderWorkspace();
     expect(screen.queryByRole("tab", { name: "Content search" })).not.toBeInTheDocument();
-    expect(screen.queryByTestId("content-search-stub")).not.toBeInTheDocument();
+    expect(fireEvent.keyDown(window, { code: "KeyF", ctrlKey: true, shiftKey: true })).toBe(true);
     disabled.view.unmount();
     const enabled = renderWorkspace({ showContentSearch: true, showGithubTab: true });
-    expect(screen.getByTestId("content-search-stub")).toBeInTheDocument();
+    // The page draws only while its tab is selected; its form lives in the host.
+    expect(
+      screen.queryByTestId("extension-view-omnigent.content-search.view"),
+    ).not.toBeInTheDocument();
     fireEvent.mouseDown(screen.getByRole("tab", { name: "Content search" }), {
       button: 0,
       ctrlKey: false,
@@ -557,7 +560,7 @@ describe("WorkspacePanel surface presentation", () => {
       "aria-keyshortcuts",
       expect.stringContaining(` ${workspaceTabAriaShortcut("1")}`),
     );
-    expect(screen.getByTestId("content-search-stub").parentElement).toHaveClass("flex");
+    expect(screen.getByTestId("extension-view-omnigent.content-search.view")).toBeInTheDocument();
   });
 
   it("sits flush to the window edge with a left divider, no floating card frame", () => {
@@ -991,14 +994,14 @@ describe("WorkspacePanel shell tabs", () => {
     expect(await screen.findByTestId("terminal-view-stub")).toHaveTextContent("terminal_zsh_s1");
     expect(screen.queryByTestId("files-panel-stub")).toBeNull();
     expect(screen.queryByTestId("file-viewer-stub")).toBeNull();
-    expect(screen.getByTestId("content-search-stub").parentElement).toHaveClass("hidden");
+    expect(screen.queryByRole("searchbox", { name: "Search file contents" })).toBeNull();
     rerender({ openTerminals: [] });
-    expect(screen.getByTestId("content-search-stub").parentElement).toHaveClass("flex");
+    const search = await screen.findByRole("searchbox", { name: "Search file contents" });
     fireEvent.keyDown(window, { code: "KeyF", ctrlKey: true, shiftKey: true });
-    expect(screen.getByTestId("content-search-stub")).toHaveFocus();
+    await waitFor(() => expect(search).toHaveFocus());
     rerender({ openTerminals: [termKey] });
     expect(await screen.findByTestId("terminal-view-stub")).toHaveTextContent("terminal_zsh_s1");
-    expect(screen.getByTestId("content-search-stub").parentElement).toHaveClass("hidden");
+    expect(screen.queryByRole("searchbox", { name: "Search file contents" })).toBeNull();
   });
 
   it("shows a selected shell over an open file, and the file while its terminal is missing", async () => {

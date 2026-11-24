@@ -2,7 +2,8 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import { startBuiltIns } from "@/test/builtInExtensions";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
 import type * as UseTerminalsModule from "@/hooks/useTerminals";
@@ -37,20 +38,6 @@ vi.mock("./placeViews/WorkspacePlaceView", () => ({
     placeViews.latest.set(`${place.kind}:${"path" in place ? (place.path ?? "") : ""}`, props);
     placeViews.bySession.set(props.conversationId, props);
     return <div data-testid="place-view-stub" />;
-  },
-}));
-// The Search tab's results have their own suite; this one checks what choosing one opens.
-const contentSearch = vi.hoisted(() => ({
-  onFileSelect: undefined as
-    ((path: string, options?: { line?: number; column?: number }) => void) | undefined,
-}));
-vi.mock("../ContentSearchPanel", () => ({
-  ContentSearchPanel: (props: {
-    onFileSelect: typeof contentSearch.onFileSelect;
-    inputRef?: React.Ref<HTMLInputElement>;
-  }) => {
-    contentSearch.onFileSelect = props.onFileSelect;
-    return <input aria-label="Search text in workspace" ref={props.inputRef} />;
   },
 }));
 vi.mock("@/components/BrowserPane/BrowserPane", () => ({
@@ -448,23 +435,22 @@ describe("WorkspaceTabsPanel diff links", () => {
 });
 
 describe("WorkspaceTabsPanel search results", () => {
-  it("opens a chosen match's file at its line", async () => {
+  it("draws the built-in Content search view, whose matches open through the workspace", async () => {
+    const builtIns = await startBuiltIns({ sessionId: "s-search-line" });
+    onTestFinished(() => builtIns.dispose());
     renderPanels([{ conversationId: "s-search-line", showContentSearch: true }]);
     const { store } = workspaceTabsSession("s-search-line");
     await act(async () => {
       await store.open({ place: { kind: "search" } }, { opener: "user" });
     });
-    await waitFor(() => expect(contentSearch.onFileSelect).toBeDefined());
-    await act(async () => {
-      contentSearch.onFileSelect?.("src/app.py", { line: 351, column: 3 });
-    });
-    await waitFor(() =>
-      expect(
-        store
-          .tabs()
-          .flatMap((tab) => ("place" in tab && tab.place.kind === "files" ? [tab.place] : [])),
-      ).toContainEqual({ kind: "files", path: "src/app.py", line: { start: 351, column: 3 } }),
+    expect(await screen.findByRole("searchbox", { name: "Search file contents" })).toBeVisible();
+    // A match runs `omnigent.openFile` with its position; the shell routes it to a tab.
+    await builtIns.runtime.commands.execute(
+      "omnigent.openFile",
+      ["src/app.py", { line: 351, column: 3 }],
+      () => {},
     );
+    expect(builtIns.openFile).toHaveBeenCalledWith("src/app.py", { line: 351, column: 3 });
   });
 });
 

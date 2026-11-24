@@ -54,7 +54,7 @@ describe("resolveWorkspaceActiveView", () => {
       { hasAgentTree: false },
       "files",
     ],
-    ["content search", { rightRailTab: "content-search" }, {}, "content-search"],
+    ["content search", { rightRailTab: "content-search" }, {}, "extension"],
     [
       "content search where it's off",
       { rightRailTab: "content-search" },
@@ -80,6 +80,18 @@ describe("resolveWorkspaceActiveView", () => {
     ["the side-chat mode with no side chat selected", { rightRailTab: "sidechat" }, {}, "files"],
   ] as const)("shows %s as the %s page", (_name, selection, availability, scope) => {
     expect(resolve(selection, availability).scope).toBe(scope);
+  });
+
+  it("shows the content-search tab as its built-in extension view", () => {
+    expect(
+      resolve(
+        { rightRailTab: "content-search" },
+        {
+          builtInTabViewId: (tab) =>
+            tab === "content-search" ? "omnigent.content-search.view" : undefined,
+        },
+      ),
+    ).toMatchObject({ scope: "extension", extensionViewId: "omnigent.content-search.view" });
   });
 
   it("shows the Changes tab as its built-in extension view", () => {

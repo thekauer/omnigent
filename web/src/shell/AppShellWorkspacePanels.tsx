@@ -1,6 +1,7 @@
 import { RenderErrorBoundary } from "@/components/RenderErrorBoundary";
 import { isOwnerLevel } from "@/lib/permissionsApi";
-import { ContentSearchPanel } from "./ContentSearchPanel";
+import { ExtensionRailView } from "./extensionViews/ExtensionRailView";
+import { builtInTabView, useRailViews } from "./railViews";
 import { ExecutionLogsPanel } from "./ExecutionLogsPanel";
 import type { OpenFileOptions } from "./FileViewerContext";
 import { FilesPanelDrawer } from "./FilesPanelDrawer";
@@ -46,7 +47,6 @@ export interface AppShellWorkspacePanelsProps {
   railTabsAvailable: { readonly "content-search": boolean; readonly tasks: boolean };
   contentSearchPanelOpen: boolean;
   setContentSearchPanelOpen: (open: boolean) => void;
-  openContentSearchResult: (path: string, options?: OpenFileOptions) => void;
   setMobileFileTarget: (element: HTMLDivElement | null) => void;
 }
 
@@ -88,7 +88,6 @@ export function AppShellWorkspacePanels({
   railTabsAvailable,
   contentSearchPanelOpen,
   setContentSearchPanelOpen,
-  openContentSearchResult,
   setMobileFileTarget,
 }: AppShellWorkspacePanelsProps) {
   return (
@@ -202,14 +201,36 @@ export function AppShellWorkspacePanels({
           onClose={() => setContentSearchPanelOpen(false)}
           testId="content-search-panel-drawer"
         >
-          <ContentSearchPanel
-            key={conversationId}
+          <BuiltInTabView
+            tab="content-search"
             conversationId={conversationId}
-            onFileSelect={openContentSearchResult}
+            visible={contentSearchPanelOpen}
           />
         </MobilePanelDrawer>
       )}
       <div ref={setMobileFileTarget} className="md:hidden" />
     </>
   );
+}
+
+/** A built-in tab's extension view in a phone's drawer (Agents, Content search). */
+function BuiltInTabView({
+  tab,
+  conversationId,
+  visible,
+}: {
+  tab: "subagents" | "content-search";
+  conversationId: string;
+  visible: boolean;
+}) {
+  const { views, settled } = useRailViews();
+  const view = builtInTabView(views, tab);
+  return view ? (
+    <ExtensionRailView
+      viewId={view.id}
+      settled={settled}
+      conversationId={conversationId}
+      visible={visible}
+    />
+  ) : null;
 }
