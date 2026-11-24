@@ -80,7 +80,7 @@ import { extensionRailTabViewId } from "@/shell/railTabs";
 import { useRailViewIds } from "@/shell/railViews";
 import { useWorkspaceBridgeSource } from "@/shell/useWorkspaceBridgeSource";
 import { WorkspaceTasksPublisher } from "@/shell/useWorkspaceTasksSource";
-import { revealFolderInFilesPanel } from "@/shell/FilesPanel";
+import { revealInFiles } from "@/shell/revealInFiles";
 import { selectPullRequestInPanel } from "@/shell/PullRequestPanel";
 import { citedFilePosition } from "@/shell/filePositionState";
 import { useGridSessions } from "./GridSessionsContext";
@@ -401,7 +401,15 @@ export function GridSessionPane({
       openFolder: showFiles
         ? (absolutePath: string) =>
             navigateWorkspace(absolutePath, undefined, () => {
-              revealFolderInFilesPanel(sessionId, absolutePath);
+              revealInFiles(sessionId, absolutePath);
+              showTab("files");
+              onOpenWorkspace();
+            })
+        : undefined,
+      revealInFiles: showFiles
+        ? (path: string) =>
+            navigateWorkspace(path, undefined, () => {
+              revealInFiles(sessionId, path, "file");
               showTab("files");
               onOpenWorkspace();
             })
@@ -703,9 +711,6 @@ export function GridSessionPane({
                   maximized={selected && workspacePanel.maximized}
                   permissionLevel={permissionLevel}
                   filesPanelSort={sort}
-                  onSortChange={setSort}
-                  filesPanelShowHidden={showHidden}
-                  onShowHiddenChange={setShowHidden}
                   liveness={liveness}
                 />
               )}

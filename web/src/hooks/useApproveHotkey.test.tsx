@@ -14,9 +14,10 @@ vi.mock("@/store/chatStore", () => ({
 }));
 let embedded = false;
 vi.mock("@/lib/embedded", () => ({ useIsEmbedded: () => embedded }));
-// The drawer's own tree stands in as one folder button.
-vi.mock("@/shell/FilesPanel", () => ({
-  FilesPanel: () => <button type="button">src</button>,
+// The drawer's Files view stands in as one folder button.
+vi.mock("@/shell/extensionViews/ExtensionRailView", () => ({
+  ExtensionRailView: () => <button type="button">src</button>,
+  MissingBuiltInView: () => <button type="button">src</button>,
 }));
 
 import { setEmbedRoot } from "@/lib/host";
@@ -359,16 +360,7 @@ describe("useApproveHotkey Esc", () => {
           <div data-composer-card="">
             <textarea aria-label="composer" />
           </div>
-          <FilesPanelDrawer
-            open
-            onClose={onClose}
-            onFileSelect={vi.fn()}
-            flatView={false}
-            showHidden={false}
-            onShowHiddenChange={vi.fn()}
-            sort="recent"
-            onSortChange={vi.fn()}
-          />
+          <FilesPanelDrawer open onClose={onClose} flatView={false} />
         </>,
       );
       const target =

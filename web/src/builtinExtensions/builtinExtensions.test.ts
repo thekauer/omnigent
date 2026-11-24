@@ -285,6 +285,7 @@ describe("built-in extensions", () => {
       "omnigent.agents",
       "omnigent.changes",
       "omnigent.content-search",
+      "omnigent.files",
       "omnigent.tasks",
     ]);
     expect(error).toHaveBeenCalledWith(expect.stringContaining("invalid built-in extension"));

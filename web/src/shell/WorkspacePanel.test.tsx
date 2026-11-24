@@ -20,6 +20,7 @@ import { useChatStore } from "@/store/chatStore";
 import { workspaceTabAriaShortcut, workspaceTabShortcutKeys } from "@/components/KeyboardShortcut";
 import { isMacPlatform } from "@/lib/hotkeys";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import type * as ExtensionRailViewModule from "./extensionViews/ExtensionRailView";
 import { useSessionAgent } from "@/hooks/useAgents";
 import type { SessionLiveness } from "@/hooks/useSessionLiveness";
 import type * as UsePermissionsModule from "@/hooks/usePermissions";
@@ -50,6 +51,7 @@ import { type BuiltInHarness, changedFile, startBuiltIns } from "@/test/builtInE
 // show) so we can prove which child mounted without dragging in Monaco / hook
 // stacks / xterm.
 const paneRenders = vi.hoisted(() => vi.fn());
+const FILES_VIEW_ID = "omnigent.files.view";
 vi.mock("./FileViewer", () => ({
   FileViewer: ({
     path,
@@ -75,13 +77,18 @@ vi.mock("./FileViewer", () => ({
     );
   },
 }));
-vi.mock("./FilesPanel", () => ({
-  // The Files tab's tree; the Changes tab is the built-in Changes extension's view.
-  FilesPanel: ({ conversationId }: { conversationId: string }) => {
-    paneRenders("files");
-    return <div data-testid="files-panel-stub" data-session={conversationId} />;
-  },
-}));
+// The Files page is the built-in Files extension's view: a stand-in for it here.
+vi.mock("./extensionViews/ExtensionRailView", async (original) => {
+  const actual = await original<typeof ExtensionRailViewModule>();
+  return {
+    ...actual,
+    ExtensionRailView: (props: Parameters<typeof actual.ExtensionRailView>[0]) => {
+      if (props.viewId !== FILES_VIEW_ID) return <actual.ExtensionRailView {...props} />;
+      paneRenders("files");
+      return <div data-testid="files-panel-stub" data-session={props.conversationId} />;
+    },
+  };
+});
 vi.mock("@/components/BrowserPane/BrowserPane", () => ({
   BrowserPane: ({
     conversationId,
@@ -307,9 +314,6 @@ function renderWorkspace(
         onToggleMaximized={onToggleMaximized}
         permissionLevel={overrides.permissionLevel ?? null}
         filesPanelSort={"recent" as ChangedSort}
-        onSortChange={vi.fn()}
-        filesPanelShowHidden={false}
-        onShowHiddenChange={vi.fn()}
         liveness={overrides.liveness}
         pending={overrides.pending}
         mobileSideChatsOpen={overrides.mobileSideChatsOpen}

@@ -80,16 +80,13 @@ vi.mock("./PullRequestPanel", () => ({
     return <div data-testid="github-panel">Pull request details</div>;
   },
 }));
-vi.mock("./FilesPanel", () => ({
-  FilesPanel: () => <div data-testid="files-panel" />,
-  revealFolderInFilesPanel: vi.fn(),
-}));
 vi.mock("./FileViewer", () => ({
   FileViewer: () => <div data-testid="file-viewer" />,
 }));
 vi.mock("./InlineTerminalsSection", () => ({
   InlineTerminalsSection: () => <div data-testid="inline-terminals-section" />,
 }));
+vi.mock("./revealInFiles", () => ({ revealInFiles: vi.fn() }));
 vi.mock("./FilesPanelDrawer", () => ({
   FilesPanelDrawer: ({ open, flatView }: { open: boolean; flatView: boolean }) => (
     <div
@@ -105,7 +102,8 @@ vi.mock("./TerminalsPanel", () => ({
 
 import { AppShell } from "./AppShell";
 import { FileViewerContext, useFolderOpener, useOpenGithubTab } from "./FileViewerContext";
-import { revealFolderInFilesPanel } from "./FilesPanel";
+import { revealInFiles } from "./revealInFiles";
+import { type BuiltInHarness, startBuiltIns } from "@/test/builtInExtensions";
 import { selectPullRequestInPanel } from "./PullRequestPanel";
 import { isMobileViewport } from "./Sidebar";
 import { usePullRequestInfo } from "@/hooks/usePullRequests";
@@ -117,6 +115,15 @@ const routeError = new Error("Route rendering failed");
 function suppressPullRequestFault(event: ErrorEvent) {
   if (event.error === pullRequestFault.error || event.error === routeError) event.preventDefault();
 }
+
+// The built-in extensions run as in the app (the Files page is the Files extension's view).
+let builtIns: BuiltInHarness;
+beforeEach(async () => {
+  builtIns = await startBuiltIns({ withSource: false });
+});
+afterEach(async () => {
+  await builtIns.dispose();
+});
 
 afterEach(() => {
   cleanup();
@@ -361,7 +368,7 @@ describe("route render failures", () => {
       button: 0,
       ctrlKey: false,
     });
-    expect(within(workspace).getByTestId("files-panel")).toBeInTheDocument();
+    expect(within(workspace).getByTestId("extension-view-omnigent.files.view")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("link", { name: "Inbox" }));
     expect(screen.getByText("Healthy inbox")).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
@@ -405,7 +412,7 @@ describe("Pull Requests render failures", () => {
       "aria-selected",
       "true",
     );
-    expect(within(workspace).getByTestId("files-panel")).toBeInTheDocument();
+    expect(within(workspace).getByTestId("extension-view-omnigent.files.view")).toBeInTheDocument();
     expect(within(workspace).queryByRole("alert")).not.toBeInTheDocument();
 
     fireEvent.mouseDown(within(workspace).getByRole("tab", { name: "Pull Requests" }));
@@ -454,7 +461,7 @@ describe("Pull Requests render failures", () => {
 
 describe("opening a folder from a chat link", () => {
   beforeEach(() => {
-    vi.mocked(revealFolderInFilesPanel).mockClear();
+    vi.mocked(revealInFiles).mockClear();
     writeSessionWorkspaceState("conv_ws", { open: false, rightRailTab: "github" });
   });
 
@@ -463,13 +470,13 @@ describe("opening a folder from a chat link", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Open folder" }));
 
-    expect(revealFolderInFilesPanel).toHaveBeenCalledWith("conv_ws", LINKED_FOLDER);
+    expect(revealInFiles).toHaveBeenCalledWith("conv_ws", LINKED_FOLDER, "folder");
     const workspace = screen.getByRole("complementary", { name: "Workspace" });
     expect(within(workspace).getByRole("tab", { name: /^Files$/ })).toHaveAttribute(
       "aria-selected",
       "true",
     );
-    expect(within(workspace).getByTestId("files-panel")).toBeInTheDocument();
+    expect(within(workspace).getByTestId("extension-view-omnigent.files.view")).toBeInTheDocument();
     expect(readSessionWorkspaceState("conv_ws")).toMatchObject({
       open: true,
       rightRailTab: "files",
@@ -483,7 +490,7 @@ describe("opening a folder from a chat link", () => {
     fireEvent.click(screen.getByRole("button", { name: "Hold navigation" }));
     fireEvent.click(screen.getByRole("button", { name: "Open folder" }));
 
-    expect(revealFolderInFilesPanel).not.toHaveBeenCalled();
+    expect(revealInFiles).not.toHaveBeenCalled();
     expect(readSessionWorkspaceState("conv_ws")).toMatchObject({
       open: false,
       rightRailTab: "github",
@@ -496,7 +503,7 @@ describe("opening a folder from a chat link", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Open folder" }));
 
-    expect(revealFolderInFilesPanel).toHaveBeenCalledWith("conv_ws", LINKED_FOLDER);
+    expect(revealInFiles).toHaveBeenCalledWith("conv_ws", LINKED_FOLDER, "folder");
     const drawer = screen.getByTestId("files-panel-drawer");
     expect(drawer).toHaveAttribute("data-state", "open");
     expect(drawer).toHaveAttribute("data-flat-view", "false");

@@ -27,27 +27,38 @@ function contextFor(sessionHostId: string | null) {
 
 async function renderTree({
   sessionHostId = HOST,
-  browseLocation,
+  browseLocation = "",
 }: { sessionHostId?: string | null; browseLocation?: string } = {}) {
   // Fresh modules per test: the desktop host id is shared window-wide.
   const { FileViewerContext } = await import("./FileViewerContext");
-  const { FolderTree } = await import("./FolderTree");
+  const { FileRowItem, FolderRowItem } = await import("./fileTreeRows");
+  const { TooltipProvider } = await import("@/components/ui/tooltip");
   const context = contextFor(sessionHostId);
+  // The Files view's rows name workspace paths: the browsed folder is part of them.
+  const at = (path: string) => (browseLocation ? `${browseLocation}/${path}` : path);
+  const [file] = files;
   render(
     <QueryClientProvider client={new QueryClient()}>
       <FileViewerContext.Provider value={context}>
-        <FolderTree
-          files={files}
-          isLoading={false}
-          isError={false}
-          error={null}
-          onFileSelect={vi.fn()}
-          conversationId="conv_1"
-          showHidden={false}
-          changedFiles={undefined}
-          sort="alpha"
-          browseLocation={browseLocation}
-        />
+        <TooltipProvider>
+          <FolderRowItem
+            name="src"
+            path={at("src")}
+            depth={0}
+            open
+            status={undefined}
+            onToggle={vi.fn()}
+          />
+          <FileRowItem
+            path={at(file.path)}
+            displayLabel={file.name}
+            depth={1}
+            fileStatus={undefined}
+            bytes={file.bytes}
+            onFileSelect={vi.fn()}
+            conversationId="conv_1"
+          />
+        </TooltipProvider>
       </FileViewerContext.Provider>
     </QueryClientProvider>,
   );

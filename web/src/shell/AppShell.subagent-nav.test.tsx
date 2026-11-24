@@ -92,9 +92,6 @@ vi.mock("./Sidebar", () => ({
   Sidebar: () => <div data-testid="sidebar" />,
   isMobileViewport: () => false,
 }));
-vi.mock("./FilesPanel", () => ({
-  FilesPanel: () => <div data-testid="files-panel" />,
-}));
 vi.mock("./FileViewer", () => ({
   FileViewer: ({ open, path, frameless }: { open: boolean; path: string; frameless?: boolean }) => (
     <div

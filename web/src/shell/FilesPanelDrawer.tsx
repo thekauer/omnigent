@@ -18,19 +18,11 @@ import { useEffect, useRef } from "react";
 import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { cn } from "@/lib/utils";
 import { ExtensionRailView, MissingBuiltInView } from "./extensionViews/ExtensionRailView";
-import { FilesPanel } from "./FilesPanel";
 import { builtInTabView, useRailViews } from "./railViews";
-import type { ChangedSort } from "@/lib/changedSort";
 
 interface FilesPanelDrawerProps {
   open: boolean;
   onClose: () => void;
-  /**
-   * File-select callback. Selecting a file inside the drawer
-   * routes to the FileViewer in AppShell; AppShell is responsible
-   * for closing this drawer in response.
-   */
-  onFileSelect: (path: string) => void;
   /**
    * Which scope the drawer renders: false = full folder tree, true = the
    * Changes tab's view. Fixed by the FAB entry that opened it (Files vs
@@ -39,34 +31,18 @@ interface FilesPanelDrawerProps {
   flatView: boolean;
   /** The session shown, for the Changes view's per-session state. */
   conversationId?: string;
-  /**
-   * Lifted hidden-files toggle state. Lifted to AppShell so the
-   * eye-icon choice survives inline→drawer transitions.
-   */
-  showHidden: boolean;
-  onShowHiddenChange: (showHidden: boolean) => void;
-  /**
-   * Lifted changed-files sort order. Lifted to AppShell so the choice
-   * stays in sync with the FileViewer's prev/next navigation order.
-   */
-  sort: ChangedSort;
-  onSortChange: (sort: ChangedSort) => void;
 }
 
 export function FilesPanelDrawer({
   open,
   onClose,
-  onFileSelect,
   flatView,
-  showHidden,
-  onShowHiddenChange,
-  sort,
-  onSortChange,
   conversationId,
 }: FilesPanelDrawerProps) {
   const { panelWidth, handleProps, isDesktop } = useResizablePanel(open);
   const { views, settled } = useRailViews();
   const changesView = builtInTabView(views, "changes");
+  const filesView = builtInTabView(views, "files");
   const ref = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -127,16 +103,16 @@ export function FilesPanelDrawer({
         />
       )}
       {open && flatView && !changesView && settled && <MissingBuiltInView label="Changes" />}
-      {open && !flatView && (
-        <FilesPanel
-          onFileSelect={onFileSelect}
-          showHidden={showHidden}
-          onShowHiddenChange={onShowHiddenChange}
-          sort={sort}
-          onSortChange={onSortChange}
+      {open && !flatView && filesView && (
+        <ExtensionRailView
+          viewId={filesView.id}
+          settled={settled}
+          conversationId={conversationId}
           onClose={onClose}
+          closeLabel="Close files"
         />
       )}
+      {open && !flatView && !filesView && settled && <MissingBuiltInView label="Files" />}
     </aside>
   );
 }

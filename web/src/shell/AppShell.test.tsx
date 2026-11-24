@@ -158,36 +158,6 @@ vi.mock("./Sidebar", () => ({
     />
   ),
 }));
-vi.mock("./FilesPanel", () => ({
-  // Stand-in for the Files tab's tree, after the open-file tabs and the
-  // FileViewer moved up to WorkspacePanel. It exposes file-select buttons; the
-  // Changes tab is the built-in Changes extension's view (real, below). The inline viewer is rendered directly by WorkspacePanel
-  // via the FileViewer mock below (data-testid="file-viewer-inline").
-  FilesPanel: ({
-    onFileSelect,
-    showHidden,
-  }: {
-    onFileSelect: (path: string) => void;
-    showHidden: boolean;
-  }) => (
-    <div data-testid="files-panel" data-show-hidden={String(showHidden)}>
-      <button
-        type="button"
-        aria-label="files: select README.md"
-        onClick={() => onFileSelect("README.md")}
-      >
-        select
-      </button>
-      <button
-        type="button"
-        aria-label="files: select AGENTS.md"
-        onClick={() => onFileSelect("AGENTS.md")}
-      >
-        select-agents
-      </button>
-    </div>
-  ),
-}));
 vi.mock("./FileViewer", () => ({
   // One frameless viewer moves between desktop and mobile layouts.
   FileViewer: ({
@@ -757,6 +727,13 @@ function withWindowOrigin(origin: string, run: () => void) {
 
 // The built-in extensions run as in the app; AppShell publishes its own workspace.
 const CHANGES_VIEW = "extension-view-omnigent.changes.view";
+const FILES_VIEW = "extension-view-omnigent.files.view";
+/** Opens a file the way a Files row does: its `omnigent.openFile` command. */
+async function openFromFilesTab(path: string) {
+  await act(async () => {
+    await builtIns.runtime.commands.execute("omnigent.openFile", [path], () => {});
+  });
+}
 let builtIns: BuiltInHarness;
 beforeEach(async () => {
   builtIns = await startBuiltIns({ withSource: false });
@@ -1683,7 +1660,7 @@ describe("TerminalFirstContext", () => {
     // default Files tab, which mounts FilesPanel.
     expect(screen.getByTestId("view-probe")).toHaveAttribute("data-view", "chat");
     expect(screen.queryByTestId("terminals-panel")).toBeNull();
-    expect(screen.getByTestId("files-panel")).toBeInTheDocument();
+    expect(screen.getByTestId(FILES_VIEW)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Terminal" }));
 
@@ -1693,7 +1670,7 @@ describe("TerminalFirstContext", () => {
     expect(screen.getByTestId("view-probe")).toHaveAttribute("data-view", "terminal");
     expect(screen.getByTestId("url-params")).toHaveTextContent("view=terminal");
     expect(screen.queryByTestId("terminals-panel")).toBeNull();
-    expect(screen.getByTestId("files-panel")).toBeInTheDocument();
+    expect(screen.getByTestId(FILES_VIEW)).toBeInTheDocument();
 
     // Toggling back to Chat returns the probe to "chat" and records that
     // explicit choice for refreshes where Terminal may be the default.
@@ -1959,7 +1936,7 @@ describe("Right-rail terminals card", () => {
     expect(screen.getByTestId("view-probe")).toHaveAttribute("data-view", "chat");
   });
 
-  it("opening a file in a terminal-first session keeps the view in Terminal", () => {
+  it("opening a file in a terminal-first session keeps the view in Terminal", async () => {
     // Regression: openFileViewer used to call setPanelInitialKey(null)
     // unconditionally to "close the terminal panel" — but in terminal-
     // first sessions there is no terminal drawer, and panelInitialKey
@@ -1992,7 +1969,7 @@ describe("Right-rail terminals card", () => {
     // Surface the rail's Files panel (Agents is the default tab now).
     fireEvent.mouseDown(screen.getByRole("tab", { name: /^Files$/i }));
     // Click a file — the file-viewer mock fires onFileSelect via this button.
-    fireEvent.click(screen.getByRole("button", { name: /files: select README\.md/i }));
+    await openFromFilesTab("README.md");
 
     // View must still be Terminal.
     expect(screen.getByTestId("view-probe")).toHaveAttribute("data-view", "terminal");
@@ -2201,7 +2178,7 @@ describe("Workspace rail maximize", () => {
     expect(rail().className).not.toContain("md:absolute");
     expect(screen.getByRole("main")).toHaveAttribute("data-flyout-boundary");
     expect(screen.getByRole("main")).not.toContainElement(rail());
-    fireEvent.click(screen.getByRole("button", { name: "files: select README.md" }));
+    await openFromFilesTab("README.md");
 
     // Maximize → the rail breaks out to cover the content region, and the left
     // sidebar collapses so the maximized rail owns the full content width.
@@ -2219,9 +2196,9 @@ describe("Workspace rail maximize", () => {
     expect(screen.getByTestId("url-params")).toHaveTextContent(/^$/);
 
     fireEvent.mouseDown(screen.getByRole("tab", { name: "Files" }));
-    expect(screen.getByTestId("files-panel")).toBeInTheDocument();
+    expect(screen.getByTestId(FILES_VIEW)).toBeInTheDocument();
     expect(rail()).toHaveClass("md:absolute");
-    fireEvent.click(screen.getByRole("button", { name: "files: select README.md" }));
+    await openFromFilesTab("README.md");
     fireEvent.mouseDown(screen.getByRole("tab", { name: /Changes/i }));
     expect(screen.getByTestId(CHANGES_VIEW)).toBeInTheDocument();
     expect(rail()).toHaveClass("md:absolute");
@@ -2628,7 +2605,7 @@ describe("Subagents tab", () => {
     expect(within(tab).getByText("1")).toBeInTheDocument();
     // Files is the default tab, whose content slot mounts FilesPanel.
     expect(screen.getByRole("tab", { name: /Files/i })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByTestId("files-panel")).toBeInTheDocument();
+    expect(screen.getByTestId(FILES_VIEW)).toBeInTheDocument();
   });
 
   it("shows the Agents tab and mounts its panel once there's more than one agent", async () => {
@@ -3030,7 +3007,7 @@ describe("FilesPanel visibility", () => {
     // FilesPanel must be in the document — the spec has os_env so the
     // working-folder panel is available. Failure here means
     // showFilesPanel evaluated to false when it should be true.
-    expect(screen.getByTestId("files-panel")).toBeInTheDocument();
+    expect(screen.getByTestId(FILES_VIEW)).toBeInTheDocument();
   });
 
   it("hides FilesPanel when environmentQuery returns available false", () => {
@@ -3045,7 +3022,7 @@ describe("FilesPanel visibility", () => {
 
     renderShell("/c/conv_abc");
 
-    expect(screen.queryByTestId("files-panel")).toBeNull();
+    expect(screen.queryByTestId(FILES_VIEW)).toBeNull();
     expect(screen.queryByTestId("files-panel-drawer")).toBeNull();
   });
 
@@ -3061,7 +3038,7 @@ describe("FilesPanel visibility", () => {
 
     renderShell("/c/conv_abc");
 
-    expect(screen.queryByTestId("files-panel")).toBeNull();
+    expect(screen.queryByTestId(FILES_VIEW)).toBeNull();
     expect(screen.queryByTestId("files-panel-drawer")).toBeNull();
   });
 
@@ -3076,7 +3053,7 @@ describe("FilesPanel visibility", () => {
 
     renderShell("/c/conv_abc");
 
-    expect(screen.getByTestId("files-panel")).toBeInTheDocument();
+    expect(screen.getByTestId(FILES_VIEW)).toBeInTheDocument();
   });
 
   it("shows FilesPanel to a view-only collaborator once the owner shares files", () => {
@@ -3111,7 +3088,7 @@ describe("FilesPanel visibility", () => {
 
     renderShell("/c/conv_abc");
 
-    expect(screen.getByTestId("files-panel")).toBeInTheDocument();
+    expect(screen.getByTestId(FILES_VIEW)).toBeInTheDocument();
   });
 
   it("shows hidden files by default, on load and after a session switch", () => {
@@ -3127,12 +3104,13 @@ describe("FilesPanel visibility", () => {
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
     render(sessionShellTree(qc, "/c/conv_abc", <SessionNavButton to="/c/conv_xyz" />));
 
-    expect(screen.getByTestId("files-panel")).toHaveAttribute("data-show-hidden", "true");
+    expect(screen.getByTestId(FILES_VIEW)).toBeInTheDocument();
+    expect(builtIns.bridge.getState().settings.showHidden).toBe(true);
 
     // The conversation-switch reset must land on the same default, otherwise
     // dotfiles would disappear the moment the user moves between sessions.
     fireEvent.click(screen.getByTestId("nav-session"));
-    expect(screen.getByTestId("files-panel")).toHaveAttribute("data-show-hidden", "true");
+    expect(builtIns.bridge.getState().settings.showHidden).toBe(true);
   });
 });
 
@@ -3363,7 +3341,7 @@ describe("Right workspace card visibility", () => {
       expect(input).toHaveValue("keep my query");
 
       fireEvent.mouseDown(screen.getByRole("tab", { name: "Files" }), { button: 0 });
-      fireEvent.click(screen.getByRole("button", { name: "files: select README.md" }));
+      await openFromFilesTab("README.md");
       expect(screen.getByTestId("file-viewer-inline")).toBeInTheDocument();
       fireEvent.keyDown(document, chord);
       // The tab's page draws again; its form keeps the session's query.
@@ -3445,7 +3423,7 @@ describe("Right workspace card visibility", () => {
     // Alt+1 goes back to Files, where the file is picked.
     fireEvent.keyDown(document.activeElement!, { code: "Digit1", key: "1", altKey: true });
 
-    fireEvent.click(screen.getByRole("button", { name: "files: select README.md" }));
+    await openFromFilesTab("README.md");
     expect(screen.getByTestId("file-viewer-inline")).toHaveAttribute("data-path", "README.md");
 
     // With focus outside the rail, the hotkey still closes the rail on screen.
@@ -4639,10 +4617,10 @@ describe("AppShell URL sync — file param", () => {
     // mount FileViewer with an empty path or hide the normal Files panel.
     expect(screen.queryByTestId("file-viewer")).toBeNull();
     expect(screen.queryByTestId("file-viewer-inline")).toBeNull();
-    expect(screen.getByTestId("files-panel")).toBeInTheDocument();
+    expect(screen.getByTestId(FILES_VIEW)).toBeInTheDocument();
   });
 
-  it("adds ?file= to the URL when a file is selected from the Files (tree) tab", () => {
+  it("adds ?file= to the URL when a file is selected from the Files (tree) tab", async () => {
     useEnvironmentMock.mockReturnValue({
       data: { available: true, root: null },
       isLoading: false,
@@ -4653,9 +4631,9 @@ describe("AppShell URL sync — file param", () => {
     renderShell("/c/conv_abc");
 
     // Sanity-check: tree mode active, no file open yet.
-    expect(screen.getByTestId("files-panel")).toBeInTheDocument();
+    expect(screen.getByTestId(FILES_VIEW)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /files: select README.md/i }));
+    await openFromFilesTab("README.md");
 
     // After selecting, ?file=README.md must appear in the URL.
     // Failure: the selectedFilePath sync effect did not fire (or fired with a stale
@@ -4663,7 +4641,7 @@ describe("AppShell URL sync — file param", () => {
     expect(screen.getByTestId("url-params").textContent).toContain("file=README.md");
   });
 
-  it("adds ?file= to the URL when a file is selected from the panel", () => {
+  it("adds ?file= to the URL when a file is selected from the panel", async () => {
     useEnvironmentMock.mockReturnValue({
       data: { available: true, root: null },
       isLoading: false,
@@ -4676,7 +4654,7 @@ describe("AppShell URL sync — file param", () => {
     expect(screen.getByTestId("url-params").textContent).toBe("");
 
     // Files is the default tab, so the files panel is already mounted.
-    fireEvent.click(screen.getByRole("button", { name: /files: select README.md/i }));
+    await openFromFilesTab("README.md");
 
     // After selecting, ?file=README.md must appear in the URL so the link is shareable.
     // Failure: the selectedFilePath sync useEffect did not call setSearchParams.
@@ -4945,13 +4923,13 @@ describe("AppShell fullscreen file links", () => {
     expect(screen.getByRole("complementary", { name: "Workspace" })).toHaveClass("md:absolute");
   });
 
-  it("ignores fullscreen without a file target", () => {
+  it("ignores fullscreen without a file target", async () => {
     mockConversations([{ id: "conv_abc", permission_level: null }]);
     renderShell("/c/conv_abc?fullscreen=1");
 
     expect(screen.queryByTestId("file-viewer-inline")).toBeNull();
     expect(screen.getByRole("complementary", { name: "Workspace" })).not.toHaveClass("md:absolute");
-    fireEvent.click(screen.getByRole("button", { name: "files: select README.md" }));
+    await openFromFilesTab("README.md");
     expect(screen.getByTestId("url-params")).toHaveTextContent(/^file=README.md$/);
     expect(screen.getByRole("complementary", { name: "Workspace" })).not.toHaveClass("md:absolute");
   });
@@ -5046,7 +5024,7 @@ describe("Files/Changes tabs drive the panel scope", () => {
     renderShell("/c/conv_abc");
 
     // The Files tab pins the panel to the tree; no scope param is written.
-    expect(screen.getByTestId("files-panel")).toBeInTheDocument();
+    expect(screen.getByTestId(FILES_VIEW)).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /files/i })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByTestId("url-params").textContent).not.toContain("view=");
   });
@@ -5087,7 +5065,7 @@ describe("Files/Changes tabs drive the panel scope", () => {
 });
 
 describe("AppShell scope view — conversation redirect (stale-closure regression)", () => {
-  it("keeps the URL on the current conversation when the scope view is revealed after an in-app switch", () => {
+  it("keeps the URL on the current conversation when the scope view is revealed after an in-app switch", async () => {
     // Regression for the "reveal the scope view → jump to a different
     // conversation" bug. AppShell is a layout route that never remounts across
     // /c/:a → /c/:b, so when showScopeView was useCallback([]) it stayed frozen
@@ -5131,7 +5109,7 @@ describe("AppShell scope view — conversation redirect (stale-closure regressio
     expect(screen.getByTestId("url-pathname").textContent).toBe("/c/conv_xyz");
 
     // Open a file in conv_xyz so the viewer's close has an active file to clear.
-    fireEvent.click(screen.getByRole("button", { name: /files: select README\.md/i }));
+    await openFromFilesTab("README.md");
     // Failure here means openFileViewer didn't set selectedFilePath.
     expect(screen.getByTestId("file-viewer-inline")).toHaveAttribute("data-path", "README.md");
 
@@ -5161,7 +5139,7 @@ describe("Right-rail tab switching — file viewer close", () => {
     mockConversations([{ id: "conv_abc", permission_level: null }]);
   }
 
-  it("closes the open file when switching rail tabs and does not restore it on return", () => {
+  it("closes the open file when switching rail tabs and does not restore it on return", async () => {
     // With a single Files tab there's no per-tab file stash: switching to
     // another rail tab closes the viewer, and returning to Files shows the
     // panel, not the previously open file.
@@ -5169,7 +5147,7 @@ describe("Right-rail tab switching — file viewer close", () => {
     renderShell("/c/conv_abc");
 
     // Files is the default tab. Open README.md from the panel.
-    fireEvent.click(screen.getByRole("button", { name: /files: select README\.md/i }));
+    await openFromFilesTab("README.md");
     // Failure: openFileViewer did not set selectedFilePath.
     expect(screen.getByTestId("file-viewer-inline")).toHaveAttribute("data-path", "README.md");
 
@@ -5182,14 +5160,14 @@ describe("Right-rail tab switching — file viewer close", () => {
     // Go back to Files — the panel shows, NOT the previously open file.
     fireEvent.mouseDown(screen.getByRole("tab", { name: /^Files$/i }));
     expect(screen.queryByTestId("file-viewer-inline")).toBeNull();
-    expect(screen.getByTestId("files-panel")).toBeInTheDocument();
+    expect(screen.getByTestId(FILES_VIEW)).toBeInTheDocument();
   });
 
-  it("closes the file viewer when the user clicks the close (X) button", () => {
+  it("closes the file viewer when the user clicks the close (X) button", async () => {
     setupFilesAvailable();
     renderShell("/c/conv_abc");
 
-    fireEvent.click(screen.getByRole("button", { name: /files: select README\.md/i }));
+    await openFromFilesTab("README.md");
     expect(screen.getByTestId("file-viewer-inline")).toHaveAttribute("data-path", "README.md");
 
     // Explicitly close the viewer with the X button (scoped to the inline rail viewer).
@@ -5200,7 +5178,7 @@ describe("Right-rail tab switching — file viewer close", () => {
     );
     // Failure: closeFileViewer did not clear selectedFilePath.
     expect(screen.queryByTestId("file-viewer-inline")).toBeNull();
-    expect(screen.getByTestId("files-panel")).toBeInTheDocument();
+    expect(screen.getByTestId(FILES_VIEW)).toBeInTheDocument();
   });
 });
 

@@ -148,7 +148,7 @@ def test_offline_runner_host_served_files_panel_stays_live(
 
     # The passive host-served badge renders because the runner reads offline
     # while the host reads online — no wake-up, panel stays usable.
-    expect(rail.get_by_test_id("files-host-served-badge")).to_be_visible(timeout=30_000)
+    expect(rail.get_by_test_id("extension-view-tag")).to_have_text("Asleep", timeout=30_000)
 
     # The seeded file is listed even though the runner is (from the UI's view)
     # offline — proving the FS query fired and rendered host-served data.

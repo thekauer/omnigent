@@ -44,6 +44,8 @@ interface FileViewerContextType {
   openGithubTab: (prUrl?: string) => void;
   /** Show a host-absolute folder in the Files tree; absent where no Files panel exists. */
   openFolder?: (absolutePath: string) => void;
+  /** Shows a workspace file in the session's Files tree. */
+  revealInFiles?: (path: string) => void;
   /**
    * Returns true when `path` is a known workspace file (present in the
    * session's changed-files list). Used as the synchronous fast path for

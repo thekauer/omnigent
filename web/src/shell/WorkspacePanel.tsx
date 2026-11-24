@@ -89,7 +89,6 @@ import {
 import { SuppressBrowserView } from "@/hooks/useSuppressBrowserView";
 import { readPreferredShell, resolveDefaultShell, writePreferredShell } from "./preferredShell";
 import { scrollTabIntoView, WorkspaceTabsScroller } from "./WorkspaceTabsScroller";
-import { FilesPanel } from "./FilesPanel";
 import { resolveWorkspaceActiveView } from "./workspaceActiveView";
 import { FileViewer } from "./FileViewer";
 import { ResponsiveViewerSlot } from "./ResponsiveViewerSlot";
@@ -776,12 +775,6 @@ interface WorkspacePanelProps {
   permissionLevel: number | null;
   /** Changed-files sort order, shared with the viewer's prev/next order. */
   filesPanelSort: ChangedSort;
-  /** Change the changed-files sort order. */
-  onSortChange: (sort: ChangedSort) => void;
-  /** Whether the Files panel shows dotfiles/hidden entries. */
-  filesPanelShowHidden: boolean;
-  /** Toggle hidden-file visibility in the Files panel. */
-  onShowHiddenChange: (show: boolean) => void;
   /** Open session's derived liveness — drives the "+ New shell" menu's
    *  connect affordance (Reconnecting… / Offline). Absent is treated as
    *  ready. */
@@ -914,9 +907,6 @@ function WorkspacePanelImpl({
   onToggleMaximized,
   permissionLevel,
   filesPanelSort,
-  onSortChange,
-  filesPanelShowHidden,
-  onShowHiddenChange,
   liveness,
   onShellCreateStart,
   onShellCreateFailed,
@@ -1508,6 +1498,8 @@ function WorkspacePanelImpl({
   const fileViewerInFront = !pending && frontTerminalKey === null && frontFilePath !== null;
   // Stays mounted behind a file or shell to keep tree expansion, listing and scroll.
   const filesPanelMounted = showFilesPanel && !pending && scopeView === "files";
+  // The Files page is the built-in Files extension's view.
+  const filesView = builtInTabView(extensionViews, "files");
   const filesPanelActive = filesPanelMounted && !terminalShown && selectedFilePath === null;
   // Desktop Close (⌘W / Ctrl+W) while the rail, or its embedded browser view,
   // has focus: close the tab on screen, or hide the rail on a fixed page.
@@ -2057,15 +2049,18 @@ function WorkspacePanelImpl({
                 )}
               >
                 <RenderErrorBoundary name="this workspace pane" resetKey={conversationId}>
-                  <FilesPanel
-                    conversationId={contained ? conversationId : undefined}
-                    frameless
-                    onFileSelect={openFileViewer}
-                    showHidden={filesPanelShowHidden}
-                    onShowHiddenChange={onShowHiddenChange}
-                    sort={filesPanelSort}
-                    onSortChange={onSortChange}
-                  />
+                  {filesView ? (
+                    <ExtensionRailView
+                      viewId={filesView.id}
+                      settled={extensionViewsSettled}
+                      conversationId={conversationId}
+                      visible={open && !inert && filesPanelActive}
+                      focusToken={viewFocusToken}
+                      onFocused={() => setViewFocusRequest(null)}
+                    />
+                  ) : extensionViewsSettled ? (
+                    <MissingBuiltInView label="Files" />
+                  ) : null}
                 </RenderErrorBoundary>
               </div>
             )}

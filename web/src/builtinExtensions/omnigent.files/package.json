@@ -1,0 +1,153 @@
+{
+  "name": "files",
+  "displayName": "Files",
+  "description": "The workspace's folders and files, with its changed files marked, in the workspace rail's Files tab.",
+  "publisher": "omnigent",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "omnigent": "*"
+  },
+  "activationEvents": [
+    "*"
+  ],
+  "browser": "./extension.ts",
+  "contributes": {
+    "views": {
+      "omnigent.rightPanel": [
+        {
+          "id": "omnigent.files.view",
+          "name": "Files",
+          "icon": "folder-tree",
+          "builtInTab": "files",
+          "location": true,
+          "filter": {
+            "placeholder": "Find files by name",
+            "ariaLabel": "Search all files",
+            "fields": [
+              {
+                "id": "include",
+                "label": "files to include",
+                "placeholder": "e.g. *.ts, src/**"
+              },
+              {
+                "id": "exclude",
+                "label": "files to exclude",
+                "placeholder": "e.g. **/node_modules, *.test.ts"
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "omnigent.files.refresh",
+        "title": "Refresh files",
+        "icon": "refresh-cw"
+      },
+      {
+        "command": "omnigent.files.showHiddenFiles",
+        "title": "Show hidden files",
+        "icon": "eye"
+      },
+      {
+        "command": "omnigent.files.hideHiddenFiles",
+        "title": "Hide hidden files",
+        "icon": "eye-off"
+      },
+      {
+        "command": "omnigent.files.sortByName",
+        "title": "Filename",
+        "icon": "arrow-down-a-z",
+        "toggled": "config.omnigent.files.sortOrder == alpha"
+      },
+      {
+        "command": "omnigent.files.sortByRecent",
+        "title": "Last edited",
+        "icon": "file-clock",
+        "toggled": "config.omnigent.files.sortOrder == recent"
+      },
+      {
+        "command": "omnigent.files.sortBySize",
+        "title": "Size",
+        "icon": "arrow-down-wide-narrow",
+        "toggled": "config.omnigent.files.sortOrder == size"
+      },
+      {
+        "command": "omnigent.files.sortByType",
+        "title": "Type",
+        "icon": "file-type",
+        "toggled": "config.omnigent.files.sortOrder == type"
+      },
+      {
+        "command": "omnigent.revealInFiles",
+        "title": "Reveal in Files"
+      }
+    ],
+    "submenus": [
+      {
+        "id": "omnigent.files.sortBy",
+        "label": "Sort",
+        "icon": "arrow-down-up",
+        "tooltip": "Sort files"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "omnigent.files.refresh",
+          "when": "view == omnigent.files.view",
+          "group": "navigation"
+        },
+        {
+          "submenu": "omnigent.openIn",
+          "when": "view == omnigent.files.view",
+          "group": "navigation"
+        },
+        {
+          "submenu": "omnigent.files.sortBy",
+          "when": "view == omnigent.files.view",
+          "group": "filter"
+        },
+        {
+          "command": "omnigent.toggleFilterFields",
+          "when": "view == omnigent.files.view",
+          "group": "filter",
+          "tooltip": "Files to include / exclude"
+        },
+        {
+          "command": "omnigent.files.showHiddenFiles",
+          "when": "view == omnigent.files.view && !config.omnigent.files.showHidden && omnigent.files.hasHiddenFiles",
+          "group": "filter",
+          "tone": "warning",
+          "tooltip": "${omnigent.files.hiddenFilesTooltip}"
+        },
+        {
+          "command": "omnigent.files.showHiddenFiles",
+          "when": "view == omnigent.files.view && !config.omnigent.files.showHidden",
+          "group": "filter"
+        },
+        {
+          "command": "omnigent.files.hideHiddenFiles",
+          "when": "view == omnigent.files.view && config.omnigent.files.showHidden",
+          "group": "filter"
+        }
+      ],
+      "omnigent.files.sortBy": [
+        {
+          "command": "omnigent.files.sortByName"
+        },
+        {
+          "command": "omnigent.files.sortByRecent"
+        },
+        {
+          "command": "omnigent.files.sortBySize"
+        },
+        {
+          "command": "omnigent.files.sortByType"
+        }
+      ]
+    }
+  }
+}

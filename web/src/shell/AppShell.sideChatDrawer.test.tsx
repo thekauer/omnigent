@@ -80,9 +80,6 @@ vi.mock("./PullRequestPanel", () => ({
   selectPullRequestInPanel: vi.fn(),
   PullRequestPanel: () => <div data-testid="github-panel">Pull request details</div>,
 }));
-vi.mock("./FilesPanel", () => ({
-  FilesPanel: () => <div data-testid="files-panel" />,
-}));
 vi.mock("./FileViewer", () => ({
   FileViewer: () => <div data-testid="file-viewer" />,
 }));

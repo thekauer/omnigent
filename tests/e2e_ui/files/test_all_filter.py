@@ -2,8 +2,8 @@
 
 In the All (folder-tree) scope the search bar has a filters toggle that
 reveals VSCode-style "files to include" / "files to exclude" glob inputs
-(see ``SearchFilterInput`` in ``FilesPanel.tsx``). Per
-``useWorkspaceFileSearch`` the globs only *narrow an active text query* —
+(the filter fields of the built-in ``omnigent.files`` extension). Per
+``workspace.findFiles`` the globs only *narrow an active text query* —
 they don't search on their own — so the test always types a query first,
 then applies a glob and asserts the results shrink accordingly.
 

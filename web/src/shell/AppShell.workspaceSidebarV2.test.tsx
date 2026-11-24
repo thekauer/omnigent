@@ -179,10 +179,6 @@ vi.mock("./PullRequestPanel", () => ({
   selectPullRequestInPanel: vi.fn(),
   PullRequestPanel: () => <div data-testid="github-panel" />,
 }));
-vi.mock("./FilesPanel", () => ({
-  FilesPanel: () => <div data-testid="files-panel" />,
-  revealFolderInFilesPanel: vi.fn(),
-}));
 vi.mock("./FileViewer", () => ({ FileViewer: () => <div data-testid="file-viewer" /> }));
 vi.mock("./InlineTerminalsSection", () => ({ InlineTerminalsSection: () => null }));
 vi.mock("./TerminalsPanel", () => ({ TerminalsPanel: () => null }));

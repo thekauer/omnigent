@@ -52,6 +52,7 @@ import {
   EyeOffIcon,
   FileDiffIcon,
   FolderOpenIcon,
+  FolderTreeIcon,
   Link2Icon,
   ListIcon,
   Loader2Icon,
@@ -1130,6 +1131,7 @@ function FileViewerBody({
   }, [citedLargeMarkdownSource, markdownSourceFallback, conversationId, path]);
 
   const registerNavigationGuard = useContext(FileViewerContext)?.registerNavigationGuard;
+  const revealInFiles = useContext(FileViewerContext)?.revealInFiles;
   useLayoutEffect(() => {
     if (!open || !registerNavigationGuard) return;
     return registerNavigationGuard((destination, options, navigate) => {
@@ -1564,6 +1566,15 @@ function FileViewerBody({
       icon: <FolderOpenIcon className="size-4" />,
       active: false,
       onSelect: () => revealInFileManager(revealTarget),
+    });
+  }
+  if (revealInFiles && !isDeletedFile) {
+    settingsMenu.push({
+      key: "reveal-in-files",
+      label: "Reveal in Files",
+      icon: <FolderTreeIcon className="size-4" />,
+      active: false,
+      onSelect: () => revealInFiles(path),
     });
   }
   if (!isDeletedFile && (fileQuery.data || isVideo)) {

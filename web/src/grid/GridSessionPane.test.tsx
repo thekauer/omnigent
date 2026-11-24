@@ -2,7 +2,6 @@ import type * as TerminalsModule from "@/hooks/useTerminals";
 import type * as SessionsApi from "@/lib/sessionsApi";
 import type { Session } from "@/lib/types";
 import type * as ConversationEntryStateModule from "@/hooks/useConversationEntryState";
-import type * as FilesPanelModule from "@/shell/FilesPanel";
 import type * as GridSessionsModule from "./GridSessionsContext";
 import {
   type ComponentProps,
@@ -35,7 +34,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { useTerminalFirst } from "@/shell/TerminalFirstContext";
 import { retrySession, updateSession } from "@/lib/sessionsApi";
 import { toast } from "sonner";
-import { revealFolderInFilesPanel } from "@/shell/FilesPanel";
+import { revealInFiles } from "@/shell/revealInFiles";
 import { selectPullRequestInPanel } from "@/shell/PullRequestPanel";
 import { conversationRegistry } from "@/store/conversationRegistry";
 import { gridCellComposerKey, useChatStore } from "@/store/chatStore";
@@ -111,10 +110,7 @@ vi.mock("@/components/blocks/TerminalView", () => ({
 
 vi.mock("@/canvas/CanvasWorkspace", () => ({ CanvasWorkspace: () => null }));
 vi.mock("@/shell/PullRequestPanel", () => ({ selectPullRequestInPanel: vi.fn() }));
-vi.mock("@/shell/FilesPanel", async (original) => ({
-  ...(await original<typeof FilesPanelModule>()),
-  revealFolderInFilesPanel: vi.fn(),
-}));
+vi.mock("@/shell/revealInFiles", () => ({ revealInFiles: vi.fn() }));
 vi.mock("@/hooks/useSidebarData", () => ({
   useLoadedConversations: () => ({}),
   useOptionalLoadedConversations: () => undefined,
@@ -495,14 +491,14 @@ it("opens chat-linked folders and PRs in that pane's workspace", () => {
   fireEvent.click(first.getByText("Block navigation"));
   fireEvent.click(first.getByText("Open folder"));
   fireEvent.click(first.getByText("Open PR"));
-  expect(revealFolderInFilesPanel).not.toHaveBeenCalledWith("first", expect.anything());
+  expect(revealInFiles).not.toHaveBeenCalledWith("first", expect.anything());
   expect(selectPullRequestInPanel).not.toHaveBeenCalled();
   expect(screen.getByTestId("workspace-first")).toHaveAttribute("data-tab", "subagents");
   expect(screen.getByTestId("workspace-first")).toHaveAttribute("aria-hidden", "true");
 
   fireEvent.click(within(screen.getByRole("region", { name: "second" })).getByText("Open folder"));
 
-  expect(revealFolderInFilesPanel).toHaveBeenCalledWith("second", "/workspace/experimental");
+  expect(revealInFiles).toHaveBeenCalledWith("second", "/workspace/experimental");
   const workspace = screen.getByRole("complementary", { name: "Workspace" });
   expect(workspace).toHaveAttribute("data-testid", "workspace-second");
   expect(workspace).toHaveAttribute("data-tab", "files");
@@ -1046,7 +1042,7 @@ it("shows each cell's sidebar as tabs with the flag on, routing its links there"
   onTestFinished(() => {
     tabsRouting.enabled = false;
     // Later cases assert this reveal was never asked for their cells.
-    vi.mocked(revealFolderInFilesPanel).mockClear();
+    vi.mocked(revealInFiles).mockClear();
   });
   render(twoCellGrid());
 

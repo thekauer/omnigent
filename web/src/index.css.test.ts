@@ -732,9 +732,6 @@ describe("index.css native safe-area layout on the rendered WorkspacePanel", () 
           onToggleMaximized: () => {},
           permissionLevel: null,
           filesPanelSort: "recent",
-          onSortChange: () => {},
-          filesPanelShowHidden: false,
-          onShowHiddenChange: () => {},
         }),
       ),
       {

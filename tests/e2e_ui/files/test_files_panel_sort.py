@@ -1,8 +1,8 @@
 """E2E: the Files panel "Sort" control reorders the All (folder-tree) view.
 
 The Files panel exposes a Sort dropdown (Filename / Last edited / Size / Type)
-that orders both the Changed list and the All tree (see ``SortSelector`` and
-``compareTreeNodes`` in ``FilesPanel.tsx`` / ``FolderTree.tsx``). This test
+that orders both the Changed list and the All tree (see ``compareNodes`` in the
+built-in ``omnigent.files`` extension's ``filesModel.ts``). This test
 seeds three files whose alphabetical order is the reverse of their size order,
 opens the All scope, and asserts that switching the sort criterion visibly
 reorders the rows.

@@ -3,9 +3,7 @@ import { isOwnerLevel } from "@/lib/permissionsApi";
 import { ExtensionRailView } from "./extensionViews/ExtensionRailView";
 import { builtInTabView, useRailViews } from "./railViews";
 import { ExecutionLogsPanel } from "./ExecutionLogsPanel";
-import type { OpenFileOptions } from "./FileViewerContext";
 import { FilesPanelDrawer } from "./FilesPanelDrawer";
-import type { ChangedSort } from "@/lib/changedSort";
 import { InlineTerminalsSection } from "./InlineTerminalsSection";
 import { MobilePanelDrawer } from "./MobilePanelDrawer";
 import { PullRequestPanel } from "./PullRequestPanel";
@@ -24,12 +22,7 @@ export interface AppShellWorkspacePanelsProps {
   showFilesPanel: boolean;
   filesPanelOpen: boolean;
   setFilesPanelOpen: (open: boolean) => void;
-  openFileViewer: (path: string, options?: OpenFileOptions) => void;
   filesDrawerFlatView: boolean;
-  filesPanelShowHidden: boolean;
-  setFilesPanelShowHidden: (show: boolean) => void;
-  filesPanelSort: ChangedSort;
-  handleFilesSortChange: (sort: ChangedSort) => void;
   rootSessionId: string | null;
   subagentsPanelOpen: boolean;
   setSubagentsPanelOpen: (open: boolean) => void;
@@ -65,12 +58,7 @@ export function AppShellWorkspacePanels({
   showFilesPanel,
   filesPanelOpen,
   setFilesPanelOpen,
-  openFileViewer,
   filesDrawerFlatView,
-  filesPanelShowHidden,
-  setFilesPanelShowHidden,
-  filesPanelSort,
-  handleFilesSortChange,
   rootSessionId,
   subagentsPanelOpen,
   setSubagentsPanelOpen,
@@ -118,13 +106,8 @@ export function AppShellWorkspacePanels({
         <FilesPanelDrawer
           open={filesPanelOpen}
           onClose={() => setFilesPanelOpen(false)}
-          onFileSelect={openFileViewer}
           flatView={filesDrawerFlatView}
           conversationId={conversationId}
-          showHidden={filesPanelShowHidden}
-          onShowHiddenChange={setFilesPanelShowHidden}
-          sort={filesPanelSort}
-          onSortChange={handleFilesSortChange}
         />
       )}
       {/* Mobile-only full-screen drawers for the rail tabs that have no

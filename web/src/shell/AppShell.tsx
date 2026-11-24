@@ -158,7 +158,7 @@ import { ProjectHomeHeaderActions, ProjectHomeTitle } from "@/projectHome/Projec
 import { projectNameFromHomePath } from "@/projectHome/projectHomeNavigation";
 import { MobileHeaderControlsProvider } from "./MobileHeaderControlsSlot";
 import type { FilePosition, OpenFileOptions, FileNavigationGuard } from "./FileViewerContext";
-import { revealFolderInFilesPanel } from "./FilesPanel";
+import { revealInFiles } from "./revealInFiles";
 import { selectPullRequestInPanel } from "./PullRequestPanel";
 import type { ChangedSort } from "@/lib/changedSort";
 import { openSessionFromView, SubagentPanelOpenerContext } from "./subagentPanelOpener";
@@ -2980,12 +2980,13 @@ function AppShellImpl() {
     openExecutionLogsPanel(executionLogTabKey(MAIN_EXECUTION_LOG_KEY));
   }
 
-  // A chat link to a folder browses the Files tree there (drawer on mobile).
-  const openFolderInFiles = useCallback(
-    (absolutePath: string) =>
-      guardFileNavigation(absolutePath, undefined, () => {
+  // A chat link to a folder browses the Files tree there, and the file viewer's
+  // "Reveal in Files" shows its file in the tree (drawer on mobile).
+  const showInFiles = useCallback(
+    (path: string, kind: "folder" | "file") =>
+      guardFileNavigation(path, undefined, () => {
         if (!conversationId) return;
-        revealFolderInFilesPanel(conversationId, absolutePath);
+        revealInFiles(conversationId, path, kind);
         if (classicDrawers()) {
           openFilesDrawer(false);
           return;
@@ -3013,6 +3014,11 @@ function AppShellImpl() {
       setRightPanelOpenAnimated,
     ],
   );
+  const openFolderInFiles = useCallback(
+    (absolutePath: string) => showInFiles(absolutePath, "folder"),
+    [showInFiles],
+  );
+  const revealFileInFiles = useCallback((path: string) => showInFiles(path, "file"), [showInFiles]);
 
   // Workspace root + runner home let chat path-links collapse absolute or
   // ``~``-relative paths the agent mentions onto workspace-relative ones.
@@ -3043,6 +3049,7 @@ function AppShellImpl() {
       guardFileNavigation,
       openGithubTab,
       openFolder: showFilesPanel ? openFolderInFiles : undefined,
+      revealInFiles: showFilesPanel ? revealFileInFiles : undefined,
       isChangedPath,
       conversationId,
       workspaceRoot,
@@ -3056,6 +3063,7 @@ function AppShellImpl() {
       openGithubTab,
       showFilesPanel,
       openFolderInFiles,
+      revealFileInFiles,
       isChangedPath,
       conversationId,
       workspaceRoot,
@@ -3711,9 +3719,6 @@ function AppShellImpl() {
                     onToggleMaximized={toggleRightPanelMaximized}
                     permissionLevel={permissionLevel}
                     filesPanelSort={filesPanelSort}
-                    onSortChange={handleFilesSortChange}
-                    filesPanelShowHidden={filesPanelShowHidden}
-                    onShowHiddenChange={setFilesPanelShowHidden}
                     liveness={liveness}
                     onShellCreateStart={markShellCreateStarted}
                     onShellCreateFailed={clearShellCreatePending}
@@ -3750,12 +3755,7 @@ function AppShellImpl() {
                 showFilesPanel={showFilesPanel}
                 filesPanelOpen={filesPanelOpen}
                 setFilesPanelOpen={setFilesPanelOpen}
-                openFileViewer={openFileViewer}
                 filesDrawerFlatView={filesDrawerFlatView}
-                filesPanelShowHidden={filesPanelShowHidden}
-                setFilesPanelShowHidden={setFilesPanelShowHidden}
-                filesPanelSort={filesPanelSort}
-                handleFilesSortChange={handleFilesSortChange}
                 rootSessionId={rootSessionId}
                 subagentsPanelOpen={subagentsPanelOpen}
                 setSubagentsPanelOpen={setSubagentsPanelOpen}
