@@ -160,7 +160,7 @@ import { MobileHeaderControlsProvider } from "./MobileHeaderControlsSlot";
 import type { FilePosition, OpenFileOptions, FileNavigationGuard } from "./FileViewerContext";
 import { revealFolderInFilesPanel } from "./FilesPanel";
 import { selectPullRequestInPanel } from "./PullRequestPanel";
-import type { ChangedSort } from "./FlatFileList";
+import type { ChangedSort } from "@/lib/changedSort";
 import { SubagentPanelOpenerContext } from "./subagentPanelOpener";
 import { isMobileViewport, Sidebar } from "./Sidebar";
 import { MobilePanelDrawer } from "./MobilePanelDrawer";
@@ -196,8 +196,8 @@ import {
   useIsWideViewport,
 } from "./SessionOverview";
 import { extensionRailTabViewId, type RightRailTab } from "./railTabs";
-import { useRailViews } from "./railViews";
-import { workspaceBridge } from "./workspaceBridge";
+import { useRailViewIds } from "./railViews";
+import { useWorkspaceBridgeSource } from "./useWorkspaceBridgeSource";
 
 /**
  * Top-level layout. The sidebar and right panels are responsive:
@@ -869,8 +869,6 @@ function AppShellImpl() {
     showFilesPanel,
     changedCount,
     changedFiles,
-    changedFilesData,
-    changedFilesError,
     isChangedPath,
   } = useWorkspaceResources({
     sessionId: serverConversationId,
@@ -1714,7 +1712,8 @@ function AppShellImpl() {
   }, [agentTerminal, agentsPanelRequested, conversationId, searchParams, terminalFirst]);
 
   // Validate the latest selection, including a tab queued by session restoration.
-  const { views: extensionViews, settled: extensionViewsSettled } = useRailViews();
+  // View ids only: a view's badge or message changing must not re-render the shell.
+  const { ids: extensionViewIds, settled: extensionViewsSettled } = useRailViewIds();
   useEffect(() => {
     setRightRailTab((tab) => {
       const fallbackTab =
@@ -1727,9 +1726,7 @@ function AppShellImpl() {
       // An extension view's tab waits while extensions load, then needs its view.
       const viewId = extensionRailTabViewId(tab);
       if (viewId !== null) {
-        return !extensionViewsSettled || extensionViews.some((view) => view.id === viewId)
-          ? tab
-          : fallbackTab;
+        return !extensionViewsSettled || extensionViewIds.includes(viewId) ? tab : fallbackTab;
       }
       if (railTabsAvailable[tab as keyof typeof railTabsAvailable]) return tab;
       return fallbackTab;
@@ -1740,7 +1737,7 @@ function AppShellImpl() {
     openPanels,
     fallbackWorkspaceTab,
     serverInfo,
-    extensionViews,
+    extensionViewIds,
     extensionViewsSettled,
   ]);
 
@@ -1917,29 +1914,18 @@ function AppShellImpl() {
 
   useUiOpenFile(serverConversationId, showFilesPanel, openFileViewer);
 
-  // Extension APIs read the active session's changed files and open files through the bridge.
-  useEffect(() => {
-    workspaceBridge.publishChangedFiles(
-      serverConversationId ?? null,
-      showFilesPanel ? changedFilesData : [],
-      showFilesPanel ? changedFilesError : undefined,
-    );
-  }, [serverConversationId, showFilesPanel, changedFilesData, changedFilesError]);
-  const openFileViewerRef = useRef(openFileViewer);
-  openFileViewerRef.current = openFileViewer;
-  useEffect(
-    () =>
-      workspaceBridge.registerActions({
-        openFile: (path) => openFileViewerRef.current(path),
-        refreshChangedFiles: () =>
-          serverConversationId
-            ? queryClient.invalidateQueries({
-                queryKey: ["workspace-changed-files", serverConversationId],
-              })
-            : Promise.resolve(),
-      }),
-    [queryClient, serverConversationId],
-  );
+  // Extension views (the built-in Changes tab among them) read this session's
+  // workspace through the bridge, unless a grid cell's workspace is in front.
+  useWorkspaceBridgeSource({
+    sessionId: serverConversationId,
+    enabled: showFilesPanel,
+    active: !canvasMode,
+    openFile: openFileViewer,
+    sortOrder: filesPanelSort,
+    onSortOrderChange: handleFilesSortChange,
+    showHidden: filesPanelShowHidden,
+    onShowHiddenChange: setFilesPanelShowHidden,
+  });
 
   // Strip the file-viewer URL params (file/diff/comment). Memoized on
   // ``setSearchParams`` so it always closes over react-router's *current*

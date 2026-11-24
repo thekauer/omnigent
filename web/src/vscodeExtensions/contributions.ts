@@ -12,6 +12,10 @@ export interface ViewContribution {
   readonly name: string;
   readonly icon: string | undefined;
   readonly order: number;
+  /** Built-in extensions only: the built-in tab id the view stands in for. */
+  readonly builtInTab?: string;
+  /** A filter field drawn above the rows. */
+  readonly filter?: { readonly placeholder: string; readonly ariaLabel: string };
 }
 
 export interface CommandContribution {
@@ -23,25 +27,50 @@ export interface CommandContribution {
 }
 
 export interface MenuItemContribution {
+  /** The command the entry runs; empty for a submenu entry. */
   readonly command: string;
+  /** Set for an entry that opens a submenu (`contributes.submenus`). */
+  readonly submenu?: string;
   readonly when: WhenClause | undefined;
   readonly group: string | undefined;
+  /** Omnigent: the button's tooltip instead of the command title. */
+  readonly tooltip?: string;
+  /** Omnigent: draws the button in the warning color. */
+  readonly tone?: "warning";
+}
+
+export interface SubmenuContribution {
+  readonly id: string;
+  readonly label: string;
+  readonly icon: string | undefined;
+  readonly tooltip: string | undefined;
+  readonly items: readonly MenuItemContribution[];
 }
 
 export interface ExtensionContributions {
   readonly views: readonly ViewContribution[];
   readonly commands: readonly CommandContribution[];
   readonly viewTitleMenu: readonly MenuItemContribution[];
+  readonly submenus: readonly SubmenuContribution[];
+}
+
+export interface ParseContributionsOptions {
+  /** Built-in extensions may bind a view to a built-in tab (`builtInTab`). */
+  readonly builtIn?: boolean;
+  /** The built-in tab ids a view may stand in for. */
+  readonly builtInTabs?: readonly string[];
 }
 
 const MAX_NAME_LENGTH = 40;
 const MAX_TITLE_LENGTH = 80;
 const MAX_ENTRIES = 50;
+const MAX_TOOLTIP_LENGTH = 200;
 
 export const EMPTY_CONTRIBUTIONS: ExtensionContributions = Object.freeze({
   views: [],
   commands: [],
   viewTitleMenu: [],
+  submenus: [],
 });
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -71,9 +100,49 @@ function iconOf(value: unknown, where: string, warnings: string[]): string | und
 }
 
 /** Checks `contributes`; view ids must start with the extension id. */
+function textOf(value: unknown, max: number): string | undefined {
+  return typeof value === "string" && value.trim() !== "" ? value.trim().slice(0, max) : undefined;
+}
+
+/** One menu entry (`{ command | submenu, when?, group?, tooltip?, tone? }`), or undefined. */
+function menuItemOf(
+  entry: unknown,
+  where: string,
+  warnings: string[],
+): MenuItemContribution | undefined {
+  if (!isRecord(entry)) {
+    warnings.push(`${where} must be an object`);
+    return undefined;
+  }
+  const command = typeof entry.command === "string" ? entry.command : "";
+  const submenu = typeof entry.submenu === "string" && entry.submenu !== "" ? entry.submenu : "";
+  if (command === "" && submenu === "") {
+    warnings.push(`${where}: "command" must be a non-empty string`);
+    return undefined;
+  }
+  if (entry.group !== undefined && typeof entry.group !== "string") {
+    warnings.push(`${where}: "group" must be a string`);
+    return undefined;
+  }
+  if (entry.tone !== undefined && entry.tone !== "warning") {
+    warnings.push(`${where}: "tone" must be "warning"; ignoring it`);
+  }
+  return {
+    command: submenu === "" ? command : "",
+    ...(submenu === "" ? {} : { submenu }),
+    when: whenOf(entry.when, where, warnings),
+    group: entry.group as string | undefined,
+    ...(textOf(entry.tooltip, MAX_TOOLTIP_LENGTH) === undefined
+      ? {}
+      : { tooltip: textOf(entry.tooltip, MAX_TOOLTIP_LENGTH) }),
+    ...(entry.tone === "warning" ? { tone: "warning" as const } : {}),
+  };
+}
+
 export function parseContributions(
   extensionId: string,
   raw: unknown,
+  options: ParseContributionsOptions = {},
 ): { contributions: ExtensionContributions; warnings: string[] } {
   const warnings: string[] = [];
   if (raw === undefined) return { contributions: EMPTY_CONTRIBUTIONS, warnings };
@@ -114,11 +183,43 @@ export function parseContributions(
             warnings.push(`${where}: "name" must be a non-empty string`);
             return;
           }
+          let builtInTab: string | undefined;
+          if (entry.builtInTab !== undefined) {
+            if (!options.builtIn) {
+              warnings.push(`${where}: "builtInTab" is for built-in extensions; ignoring it`);
+            } else if (
+              typeof entry.builtInTab !== "string" ||
+              !(options.builtInTabs ?? []).includes(entry.builtInTab)
+            ) {
+              warnings.push(`${where}: unknown built-in tab ${JSON.stringify(entry.builtInTab)}`);
+            } else if (views.some((view) => view.builtInTab === entry.builtInTab)) {
+              warnings.push(`${where}: built-in tab ${entry.builtInTab} is already taken`);
+            } else {
+              builtInTab = entry.builtInTab;
+            }
+          }
+          let filter: ViewContribution["filter"];
+          if (entry.filter !== undefined) {
+            const placeholder = isRecord(entry.filter)
+              ? textOf(entry.filter.placeholder, MAX_TITLE_LENGTH)
+              : undefined;
+            if (placeholder === undefined) {
+              warnings.push(`${where}: "filter.placeholder" must be a non-empty string`);
+            } else {
+              const record = entry.filter as Record<string, unknown>;
+              filter = {
+                placeholder,
+                ariaLabel: textOf(record.ariaLabel, MAX_TITLE_LENGTH) ?? placeholder,
+              };
+            }
+          }
           views.push({
             id,
             name: name.trim().slice(0, MAX_NAME_LENGTH),
             icon: iconOf(entry.icon, where, warnings),
             order: views.length,
+            ...(builtInTab === undefined ? {} : { builtInTab }),
+            ...(filter === undefined ? {} : { filter }),
           });
         });
       }
@@ -150,13 +251,41 @@ export function parseContributions(
     }
   }
 
+  const submenus: SubmenuContribution[] = [];
+  if (raw.submenus !== undefined) {
+    if (!Array.isArray(raw.submenus)) {
+      warnings.push('"contributes.submenus" must be an array');
+    } else {
+      raw.submenus.slice(0, MAX_ENTRIES).forEach((entry: unknown, index) => {
+        const where = `contributes.submenus[${index}]`;
+        if (!isRecord(entry) || typeof entry.id !== "string" || entry.id === "") {
+          warnings.push(`${where}: "id" must be a non-empty string`);
+          return;
+        }
+        const label = textOf(entry.label, MAX_TITLE_LENGTH);
+        if (label === undefined) {
+          warnings.push(`${where}: "label" must be a non-empty string`);
+          return;
+        }
+        submenus.push({
+          id: entry.id,
+          label,
+          icon: iconOf(entry.icon, where, warnings),
+          tooltip: textOf(entry.tooltip, MAX_TOOLTIP_LENGTH),
+          items: [],
+        });
+      });
+    }
+  }
+
   const viewTitleMenu: MenuItemContribution[] = [];
   if (raw.menus !== undefined) {
     if (!isRecord(raw.menus)) {
       warnings.push('"contributes.menus" must be an object');
     } else {
       for (const [menu, entries] of Object.entries(raw.menus)) {
-        if (menu !== "view/title") {
+        const submenuIndex = submenus.findIndex((submenu) => submenu.id === menu);
+        if (menu !== "view/title" && submenuIndex === -1) {
           warnings.push(`contributes.menus: menu "${menu}" is not supported yet; ignoring it`);
           continue;
         }
@@ -164,22 +293,26 @@ export function parseContributions(
           warnings.push(`contributes.menus["${menu}"] must be an array`);
           continue;
         }
+        const items: MenuItemContribution[] = [];
         entries.slice(0, MAX_ENTRIES).forEach((entry: unknown, index) => {
-          const where = `contributes.menus["${menu}"][${index}]`;
-          if (!isRecord(entry) || typeof entry.command !== "string" || entry.command === "") {
-            warnings.push(`${where}: "command" must be a non-empty string`);
+          const item = menuItemOf(entry, `contributes.menus["${menu}"][${index}]`, warnings);
+          if (!item) return;
+          if (item.submenu !== undefined && menu !== "view/title") {
+            warnings.push(
+              `contributes.menus["${menu}"][${index}]: nested submenus are not supported`,
+            );
             return;
           }
-          if (entry.group !== undefined && typeof entry.group !== "string") {
-            warnings.push(`${where}: "group" must be a string`);
+          if (item.submenu !== undefined && !submenus.some((sub) => sub.id === item.submenu)) {
+            warnings.push(
+              `contributes.menus["${menu}"][${index}]: unknown submenu ${JSON.stringify(item.submenu)}`,
+            );
             return;
           }
-          viewTitleMenu.push({
-            command: entry.command,
-            when: whenOf(entry.when, where, warnings),
-            group: entry.group,
-          });
+          items.push(item);
         });
+        if (menu === "view/title") viewTitleMenu.push(...items);
+        else submenus[submenuIndex] = { ...submenus[submenuIndex], items: Object.freeze(items) };
       }
     }
   }
@@ -188,6 +321,7 @@ export function parseContributions(
       views: Object.freeze(views),
       commands: Object.freeze(commands),
       viewTitleMenu: Object.freeze(viewTitleMenu),
+      submenus: Object.freeze(submenus),
     }),
     warnings,
   };

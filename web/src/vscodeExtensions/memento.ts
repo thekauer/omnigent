@@ -50,7 +50,15 @@ export function createWorkspaceState(
         const next = Object.fromEntries(
           Object.entries(store.read(sessionId, extensionId)).filter(([name]) => name !== key),
         );
-        if (plain !== undefined) next[key] = plain;
+        // A defined property, so a key such as `__proto__` is stored, not a prototype change.
+        if (plain !== undefined) {
+          Object.defineProperty(next, key, {
+            value: plain,
+            enumerable: true,
+            writable: true,
+            configurable: true,
+          });
+        }
         store.write(sessionId, extensionId, next);
         return Promise.resolve();
       } catch (error) {

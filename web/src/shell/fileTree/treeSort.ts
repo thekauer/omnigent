@@ -3,7 +3,8 @@
 // uses, so both views agree. Folders carry an mtime but never a size.
 
 import type { FileTreeSortComparator } from "@/components/file-tree/vendored";
-import { type ChangedSort, compareChangedFiles } from "../FlatFileList";
+import type { ChangedSort } from "@/lib/changedSort";
+import { compareChangedFiles } from "../changedFilesOrder";
 
 /** What ordering needs to know about one entry beyond its name. */
 export interface TreeEntryMeta {

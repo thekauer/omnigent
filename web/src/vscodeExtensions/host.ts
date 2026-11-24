@@ -4,6 +4,7 @@ import type * as omnigent from "omnigent";
 import { disposeAll } from "./base";
 import { createExtensionApi, type ExtensionApiHandle, type HostServices } from "./api";
 import { registerExtensionApi } from "./apiRegistry";
+import { BUILT_IN_RAIL_TABS } from "@/shell/railTabs";
 import { parseContributions } from "./contributions";
 import {
   createWorkspaceState,
@@ -16,8 +17,15 @@ export interface ExtensionDescription {
   readonly id: string;
   readonly version: string;
   readonly activationEvents: readonly string[];
-  /** URL the browser entry is imported from. */
+  /** URL the browser entry is imported from, or where a built-in's module lives. */
   readonly entryUrl: string;
+  /** Loads the entry instead of importing `entryUrl` (built-in extensions). */
+  readonly load?: () => Promise<unknown>;
+  /**
+   * Ships with the app: no load timeout (the module is part of the bundle), a
+   * generous activation timeout, and views that show an error state if it fails.
+   */
+  readonly builtIn?: boolean;
   /** The manifest's `contributes`, unchecked. */
   readonly contributes?: unknown;
 }
@@ -52,6 +60,8 @@ export const ACTIVATION_TIMEOUT_MS = 10_000;
  * connections, so entries start loading at boot, before those streams open.
  */
 export const LOAD_TIMEOUT_MS = 20_000;
+/** The activation budget of a built-in extension, which core UI depends on. */
+export const BUILT_IN_ACTIVATION_TIMEOUT_MS = 60_000;
 
 export interface ExtensionHostOptions {
   services: HostServices;
@@ -109,7 +119,10 @@ export class ExtensionHost {
   /** Registers what the manifest contributes, once per id, before the extension activates. */
   private contribute(extension: ExtensionDescription): void {
     if (this.contributed.has(extension.id) || this.disposed) return;
-    const { contributions, warnings } = parseContributions(extension.id, extension.contributes);
+    const { contributions, warnings } = parseContributions(extension.id, extension.contributes, {
+      builtIn: extension.builtIn === true,
+      builtInTabs: BUILT_IN_RAIL_TABS,
+    });
     for (const warning of warnings) {
       this.log.warn(`[omnigent-extensions] ${extension.id}: ${warning}`);
     }
@@ -188,10 +201,14 @@ export class ExtensionHost {
       );
     }
     this.attempted.add(extension.id);
-    const activation = this.doActivate(extension, activateAfter).finally(() => {
+    const activation = this.doActivate(extension, activateAfter).then((result) => {
       this.activating.delete(extension.id);
-      // Its views stop showing "Loading" whether it activated or not.
-      this.services.views.extensionSettled(extension.id);
+      // Its views stop showing "Loading" whether it activated or not; a failure shows.
+      this.services.views.extensionSettled(
+        extension.id,
+        result === "failed" ? "activation failed" : undefined,
+      );
+      return result;
     });
     this.activating.set(extension.id, activation);
     return activation;
@@ -212,7 +229,8 @@ export class ExtensionHost {
       workspaceState: createWorkspaceState(
         extension.id,
         this.extensionState,
-        () => this.services.sessions.activeSession?.id,
+        // The workspace on screen (a grid cell's, say), else the chat session.
+        () => this.services.workspace.activeSessionId ?? this.services.sessions.activeSession?.id,
       ),
     });
     const cleanUp = () => {
@@ -242,14 +260,22 @@ export class ExtensionHost {
         timer = setTimeout(() => resolve("timeout"), ms);
       };
     });
-    armTimeout(
-      this.loadTimeoutMs,
-      `failed to load ${extension.entryUrl}: timed out after ${this.loadTimeoutMs}ms`,
-    );
+    // A built-in's module is in the bundle: loading it cannot hang on the network.
+    if (!extension.builtIn) {
+      armTimeout(
+        this.loadTimeoutMs,
+        `failed to load ${extension.entryUrl}: timed out after ${this.loadTimeoutMs}ms`,
+      );
+    }
+    const activationTimeoutMs = extension.builtIn
+      ? Math.max(this.activationTimeoutMs, BUILT_IN_ACTIVATION_TIMEOUT_MS)
+      : this.activationTimeoutMs;
     const run: Promise<LoadOutcome> = (async () => {
       let module: ExtensionModule;
       try {
-        module = (await this.importModule(extension.entryUrl)) as ExtensionModule;
+        module = (await (extension.load
+          ? extension.load()
+          : this.importModule(extension.entryUrl))) as ExtensionModule;
       } catch (error) {
         return { kind: "load-failed", error };
       }
@@ -262,10 +288,7 @@ export class ExtensionHost {
         await activateAfter;
         if (raced) return { kind: "abandoned" };
       }
-      armTimeout(
-        this.activationTimeoutMs,
-        `activate timed out after ${this.activationTimeoutMs}ms`,
-      );
+      armTimeout(activationTimeoutMs, `activate timed out after ${activationTimeoutMs}ms`);
       try {
         await module.activate(context);
       } catch (error) {

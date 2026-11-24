@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { ContextKeyService } from "./contextKeys";
 import { parseContributions } from "./contributions";
-import { parseWhen } from "./when";
+import { MAX_WHEN_DEPTH, MAX_WHEN_LENGTH, parseWhen } from "./when";
 
 const lookup =
   (values: Record<string, unknown>) =>
@@ -145,5 +145,90 @@ describe("parseContributions", () => {
   it("accepts a manifest without contributions and refuses a non-object", () => {
     expect(parseContributions("pub.ext", undefined).warnings).toEqual([]);
     expect(parseContributions("pub.ext", []).warnings).toEqual(['"contributes" must be an object']);
+  });
+});
+
+describe("when clause limits", () => {
+  it("refuses clauses that are too long or nested too deep", () => {
+    expect(() => parseWhen(`a == ${"x".repeat(MAX_WHEN_LENGTH)}`)).toThrow(/longer than/);
+    expect(() =>
+      parseWhen(`${"(".repeat(MAX_WHEN_DEPTH + 1)}a${")".repeat(MAX_WHEN_DEPTH + 1)}`),
+    ).toThrow(/nested deeper/);
+    expect(() => parseWhen(`${"!".repeat(MAX_WHEN_DEPTH + 1)}a`)).toThrow(/nested deeper/);
+    expect(
+      parseWhen(`${"(".repeat(MAX_WHEN_DEPTH)}a${")".repeat(MAX_WHEN_DEPTH)}`).evaluate(() => true),
+    ).toBe(true);
+  });
+
+  it("negates a comparison as a whole", () => {
+    const clause = parseWhen("!mode == tree");
+    expect(clause.evaluate((key) => (key === "mode" ? "tree" : undefined))).toBe(false);
+    expect(clause.evaluate((key) => (key === "mode" ? "list" : undefined))).toBe(true);
+  });
+});
+
+describe("parseContributions: built-in tabs, filters and submenus", () => {
+  it("reads a built-in view's tab and filter, and submenus with their entries", () => {
+    const { contributions, warnings } = parseContributions(
+      "omnigent.x",
+      {
+        views: {
+          "omnigent.rightPanel": [
+            {
+              id: "omnigent.x.view",
+              name: "X",
+              builtInTab: "changes",
+              filter: { placeholder: "Find" },
+            },
+          ],
+        },
+        submenus: [{ id: "omnigent.x.sort", label: "Sort", icon: "arrow-down-up" }],
+        menus: {
+          "view/title": [
+            { submenu: "omnigent.x.sort", group: "filter" },
+            { command: "omnigent.x.a", group: "filter", tone: "warning", tooltip: "Careful" },
+          ],
+          "omnigent.x.sort": [{ command: "omnigent.x.a" }],
+        },
+      },
+      { builtIn: true, builtInTabs: ["changes", "files"] },
+    );
+    expect(warnings).toEqual([]);
+    expect(contributions.views[0]).toMatchObject({
+      builtInTab: "changes",
+      filter: { placeholder: "Find", ariaLabel: "Find" },
+    });
+    expect(contributions.submenus).toEqual([
+      expect.objectContaining({
+        id: "omnigent.x.sort",
+        label: "Sort",
+        items: [expect.objectContaining({ command: "omnigent.x.a" })],
+      }),
+    ]);
+    expect(contributions.viewTitleMenu).toEqual([
+      expect.objectContaining({ submenu: "omnigent.x.sort", command: "", group: "filter" }),
+      expect.objectContaining({ command: "omnigent.x.a", tone: "warning", tooltip: "Careful" }),
+    ]);
+  });
+
+  it("keeps built-in tabs for built-in extensions, and warns about bad entries", () => {
+    const { contributions, warnings } = parseContributions("pub.ext", {
+      views: {
+        "omnigent.rightPanel": [{ id: "pub.ext.v", name: "V", builtInTab: "changes", filter: {} }],
+      },
+      submenus: [{ id: "pub.ext.s" }],
+      menus: {
+        "view/title": [{ submenu: "pub.ext.missing" }, { command: "pub.ext.c", tone: "loud" }],
+      },
+    });
+    expect(contributions.views[0].builtInTab).toBeUndefined();
+    expect(contributions.views[0].filter).toBeUndefined();
+    expect(warnings).toEqual([
+      expect.stringContaining('"builtInTab" is for built-in extensions'),
+      expect.stringContaining('"filter.placeholder" must be a non-empty string'),
+      expect.stringContaining('"label" must be a non-empty string'),
+      expect.stringContaining("unknown submenu"),
+      expect.stringContaining('"tone" must be "warning"'),
+    ]);
   });
 });

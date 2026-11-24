@@ -18,7 +18,7 @@ import { type WorkspaceFile, useWorkspaceDirectories } from "@/hooks/useWorkspac
 import { type PrefetchTarget, useWorkspacePrefetch } from "@/hooks/useWorkspacePrefetch";
 import { useResolvedThemeMode } from "@/components/theme/useResolvedThemeMode";
 import { folderTreePath } from "../breadcrumbPaths";
-import type { ChangedSort } from "../FlatFileList";
+import type { ChangedSort } from "@/lib/changedSort";
 import { useFocusedFileSource } from "../fileCommands/focusedFile";
 import { useFileCommandTarget } from "../fileCommands/target";
 import { FileCommandMenuAt } from "../fileCommands/useFileCommandMenu";

@@ -1,0 +1,131 @@
+// Registers a workspace surface (the shell's session or a grid cell) with the
+// workspace bridge, so extension views read what that surface would show: its
+// changed files, why they cannot load, and its file settings.
+
+import { useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef } from "react";
+import { useSessionHostOnline, useSessionRunnerOnline } from "@/hooks/RunnerHealthProvider";
+import { useSandboxStarting } from "@/hooks/useSessionReconnect";
+import {
+  RunnerOfflineError,
+  useWorkspaceAsleep,
+  useWorkspaceChangedFiles,
+  useWorkspaceEnvironment,
+} from "@/hooks/useWorkspaceChangedFiles";
+import type { ChangedSort } from "@/lib/changedSort";
+import { useChatStore } from "@/store/chatStore";
+import { fileListStatus } from "./fileListStatus";
+import {
+  type WorkspaceAvailability,
+  type WorkspaceBridge,
+  type WorkspaceBridgeState,
+  type WorkspaceFileSettings,
+  type WorkspaceSource,
+  workspaceBridge,
+} from "./workspaceBridge";
+
+const NO_FILES: readonly never[] = Object.freeze([]);
+
+export interface WorkspaceBridgeSourceOptions {
+  sessionId: string | undefined;
+  /** Whether the session's workspace may be read (its Files tabs are shown). */
+  enabled: boolean;
+  /** Whether this surface is on screen; the latest activated one is in front. */
+  active: boolean;
+  openFile: (path: string) => void;
+  sortOrder: ChangedSort;
+  onSortOrderChange: (sort: ChangedSort) => void;
+  showHidden: boolean;
+  onShowHiddenChange: (showHidden: boolean) => void;
+  bridge?: WorkspaceBridge;
+}
+
+export function useWorkspaceBridgeSource({
+  sessionId,
+  enabled,
+  active,
+  openFile,
+  sortOrder,
+  onSortOrderChange,
+  showHidden,
+  onShowHiddenChange,
+  bridge = workspaceBridge,
+}: WorkspaceBridgeSourceOptions): void {
+  const queryClient = useQueryClient();
+  const changedQuery = useWorkspaceChangedFiles(sessionId, { enabled });
+  const environmentQuery = useWorkspaceEnvironment(sessionId, { enabled });
+  // The runner went offline after it was up (the session failed): a message reconnects it.
+  const runnerWentOffline = useChatStore(
+    (state) => state.conversationId === sessionId && state.sessionStatus === "failed",
+  );
+  const sandboxAsleep = useWorkspaceAsleep(sessionId);
+  const sandboxWaking = useSandboxStarting(sessionId);
+  const runnerOnline = useSessionRunnerOnline(sessionId);
+  const hostOnline = useSessionHostOnline(sessionId);
+  const status = fileListStatus(changedQuery, environmentQuery);
+  const loaded = changedQuery.data?.data;
+  const offline = status.isError && status.error instanceof RunnerOfflineError;
+
+  let availability: WorkspaceAvailability = "available";
+  let changedFiles: WorkspaceBridgeState["changedFiles"];
+  let error: string | undefined;
+  if (!enabled || sessionId === undefined) {
+    changedFiles = NO_FILES;
+  } else if (sandboxAsleep && loaded === undefined) {
+    availability = sandboxWaking ? "sandboxStarting" : "sandboxOffline";
+  } else if (status.isLoading) {
+    changedFiles = undefined;
+  } else if (offline) {
+    // A session that has not started yet also answers offline: that is no changes yet.
+    if (runnerWentOffline) availability = "agentAsleep";
+    else changedFiles = NO_FILES;
+  } else if (status.isError) {
+    error = status.error?.message ?? "unknown error";
+  } else {
+    changedFiles = loaded ?? NO_FILES;
+  }
+  const servedFromHost = runnerOnline === false && hostOnline === true;
+
+  const settings = useMemo<WorkspaceFileSettings>(
+    () => ({ sortOrder, showHidden }),
+    [sortOrder, showHidden],
+  );
+  const latest = useRef({ openFile, onSortOrderChange, onShowHiddenChange, sessionId });
+  latest.current = { openFile, onSortOrderChange, onShowHiddenChange, sessionId };
+  const sourceRef = useRef<WorkspaceSource | null>(null);
+  useEffect(() => {
+    const source = bridge.createSource();
+    source.setActions({
+      openFile: (path) => latest.current.openFile(path),
+      refreshChangedFiles: () => {
+        const id = latest.current.sessionId;
+        return id
+          ? queryClient.invalidateQueries({ queryKey: ["workspace-changed-files", id] })
+          : Promise.resolve();
+      },
+      updateSettings: (patch) => {
+        if (patch.sortOrder !== undefined) latest.current.onSortOrderChange(patch.sortOrder);
+        if (patch.showHidden !== undefined) latest.current.onShowHiddenChange(patch.showHidden);
+      },
+    });
+    sourceRef.current = source;
+    return () => {
+      source.dispose();
+      if (sourceRef.current === source) sourceRef.current = null;
+    };
+  }, [bridge, queryClient]);
+  // Publishing waits for the commit, so a surface never reports a render it threw away.
+  useEffect(() => {
+    const source = sourceRef.current;
+    if (!source) return;
+    source.update({
+      sessionId: sessionId ?? null,
+      changedFiles,
+      ...(error === undefined ? {} : { error }),
+      availability,
+      servedFromHost,
+      settings,
+    });
+    source.setActive(active);
+  });
+}

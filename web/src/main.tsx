@@ -36,6 +36,7 @@ import { applyThemePalette, readThemePalette } from "./lib/themePalette";
 import { applyCustomTheme, readCustomTheme } from "./lib/customTheme";
 import { initChatStore } from "./store/chatStore";
 import { railViews } from "./shell/railViews";
+import { startExtensionHost } from "./vscodeExtensions/extensionHost";
 import "katex/dist/katex.min.css";
 import "streamdown/styles.css";
 import "./index.css";
@@ -61,8 +62,11 @@ const queryClient = new QueryClient({
 // invalidate cached queries (e.g. the conversations list when a new
 // conversation is created server-side).
 initChatStore(queryClient);
-// VS Code-style extensions from OMNIGENT_WEB_EXTENSION_DEV_PATHS. Dev server only:
-// the guard drops the loader and the extension host from production builds.
+// VS Code-style extensions. The built-ins (core tabs such as Changes) start here,
+// before the first render, in every build.
+startExtensionHost();
+// Extensions from OMNIGENT_WEB_EXTENSION_DEV_PATHS join the same host. Dev server
+// only: the guard drops the dev loader from production builds.
 if (import.meta.env.DEV) {
   // A restored extension tab waits for the views those extensions contribute.
   const extensionViewsLoaded = railViews.beginLoading();

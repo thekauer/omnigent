@@ -23,9 +23,14 @@ export function toPlainJson(value: unknown, what: string): unknown {
 
 export class CommandRegistry {
   private readonly handlers = new Map<string, { owner: string; handler: CommandHandler }>();
-  private readonly node: NodeCommandRoute | undefined;
+  private node: NodeCommandRoute | undefined;
 
   constructor(node?: NodeCommandRoute) {
+    this.node = node;
+  }
+
+  /** Routes unknown commands to the Node entries' commands (dev server only). */
+  setNodeRoute(node: NodeCommandRoute): void {
     this.node = node;
   }
 

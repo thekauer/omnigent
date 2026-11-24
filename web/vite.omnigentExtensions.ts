@@ -28,6 +28,7 @@ import {
   NodeExtensionHost,
   type NodeExtensionHostOptions,
 } from "./vite.omnigentNodeExtensions";
+import { isValidEngineRange, validateManifest } from "./src/vscodeExtensions/manifest";
 
 export const DEV_PATHS_ENV = "OMNIGENT_WEB_EXTENSION_DEV_PATHS";
 export const DEV_EXTENSIONS_MODULE = "virtual:omnigent-dev-extensions";
@@ -49,11 +50,6 @@ export const OMNIGENT_API_EXPORTS = [
   "TreeItemCollapsibleState",
 ] as const;
 
-const KNOWN_ACTIVATION_EVENTS = new Set(["*", "onStartupFinished"]);
-const NAME_PATTERN = /^[a-z0-9][a-z0-9._-]*$/;
-const PUBLISHER_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9-]*$/;
-const SEMVER_PATTERN = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
-const RANGE_COMPARATOR_PATTERN = /^(?:\^|~|>=|<=|>|<|=)?\d+(?:\.\d+){0,2}(?:-[0-9A-Za-z.-]+)?$/;
 /** Files an extension may import; everything else in its folder is not served. */
 const SERVABLE_FILE_PATTERN = /\.(?:m?js|json|css)$/;
 const SKIPPED_DIRECTORIES = new Set(["node_modules", ".git"]);
@@ -113,12 +109,7 @@ export function parseDevPaths(raw: string | undefined, cwd = process.cwd()): str
     .map((entry) => path.resolve(cwd, entry));
 }
 
-export function isValidEngineRange(range: string): boolean {
-  const trimmed = range.trim();
-  if (trimmed === "*") return true;
-  const comparators = trimmed.split(/\s+/);
-  return comparators.length > 0 && comparators.every((c) => RANGE_COMPARATOR_PATTERN.test(c));
-}
+export { isValidEngineRange };
 
 function fsUrl(absolutePath: string): string {
   const posix = absolutePath.split(path.sep).join("/");
@@ -152,72 +143,35 @@ export function readDevExtension(folder: string): ManifestResult {
     return failure([`cannot read package.json (${reason})`]);
   }
 
-  const problems: string[] = [];
-  const { name, publisher, version, engines, browser, activationEvents } = manifest;
-  if (typeof name !== "string" || !NAME_PATTERN.test(name)) {
-    problems.push('"name" must be a lowercase string without spaces');
+  const validation = validateManifest(manifest, folder);
+  warnings.push(...validation.warnings);
+  const problems = [...validation.problems];
+  // The shared validator reported a missing or non-string entry; check the files here.
+  const named = (value: unknown): value is string =>
+    typeof value === "string" && value.trim() !== "";
+  const entryPath = named(manifest.browser)
+    ? validateEntry("browser", manifest.browser, directory, problems, true)
+    : undefined;
+  const mainPath = named(manifest.main)
+    ? validateEntry("main", manifest.main, directory, problems, false)
+    : undefined;
+  const valid = validation.manifest;
+  if (problems.length > 0 || entryPath === undefined || valid === undefined) {
+    return failure(problems);
   }
-  if (typeof publisher !== "string" || !PUBLISHER_PATTERN.test(publisher)) {
-    problems.push('"publisher" must be a string of letters, digits and dashes');
-  }
-  if (typeof version !== "string" || !SEMVER_PATTERN.test(version)) {
-    problems.push('"version" must be a semver version such as 0.1.0');
-  }
-  const engineRange =
-    typeof engines === "object" && engines !== null
-      ? (engines as Record<string, unknown>).omnigent
-      : undefined;
-  if (engineRange === undefined) {
-    problems.push('"engines.omnigent" is required (for example "^0.24.0")');
-  } else if (typeof engineRange !== "string" || !isValidEngineRange(engineRange)) {
-    problems.push(`"engines.omnigent" must be a semver range, got ${JSON.stringify(engineRange)}`);
-  }
-
-  const entryPath = validateEntry("browser", browser, directory, problems, true);
-  const mainPath =
-    manifest.main === undefined
-      ? undefined
-      : validateEntry("main", manifest.main, directory, problems, false);
-
-  let events: string[] = [];
-  if (activationEvents === undefined) {
-    warnings.push(`${folder}: no "activationEvents"; the extension will not be activated`);
-  } else if (
-    !Array.isArray(activationEvents) ||
-    !activationEvents.every((event) => typeof event === "string")
-  ) {
-    problems.push('"activationEvents" must be an array of strings');
-  } else {
-    events = activationEvents;
-    for (const event of events) {
-      if (!KNOWN_ACTIVATION_EVENTS.has(event)) {
-        warnings.push(`${folder}: activation event "${event}" is not supported yet`);
-      }
-    }
-  }
-
-  const { contributes } = manifest;
-  const contributesObject =
-    typeof contributes === "object" && contributes !== null && !Array.isArray(contributes);
-  if (contributes !== undefined && !contributesObject) {
-    problems.push('"contributes" must be an object');
-  }
-
-  if (problems.length > 0 || entryPath === undefined) return failure(problems);
-  const id = `${publisher as string}.${name as string}`;
   return {
     extension: {
-      id,
-      publisher: publisher as string,
-      name: name as string,
-      version: version as string,
-      engines: { omnigent: engineRange as string },
-      activationEvents: events,
+      id: valid.id,
+      publisher: valid.publisher,
+      name: valid.name,
+      version: valid.version,
+      engines: { omnigent: valid.engines.omnigent },
+      activationEvents: [...valid.activationEvents],
       directory,
       entryPath,
       entryUrl: fsUrl(entryPath),
       ...(mainPath === undefined ? {} : { mainPath }),
-      ...(contributesObject ? { contributes: contributes as Record<string, unknown> } : {}),
+      ...(valid.contributes === undefined ? {} : { contributes: valid.contributes }),
     },
     warnings,
   };

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FileTreeModel } from "@/components/file-tree/vendored";
-import type { ChangedSort } from "../FlatFileList";
+import type { ChangedSort } from "@/lib/changedSort";
 import { type TreeEntryMeta, treeComparator, treeOrderSignature } from "./treeSort";
 
 const PATHS = ["b.ts", "a.ts", "src/", "src/z.ts", "src/y.ts", "docs/", "docs/x.md"];

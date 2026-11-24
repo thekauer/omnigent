@@ -34,6 +34,8 @@ export interface TreeViewModelOptions {
   /** Runs a row's command; arguments are copied as JSON by the command registry. */
   executeCommand: (command: string, args: readonly unknown[]) => Promise<unknown>;
   logError: (message: string, error?: unknown) => void;
+  /** The session the provider's data is for (the workspace on screen). */
+  dataSessionId?: () => string | undefined;
 }
 
 function text(value: unknown, max: number): string | undefined {
@@ -135,6 +137,10 @@ export function sanitizeTreeItem(
     collapsible: COLLAPSIBLE[item.collapsibleState ?? 0] ?? "none",
     hasCommand: command !== undefined,
     contextValue: text(item.contextValue, MAX_LABEL),
+    size:
+      typeof item.size === "number" && Number.isFinite(item.size) && item.size >= 0
+        ? Math.floor(item.size)
+        : undefined,
   });
   return { node, command };
 }
@@ -143,13 +149,28 @@ async function settle<T>(value: T | PromiseLike<T>): Promise<T> {
   return isThenable<T>(value) ? await value : value;
 }
 
+interface RowCommand {
+  command: string;
+  args: unknown[];
+}
+
 /** The rail-side model of one tree view; `dispose` stops change events. */
 export function createTreeViewModel<T>(
   provider: omnigent.TreeDataProvider<T>,
   options: TreeViewModelOptions,
-): { model: RailTreeModel; dispose: () => void } {
-  const elements = new Map<string, T>();
-  const commands = new Map<string, { command: string; args: unknown[] }>();
+): { model: RailTreeModel; dispose: () => void; refresh: () => void } {
+  // Handles of the current root load and the one before it (rows still on screen
+  // while a reload runs); older ones are dropped, so the maps do not grow.
+  let elements = new Map<string, T>();
+  let commands = new Map<string, RowCommand>();
+  let previousElements = new Map<string, T>();
+  let previousCommands = new Map<string, RowCommand>();
+  const elementOf = (handle: string) =>
+    elements.has(handle)
+      ? { found: true, element: elements.get(handle) }
+      : previousElements.has(handle)
+        ? { found: true, element: previousElements.get(handle) }
+        : { found: false, element: undefined };
   const listeners = new Set<() => void>();
   let disposed = false;
   const subscription =
@@ -164,8 +185,14 @@ export function createTreeViewModel<T>(
     if (disposed) return [];
     let element: T | undefined;
     if (parent !== undefined) {
-      if (!elements.has(parent)) return [];
-      element = elements.get(parent);
+      const lookup = elementOf(parent);
+      if (!lookup.found) return [];
+      element = lookup.element;
+    } else {
+      previousElements = elements;
+      previousCommands = commands;
+      elements = new Map();
+      commands = new Map();
     }
     let children: T[] | null | undefined;
     try {
@@ -176,6 +203,10 @@ export function createTreeViewModel<T>(
     }
     if (!Array.isArray(children)) return [];
     if (elements.size > MAX_ELEMENTS) elements.clear();
+    // Children load after their parent's generation; keep them in the generation that has it.
+    const targetElements =
+      parent === undefined || elements.has(parent) ? elements : previousElements;
+    const targetCommands = targetElements === elements ? commands : previousCommands;
     // Items resolve in parallel; handles are then assigned in order.
     const items = await Promise.all(
       children.slice(0, MAX_CHILDREN).map(async (child) => {
@@ -202,9 +233,9 @@ export function createTreeViewModel<T>(
       for (let copy = 2; used.has(handle); copy += 1) handle = `${base}#${copy}`;
       used.add(handle);
       const { node, command } = sanitizeTreeItem(item, handle);
-      elements.set(handle, child);
-      if (command) commands.set(handle, command);
-      else commands.delete(handle);
+      targetElements.set(handle, child);
+      if (command) targetCommands.set(handle, command);
+      else targetCommands.delete(handle);
       nodes.push(node);
     }
     return Object.freeze(nodes);
@@ -212,12 +243,13 @@ export function createTreeViewModel<T>(
 
   const model: RailTreeModel = {
     getChildren,
+    ...(options.dataSessionId ? { dataSessionId: options.dataSessionId } : {}),
     subscribe: (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
     runCommand: (handle) => {
-      const command = commands.get(handle);
+      const command = commands.get(handle) ?? previousCommands.get(handle);
       if (!command || disposed) return;
       options.executeCommand(command.command, command.args).catch((error: unknown) => {
         options.logError(`command '${command.command}' failed`, error);
@@ -226,12 +258,18 @@ export function createTreeViewModel<T>(
   };
   return {
     model,
+    refresh: () => {
+      if (disposed) return;
+      for (const listener of [...listeners]) listener();
+    },
     dispose: () => {
       disposed = true;
       listeners.clear();
       subscription?.dispose();
       elements.clear();
       commands.clear();
+      previousElements.clear();
+      previousCommands.clear();
     },
   };
 }

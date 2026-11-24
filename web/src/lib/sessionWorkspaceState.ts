@@ -66,6 +66,11 @@ export const MAX_EXTENSION_STATE_KEYS = 50;
 export const MAX_EXTENSION_STATE_KEY_LENGTH = 128;
 /** Bytes of one extension's memento in one session, as JSON. */
 export const MAX_EXTENSION_STATE_BYTES = 8 * 1024;
+/**
+ * Bytes of every session's extension mementos together, as JSON: well under a
+ * browser's ~5 MiB storage quota, which the whole store shares one key of.
+ */
+export const MAX_TOTAL_EXTENSION_STATE_BYTES = 256 * 1024;
 const EXTENSION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9-]*\.[a-z0-9][a-z0-9._-]*$/;
 
 function isValidWidth(value: unknown): value is number {
@@ -186,11 +191,22 @@ function sanitize(entry: unknown): SessionWorkspaceState {
   return state;
 }
 
+// The last parse, keyed by the raw text: a write here, another tab's write (the
+// `storage` event case) or a cleared store all change the text, so the cache
+// cannot go stale, while repeated reads (mementos, every render) skip the parse.
+let cachedRaw: string | null = null;
+let cachedStore: Store = [];
+
+function copyStore(store: Store): Store {
+  return store.map(({ id, state }) => ({ id, state: { ...state } }));
+}
+
 function readStore(): Store {
   if (typeof window === "undefined") return [];
   try {
     const raw = window.localStorage.getItem(SESSION_WORKSPACE_STATE_KEY);
     if (!raw) return [];
+    if (raw === cachedRaw) return copyStore(cachedStore);
     const parsed: unknown = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
     const store: Store = [];
@@ -200,21 +216,65 @@ function readStore(): Store {
       if (typeof record.id !== "string") continue;
       store.push({ id: record.id, state: sanitize(record.state) });
     }
+    cachedRaw = raw;
+    cachedStore = copyStore(store);
     return store;
   } catch {
     return [];
   }
 }
 
-/** Persist the store; false when storage refused the write. */
-function writeStore(store: Store): boolean {
+function jsonBytes(value: unknown): number {
+  return new TextEncoder().encode(JSON.stringify(value) ?? "").length;
+}
+
+/** Drops the extension mementos of the oldest session that has any; false when none has. */
+function evictOldestExtensionState(store: Store, keepId?: string): boolean {
+  const oldest = store.find((entry) => entry.state.extensionState && entry.id !== keepId);
+  if (!oldest) return false;
+  oldest.state = { ...oldest.state };
+  delete oldest.state.extensionState;
+  return true;
+}
+
+/** Keeps all sessions' mementos within MAX_TOTAL_EXTENSION_STATE_BYTES, oldest dropped first. */
+function capExtensionState(store: Store, keepId?: string): void {
+  const total = () =>
+    store.reduce(
+      (sum, entry) =>
+        sum + (entry.state.extensionState ? jsonBytes(entry.state.extensionState) : 0),
+      0,
+    );
+  while (total() > MAX_TOTAL_EXTENSION_STATE_BYTES && evictOldestExtensionState(store, keepId)) {
+    // Evicted one; check again.
+  }
+}
+
+function isQuotaError(error: unknown): boolean {
+  return (
+    error instanceof DOMException &&
+    (error.name === "QuotaExceededError" || error.name === "NS_ERROR_DOM_QUOTA_REACHED")
+  );
+}
+
+/**
+ * Persist the store; false when storage refused the write. When the quota is
+ * full, the oldest sessions' extension mementos go first (never `keepId`'s), so
+ * one full store cannot break every session's state.
+ */
+function writeStore(store: Store, keepId?: string): boolean {
   if (typeof window === "undefined") return false;
-  try {
-    window.localStorage.setItem(SESSION_WORKSPACE_STATE_KEY, JSON.stringify(store));
-    return true;
-  } catch {
-    // Storage quota/access errors must not break panel interactions.
-    return false;
+  for (;;) {
+    try {
+      const raw = JSON.stringify(store);
+      window.localStorage.setItem(SESSION_WORKSPACE_STATE_KEY, raw);
+      cachedRaw = raw;
+      cachedStore = copyStore(store);
+      return true;
+    } catch (error) {
+      // Storage quota/access errors must not break panel interactions.
+      if (!isQuotaError(error) || !evictOldestExtensionState(store, keepId)) return false;
+    }
   }
 }
 
@@ -260,7 +320,8 @@ export function saveSessionWorkspaceState(
   if (store.length > MAX_SESSIONS) {
     store.splice(0, store.length - MAX_SESSIONS);
   }
-  return writeStore(store);
+  if (patch.extensionState !== undefined) capExtensionState(store, conversationId);
+  return writeStore(store, conversationId);
 }
 
 /** Merge a partial update into one session's persisted workspace state. */

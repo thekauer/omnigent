@@ -1,14 +1,25 @@
 // The content area of an extension view's rail tab: its title bar with the
-// view/title actions, then its tree, drawn with the same rows as the Files tree
-// and the Changes list and windowed like them.
+// view/title actions, an optional filter field with its own actions, then its
+// tree, drawn with the same rows as the Files tree and the Changes list and
+// windowed like them.
 
 import { useVirtualizer } from "@tanstack/react-virtual";
+import { SearchIcon, XIcon } from "lucide-react";
 import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
-import { ChangedFileRow, FileGroupHeader } from "../FlatFileList";
+import { RunnerAsleepHint } from "../RunnerAsleepHint";
+import { useScrollRestore } from "../useScrollRestore";
+import { ChangedFileRow, FileGroupHeader } from "../ChangedFileRow";
 import { FileRowItem, FolderRowItem } from "../FolderTree";
 import { railViewIcon } from "../railViewIcons";
 import {
@@ -18,6 +29,7 @@ import {
   type RailTreeNode,
   type RailView,
   type RailViewRegistry,
+  type RailViewTitleAction,
   railViews,
   useRailViews,
 } from "../railViews";
@@ -121,7 +133,7 @@ function TreeRow({
         status={status}
         isDeleted={status === "deleted"}
         diffstat={node.decoration ? <Decoration decoration={node.decoration} /> : null}
-        bytes={null}
+        bytes={node.size ?? null}
         onFileSelect={() => onRun(node)}
         conversationId={conversationId}
       />
@@ -186,7 +198,22 @@ function useTreeChildren(
     [tree],
   );
 
-  useEffect(() => tree?.subscribe(() => setGeneration((value) => value + 1)), [tree]);
+  // Changes arrive in bursts (a rebuild fires per setting or file event); reload once a frame.
+  useEffect(() => {
+    if (!tree) return;
+    let frame: number | null = null;
+    const unsubscribe = tree.subscribe(() => {
+      if (frame !== null) return;
+      frame = requestAnimationFrame(() => {
+        frame = null;
+        setGeneration((value) => value + 1);
+      });
+    });
+    return () => {
+      if (frame !== null) cancelAnimationFrame(frame);
+      unsubscribe();
+    };
+  }, [tree]);
 
   // On mount and on every change: reload the roots, then each open node level by level
   // (a node's element is only current once its parent reloaded), and swap them in at
@@ -244,7 +271,165 @@ function useTreeChildren(
   return { children, loaded };
 }
 
-function ViewTitle({ view }: { view: RailView }) {
+const MESSAGE_LINK = /\[([^\]]+)\]\(command:([A-Za-z0-9._-]+)\)/g;
+
+/** A view message: plain text, with `[text](command:id)` links drawn as buttons. */
+function ViewMessage({ view }: { view: RailView }) {
+  const message = view.message ?? "";
+  const parts: ReactNode[] = [];
+  let last = 0;
+  for (const match of message.matchAll(MESSAGE_LINK)) {
+    const index = match.index ?? 0;
+    if (index > last) parts.push(message.slice(last, index));
+    const command = match[2];
+    parts.push(
+      <button
+        key={index}
+        type="button"
+        className="cursor-pointer underline hover:text-foreground"
+        onClick={() => view.host?.runCommand(command)}
+      >
+        {match[1]}
+      </button>,
+    );
+    last = index + match[0].length;
+  }
+  if (last < message.length) parts.push(message.slice(last));
+  return (
+    <p
+      className={cn(
+        "px-2 py-1 text-sm",
+        view.messageSeverity === "error" ? "text-destructive" : "text-muted-foreground",
+      )}
+    >
+      {parts}
+    </p>
+  );
+}
+
+/** Runs a title action; the button is disabled, and its icon spins, until it finished. */
+function useRunningAction(action: { run: () => Promise<void> }) {
+  const [running, setRunning] = useState(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const run = useCallback(() => {
+    if (running) return;
+    setRunning(true);
+    void action.run().finally(() => {
+      if (mounted.current) setRunning(false);
+    });
+  }, [action, running]);
+  return { running, run };
+}
+
+function ActionButton({ action }: { action: RailViewTitleAction }) {
+  const { running, run } = useRunningAction(action);
+  const Icon = railViewIcon(action.icon);
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          aria-label={action.title}
+          aria-pressed={action.toggled}
+          data-view-action={action.id}
+          disabled={running}
+          className={cn(
+            "shrink-0",
+            action.tone === "warning"
+              ? "text-warning hover:text-warning/80"
+              : "text-muted-foreground hover:text-foreground",
+          )}
+          onClick={run}
+        >
+          {Icon ? (
+            <Icon className={cn(running && "animate-spin")} />
+          ) : (
+            <span className="text-xs">{action.title}</span>
+          )}
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{action.tooltip ?? action.title}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** A submenu of toggles, such as a sort order: the button names the toggled entry. */
+function SubmenuButton({ action }: { action: RailViewTitleAction }) {
+  const items = action.items ?? [];
+  const active = items.find((item) => item.toggled) ?? items[0];
+  const Icon = railViewIcon(action.icon);
+  return (
+    <DropdownMenu>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              aria-label={active ? `${action.title}: ${active.title}` : action.title}
+              data-view-action={action.id}
+              className="shrink-0 gap-[2px] text-muted-foreground hover:text-foreground"
+            >
+              {Icon && <Icon />}
+              <span>{active?.title ?? action.title}</span>
+            </Button>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">{action.tooltip ?? action.title}</TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent align="end" className="w-40">
+        <DropdownMenuRadioGroup
+          value={items.find((item) => item.toggled)?.id ?? ""}
+          onValueChange={(value) => void items.find((item) => item.id === value)?.run()}
+        >
+          {items.map((item) => {
+            const ItemIcon = railViewIcon(item.icon);
+            return (
+              <DropdownMenuRadioItem key={item.id} value={item.id}>
+                {ItemIcon && <ItemIcon className="size-3.5" />}
+                {item.title}
+              </DropdownMenuRadioItem>
+            );
+          })}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function ActionList({ actions }: { actions: readonly RailViewTitleAction[] }) {
+  return (
+    <TooltipProvider>
+      {actions.map((action) =>
+        action.items ? (
+          <SubmenuButton key={action.id} action={action} />
+        ) : (
+          <ActionButton key={action.id} action={action} />
+        ),
+      )}
+    </TooltipProvider>
+  );
+}
+
+function ViewTitle({
+  view,
+  onClose,
+  closeLabel,
+}: {
+  view: RailView;
+  onClose?: () => void;
+  closeLabel: string;
+}) {
+  const TagIcon = railViewIcon(view.tag?.icon);
   return (
     <div className="flex h-11 shrink-0 items-center gap-[2px] px-2">
       <h2 className="shrink-0 pl-1 font-medium text-ui">{view.title ?? view.name}</h2>
@@ -253,31 +438,72 @@ function ViewTitle({ view }: { view: RailView }) {
           {view.description}
         </span>
       )}
-      <div className="ml-auto flex items-center gap-[2px]">
+      {view.tag && (
         <TooltipProvider>
-          {view.actions.map((action) => {
-            const Icon = railViewIcon(action.icon);
-            return (
-              <Tooltip key={action.id}>
-                <TooltipTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label={action.title}
-                    aria-pressed={action.toggled}
-                    data-view-action={action.id}
-                    className="shrink-0 text-muted-foreground hover:text-foreground"
-                    onClick={action.run}
-                  >
-                    {Icon ? <Icon /> : <span className="text-xs">{action.title}</span>}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">{action.title}</TooltipContent>
-              </Tooltip>
-            );
-          })}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span
+                data-testid="extension-view-tag"
+                className="flex shrink-0 items-center gap-1 rounded-full bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
+              >
+                {TagIcon && <TagIcon className="size-3 shrink-0" />}
+                {view.tag.text}
+              </span>
+            </TooltipTrigger>
+            {view.tag.tooltip && <TooltipContent>{view.tag.tooltip}</TooltipContent>}
+          </Tooltip>
         </TooltipProvider>
+      )}
+      <div className="ml-auto flex items-center gap-[2px]">
+        <ActionList actions={view.actions.filter((action) => action.group === "navigation")} />
+        {onClose && (
+          <button
+            type="button"
+            aria-label={closeLabel}
+            className="cursor-pointer rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+            onClick={onClose}
+          >
+            <XIcon className="size-4" />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** The view's filter field and the actions next to it, laid out as the Files views' search bar. */
+function ViewFilter({
+  view,
+  conversationId,
+}: {
+  view: RailView;
+  conversationId: string | undefined;
+}) {
+  const filter = view.filter;
+  const host = view.host;
+  const [text, setText] = useState(() => host?.getFilter(conversationId) ?? "");
+  if (!filter) return null;
+  return (
+    <div
+      className="shrink-0 flex items-center gap-2 px-2 py-2 @max-[400px]/filespanel:flex-col @max-[400px]/filespanel:items-stretch"
+      onClick={(event) => event.stopPropagation()}
+    >
+      <div className="flex min-w-0 flex-1 items-center gap-[2px]">
+        <div className="flex min-w-0 flex-1 items-center gap-[6px] rounded-lg border border-border px-[10px] py-[4px] transition-colors focus-within:border-border-strong">
+          <SearchIcon className="size-4 shrink-0 text-muted-foreground" />
+          <input
+            aria-label={filter.ariaLabel}
+            className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            onChange={(event) => {
+              setText(event.target.value);
+              host?.setFilter(conversationId, event.target.value);
+            }}
+            placeholder={filter.placeholder}
+            type="search"
+            value={text}
+          />
+        </div>
+        <ActionList actions={view.actions.filter((action) => action.group === "filter")} />
       </div>
     </div>
   );
@@ -292,6 +518,10 @@ function ViewTree({
   tree: RailTreeModel;
   conversationId: string | undefined;
 }) {
+  // Data for another session's workspace (it is still coming on screen) is not shown.
+  const dataSession = tree.dataSessionId?.();
+  const stale =
+    dataSession !== undefined && conversationId !== undefined && dataSession !== conversationId;
   const [expanded, setExpanded] = useState<ReadonlyMap<string, boolean>>(() =>
     readExpandState(conversationId, view.id),
   );
@@ -324,9 +554,22 @@ function ViewTree({
     },
     [tree],
   );
+  const ready = loaded && !stale;
+  const handleScroll = useScrollRestore(
+    scrollRef,
+    conversationId ? `view:${view.id}:${conversationId}` : null,
+    ready,
+  );
   let body: ReactNode = null;
-  if (!loaded) {
+  if (!ready) {
     body = <p className="px-2 py-1 text-muted-foreground text-sm">Loading…</p>;
+  } else if (view.notice) {
+    body = (
+      <RunnerAsleepHint
+        sandboxOffline={view.notice !== "agentAsleep"}
+        waking={view.notice === "sandboxStarting"}
+      />
+    );
   } else if (rows.length > 0) {
     body = (
       <div className="relative w-full" style={{ height: `${virtualizer.getTotalSize()}px` }}>
@@ -353,8 +596,9 @@ function ViewTree({
     <section
       ref={scrollRef}
       className={cn("min-h-0 flex-1 overflow-y-auto px-2 pb-2", listLayout ? "pt-1" : "pt-0")}
+      onScroll={handleScroll}
     >
-      {view.message && <p className="px-2 py-1 text-muted-foreground text-sm">{view.message}</p>}
+      {ready && !view.notice && view.message && <ViewMessage view={view} />}
       <TooltipProvider>{body}</TooltipProvider>
     </section>
   );
@@ -366,15 +610,25 @@ export function ExtensionRailView({
   settled,
   conversationId,
   registry = railViews,
+  visible = true,
+  onClose,
+  closeLabel = "Close",
 }: {
   viewId: string;
   /** Whether extensions have finished loading, so a missing view is really gone. */
   settled: boolean;
   conversationId: string | undefined;
   registry?: RailViewRegistry;
+  /** Whether the page is on screen (the rail open, the tab not hidden). */
+  visible?: boolean;
+  /** Draws a close button after the title actions, as in a drawer. */
+  onClose?: () => void;
+  closeLabel?: string;
 }) {
   const { views } = useRailViews(registry);
   const view = views.find((candidate) => candidate.id === viewId);
+  const host = view?.host;
+  useEffect(() => (visible && host ? host.reportVisible() : undefined), [visible, host]);
   if (!view) {
     return settled ? null : (
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-muted-foreground">
@@ -387,22 +641,40 @@ export function ExtensionRailView({
       data-testid={`extension-view-${view.id}`}
       className="@container/filespanel flex min-h-0 flex-1 flex-col overflow-hidden bg-card"
     >
-      <ViewTitle view={view} />
+      <ViewTitle view={view} onClose={onClose} closeLabel={closeLabel} />
       <div className="workspace-panel-header-divider shrink-0 border-t border-border" />
+      <ViewFilter key={`filter:${conversationId}`} view={view} conversationId={conversationId} />
       {view.tree ? (
         <ViewTree
-          key={conversationId}
+          key={`tree:${conversationId}`}
           view={view}
           tree={view.tree}
           conversationId={conversationId}
         />
       ) : (
         <section className="min-h-0 flex-1 overflow-y-auto px-2 pt-1 pb-2">
-          <p className="px-2 py-1 text-muted-foreground text-sm">
-            {view.loading ? "Loading…" : (view.message ?? NO_PROVIDER_MESSAGE)}
-          </p>
+          {view.error ? (
+            <p role="alert" className="px-2 py-1 text-destructive text-sm">
+              {view.name} could not be loaded. Reload the page to try again.
+            </p>
+          ) : (
+            <p className="px-2 py-1 text-muted-foreground text-sm">
+              {view.loading ? "Loading…" : (view.message ?? NO_PROVIDER_MESSAGE)}
+            </p>
+          )}
         </section>
       )}
     </div>
+  );
+}
+
+/** Shown for a built-in tab whose view never registered, so the panel is never blank. */
+export function MissingBuiltInView({ label }: { label: string }) {
+  return (
+    <section className="min-h-0 flex-1 overflow-y-auto px-2 pt-1 pb-2">
+      <p role="alert" className="px-2 py-1 text-destructive text-sm">
+        {label} could not be loaded. Reload the page to try again.
+      </p>
+    </section>
   );
 }

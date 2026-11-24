@@ -73,8 +73,11 @@ import {
   type OpenFileOptions,
 } from "@/shell/FileViewerContext";
 import type { RightRailTab } from "@/shell/railTabs";
-import type { ChangedSort } from "@/shell/FlatFileList";
+import type { ChangedSort } from "@/lib/changedSort";
 import { WorkspacePanel } from "@/shell/WorkspacePanel";
+import { extensionRailTabViewId } from "@/shell/railTabs";
+import { useRailViewIds } from "@/shell/railViews";
+import { useWorkspaceBridgeSource } from "@/shell/useWorkspaceBridgeSource";
 import { revealFolderInFilesPanel } from "@/shell/FilesPanel";
 import { selectPullRequestInPanel } from "@/shell/PullRequestPanel";
 import { citedFilePosition } from "@/shell/filePositionState";
@@ -260,6 +263,7 @@ export function GridSessionPane({
   }, []);
   const [sort, setSort] = useState<ChangedSort>(DEFAULT_FILES_PANEL_PREFERENCES.sort);
   const [showHidden, setShowHidden] = useState(false);
+  const extensionViews = useRailViewIds();
   const [position, setPosition] = useState<FilePosition>();
   const navigationGuard = useRef<FileNavigationGuard | null>(null);
   const registerNavigationGuard = useCallback((guard: FileNavigationGuard) => {
@@ -419,10 +423,25 @@ export function GridSessionPane({
       isChangedPath,
     ],
   );
+  // The selected cell's workspace is the one extension views (the Changes tab) show.
+  useWorkspaceBridgeSource({
+    sessionId,
+    enabled: showFiles,
+    active: selected,
+    openFile,
+    sortOrder: sort,
+    onSortOrderChange: setSort,
+    showHidden,
+    onShowHiddenChange: setShowHidden,
+  });
+  // A saved extension tab waits while extensions load, then needs its view, as in AppShell.
+  const savedViewId = extensionRailTabViewId(workspace.rightRailTab ?? null);
   const rightRailTab =
     !showFiles && ["files", "changes", "github"].includes(workspace.rightRailTab ?? "")
       ? "subagents"
-      : (workspace.rightRailTab ?? null);
+      : savedViewId !== null && extensionViews.settled && !extensionViews.ids.includes(savedViewId)
+        ? readInitialWorkspaceTab()
+        : (workspace.rightRailTab ?? null);
   return (
     <TerminalFirstContextProvider
       value={{

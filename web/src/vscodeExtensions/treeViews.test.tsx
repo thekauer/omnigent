@@ -9,7 +9,8 @@ import { EventEmitter } from "./base";
 import { CommandRegistry } from "./commands";
 import { ContextKeyService } from "./contextKeys";
 import { parseContributions } from "./contributions";
-import { sanitizeTreeItem } from "./treeView";
+import { createTreeViewModel, sanitizeTreeItem } from "./treeView";
+import { testViewsService } from "./testServices";
 import { ViewsService } from "./viewsService";
 
 const VIEW = "pub.ext.changes";
@@ -332,5 +333,291 @@ describe("sanitizeTreeItem", () => {
     for (const icon of ["file", "folder", "git-branch"]) {
       expect(sanitizeTreeItem({ label: "x", iconPath: icon }, "h").node.icon).toBe(icon);
     }
+  });
+});
+
+describe("view filter, submenus, notices and visibility", () => {
+  const RICH_VIEW = "pub.rich.view";
+  const RICH = {
+    views: {
+      "omnigent.rightPanel": [
+        {
+          id: RICH_VIEW,
+          name: "Rich",
+          filter: { placeholder: "Find things", ariaLabel: "Search things" },
+        },
+      ],
+    },
+    commands: [
+      {
+        command: "pub.rich.a",
+        title: "Alpha",
+        icon: "arrow-down-a-z",
+        toggled: "pub.rich.sort == a",
+      },
+      { command: "pub.rich.b", title: "Beta", icon: "file-type", toggled: "pub.rich.sort == b" },
+      { command: "pub.rich.show", title: "Show", icon: "eye" },
+    ],
+    submenus: [
+      { id: "pub.rich.sortBy", label: "Sort", icon: "arrow-down-up", tooltip: "Sort things" },
+    ],
+    menus: {
+      "view/title": [
+        { submenu: "pub.rich.sortBy", group: "filter" },
+        {
+          command: "pub.rich.show",
+          group: "filter",
+          tone: "warning",
+          tooltip: "Hidden ones exist",
+        },
+      ],
+      "pub.rich.sortBy": [{ command: "pub.rich.a" }, { command: "pub.rich.b" }],
+    },
+  };
+
+  function richSetup() {
+    const registry = new RailViewRegistry();
+    const contextKeys = new ContextKeyService();
+    const commands = new CommandRegistry();
+    const workspace = {
+      activeSessionId: "s1" as string | undefined,
+      changed: new EventEmitter<unknown>(),
+    };
+    const shown = vi.fn();
+    const views = new ViewsService({
+      registry,
+      contextKeys,
+      executeCommand: (command, args) => commands.execute(command, args, () => {}),
+      showError: () => {},
+      workspace: {
+        get activeSessionId() {
+          return workspace.activeSessionId;
+        },
+        onDidChangeChangedFiles: workspace.changed.event,
+      },
+      onViewShown: shown,
+    });
+    const { contributions, warnings } = parseContributions("pub.rich", RICH);
+    expect(warnings).toEqual([]);
+    views.addExtension("pub.rich", contributions);
+    views.extensionSettled("pub.rich");
+    let roots = ["one", "two"];
+    const changed = new EventEmitter<void>();
+    const tree: omnigent.TreeView<string> = views.createTreeView<string>(
+      "pub.rich",
+      RICH_VIEW,
+      {
+        treeDataProvider: {
+          onDidChangeTreeData: changed.event,
+          getChildren: (): string[] => roots.filter((root) => root.includes(tree.filter)),
+          getTreeItem: (label: string) => ({
+            label,
+            collapsibleState: 0,
+            command: { command: "pub.rich.open" },
+          }),
+        },
+      },
+      vi.fn(),
+    );
+    const ui = (conversationId = "s1", visible = true) => (
+      <QueryClientProvider client={new QueryClient()}>
+        <ExtensionRailView
+          viewId={RICH_VIEW}
+          settled
+          conversationId={conversationId}
+          registry={registry}
+          visible={visible}
+        />
+      </QueryClientProvider>
+    );
+    return {
+      registry,
+      contextKeys,
+      commands,
+      workspace,
+      tree,
+      changed,
+      ui,
+      shown,
+      setRoots: (next: string[]) => {
+        roots = next;
+        changed.fire();
+      },
+    };
+  }
+
+  it("keeps the filter text per session and tells the extension", async () => {
+    const { tree, ui, workspace, changed } = richSetup();
+    const seen: string[] = [];
+    tree.onDidChangeFilter((text) => {
+      seen.push(text);
+      changed.fire();
+    });
+    const { rerender } = render(ui("s1"));
+    const search = await screen.findByRole("searchbox", { name: "Search things" });
+    expect(search).toHaveAttribute("placeholder", "Find things");
+    fireEvent.change(search, { target: { value: "tw" } });
+    expect(tree.filter).toBe("tw");
+    await waitFor(() => expect(screen.queryByText("one")).toBeNull());
+    expect(screen.getByText("two")).toBeInTheDocument();
+    // Another session on screen: its own (empty) filter.
+    workspace.activeSessionId = "s2";
+    workspace.changed.fire(undefined);
+    rerender(ui("s2"));
+    expect(tree.filter).toBe("");
+    expect(await screen.findByText("one")).toBeInTheDocument();
+    workspace.activeSessionId = "s1";
+    workspace.changed.fire(undefined);
+    rerender(ui("s1"));
+    expect(tree.filter).toBe("tw");
+    expect(screen.getByRole("searchbox", { name: "Search things" })).toHaveValue("tw");
+    expect(seen).toEqual(["tw", "", "tw"]);
+  });
+
+  it("draws a submenu of toggles as a button naming the toggled entry, and runs a pick", async () => {
+    const { contextKeys, commands, ui } = richSetup();
+    const ranB = vi.fn();
+    commands.register("pub.rich", "pub.rich.b", ranB);
+    contextKeys.set("pub.rich.sort", "a");
+    render(ui());
+    const sort = await screen.findByRole("button", { name: "Sort: Alpha" });
+    expect(sort).toHaveTextContent("Alpha");
+    expect(sort.querySelector(".lucide-arrow-down-up")).not.toBeNull();
+    fireEvent.pointerDown(sort, { button: 0, ctrlKey: false });
+    const beta = await screen.findByRole("menuitemradio", { name: "Beta" });
+    expect(screen.getByRole("menuitemradio", { name: "Alpha" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    fireEvent.click(beta);
+    await waitFor(() => expect(ranB).toHaveBeenCalledOnce());
+    act(() => contextKeys.set("pub.rich.sort", "b"));
+    expect(screen.getByRole("button", { name: "Sort: Beta" })).toBeInTheDocument();
+  });
+
+  it("draws filter-group buttons next to the field, in the warning tone with their tooltip", async () => {
+    const { ui } = richSetup();
+    render(ui());
+    const show = await screen.findByRole("button", { name: "Show" });
+    expect(show).toHaveClass("text-warning");
+    const search = screen.getByRole("searchbox");
+    expect(search.compareDocumentPosition(show) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.pointerMove(show, { pointerType: "mouse" });
+    fireEvent.focus(show);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent("Hidden ones exist");
+  });
+
+  it("draws command links in messages, error messages, notices and the title tag", async () => {
+    const { tree, commands, ui } = richSetup();
+    const ran = vi.fn();
+    commands.register("pub.rich", "pub.rich.show", ran);
+    render(ui());
+    act(() => {
+      tree.message = "3 hidden. [Click to show](command:pub.rich.show) now";
+    });
+    const link = await screen.findByRole("button", { name: "Click to show" });
+    expect(link.parentElement).toHaveTextContent("3 hidden. Click to show now");
+    fireEvent.click(link);
+    await waitFor(() => expect(ran).toHaveBeenCalledOnce());
+    act(() => {
+      tree.message = "Failed to load: boom";
+      tree.messageSeverity = "error";
+    });
+    expect(await screen.findByText("Failed to load: boom")).toHaveClass("text-destructive");
+    act(() => {
+      tree.notice = "agentAsleep";
+    });
+    expect(await screen.findByText(/agent is asleep/i)).toBeInTheDocument();
+    expect(screen.queryByText("Failed to load: boom")).toBeNull();
+    expect(screen.queryByText("one")).toBeNull();
+    act(() => {
+      tree.notice = "bogus" as never;
+      tree.tag = { text: "Asleep", icon: "moon", tooltip: "Served by the host" };
+    });
+    expect(tree.notice).toBeUndefined();
+    expect(await screen.findByTestId("extension-view-tag")).toHaveTextContent("Asleep");
+  });
+
+  it("reports visibility while a drawn copy is on screen, and tells the host", async () => {
+    const { tree, ui, shown } = richSetup();
+    const events: boolean[] = [];
+    tree.onDidChangeVisibility(({ visible }) => events.push(visible));
+    expect(tree.visible).toBe(false);
+    const { rerender, unmount } = render(ui("s1", false));
+    expect(tree.visible).toBe(false);
+    rerender(ui("s1", true));
+    expect(tree.visible).toBe(true);
+    expect(shown).toHaveBeenCalledWith(RICH_VIEW);
+    unmount();
+    expect(tree.visible).toBe(false);
+    expect(events).toEqual([true, false]);
+  });
+
+  it("reloads once for a burst of changes", async () => {
+    const { setRoots, ui, registry } = richSetup();
+    render(ui());
+    await screen.findByText("one");
+    const model = registry.get(RICH_VIEW)!.tree!;
+    const getChildren = vi.spyOn(model, "getChildren");
+    act(() => {
+      setRoots(["x"]);
+      setRoots(["y"]);
+      setRoots(["z"]);
+    });
+    expect(await screen.findByText("z")).toBeInTheDocument();
+    expect(getChildren).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("extension view errors", () => {
+  it("shows a failed extension's view as an error, not the no-provider text", () => {
+    const registry = new RailViewRegistry();
+    const views = testViewsService(new CommandRegistry(), { registry });
+    const { contributions } = parseContributions("pub.bad", {
+      views: { "omnigent.rightPanel": [{ id: "pub.bad.view", name: "Bad" }] },
+    });
+    views.addExtension("pub.bad", contributions);
+    views.extensionSettled("pub.bad", "activation failed");
+    render(
+      <ExtensionRailView viewId="pub.bad.view" settled conversationId="s1" registry={registry} />,
+    );
+    expect(screen.getByRole("alert")).toHaveTextContent("Bad could not be loaded");
+  });
+});
+
+describe("tree handles", () => {
+  it("drops handles of earlier root loads, keeping the one before for rows still on screen", async () => {
+    let generation = 0;
+    const ran = vi.fn();
+    const commands = new CommandRegistry();
+    commands.register("pub.ext", "pub.ext.open", ran);
+    const { model } = createTreeViewModel<string>(
+      {
+        getChildren: (element) => (element ? [] : [`root-${generation}`]),
+        getTreeItem: (label) => ({
+          id: label,
+          label,
+          command: { command: "pub.ext.open", arguments: [label] },
+        }),
+      },
+      {
+        executeCommand: (command, args) => commands.execute(command, args, () => {}),
+        logError: vi.fn(),
+      },
+    );
+    const first = await model.getChildren(undefined);
+    generation = 1;
+    await model.getChildren(undefined);
+    // A row of the previous load still runs while the new one is on screen.
+    model.runCommand(first[0].handle);
+    await waitFor(() => expect(ran).toHaveBeenCalledWith("root-0"));
+    generation = 2;
+    await model.getChildren(undefined);
+    model.runCommand(first[0].handle);
+    expect(await model.getChildren(first[0].handle)).toEqual([]);
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0);
+    });
+    expect(ran).toHaveBeenCalledTimes(1);
   });
 });

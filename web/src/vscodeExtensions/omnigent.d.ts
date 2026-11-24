@@ -106,7 +106,7 @@ declare module "omnigent" {
     /**
      * Values kept per chat session, unlike VS Code's per-workspace state: each
      * call reads or writes the memento of the session on screen at that moment
-     * (see {@link sessions.activeSession}). It lives in this browser's storage,
+     * (see {@link workspace.activeSessionId}). It lives in this browser's storage,
      * with the session's other UI state, for the 100 most recent sessions.
      */
     readonly workspaceState: Memento;
@@ -202,6 +202,8 @@ declare module "omnigent" {
     collapsibleState?: TreeItemCollapsibleState;
     command?: Command;
     contextValue?: string;
+    /** Size of the resource in bytes, drawn like the Changes list's file size. */
+    size?: number;
   }
 
   /** Provides a tree view's data, as `vscode.TreeDataProvider`. */
@@ -223,15 +225,56 @@ declare module "omnigent" {
     readonly tooltip: string;
   }
 
+  /** As `vscode.TreeViewVisibilityChangeEvent`. */
+  export interface TreeViewVisibilityChangeEvent {
+    readonly visible: boolean;
+  }
+
+  /**
+   * A state the host draws in place of a view's rows, the same way for every
+   * workspace view: the agent is asleep (a message reconnects it), the session's
+   * sandbox is offline, or it is starting.
+   */
+  export type ViewNotice = "agentAsleep" | "sandboxOffline" | "sandboxStarting";
+
+  /** A small pill after a view's title, such as "Asleep". */
+  export interface ViewTag {
+    readonly text: string;
+    readonly tooltip?: string;
+    /** An icon name from the allowlist. */
+    readonly icon?: string;
+  }
+
   /** A tree view, as `vscode.TreeView`; plain text everywhere. No selection or reveal yet. */
   export interface TreeView<T> {
     /** Shown in the view's title bar; defaults to the contributed name. */
     title: string | undefined;
     /** Muted text next to the title. */
     description: string | undefined;
-    /** Shown above the tree, for example when it is empty. */
+    /**
+     * Shown above the tree, for example when it is empty. Links written as
+     * `[text](command:<command id>)` are drawn as buttons that run the command,
+     * as in a trusted `vscode.MarkdownString`; everything else is plain text.
+     */
     message: string | undefined;
+    /** `"error"` draws {@link message} as an error. Defaults to `"info"`. */
+    messageSeverity: "info" | "error" | undefined;
+    /** A host-drawn state shown instead of the rows and the message. */
+    notice: ViewNotice | undefined;
+    /** A pill after the title. */
+    tag: ViewTag | undefined;
     badge: ViewBadge | undefined;
+    /** Whether the view is on screen, as `vscode.TreeView.visible`. */
+    readonly visible: boolean;
+    readonly onDidChangeVisibility: Event<TreeViewVisibilityChangeEvent>;
+    /**
+     * The text in the view's filter field (a view that contributes `filter`),
+     * for the workspace on screen; `""` when empty. The extension filters its
+     * own data with it.
+     */
+    readonly filter: string;
+    /** Fires when the filter text changes, also when another workspace comes on screen. */
+    readonly onDidChangeFilter: Event<string>;
     /** Removes the data provider; the view stays, without data. */
     dispose: () => void;
   }
@@ -307,6 +350,9 @@ declare module "omnigent" {
    * - `setContext(key, value)` sets a context key for `when` clauses.
    * - `omnigent.openFile(path)` opens a workspace file in the file viewer.
    * - `omnigent.refreshChangedFiles()` refetches the active session's changed files.
+   *
+   * Context keys the host sets: `config.<setting>` for each workspace setting
+   * (see {@link workspace.getConfiguration}).
    */
   export namespace commands {
     /**
@@ -405,24 +451,63 @@ declare module "omnigent" {
     readonly linesRemoved: number | null;
   }
 
+  /** Why the workspace on screen cannot be read right now, when the host knows. */
+  export type WorkspaceAvailability =
+    "available" | "agentAsleep" | "sandboxOffline" | "sandboxStarting";
+
   export interface ChangedFilesChangeEvent {
     readonly sessionId: string | undefined;
     /** `undefined` while the list loads, or when it could not be loaded. */
     readonly files: readonly ChangedFile[] | undefined;
     /** Why the list could not be loaded, as {@link workspace.changedFilesError}. */
     readonly error?: string;
+    readonly availability: WorkspaceAvailability;
+    readonly servedFromHost: boolean;
+  }
+
+  /**
+   * Settings of the workspace on screen, as `vscode.WorkspaceConfiguration`.
+   * Known settings: `omnigent.files.sortOrder` (`"alpha"`, `"recent"`, `"size"`
+   * or `"type"`) and `omnigent.files.showHidden` (boolean), shared with the
+   * Files tab and the file viewer. Each is also the context key `config.<name>`.
+   */
+  export interface WorkspaceConfiguration {
+    get: {
+      <T>(key: string): T | undefined;
+      <T>(key: string, defaultValue: T): T;
+    };
+    has: (key: string) => boolean;
+    /** Rejects for an unknown setting, a value of the wrong type, or no workspace on screen. */
+    update: (key: string, value: unknown) => Promise<void>;
+  }
+
+  export interface ConfigurationChangeEvent {
+    /** Whether `section` (such as `omnigent.files` or `omnigent.files.sortOrder`) changed. */
+    affectsConfiguration: (section: string) => boolean;
   }
 
   export namespace workspace {
     /**
-     * The active session's changed files, frozen; `undefined` while they load
-     * or without a session.
+     * The chat session whose workspace is on screen: the session open in the
+     * window, or the selected grid cell. `workspaceState` follows it.
+     */
+    export const activeSessionId: string | undefined;
+    /**
+     * That session's changed files, frozen; `undefined` while they load, when
+     * they cannot be loaded, or without a session.
      */
     export function getChangedFiles(): readonly ChangedFile[] | undefined;
     /** Why the active session's changed files could not be loaded, if they could not. */
     export const changedFilesError: string | undefined;
-    /** Fires when that list changes, including when the active session changes. */
+    /** Whether the workspace can be read, or why not. */
+    export const availability: WorkspaceAvailability;
+    /** The agent is asleep but its host serves the workspace. */
+    export const servedFromHost: boolean;
+    /** Fires when that list, its availability or the session on screen changes. */
     export const onDidChangeChangedFiles: Event<ChangedFilesChangeEvent>;
+    /** The settings under `section` (for example `omnigent.files`), or all of them. */
+    export function getConfiguration(section?: string): WorkspaceConfiguration;
+    export const onDidChangeConfiguration: Event<ConfigurationChangeEvent>;
   }
 
   export namespace sessions {

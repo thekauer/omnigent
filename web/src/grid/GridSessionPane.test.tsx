@@ -27,6 +27,7 @@ import { afterEach, expect, it, onTestFinished, vi } from "vitest";
 import { type FileNavigationGuard, FileViewerContext } from "@/shell/FileViewerContext";
 import type { WorkspacePanel } from "@/shell/WorkspacePanel";
 import { readSessionWorkspaceState, writeSessionWorkspaceState } from "@/lib/sessionWorkspaceState";
+import { workspaceBridge } from "@/shell/workspaceBridge";
 import { RearrangeableGrid } from "./GridWorkspace";
 import { splitGrid } from "./gridLayout";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -162,6 +163,8 @@ vi.mock("@/hooks/useChildSessions", () => ({ useChildSessions: () => ({ children
 vi.mock("@/hooks/useWorkspaceChangedFiles", () => ({
   useWorkspaceEnvironment: () => ({ data: { available: true, root: "/workspace" } }),
   useWorkspaceChangedFiles: () => ({ data: { data: [] } }),
+  useWorkspaceAsleep: () => false,
+  RunnerOfflineError: class RunnerOfflineError extends Error {},
 }));
 vi.mock("@/hooks/useTerminals", async (importOriginal) => ({
   ...(await importOriginal<typeof TerminalsModule>()),
@@ -1069,4 +1072,23 @@ it("shows each cell's sidebar as tabs with the flag on, routing its links there"
     ]),
   );
   expect(selectPullRequestInPanel).not.toHaveBeenCalled();
+});
+
+it("puts the selected cell's workspace in front for extension views, and drops a saved tab whose view is gone", () => {
+  writeSessionWorkspaceState("second", { rightRailTab: "ext:gone.ext.view" });
+  render(
+    <MemoryRouter>
+      <TooltipProvider>
+        <RearrangeableGrid
+          grid={{ id: "bridge", layout: splitGrid("first", "first", "second", "right")! }}
+        />
+      </TooltipProvider>
+    </MemoryRouter>,
+  );
+  expect(workspaceBridge.getState().sessionId).toBe("first");
+  fireEvent.click(within(screen.getByRole("region", { name: "second" })).getByText("Open folder"));
+  expect(screen.getByRole("region", { name: "second (active)" })).toBeInTheDocument();
+  expect(workspaceBridge.getState().sessionId).toBe("second");
+  // Extensions have settled without that view, so the cell falls back as AppShell does.
+  expect(screen.getByTestId("workspace-second")).toHaveAttribute("data-tab", "files");
 });

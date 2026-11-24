@@ -3,7 +3,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { WorkspaceChangedFile } from "@/hooks/useWorkspaceChangedFiles";
 import { MAX_EXTENSION_STATE_BYTES, readExtensionState } from "@/lib/sessionWorkspaceState";
 import { RailViewRegistry } from "@/shell/railViews";
-import { WorkspaceBridge } from "@/shell/workspaceBridge";
+import {
+  EMPTY_WORKSPACE_STATE,
+  type WorkspaceActions,
+  WorkspaceBridge,
+  type WorkspaceBridgeState,
+} from "@/shell/workspaceBridge";
 import { getExtensionApi } from "./apiRegistry";
 import {
   OPEN_FILE_COMMAND,
@@ -39,6 +44,25 @@ function changed(path: string, status: WorkspaceChangedFile["status"]): Workspac
 
 afterEach(() => localStorage.clear());
 
+/** An active workspace source on `bridge`, as the shell registers one. */
+function sourceOn(bridge: WorkspaceBridge, actions?: WorkspaceActions) {
+  const source = bridge.createSource();
+  source.setActive(true);
+  if (actions) source.setActions(actions);
+  let state: WorkspaceBridgeState = EMPTY_WORKSPACE_STATE;
+  const publish = (
+    sessionId: string | null,
+    changedFiles: readonly WorkspaceChangedFile[] | undefined,
+    error?: string,
+    patch: Partial<WorkspaceBridgeState> = {},
+  ) => {
+    state = { ...state, sessionId, changedFiles, error, ...patch };
+    if (error === undefined) delete (state as { error?: string }).error;
+    source.update(state);
+  };
+  return { source, publish, state: () => state };
+}
+
 describe("context.workspaceState", () => {
   it("is scoped to the active chat session", async () => {
     let session: string | undefined = "s1";
@@ -58,6 +82,14 @@ describe("context.workspaceState", () => {
     await memento.update("mode", undefined);
     expect(memento.keys()).toEqual(["nested"]);
     expect(readExtensionState("s1", "pub.ext")).toEqual({ nested: { a: [1, 2] } });
+  });
+
+  it("stores a key named __proto__ like any other", async () => {
+    const memento = createWorkspaceState("pub.ext", sessionExtensionStateStore, () => "s1");
+    await memento.update("__proto__", { polluted: true });
+    expect(memento.keys()).toEqual(["__proto__"]);
+    expect(memento.get("__proto__")).toEqual({ polluted: true });
+    expect(({} as { polluted?: boolean }).polluted).toBeUndefined();
   });
 
   it("rejects without a session, over the caps, and for bad keys", async () => {
@@ -106,14 +138,15 @@ describe("context.workspaceState", () => {
 describe("workspace.getChangedFiles and onDidChangeChangedFiles", () => {
   it("serve frozen plain copies and fire on changes and session switches", async () => {
     const bridge = new WorkspaceBridge();
+    const { publish } = sourceOn(bridge);
     const service = new WorkspaceService(bridge);
     const events: omnigent.ChangedFilesChangeEvent[] = [];
     service.onDidChangeChangedFiles((event) => events.push(event));
     expect(service.getChangedFiles()).toBeUndefined();
     const files = [changed("repo/a.ts", "created"), changed("b.md", "deleted")];
-    bridge.publishChangedFiles("s1", files);
+    publish("s1", files);
     // A burst is coalesced into one event.
-    bridge.publishChangedFiles("s1", files);
+    publish("s1", files);
     await flush();
     expect(events).toHaveLength(1);
     expect(events[0].sessionId).toBe("s1");
@@ -132,14 +165,30 @@ describe("workspace.getChangedFiles and onDidChangeChangedFiles", () => {
     ]);
     expect(Object.isFrozen(service.getChangedFiles())).toBe(true);
     expect(Object.isFrozen(service.getChangedFiles()![0])).toBe(true);
-    bridge.publishChangedFiles("s2", undefined);
+    publish("s2", undefined);
     await flush();
-    expect(events.at(-1)).toEqual({ sessionId: "s2", files: undefined });
-    bridge.publishChangedFiles("s2", undefined, "502 Bad Gateway");
+    expect(events.at(-1)).toEqual({
+      sessionId: "s2",
+      files: undefined,
+      availability: "available",
+      servedFromHost: false,
+    });
+    publish("s2", undefined, "502 Bad Gateway");
     await flush();
-    expect(events.at(-1)).toEqual({ sessionId: "s2", files: undefined, error: "502 Bad Gateway" });
+    expect(events.at(-1)).toEqual({
+      sessionId: "s2",
+      files: undefined,
+      error: "502 Bad Gateway",
+      availability: "available",
+      servedFromHost: false,
+    });
     expect(service.changedFilesError).toBe("502 Bad Gateway");
-    bridge.publishChangedFiles(null, []);
+    publish("s2", undefined, undefined, { availability: "agentAsleep", servedFromHost: true });
+    await flush();
+    expect(events.at(-1)).toMatchObject({ availability: "agentAsleep", servedFromHost: true });
+    expect(service.availability).toBe("agentAsleep");
+    expect(service.servedFromHost).toBe(true);
+    publish(null, []);
     await flush();
     expect(service.changedFilesError).toBeUndefined();
     expect(service.getChangedFiles()).toBeUndefined();
@@ -148,6 +197,7 @@ describe("workspace.getChangedFiles and onDidChangeChangedFiles", () => {
 
   it("reach extensions through the API and stop after deactivation", async () => {
     const bridge = new WorkspaceBridge();
+    const { publish } = sourceOn(bridge);
     const workspace = new WorkspaceService(bridge);
     const seen: (readonly omnigent.ChangedFile[] | undefined)[] = [];
     const host = new ExtensionHost({
@@ -165,11 +215,11 @@ describe("workspace.getChangedFiles and onDidChangeChangedFiles", () => {
     await host.start([
       { id: "pub.ext", version: "1.0.0", activationEvents: ["*"], entryUrl: "/ext.js" },
     ]);
-    bridge.publishChangedFiles("s1", [changed("a.ts", "modified")]);
+    publish("s1", [changed("a.ts", "modified")]);
     await flush();
     expect(seen.map((files) => files?.map((file) => file.path))).toEqual([["a.ts"]]);
     await host.deactivate("pub.ext");
-    bridge.publishChangedFiles("s1", []);
+    publish("s1", []);
     await flush();
     expect(seen).toHaveLength(1);
   });
@@ -185,7 +235,8 @@ describe("built-in commands", () => {
     await expect(run(OPEN_FILE_COMMAND, "a.ts")).rejects.toThrow(/no workspace/);
     const openFile = vi.fn();
     const refreshChangedFiles = vi.fn(() => Promise.resolve());
-    const unregister = bridge.registerActions({ openFile, refreshChangedFiles });
+    const { source } = sourceOn(bridge, { openFile, refreshChangedFiles, updateSettings: vi.fn() });
+    const unregister = () => source.dispose();
     await run(SET_CONTEXT_COMMAND, "pub.ext.mode", "tree");
     expect(contextKeys.get("pub.ext.mode")).toBe("tree");
     await run(OPEN_FILE_COMMAND, "src/a.ts");
@@ -252,5 +303,108 @@ describe("contributed views through the host", () => {
     expect(registry.get("pub.ext.view")?.tree).toBeUndefined();
     await host.dispose();
     expect(registry.get("pub.ext.view")).toBeUndefined();
+  });
+});
+
+describe("workspaces on screen", () => {
+  it("follows the latest activated source, so a selected grid cell's files reach extensions", async () => {
+    const bridge = new WorkspaceBridge();
+    const shellOpen = vi.fn();
+    const cellOpen = vi.fn();
+    const shell = sourceOn(bridge, {
+      openFile: shellOpen,
+      refreshChangedFiles: () => Promise.resolve(),
+      updateSettings: vi.fn(),
+    });
+    shell.publish("shell", [changed("a.ts", "modified")]);
+    const cell = bridge.createSource();
+    cell.update({ ...EMPTY_WORKSPACE_STATE, sessionId: "cell", changedFiles: [] });
+    cell.setActions({
+      openFile: cellOpen,
+      refreshChangedFiles: () => Promise.resolve(),
+      updateSettings: vi.fn(),
+    });
+    const service = new WorkspaceService(bridge);
+    expect(service.activeSessionId).toBe("shell");
+    cell.setActive(true);
+    await flush();
+    expect(service.activeSessionId).toBe("cell");
+    expect(service.getChangedFiles()).toEqual([]);
+    bridge.openFile("x.ts");
+    expect(cellOpen).toHaveBeenCalledWith("x.ts");
+    // An update to a source behind the front one changes nothing on screen.
+    shell.publish("shell", []);
+    await flush();
+    expect(service.activeSessionId).toBe("cell");
+    cell.setActive(false);
+    await flush();
+    expect(service.activeSessionId).toBe("shell");
+    bridge.openFile("y.ts");
+    expect(shellOpen).toHaveBeenCalledWith("y.ts");
+    service.dispose();
+  });
+
+  it("keeps workspaceState with the workspace on screen", async () => {
+    const bridge = new WorkspaceBridge();
+    const shell = sourceOn(bridge);
+    shell.publish("s1", []);
+    const workspace = new WorkspaceService(bridge);
+    let context: omnigent.ExtensionContext | undefined;
+    const host = new ExtensionHost({
+      services: hostServices({ workspace }),
+      importModule: () =>
+        Promise.resolve({ activate: (ctx: omnigent.ExtensionContext) => void (context = ctx) }),
+      console: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
+    });
+    await host.start([
+      { id: "pub.ext", version: "1.0.0", activationEvents: ["*"], entryUrl: "/e.js" },
+    ]);
+    await context!.workspaceState.update("mode", "tree");
+    shell.publish("s2", []);
+    await flush();
+    expect(context!.workspaceState.get("mode")).toBeUndefined();
+    shell.publish("s1", []);
+    await flush();
+    expect(context!.workspaceState.get("mode")).toBe("tree");
+    await host.dispose();
+  });
+});
+
+describe("workspace.getConfiguration", () => {
+  it("reads and updates the workspace's file settings, and reports what changed", async () => {
+    const bridge = new WorkspaceBridge();
+    const updateSettings = vi.fn();
+    const { publish, state } = sourceOn(bridge, {
+      openFile: vi.fn(),
+      refreshChangedFiles: () => Promise.resolve(),
+      updateSettings,
+    });
+    publish("s1", []);
+    const service = new WorkspaceService(bridge);
+    const files = service.getConfiguration("omnigent.files");
+    expect(files.get("sortOrder")).toBe("alpha");
+    expect(files.get("showHidden")).toBe(true);
+    expect(files.has("sortOrder")).toBe(true);
+    expect(files.has("nope")).toBe(false);
+    expect(files.get("nope", 7)).toBe(7);
+    expect(service.getConfiguration().get("omnigent.files.sortOrder")).toBe("alpha");
+    expect(service.settingValues()).toEqual({
+      "omnigent.files.sortOrder": "alpha",
+      "omnigent.files.showHidden": true,
+    });
+    await files.update("sortOrder", "size");
+    expect(updateSettings).toHaveBeenCalledWith({ sortOrder: "size" });
+    await expect(files.update("sortOrder", "sideways")).rejects.toThrow(TypeError);
+    await expect(files.update("showHidden", "yes")).rejects.toThrow(TypeError);
+    await expect(files.update("nope", 1)).rejects.toThrow(/unknown setting/);
+    const changes: omnigent.ConfigurationChangeEvent[] = [];
+    service.onDidChangeConfiguration((event) => changes.push(event));
+    publish("s1", [], undefined, { settings: { ...state().settings, showHidden: false } });
+    await flush();
+    expect(changes).toHaveLength(1);
+    expect(changes[0].affectsConfiguration("omnigent.files")).toBe(true);
+    expect(changes[0].affectsConfiguration("omnigent.files.showHidden")).toBe(true);
+    expect(changes[0].affectsConfiguration("omnigent.files.sortOrder")).toBe(false);
+    service.dispose();
   });
 });

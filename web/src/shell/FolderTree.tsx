@@ -12,7 +12,8 @@ import {
 import { cn } from "@/lib/utils";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { RunnerAsleepHint } from "./RunnerAsleepHint";
-import { type ChangedSort, compareChangedFiles, type SortableFile } from "./FlatFileList";
+import type { ChangedSort } from "@/lib/changedSort";
+import { compareChangedFiles, type SortableFile } from "./changedFilesOrder";
 import {
   ROW_ACTION_SIZE_CLASS,
   ROW_META_SLOT_CLASS,

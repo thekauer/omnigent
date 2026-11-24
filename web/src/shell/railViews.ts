@@ -2,7 +2,7 @@
 // view is plain data plus a host-owned tree model; the rail draws the tab and
 // the content area itself, so extension code never touches React or the DOM.
 
-import { useSyncExternalStore } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import type { WorkspaceChangedFile } from "@/hooks/useWorkspaceChangedFiles";
 
 /** A view's count badge on its tab, like VS Code's `ViewBadge`. */
@@ -11,16 +11,37 @@ export interface RailViewBadge {
   readonly tooltip: string;
 }
 
-/** One title-bar button of a view (a `view/title` menu entry with group "navigation"). */
-export interface RailViewTitleAction {
-  /** The command id; unique within the view. */
+/** One entry of a title action's submenu. */
+export interface RailViewMenuItem {
+  /** The command id. */
   readonly id: string;
   readonly title: string;
+  readonly icon: string | undefined;
+  readonly toggled: boolean | undefined;
+  /** Resolves once the command finished; a failure is shown by the host. */
+  readonly run: () => Promise<void>;
+}
+
+/**
+ * One button of a view: a `view/title` menu entry in group "navigation" (the
+ * title bar) or "filter" (next to the view's filter field), or a submenu.
+ */
+export interface RailViewTitleAction {
+  /** The command or submenu id; unique within the view. */
+  readonly id: string;
+  readonly title: string;
+  /** The button's tooltip; defaults to the title. */
+  readonly tooltip: string | undefined;
   /** A name from the rail icon allowlist (railViewIcons.ts). */
   readonly icon: string | undefined;
   /** Set for toggle commands: the button gets `aria-pressed`. */
   readonly toggled: boolean | undefined;
-  readonly run: () => void;
+  readonly tone: "warning" | undefined;
+  readonly group: "navigation" | "filter";
+  /** Resolves once the command finished; a failure is shown by the host. */
+  readonly run: () => Promise<void>;
+  /** A submenu's entries; the button opens them instead of running a command. */
+  readonly items?: readonly RailViewMenuItem[];
 }
 
 export type RailTreeItemStatus = "added" | "modified" | "deleted";
@@ -52,6 +73,8 @@ export interface RailTreeNode {
   readonly collapsible: RailTreeItemCollapsible;
   readonly hasCommand: boolean;
   readonly contextValue: string | undefined;
+  /** Bytes of the resource, drawn like the Changes list's file size. */
+  readonly size: number | undefined;
 }
 
 /** What the rail needs from a tree view; implemented by the extension host. */
@@ -62,6 +85,35 @@ export interface RailTreeModel {
   subscribe: (listener: () => void) => () => void;
   /** Runs the row's `command`, if it has one. */
   runCommand: (handle: string) => void;
+  /**
+   * The chat session whose workspace the provider's data is for, when the host
+   * knows; a view drawn for another session waits instead of showing it.
+   */
+  dataSessionId?: () => string | undefined;
+}
+
+export type RailViewNotice = "agentAsleep" | "sandboxOffline" | "sandboxStarting";
+
+export interface RailViewTag {
+  readonly text: string;
+  readonly tooltip: string | undefined;
+  readonly icon: string | undefined;
+}
+
+/** What a drawn view can ask of the host that owns it; set by the extension host. */
+export interface RailViewHost {
+  /** The filter text kept for `sessionId`. */
+  getFilter: (sessionId: string | undefined) => string;
+  setFilter: (sessionId: string | undefined, text: string) => void;
+  /** The view is on screen until the returned function is called. */
+  reportVisible: () => () => void;
+  /** Runs a command a message link names. */
+  runCommand: (command: string) => void;
+}
+
+export interface RailViewFilter {
+  readonly placeholder: string;
+  readonly ariaLabel: string;
 }
 
 export interface RailViewState {
@@ -73,6 +125,12 @@ export interface RailViewState {
   readonly loading: boolean;
   readonly actions: readonly RailViewTitleAction[];
   readonly tree: RailTreeModel | undefined;
+  /** Set when the contributing extension failed to activate. */
+  readonly error: string | undefined;
+  readonly messageSeverity: "info" | "error" | undefined;
+  readonly notice: RailViewNotice | undefined;
+  readonly tag: RailViewTag | undefined;
+  readonly host: RailViewHost | undefined;
 }
 
 export interface RailViewContribution {
@@ -82,6 +140,10 @@ export interface RailViewContribution {
   readonly name: string;
   /** A name from the rail icon allowlist; unknown names fall back to a generic icon. */
   readonly icon: string | undefined;
+  /** The built-in tab (such as "changes") a built-in extension's view stands in for. */
+  readonly builtInTab?: string;
+  /** A filter field above the rows. */
+  readonly filter?: RailViewFilter;
 }
 
 export interface RailView extends RailViewContribution, RailViewState {}
@@ -106,6 +168,11 @@ const INITIAL_STATE: RailViewState = {
   loading: true,
   actions: [],
   tree: undefined,
+  error: undefined,
+  messageSeverity: undefined,
+  notice: undefined,
+  tag: undefined,
+  host: undefined,
 };
 
 interface Entry {
@@ -146,6 +213,11 @@ export class RailViewRegistry {
     return {
       update: (patch) => {
         if (disposed) return;
+        // Skip no-op updates, so badge or message sets that change nothing do not re-render.
+        const current = entry.view as unknown as Record<string, unknown>;
+        if (Object.entries(patch).every(([key, value]) => Object.is(current[key], value))) {
+          return;
+        }
         entry.view = Object.freeze({ ...entry.view, ...patch, ...contribution });
         this.publish();
       },
@@ -193,6 +265,32 @@ export const railViews = new RailViewRegistry();
 
 export function useRailViews(registry: RailViewRegistry = railViews): RailViewsSnapshot {
   return useSyncExternalStore(registry.subscribe, registry.getSnapshot, registry.getSnapshot);
+}
+
+/**
+ * The registered view ids, one per line, and whether loading settled: enough to
+ * validate a stored tab, without re-rendering when a view's badge or message changes.
+ */
+export function useRailViewIds(registry: RailViewRegistry = railViews): {
+  ids: readonly string[];
+  settled: boolean;
+} {
+  const key = useSyncExternalStore(registry.subscribe, () => {
+    const snapshot = registry.getSnapshot();
+    return `${snapshot.settled ? "1" : "0"}${snapshot.views.map((view) => `\n${view.id}`).join("")}`;
+  });
+  return useMemo(() => {
+    const [settled, ...ids] = key.split("\n");
+    return { ids, settled: settled === "1" };
+  }, [key]);
+}
+
+/** The view that stands in for a built-in tab, if a built-in extension registered one. */
+export function builtInTabView(
+  views: readonly RailView[],
+  tab: string | null,
+): RailView | undefined {
+  return tab === null ? undefined : views.find((view) => view.builtInTab === tab);
 }
 
 /** A status of the changed-files API in tree-item terms. */

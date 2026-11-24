@@ -127,7 +127,8 @@ import { isFileComment } from "@/lib/localReviewComments";
 import { useIsMobileViewport } from "@/hooks/useIsMobileViewport";
 import { readFileViewPreferences, writeFileViewPreferences } from "@/lib/fileViewPreferences";
 import { hasCommandModifier } from "@/lib/hotkeys";
-import { type ChangedSort, groupChangedFiles } from "./FlatFileList";
+import type { ChangedSort } from "@/lib/changedSort";
+import { groupChangedFiles } from "./changedFilesOrder";
 import { CodeViewer } from "./CodeViewer";
 import {
   MONACO_SPLIT_BREAKPOINT,

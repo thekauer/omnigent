@@ -227,7 +227,7 @@ import {
   readFileViewPreferences,
   writeFileViewPreferences,
 } from "@/lib/fileViewPreferences";
-import type { ChangedSort } from "./FlatFileList";
+import type { ChangedSort } from "@/lib/changedSort";
 
 const useCommentsMock = vi.mocked(useComments);
 const useOptionalCommentSenderMock = vi.mocked(useOptionalCommentSender);

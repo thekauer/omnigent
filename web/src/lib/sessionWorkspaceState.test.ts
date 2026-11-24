@@ -3,6 +3,7 @@ import {
   MAX_EXTENSION_STATE_BYTES,
   MAX_EXTENSION_STATE_EXTENSIONS,
   MAX_EXTENSION_STATE_KEYS,
+  MAX_TOTAL_EXTENSION_STATE_BYTES,
   type SessionWorkspaceState,
   readExtensionState,
   readSessionWorkspaceState,
@@ -308,5 +309,63 @@ describe("extension tabs and mementos", () => {
       "pub.ok": { mode: "tree" },
     });
     expect(readSessionWorkspaceState("conv_garbage")).toEqual({});
+  });
+
+  it("keeps all sessions' mementos under a total cap, dropping the oldest first", () => {
+    const value = "x".repeat(MAX_EXTENSION_STATE_BYTES - 64);
+    const sessions = Math.ceil(MAX_TOTAL_EXTENSION_STATE_BYTES / MAX_EXTENSION_STATE_BYTES) + 5;
+    for (let index = 0; index < sessions; index += 1) {
+      writeSessionWorkspaceState(`conv_${index}`, { open: true });
+      writeExtensionState(`conv_${index}`, "pub.one", { value });
+    }
+    const raw = localStorage.getItem(STORAGE_KEY)!;
+    const total = (JSON.parse(raw) as { state: { extensionState?: unknown } }[]).reduce(
+      (sum, entry) =>
+        sum + (entry.state.extensionState ? JSON.stringify(entry.state.extensionState).length : 0),
+      0,
+    );
+    expect(total).toBeLessThanOrEqual(MAX_TOTAL_EXTENSION_STATE_BYTES);
+    expect(readExtensionState("conv_0", "pub.one")).toEqual({});
+    expect(readExtensionState(`conv_${sessions - 1}`, "pub.one")).toEqual({ value });
+    // The rest of an evicted session's state stays.
+    expect(readSessionWorkspaceState("conv_0").open).toBe(true);
+  });
+
+  it("frees the oldest mementos and retries when storage is full", () => {
+    writeExtensionState("conv_old", "pub.one", { a: 1 });
+    writeExtensionState("conv_new", "pub.one", { b: 2 });
+    const setItem = Storage.prototype.setItem;
+    let refusals = 0;
+    const spy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (
+      this: Storage,
+      key: string,
+      value: string,
+    ) {
+      // Full while the old session still holds a memento.
+      if (value.includes('"a":1')) {
+        refusals += 1;
+        throw new DOMException("full", "QuotaExceededError");
+      }
+      setItem.call(this, key, value);
+    });
+    writeExtensionState("conv_new", "pub.one", { b: 3 });
+    spy.mockRestore();
+    expect(refusals).toBe(1);
+    expect(readExtensionState("conv_old", "pub.one")).toEqual({});
+    expect(readExtensionState("conv_new", "pub.one")).toEqual({ b: 3 });
+  });
+
+  it("re-reads the store when another writer changed it", () => {
+    writeExtensionState("conv_a", "pub.one", { mode: "tree" });
+    expect(readExtensionState("conv_a", "pub.one")).toEqual({ mode: "tree" });
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify([
+        { id: "conv_a", state: { extensionState: { "pub.one": { mode: "list" } } } },
+      ]),
+    );
+    expect(readExtensionState("conv_a", "pub.one")).toEqual({ mode: "list" });
+    localStorage.clear();
+    expect(readExtensionState("conv_a", "pub.one")).toEqual({});
   });
 });

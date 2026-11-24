@@ -42,7 +42,8 @@ import {
 import type { WorkingCopyComparisonOwner } from "@/lib/workingCopyComparisonOwner";
 import { useComparisonOwner } from "@/hooks/useComparisonOwner";
 import { hasNoTextDiff } from "./codeViewerHelpers";
-import { type ChangedSort, groupChangedFiles } from "./FlatFileList";
+import type { ChangedSort } from "@/lib/changedSort";
+import { groupChangedFiles } from "./changedFilesOrder";
 import { isFilePositionPending } from "./filePositionState";
 import type { FileDiffRequest, FilePosition } from "./FileViewerContext";
 import { useReviewCommentLayer, type ReviewCommentContext } from "./useReviewCommentLayer";

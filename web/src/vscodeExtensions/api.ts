@@ -167,6 +167,10 @@ export function createExtensionApi(
     services.workspace.onDidChangeChangedFiles,
     "onDidChangeChangedFiles",
   );
+  const onDidChangeConfiguration = guard(
+    services.workspace.onDidChangeConfiguration,
+    "onDidChangeConfiguration",
+  );
 
   function createTreeView<T>(
     viewId: string,
@@ -178,7 +182,14 @@ export function createExtensionApi(
         title: undefined,
         description: undefined,
         message: undefined,
+        messageSeverity: undefined,
+        notice: undefined,
+        tag: undefined,
         badge: undefined,
+        visible: false,
+        onDidChangeVisibility: () => new Disposable(() => {}),
+        filter: "",
+        onDidChangeFilter: () => new Disposable(() => {}),
         dispose: () => {},
       };
     }
@@ -357,11 +368,22 @@ export function createExtensionApi(
     commands: Object.freeze({ registerCommand, executeCommand }),
     hosts: Object.freeze({ registerReconnectProvider }),
     workspace: Object.freeze({
+      get activeSessionId() {
+        return services.workspace.activeSessionId;
+      },
       getChangedFiles: () => services.workspace.getChangedFiles(),
       get changedFilesError() {
         return services.workspace.changedFilesError;
       },
+      get availability() {
+        return services.workspace.availability;
+      },
+      get servedFromHost() {
+        return services.workspace.servedFromHost;
+      },
       onDidChangeChangedFiles,
+      getConfiguration: (section?: string) => services.workspace.getConfiguration(section),
+      onDidChangeConfiguration,
     }),
     sessions: Object.freeze({
       get activeSession() {

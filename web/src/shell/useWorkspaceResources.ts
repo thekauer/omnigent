@@ -50,13 +50,6 @@ export function useWorkspaceResources({
     showFilesPanel: canBrowseWorkspace && environmentQuery.data?.available !== false,
     changedCount: changedFiles.data?.data.length ?? 0,
     changedFiles: changedFiles.data?.data ?? NO_CHANGED_FILES,
-    /** The changed files as loaded; undefined until the first load lands. */
-    changedFilesData: changedFiles.data?.data,
-    /** Why the changed files could not be loaded, when they could not. */
-    changedFilesError:
-      changedFiles.data === undefined && changedFiles.error
-        ? changedFiles.error.message
-        : undefined,
     isChangedPath,
     terminals,
     agentTerminal,

@@ -1,7 +1,8 @@
 // A minimal `when` clause evaluator, after VS Code's context key expressions:
 // `key`, `!key`, `key == value`, `key != value`, `&&`, `||` and parentheses.
-// `!` binds tightest, then `==`/`!=`, then `&&`, then `||`. Values may be quoted
-// ('a b') or bare (`view == publisher.name.view`); `true`/`false` compare as booleans.
+// A comparison binds tightest (`!a == b` is `!(a == b)`), then `!`, `&&`, `||`.
+// Values may be quoted ('a b') or bare (`view == publisher.name.view`);
+// `true`/`false` compare as booleans. Clauses are capped in length and nesting.
 
 export type ContextValue = string | number | boolean | null | undefined;
 export type ContextLookup = (key: string) => unknown;
@@ -19,6 +20,10 @@ type Token =
   | { kind: "op"; text: "!" | "==" | "!=" | "&&" | "||" | "(" | ")" };
 
 const WORD = /[^\s!=&|()'"]+/y;
+/** Longest clause accepted, in characters. */
+export const MAX_WHEN_LENGTH = 1024;
+/** Deepest nesting of parentheses and `!` accepted. */
+export const MAX_WHEN_DEPTH = 32;
 
 function tokenize(source: string): Token[] {
   const tokens: Token[] = [];
@@ -59,8 +64,21 @@ function tokenize(source: string): Token[] {
 }
 
 function parse(source: string): Node {
+  if (source.length > MAX_WHEN_LENGTH) {
+    throw new SyntaxError(`clause longer than ${MAX_WHEN_LENGTH} characters`);
+  }
   const tokens = tokenize(source);
   let position = 0;
+  let depth = 0;
+  const nested = <T>(parseInner: () => T): T => {
+    depth += 1;
+    if (depth > MAX_WHEN_DEPTH) throw new SyntaxError(`nested deeper than ${MAX_WHEN_DEPTH}`);
+    try {
+      return parseInner();
+    } finally {
+      depth -= 1;
+    }
+  };
   const peek = () => tokens[position];
   const isOp = (text: string) => {
     const token = peek();
@@ -91,11 +109,11 @@ function parse(source: string): Node {
   const parseUnary = (): Node => {
     if (isOp("!")) {
       position += 1;
-      return { kind: "not", operand: parseUnary() };
+      return { kind: "not", operand: nested(parseUnary) };
     }
     if (isOp("(")) {
       position += 1;
-      const inner = parseOr();
+      const inner = nested(parseOr);
       if (!isOp(")")) throw new SyntaxError("expected ')'");
       position += 1;
       return inner;
