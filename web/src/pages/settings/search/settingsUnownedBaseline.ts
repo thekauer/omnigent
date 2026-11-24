@@ -73,6 +73,11 @@ export const UNOWNED_CONTROLS: Readonly<Record<string, { count: number; reason: 
     reason:
       "Credential card's button; its control is passed in as a prop, which the guard can't read.",
   },
+  "src/shell/CliCommandBlock.tsx › CliCommandBlock › Button": {
+    count: 1,
+    reason:
+      "Copy button of the session import's connect-a-host command, shown while no machine is online; it copies a command, not a setting.",
+  },
   "src/shell/CreateAgentDialog.tsx › AgentFormFields › Button": {
     count: 1,
     reason:
