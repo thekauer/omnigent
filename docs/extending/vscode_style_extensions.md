@@ -140,6 +140,9 @@ repository's reference policy keeps them out of here.
 
 Stop after item 4. The rest of the "Later" list waits for the user.
 
+**Theming** (themes, tokens and variants) is tracked with its own status in
+[theming_plan.md](theming_plan.md).
+
 **Constraints:**
 
 - Commit and push at each green checkpoint. No upstream PRs or comments.
