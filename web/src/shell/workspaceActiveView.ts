@@ -35,7 +35,12 @@ export interface WorkspaceViewAvailability {
   hasAgentTree: boolean;
   /** Phones show side chats in their own drawer, not the rail. */
   mobile: boolean;
+  /** The view a built-in extension registered for a built-in tab (Changes), if any. */
+  builtInTabViewId?: (tab: RightRailTab) => string | undefined;
 }
+
+/** Built-in tabs whose page is a built-in extension's view. */
+export const EXTENSION_BACKED_TABS: readonly RightRailTab[] = ["changes"];
 
 export interface WorkspaceActiveView {
   /** The shell shown in front, when its terminal is present. */
@@ -43,10 +48,14 @@ export interface WorkspaceActiveView {
   /** The file shown in front when no shell is. */
   filePath: string | null;
   scope: WorkspaceScopeView;
-  /** The Files page lists only changes. */
-  flat: boolean;
-  /** The extension view of an `ext:` tab, when that page is selected. */
+  /**
+   * The extension view of the selected page: an `ext:` tab's, or the built-in
+   * extension's view of a tab such as Changes. Null on the `extension` scope when
+   * that view is not registered (yet).
+   */
   extensionViewId: string | null;
+  /** The Files page lists only changes; never true now that Changes is a built-in view. */
+  flat: boolean;
   sideChatSelected: boolean;
   browserSelected: boolean;
 }
@@ -66,7 +75,10 @@ export function resolveWorkspaceActiveView(
     rightRailTab === "sidechat" && nothingInFront && selection.selectedSideChatId !== null;
   const browserSelected =
     rightRailTab === "browser" && nothingInFront && selection.selectedBrowserId !== null;
-  const extensionViewId = extensionRailTabViewId(rightRailTab);
+  const extensionBacked = rightRailTab !== null && EXTENSION_BACKED_TABS.includes(rightRailTab);
+  const extensionViewId = extensionBacked
+    ? (availability.builtInTabViewId?.(rightRailTab) ?? null)
+    : extensionRailTabViewId(rightRailTab);
   const scope: WorkspaceScopeView =
     sideChatSelected && !availability.mobile
       ? "sidechat"
@@ -80,7 +92,7 @@ export function resolveWorkspaceActiveView(
               ? "subagents"
               : rightRailTab === null
                 ? "empty"
-                : extensionViewId !== null
+                : extensionViewId !== null || extensionBacked
                   ? "extension"
                   : rightRailTab === "content-search" && availability.showContentSearch
                     ? "content-search"
@@ -89,8 +101,8 @@ export function resolveWorkspaceActiveView(
     terminalKey,
     filePath: terminalKey === null ? selectedFilePath : null,
     scope,
-    flat: rightRailTab === "changes",
     extensionViewId,
+    flat: false,
     sideChatSelected,
     browserSelected,
   };

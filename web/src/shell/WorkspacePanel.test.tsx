@@ -31,7 +31,7 @@ import { emitBrowserActionRequest } from "@/lib/browserActionBus";
 import { subagentTabId } from "@/lib/subagentTabs";
 import type { Session } from "@/lib/types";
 import { type FileNavigationGuard, FileViewerContext } from "./FileViewerContext";
-import type { ChangedSort } from "./FlatFileList";
+import type { ChangedSort } from "@/lib/changedSort";
 import type { RightRailTab } from "./railTabs";
 import { railViews } from "./railViews";
 import {
@@ -41,6 +41,7 @@ import {
 } from "@/lib/workspaceTabPreferences";
 import { resetDesktopCommandsForTests, useDesktopCommand } from "@/lib/desktopCommands";
 import { WorkspacePanel } from "./WorkspacePanel";
+import { type BuiltInHarness, changedFile, startBuiltIns } from "@/test/builtInExtensions";
 
 // The rail's content children are exercised by their own suites; stub them so
 // these tests focus on WorkspacePanel's own logic (the open-file/shell tab
@@ -75,17 +76,10 @@ vi.mock("./FileViewer", () => ({
   },
 }));
 vi.mock("./FilesPanel", () => ({
-  // Echo the fixed scope so tests can prove the Files tab renders the tree
-  // (flatView=false) and the Changes tab the changed-only list (flatView=true).
-  FilesPanel: ({ flatView, conversationId }: { flatView: boolean; conversationId: string }) => {
+  // The Files tab's tree; the Changes tab is the built-in Changes extension's view.
+  FilesPanel: ({ conversationId }: { conversationId: string }) => {
     paneRenders("files");
-    return (
-      <div
-        data-testid="files-panel-stub"
-        data-session={conversationId}
-        data-flat-view={String(flatView)}
-      />
-    );
+    return <div data-testid="files-panel-stub" data-session={conversationId} />;
   },
 }));
 vi.mock("./SubagentsPanel", () => ({
@@ -178,12 +172,16 @@ const useTerminalsMock = vi.mocked(useTerminals);
 const useCreateTerminalMock = vi.mocked(useCreateTerminal);
 const useSessionAgentMock = vi.mocked(useSessionAgent);
 
-beforeEach(() => {
+// The built-in extensions run as in the app: the Changes tab is their view.
+let builtIns: BuiltInHarness;
+beforeEach(async () => {
   vi.spyOn(navigator, "platform", "get").mockReturnValue("Win32");
+  builtIns = await startBuiltIns({ sessionId: "conv_ws" });
 });
 
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  await builtIns.dispose();
   localStorage.clear();
   vi.clearAllMocks();
   vi.restoreAllMocks();
@@ -239,7 +237,6 @@ function renderWorkspace(
     openPanels?: DefaultWorkspaceTab[];
     selectedFilePath?: string | null;
     openFiles?: string[];
-    changedCount?: number;
     showGithubTab?: boolean;
     showContentSearch?: boolean;
     showFilesPanel?: boolean;
@@ -304,7 +301,6 @@ function renderWorkspace(
         showBrowserTab={overrides.showBrowserTab ?? false}
         onReveal={onReveal}
         onHide={overrides.withHide === false ? undefined : onHide}
-        changedCount={overrides.changedCount ?? 0}
         subagentsWorking={0}
         agentCount={1}
         rootSessionId={null}
@@ -403,7 +399,7 @@ describe("WorkspacePanel render failures", () => {
 
         paneRenders.mockReset();
         rerender({ rightRailTab: "changes", selectedFilePath: null });
-        expect(screen.getByTestId("files-panel-stub")).toBeInTheDocument();
+        expect(screen.getByTestId("extension-view-omnigent.changes.view")).toBeInTheDocument();
         if (pane === "search") rerender({ rightRailTab: "content-search" });
         expect(screen.queryByRole("alert")).not.toBeInTheDocument();
       } finally {
@@ -440,7 +436,7 @@ describe("WorkspacePanel surface presentation", () => {
     });
 
     expect(screen.getByRole("tab", { name: "Changes" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByTestId("files-panel-stub")).toHaveAttribute("data-flat-view", "true");
+    expect(screen.getByTestId("extension-view-omnigent.changes.view")).toBeInTheDocument();
     requestSandboxWakeMock.mockClear();
     // An opened unpinned tab is a pick like a pinned one.
     fireEvent.click(screen.getByRole("tab", { name: "Changes" }));
@@ -753,8 +749,11 @@ describe("WorkspacePanel surface presentation", () => {
     expect(screen.queryByRole("tab", { name: /shells/i })).toBeNull();
   });
 
-  it("badges the Changes tab (not Files) with the changed-file count", () => {
-    renderWorkspace({ changedCount: 3 });
+  it("badges the Changes tab (not Files) with the changed-file count", async () => {
+    await builtIns.publish({
+      changedFiles: [changedFile("a.ts"), changedFile("b.ts"), changedFile("c.ts")],
+    });
+    renderWorkspace();
 
     // The changed-file count moved from the old single Files tab to Changes;
     // Files carries no count.
@@ -915,18 +914,31 @@ describe("WorkspacePanel content area", () => {
     renderWorkspace({ rightRailTab: "files", selectedFilePath: null });
 
     // No active file → the scope view owns the content slot and the viewer is
-    // unmounted. The Files tab pins the panel to the full folder tree.
-    const panel = screen.getByTestId("files-panel-stub");
-    expect(panel).toHaveAttribute("data-flat-view", "false");
+    // unmounted. The Files tab shows the full folder tree.
+    expect(screen.getByTestId("files-panel-stub")).toBeInTheDocument();
     expect(screen.queryByTestId("file-viewer-stub")).toBeNull();
   });
 
-  it("renders the FilesPanel changed-only scope on the Changes tab", () => {
+  it("renders the built-in Changes view on the Changes tab", async () => {
+    await builtIns.publish({ changedFiles: [changedFile("src/app.ts")] });
     renderWorkspace({ rightRailTab: "changes", selectedFilePath: null });
 
-    // The Changes tab pins the same panel to the changed-files-only flat list.
-    expect(screen.getByTestId("files-panel-stub")).toHaveAttribute("data-flat-view", "true");
+    // The Changes tab is the built-in extension's view, not the Files panel.
+    expect(screen.getByTestId("extension-view-omnigent.changes.view")).toBeInTheDocument();
+    expect(screen.queryByTestId("files-panel-stub")).toBeNull();
     expect(screen.queryByTestId("file-viewer-stub")).toBeNull();
+    expect(await screen.findByRole("button", { name: "src/app.ts" })).toBeInTheDocument();
+    // Its title bar and the search field, as the classic tab had.
+    expect(screen.getByRole("heading", { name: "Changes" })).toBeInTheDocument();
+    expect(screen.getByRole("searchbox", { name: "Search changed files" })).toBeInTheDocument();
+  });
+
+  it("keeps the Changes tab, never a blank page, when the built-in view is missing", async () => {
+    await builtIns.dispose();
+    renderWorkspace({ rightRailTab: "changes", selectedFilePath: null });
+    expect(screen.getByRole("tab", { name: "Changes" })).toBeInTheDocument();
+    expect(screen.getByRole("alert")).toHaveTextContent("Changes could not be loaded");
+    builtIns = await startBuiltIns({ sessionId: "conv_ws" });
   });
 });
 

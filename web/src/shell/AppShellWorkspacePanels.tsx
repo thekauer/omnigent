@@ -4,7 +4,7 @@ import { ContentSearchPanel } from "./ContentSearchPanel";
 import { ExecutionLogsPanel } from "./ExecutionLogsPanel";
 import type { OpenFileOptions } from "./FileViewerContext";
 import { FilesPanelDrawer } from "./FilesPanelDrawer";
-import type { ChangedSort } from "./FlatFileList";
+import type { ChangedSort } from "@/lib/changedSort";
 import { InlineTerminalsSection } from "./InlineTerminalsSection";
 import { MobilePanelDrawer } from "./MobilePanelDrawer";
 import { PullRequestPanel } from "./PullRequestPanel";
@@ -124,6 +124,7 @@ export function AppShellWorkspacePanels({
           onClose={() => setFilesPanelOpen(false)}
           onFileSelect={openFileViewer}
           flatView={filesDrawerFlatView}
+          conversationId={conversationId}
           showHidden={filesPanelShowHidden}
           onShowHiddenChange={setFilesPanelShowHidden}
           sort={filesPanelSort}

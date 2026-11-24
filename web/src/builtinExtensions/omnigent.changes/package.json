@@ -1,0 +1,145 @@
+{
+  "name": "changes",
+  "displayName": "Changes",
+  "description": "The session's changed files as a list or a tree, in the workspace rail's Changes tab.",
+  "publisher": "omnigent",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "omnigent": "*"
+  },
+  "activationEvents": [
+    "*"
+  ],
+  "browser": "./extension.ts",
+  "contributes": {
+    "views": {
+      "omnigent.rightPanel": [
+        {
+          "id": "omnigent.changes.view",
+          "name": "Changes",
+          "icon": "file-diff",
+          "builtInTab": "changes",
+          "filter": {
+            "placeholder": "Find changed files by name",
+            "ariaLabel": "Search changed files"
+          }
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "omnigent.changes.viewAsTree",
+        "title": "View as Tree",
+        "icon": "list-tree"
+      },
+      {
+        "command": "omnigent.changes.viewAsList",
+        "title": "View as List",
+        "icon": "list"
+      },
+      {
+        "command": "omnigent.changes.refresh",
+        "title": "Refresh files",
+        "icon": "refresh-cw"
+      },
+      {
+        "command": "omnigent.changes.showHiddenFiles",
+        "title": "Show hidden files",
+        "icon": "eye"
+      },
+      {
+        "command": "omnigent.changes.hideHiddenFiles",
+        "title": "Hide hidden files",
+        "icon": "eye-off"
+      },
+      {
+        "command": "omnigent.changes.sortByName",
+        "title": "Filename",
+        "icon": "arrow-down-a-z",
+        "toggled": "config.omnigent.files.sortOrder == alpha"
+      },
+      {
+        "command": "omnigent.changes.sortByRecent",
+        "title": "Last edited",
+        "icon": "file-clock",
+        "toggled": "config.omnigent.files.sortOrder == recent"
+      },
+      {
+        "command": "omnigent.changes.sortBySize",
+        "title": "Size",
+        "icon": "arrow-down-wide-narrow",
+        "toggled": "config.omnigent.files.sortOrder == size"
+      },
+      {
+        "command": "omnigent.changes.sortByType",
+        "title": "Type",
+        "icon": "file-type",
+        "toggled": "config.omnigent.files.sortOrder == type"
+      }
+    ],
+    "submenus": [
+      {
+        "id": "omnigent.changes.sortBy",
+        "label": "Sort",
+        "icon": "arrow-down-up",
+        "tooltip": "Sort files"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "omnigent.changes.viewAsTree",
+          "when": "view == omnigent.changes.view && omnigent.changes.viewMode != tree",
+          "group": "navigation"
+        },
+        {
+          "command": "omnigent.changes.viewAsList",
+          "when": "view == omnigent.changes.view && omnigent.changes.viewMode == tree",
+          "group": "navigation"
+        },
+        {
+          "command": "omnigent.changes.refresh",
+          "when": "view == omnigent.changes.view",
+          "group": "navigation"
+        },
+        {
+          "submenu": "omnigent.changes.sortBy",
+          "when": "view == omnigent.changes.view",
+          "group": "filter"
+        },
+        {
+          "command": "omnigent.changes.showHiddenFiles",
+          "when": "view == omnigent.changes.view && !config.omnigent.files.showHidden && omnigent.changes.hasHiddenFiles",
+          "group": "filter",
+          "tone": "warning",
+          "tooltip": "Some changed files are in hidden directories. Click to show."
+        },
+        {
+          "command": "omnigent.changes.showHiddenFiles",
+          "when": "view == omnigent.changes.view && !config.omnigent.files.showHidden",
+          "group": "filter"
+        },
+        {
+          "command": "omnigent.changes.hideHiddenFiles",
+          "when": "view == omnigent.changes.view && config.omnigent.files.showHidden",
+          "group": "filter"
+        }
+      ],
+      "omnigent.changes.sortBy": [
+        {
+          "command": "omnigent.changes.sortByName"
+        },
+        {
+          "command": "omnigent.changes.sortByRecent"
+        },
+        {
+          "command": "omnigent.changes.sortBySize"
+        },
+        {
+          "command": "omnigent.changes.sortByType"
+        }
+      ]
+    }
+  }
+}

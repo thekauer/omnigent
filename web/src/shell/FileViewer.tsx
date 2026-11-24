@@ -409,7 +409,7 @@ interface FileViewerProps {
   onCommentsOpenChange?: (open: boolean) => void;
   /**
    * Sort order for the prev/next navigation. Must match the order the
-   * Changes list (`FilesPanel` → `FlatFileList`) is sorted by, or the
+   * Changes tab (the built-in `omnigent.changes` extension) is sorted by, or the
    * "X/N" index won't line up with the list. Defaults to the panel's default sort.
    */
   sort?: ChangedSort;

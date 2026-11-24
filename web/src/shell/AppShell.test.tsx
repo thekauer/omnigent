@@ -1,6 +1,7 @@
 vi.mock("@/lib/fetchSessionHostId", () => ({
   fetchSessionHostId: vi.fn().mockResolvedValue("local-host"),
 }));
+import { type BuiltInHarness, startBuiltIns } from "@/test/builtInExtensions";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
@@ -158,26 +159,18 @@ vi.mock("./Sidebar", () => ({
   ),
 }));
 vi.mock("./FilesPanel", () => ({
-  // Scope-only stand-in matching the real FilesPanel after the open-file tabs
-  // and the FileViewer moved up to WorkspacePanel. It echoes its fixed scope
-  // (data-flat-view) and exposes file-select buttons; the scope is now the
-  // Files vs Changes rail tab (driven by the real WorkspacePanel), not an
-  // in-panel toggle. The inline viewer is rendered directly by WorkspacePanel
+  // Stand-in for the Files tab's tree, after the open-file tabs and the
+  // FileViewer moved up to WorkspacePanel. It exposes file-select buttons; the
+  // Changes tab is the built-in Changes extension's view (real, below). The inline viewer is rendered directly by WorkspacePanel
   // via the FileViewer mock below (data-testid="file-viewer-inline").
   FilesPanel: ({
     onFileSelect,
-    flatView,
     showHidden,
   }: {
     onFileSelect: (path: string) => void;
-    flatView: boolean;
     showHidden: boolean;
   }) => (
-    <div
-      data-testid="files-panel"
-      data-flat-view={String(flatView)}
-      data-show-hidden={String(showHidden)}
-    >
+    <div data-testid="files-panel" data-show-hidden={String(showHidden)}>
       <button
         type="button"
         aria-label="files: select README.md"
@@ -756,6 +749,16 @@ function withWindowOrigin(origin: string, run: () => void) {
     Object.defineProperty(window, "location", { configurable: true, value: originalLocation });
   }
 }
+
+// The built-in extensions run as in the app; AppShell publishes its own workspace.
+const CHANGES_VIEW = "extension-view-omnigent.changes.view";
+let builtIns: BuiltInHarness;
+beforeEach(async () => {
+  builtIns = await startBuiltIns({ withSource: false });
+});
+afterEach(async () => {
+  await builtIns.dispose();
+});
 
 beforeEach(() => {
   runnerHealthState.runnerOnline = undefined;
@@ -2215,7 +2218,7 @@ describe("Workspace rail maximize", () => {
     expect(rail()).toHaveClass("md:absolute");
     fireEvent.click(screen.getByRole("button", { name: "files: select README.md" }));
     fireEvent.mouseDown(screen.getByRole("tab", { name: /Changes/i }));
-    expect(screen.getByTestId("files-panel")).toHaveAttribute("data-flat-view", "true");
+    expect(screen.getByTestId(CHANGES_VIEW)).toBeInTheDocument();
     expect(rail()).toHaveClass("md:absolute");
     expect(screen.getByTestId("sidebar")).toHaveAttribute("data-open", "false");
 
@@ -3416,7 +3419,9 @@ describe("Right workspace card visibility", () => {
     // Alt+2 here (⌃2 on macOS) shows the second fixed tab, wherever focus is.
     screen.getByRole("button", { name: "Collapse right panel" }).focus();
     fireEvent.keyDown(document.activeElement!, { code: "Digit2", key: "2", altKey: true });
-    expect(screen.getByTestId("files-panel")).toHaveAttribute("data-flat-view", "true");
+    expect(screen.getByTestId(CHANGES_VIEW)).toBeInTheDocument();
+    // Alt+1 goes back to Files, where the file is picked.
+    fireEvent.keyDown(document.activeElement!, { code: "Digit1", key: "1", altKey: true });
 
     fireEvent.click(screen.getByRole("button", { name: "files: select README.md" }));
     expect(screen.getByTestId("file-viewer-inline")).toHaveAttribute("data-path", "README.md");
@@ -3927,7 +3932,7 @@ describe("Right workspace card visibility", () => {
     fireEvent.pointerDown(screen.getByRole("button", { name: "Open new" }), { button: 0 });
     fireEvent.click(screen.getByRole("menuitem", { name: "Changes" }));
     expect(screen.getByRole("tab", { name: "Changes" })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByTestId("files-panel")).toHaveAttribute("data-flat-view", "true");
+    expect(screen.getByTestId(CHANGES_VIEW)).toBeInTheDocument();
     expect(readSessionWorkspaceState("conv_unpinned").openPanels).toEqual(["changes"]);
 
     fireEvent.click(screen.getByRole("button", { name: "Close Changes" }));
@@ -4626,7 +4631,7 @@ describe("AppShell URL sync — file param", () => {
     renderShell("/c/conv_abc");
 
     // Sanity-check: tree mode active, no file open yet.
-    expect(screen.getByTestId("files-panel")).toHaveAttribute("data-flat-view", "false");
+    expect(screen.getByTestId("files-panel")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /files: select README.md/i }));
 
@@ -5019,7 +5024,7 @@ describe("Files/Changes tabs drive the panel scope", () => {
     renderShell("/c/conv_abc");
 
     // The Files tab pins the panel to the tree; no scope param is written.
-    expect(screen.getByTestId("files-panel")).toHaveAttribute("data-flat-view", "false");
+    expect(screen.getByTestId("files-panel")).toBeInTheDocument();
     expect(screen.getByRole("tab", { name: /files/i })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByTestId("url-params").textContent).not.toContain("view=");
   });
@@ -5038,7 +5043,7 @@ describe("Files/Changes tabs drive the panel scope", () => {
 
     // Selecting Changes flips the panel to the changed-only flat list; the
     // scope is the tab, so no ?view= param is written.
-    expect(screen.getByTestId("files-panel")).toHaveAttribute("data-flat-view", "true");
+    expect(screen.getByTestId(CHANGES_VIEW)).toBeInTheDocument();
     expect(screen.getByTestId("url-params").textContent).not.toContain("view=");
   });
 
@@ -5055,7 +5060,7 @@ describe("Files/Changes tabs drive the panel scope", () => {
     renderShell("/c/conv_changesmem");
 
     expect(screen.getByRole("tab", { name: /changes/i })).toHaveAttribute("aria-selected", "true");
-    expect(screen.getByTestId("files-panel")).toHaveAttribute("data-flat-view", "true");
+    expect(screen.getByTestId(CHANGES_VIEW)).toBeInTheDocument();
   });
 });
 

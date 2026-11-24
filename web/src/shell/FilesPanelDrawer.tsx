@@ -10,14 +10,17 @@
 //
 // The drawer renders the existing `FilesPanel` in its full-screen
 // mode (the `onClose` prop switches it to that layout) so the
-// drawer doesn't duplicate the panel's header chrome.
+// drawer doesn't duplicate the panel's header chrome; for Changes it
+// renders the built-in Changes extension's view with a close button.
 
 import { useEffect, useRef } from "react";
 
 import { useResizablePanel } from "@/hooks/useResizablePanel";
 import { cn } from "@/lib/utils";
+import { ExtensionRailView, MissingBuiltInView } from "./extensionViews/ExtensionRailView";
 import { FilesPanel } from "./FilesPanel";
-import type { ChangedSort } from "./FlatFileList";
+import { builtInTabView, useRailViews } from "./railViews";
+import type { ChangedSort } from "@/lib/changedSort";
 
 interface FilesPanelDrawerProps {
   open: boolean;
@@ -29,11 +32,13 @@ interface FilesPanelDrawerProps {
    */
   onFileSelect: (path: string) => void;
   /**
-   * Which scope the drawer renders: false = full folder tree, true =
-   * changed-files-only flat list. Fixed by the FAB entry that opened it
-   * (Files vs Changes) — the drawer has no in-panel scope switch.
+   * Which scope the drawer renders: false = full folder tree, true = the
+   * Changes tab's view. Fixed by the FAB entry that opened it (Files vs
+   * Changes); the drawer has no in-panel scope switch.
    */
   flatView: boolean;
+  /** The session shown, for the Changes view's per-session state. */
+  conversationId?: string;
   /**
    * Lifted hidden-files toggle state. Lifted to AppShell so the
    * eye-icon choice survives inline→drawer transitions.
@@ -57,8 +62,11 @@ export function FilesPanelDrawer({
   onShowHiddenChange,
   sort,
   onSortChange,
+  conversationId,
 }: FilesPanelDrawerProps) {
   const { panelWidth, handleProps, isDesktop } = useResizablePanel(open);
+  const { views, settled } = useRailViews();
+  const changesView = builtInTabView(views, "changes");
   const ref = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -85,6 +93,7 @@ export function FilesPanelDrawer({
       ref={ref}
       data-testid="files-panel-drawer"
       data-state={open ? "open" : "closed"}
+      data-flat-view={flatView}
       // It closes on Escape, so page-wide Escape shortcuts leave keys inside it alone.
       data-escape-owner={open ? "" : undefined}
       style={{ width: panelWidth }}
@@ -108,10 +117,20 @@ export function FilesPanelDrawer({
           is set: it owns the header (title + X close button) and
           fills the parent's height. Mount it only while open so the
           folder tree initializes from the latest inline-panel state. */}
-      {open && (
+      {open && flatView && changesView && (
+        <ExtensionRailView
+          viewId={changesView.id}
+          settled={settled}
+          conversationId={conversationId}
+          onClose={onClose}
+          closeLabel="Close files"
+        />
+      )}
+      {open && flatView && !changesView && settled && <MissingBuiltInView label="Changes" />}
+      {open && !flatView && (
         <FilesPanel
           onFileSelect={onFileSelect}
-          flatView={flatView}
+          flatView={false}
           showHidden={showHidden}
           onShowHiddenChange={onShowHiddenChange}
           sort={sort}

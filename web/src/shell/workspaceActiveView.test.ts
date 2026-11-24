@@ -37,7 +37,7 @@ function resolve(
 describe("resolveWorkspaceActiveView", () => {
   it.each([
     ["the Files tab", { rightRailTab: "files" }, {}, "files"],
-    ["the Changes tab", { rightRailTab: "changes" }, {}, "files"],
+    ["the Changes tab", { rightRailTab: "changes" }, {}, "extension"],
     ["Pull Requests", { rightRailTab: "github" }, {}, "github"],
     [
       "Pull Requests where they're hidden",
@@ -82,9 +82,14 @@ describe("resolveWorkspaceActiveView", () => {
     expect(resolve(selection, availability).scope).toBe(scope);
   });
 
-  it("lists only changes on the Changes tab", () => {
-    expect(resolve({ rightRailTab: "changes" }).flat).toBe(true);
-    expect(resolve({ rightRailTab: "files" }).flat).toBe(false);
+  it("shows the Changes tab as its built-in extension view", () => {
+    expect(
+      resolve({ rightRailTab: "changes" }, { builtInTabViewId: () => "omnigent.changes.view" }),
+    ).toMatchObject({ scope: "extension", extensionViewId: "omnigent.changes.view" });
+    expect(resolve({ rightRailTab: "files" })).toMatchObject({
+      scope: "files",
+      extensionViewId: null,
+    });
   });
 
   it("puts a present shell in front of an open file", () => {

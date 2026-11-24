@@ -99,12 +99,12 @@ import { ResponsiveViewerSlot } from "./ResponsiveViewerSlot";
 import { TasksPanel } from "./TasksPanel";
 import { SessionDescendantRuns } from "@/components/workflows/WorkflowRunRow";
 import { PullRequestPanel } from "./PullRequestPanel";
-import type { ChangedSort } from "./FlatFileList";
+import type { ChangedSort } from "@/lib/changedSort";
 import { SubagentsPanel } from "./SubagentsPanel";
 import { useTerminalStatuses } from "./useTerminalStatuses";
 import { extensionRailTab, type RightRailTab } from "./railTabs";
-import { useRailViews } from "./railViews";
-import { ExtensionRailView } from "./extensionViews/ExtensionRailView";
+import { builtInTabView, useRailViews } from "./railViews";
+import { ExtensionRailView, MissingBuiltInView } from "./extensionViews/ExtensionRailView";
 import {
   WORKSPACE_PANEL_TABS,
   type RailPanelTab,
@@ -731,8 +731,6 @@ interface WorkspacePanelProps {
   onReveal?: () => void;
   /** Hide the rail; desktop Close uses it when no tab on screen can close. */
   onHide?: () => void;
-  /** Count of changed files, shown as the Changes tab badge. */
-  changedCount: number;
   /** How many child agents are actively working (Agents tab badge). */
   subagentsWorking: number;
   /**
@@ -908,7 +906,6 @@ function WorkspacePanelImpl({
   showBrowserTab,
   onReveal,
   onHide,
-  changedCount,
   subagentsWorking,
   agentCount,
   rootSessionId,
@@ -952,6 +949,7 @@ function WorkspacePanelImpl({
   const sideChats = useSideChats(conversationId);
   const mobileViewport = useIsMobileViewport();
   const isMobile = mobileViewport && !contained;
+  const { views: extensionViews, settled: extensionViewsSettled } = useRailViews();
   const activeView = resolveWorkspaceActiveView(
     {
       rightRailTab,
@@ -968,6 +966,7 @@ function WorkspacePanelImpl({
       showContentSearch,
       hasAgentTree: Boolean(rootSessionId),
       mobile: isMobile,
+      builtInTabViewId: (tab) => builtInTabView(extensionViews, tab)?.id,
     },
   );
   const { browserSelected, sideChatSelected } = activeView;
@@ -1357,12 +1356,13 @@ function WorkspacePanelImpl({
     return pending || showFilesPanel;
   });
   const pinnedTabs = readPinnedWorkspaceTabs();
-  const { views: extensionViews, settled: extensionViewsSettled } = useRailViews();
   const visiblePermanentTabs: RailPanelTab[] = [
     ...availablePanels.filter((tab) => pinnedTabs.includes(tab)),
     ...(showContentSearch && (pending || showFilesPanel) ? ["content-search" as const] : []),
     // Extension views follow the built-ins, in the registry's order.
-    ...extensionViews.map((view) => extensionRailTab(view.id)),
+    ...extensionViews
+      .filter((view) => view.builtInTab === undefined)
+      .map((view) => extensionRailTab(view.id)),
   ];
   const unpinnedTabs = availablePanels.filter((tab) => !pinnedTabs.includes(tab));
   const visibleOpenPanels = openPanels.filter((tab) => unpinnedTabs.includes(tab));
@@ -1512,7 +1512,6 @@ function WorkspacePanelImpl({
       showGithubTab,
       showTasksTab,
       showContentSearch,
-      changedCount,
       agentCount,
       subagentsWorking,
       digit: shortcutFor(tab),
@@ -2115,10 +2114,7 @@ function WorkspacePanelImpl({
                   !filesPanelActive && "invisible absolute inset-0",
                 )}
               >
-                <RenderErrorBoundary
-                  name="this workspace pane"
-                  resetKey={JSON.stringify([conversationId, activeView.flat])}
-                >
+                <RenderErrorBoundary name="this workspace pane" resetKey={conversationId}>
                   <FilesPanel
                     conversationId={contained ? conversationId : undefined}
                     frameless
@@ -2216,8 +2212,25 @@ function WorkspacePanelImpl({
                   viewId={activeView.extensionViewId}
                   settled={extensionViewsSettled}
                   conversationId={conversationId}
+                  visible={open && !inert}
                 />
               </RenderErrorBoundary>
+            ) : scopeView === "extension" ? (
+              // A built-in tab whose built-in view never registered: say so, never blank.
+              extensionViewsSettled ? (
+                <MissingBuiltInView
+                  label={
+                    rightRailTab === null
+                      ? "This view"
+                      : (railTabDescriptor(rightRailTab as RailPanelTab, extensionViews)?.label ??
+                        "This view")
+                  }
+                />
+              ) : (
+                <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-muted-foreground">
+                  <Spinner />
+                </div>
+              )
             ) : scopeView === "empty" ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-2 px-6 text-center text-muted-foreground">
                 <PlusIcon className="size-6" />

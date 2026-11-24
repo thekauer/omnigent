@@ -3,13 +3,17 @@
 // dev extension's, and an entry module that only uses the extension API.
 import type { ExtensionDescription } from "@/vscodeExtensions/host";
 import { validateManifest } from "@/vscodeExtensions/manifest";
+import * as changes from "./omnigent.changes/extension";
+import changesManifest from "./omnigent.changes/package.json";
 
 export interface BuiltInExtension {
   readonly manifest: unknown;
   readonly module: { activate: (context: never) => unknown; deactivate?: () => unknown };
 }
 
-export const BUILT_IN_EXTENSIONS: readonly BuiltInExtension[] = Object.freeze([]);
+export const BUILT_IN_EXTENSIONS: readonly BuiltInExtension[] = Object.freeze([
+  { manifest: changesManifest, module: changes },
+]);
 
 /** The built-ins as the host loads them; a manifest that fails its checks is logged and left out. */
 export function builtInExtensions(

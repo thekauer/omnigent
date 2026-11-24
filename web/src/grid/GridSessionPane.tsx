@@ -675,7 +675,6 @@ export function GridSessionPane({
                   }
                   showBrowserTab={supportsBrowser()}
                   onReveal={onOpenWorkspace}
-                  changedCount={changedCount}
                   subagentsWorking={childSessions.filter((child) => child.busy).length}
                   agentCount={childSessions.length + 1}
                   rootSessionId={rootSessionId}

@@ -23,7 +23,7 @@ import {
   TAB_BADGE_BASE,
 } from "./railTabs";
 import { DEFAULT_RAIL_VIEW_ICON, railViewIcon } from "./railViewIcons";
-import type { RailView } from "./railViews";
+import { builtInTabView, type RailView } from "./railViews";
 
 /** The rail's fixed built-in panel tabs: everything but the dynamic browser and side-chat modes. */
 export type WorkspacePanelTab = Exclude<BuiltInRailTab, "browser" | "sidechat">;
@@ -39,7 +39,6 @@ export interface WorkspacePanelTabContext {
   /** Whether the session has a Tasks tab. */
   showTasksTab: boolean;
   showContentSearch: boolean;
-  changedCount: number;
   agentCount: number;
   subagentsWorking: number;
   /** This tab's ⌃N digit among the visible fixed tabs, if it has one. */
@@ -82,14 +81,11 @@ export const WORKSPACE_PANEL_TABS: Record<WorkspacePanelTab, WorkspacePanelTabDe
     icon: FolderTreeIcon,
     shown: ({ pending, showFilesPanel }) => pending || showFilesPanel,
   },
+  // Its page, label, icon and badge come from the built-in Changes extension's view.
   changes: {
     label: "Changes",
     icon: FileDiffIcon,
     shown: ({ pending, showFilesPanel }) => pending || showFilesPanel,
-    ariaLabel: ({ changedCount }) =>
-      changedCount > 0 ? `Changes ${changedCount} changed` : "Changes",
-    badge: ({ changedCount }) =>
-      changedCount > 0 ? { text: changedCount, className: "sr-only" } : null,
   },
   github: {
     label: "Pull Requests",
@@ -142,7 +138,19 @@ export function railTabDescriptor(
   views: readonly RailView[],
 ): WorkspacePanelTabDescriptor | null {
   const viewId = extensionRailTabViewId(tab);
-  if (viewId === null) return WORKSPACE_PANEL_TABS[tab as WorkspacePanelTab];
+  if (viewId === null) {
+    const builtIn = WORKSPACE_PANEL_TABS[tab as WorkspacePanelTab];
+    // A built-in extension's view stands in for the tab: its name, icon and badge,
+    // in the built-in tab's place and with its visibility.
+    const view = builtInTabView(views, tab);
+    if (!view) return builtIn;
+    const viewDescriptor = extensionViewTabDescriptor(view);
+    return {
+      ...viewDescriptor,
+      icon: railViewIcon(view.icon) ?? builtIn.icon,
+      shown: builtIn.shown,
+    };
+  }
   const view = views.find((candidate) => candidate.id === viewId);
   return view ? extensionViewTabDescriptor(view) : null;
 }

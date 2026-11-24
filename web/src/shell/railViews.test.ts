@@ -23,7 +23,6 @@ const CONTEXT: WorkspacePanelTabContext = {
   showGithubTab: true,
   showTasksTab: true,
   showContentSearch: true,
-  changedCount: 3,
   agentCount: 2,
   subagentsWorking: 1,
   digit: "7",
@@ -167,10 +166,71 @@ describe("resolveWorkspaceActiveView with an extension tab", () => {
   it("shows the extension page for an ext: tab and nothing else changes", () => {
     expect(
       resolveWorkspaceActiveView({ ...selection, rightRailTab: "ext:a.ext.v" }, availability),
-    ).toMatchObject({ scope: "extension", extensionViewId: "a.ext.v", flat: false });
+    ).toMatchObject({ scope: "extension", extensionViewId: "a.ext.v" });
+    expect(
+      resolveWorkspaceActiveView({ ...selection, rightRailTab: "files" }, availability),
+    ).toMatchObject({ scope: "files", extensionViewId: null });
+  });
+
+  it("shows the built-in view of the Changes tab, or the extension page without one", () => {
+    expect(
+      resolveWorkspaceActiveView(
+        { ...selection, rightRailTab: "changes" },
+        {
+          ...availability,
+          builtInTabViewId: (tab) => (tab === "changes" ? "omnigent.changes.view" : undefined),
+        },
+      ),
+    ).toMatchObject({ scope: "extension", extensionViewId: "omnigent.changes.view" });
     expect(
       resolveWorkspaceActiveView({ ...selection, rightRailTab: "changes" }, availability),
-    ).toMatchObject({ scope: "files", extensionViewId: null, flat: true });
+    ).toMatchObject({ scope: "extension", extensionViewId: null });
+  });
+
+  it("takes a built-in tab's label, icon and badge from the view standing in for it", () => {
+    const registry = new RailViewRegistry();
+    const handle = registry.register({
+      id: "omnigent.changes.view",
+      extensionId: "omnigent.changes",
+      name: "Changes",
+      icon: "file-diff",
+      builtInTab: "changes",
+    });
+    handle.update({ badge: { value: 3, tooltip: "3 changed" } });
+    const descriptor = railTabDescriptor("changes", registry.getSnapshot().views)!;
+    expect(workspacePanelTabPresentation(descriptor, CONTEXT)).toMatchObject({
+      label: "Changes",
+      icon: RAIL_VIEW_ICONS["file-diff"],
+      ariaLabel: "Changes 3 changed",
+      badge: { text: 3, className: "sr-only" },
+    });
+    // Its visibility stays the built-in tab's.
+    expect(
+      workspacePanelTabPresentation(descriptor, { ...CONTEXT, showFilesPanel: false }),
+    ).toBeNull();
+    handle.update({ badge: undefined });
+    expect(
+      workspacePanelTabPresentation(
+        railTabDescriptor("changes", registry.getSnapshot().views)!,
+        CONTEXT,
+      ),
+    ).toMatchObject({ ariaLabel: "Changes", badge: null });
+  });
+
+  it("skips updates that change nothing", () => {
+    const registry = new RailViewRegistry();
+    const listener = vi.fn();
+    const handle = registry.register({
+      id: "a.b.c",
+      extensionId: "a.b",
+      name: "C",
+      icon: undefined,
+    });
+    registry.subscribe(listener);
+    handle.update({ message: undefined, loading: true });
+    expect(listener).not.toHaveBeenCalled();
+    handle.update({ message: "x" });
+    expect(listener).toHaveBeenCalledOnce();
   });
 
   it("keeps an open file in front of the extension page", () => {

@@ -3667,7 +3667,6 @@ function AppShellImpl() {
                     showBrowserTab={railTabsAvailable.browser}
                     onReveal={revealRightPanel}
                     onHide={rightPanelOpen ? toggleRightPanel : undefined}
-                    changedCount={changedCount}
                     subagentsWorking={subagentsWorking}
                     agentCount={agentCount}
                     rootSessionId={rootSessionId}

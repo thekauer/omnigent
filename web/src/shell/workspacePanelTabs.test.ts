@@ -14,7 +14,6 @@ const READY: WorkspacePanelTabContext = {
   showGithubTab: true,
   showTasksTab: true,
   showContentSearch: true,
-  changedCount: 0,
   agentCount: 0,
   subagentsWorking: 0,
   digit: undefined,
@@ -121,16 +120,11 @@ describe("workspacePanelTabPresentation", () => {
     });
   });
 
-  it("announces the Changes count only when files changed", () => {
+  it("draws Changes without a count until its built-in view gives one", () => {
+    // The count comes from the built-in Changes view's badge (railViews.test.ts).
     expect(workspacePanelTabPresentation(WORKSPACE_PANEL_TABS.changes, READY)).toMatchObject({
       ariaLabel: "Changes",
       badge: null,
-    });
-    expect(
-      workspacePanelTabPresentation(WORKSPACE_PANEL_TABS.changes, { ...READY, changedCount: 3 }),
-    ).toMatchObject({
-      ariaLabel: "Changes 3 changed",
-      badge: { text: 3, className: "sr-only" },
     });
   });
 
