@@ -19,9 +19,10 @@
 // (main.tsx) before first paint and on every change (Appearance settings).
 
 // `.ts` extension (not extensionless like the app's other imports): this module
-// is also loaded directly by the `generate-theme-palettes.mjs` node script,
+// is also loaded directly by the `generate-theme-tokens.mjs` node script,
 // whose ESM resolver can't do extensionless resolution. tsconfig has
 // `allowImportingTsExtensions`, and Vite resolves it the same either way.
+import { PALETTE_TOKEN_CSS_NAMES, type PaletteTokenKey } from "../theme/tokens/registry.ts";
 import { getThemeRoots } from "./host.ts";
 
 const STORAGE_KEY = "omnigent:ui-theme-palette";
@@ -60,89 +61,10 @@ export interface PaletteSwatch {
   text: string;
 }
 
-export interface PaletteTokens {
-  background: string;
-  foreground: string;
-  card: string;
-  cardSolid: string;
-  cardForeground: string;
-  tray: string;
-  popover: string;
-  popoverForeground: string;
-  primary: string;
-  link: string;
-  primaryForeground: string;
-  selectionBackground: string;
-  selectionForeground: string;
-  codeSelection: string;
-  secondary: string;
-  secondaryForeground: string;
-  muted: string;
-  mutedForeground: string;
-  codeBackground: string;
-  accent: string;
-  accentForeground: string;
-  border: string;
-  borderStrong: string;
-  buttonBorder: string;
-  input: string;
-  ring: string;
-  brandAccent: string;
-  sidebar: string;
-  sidebarForeground: string;
-  sidebarPrimary: string;
-  sidebarPrimaryForeground: string;
-  sidebarAccent: string;
-  sidebarAccentForeground: string;
-  sidebarBorder: string;
-  sidebarRing: string;
-  sidebarActive: string;
-  sidebarActiveForeground: string;
-  sidebarBackground: string;
-  shellBackground: string;
-}
+/** One value per palette token (`theme/tokens/workbench.ts`), keyed as in the registry. */
+export type PaletteTokens = Record<PaletteTokenKey, string>;
 
-export const PALETTE_TOKEN_CSS_NAMES = {
-  background: "background",
-  foreground: "foreground",
-  card: "card",
-  cardSolid: "card-solid",
-  cardForeground: "card-foreground",
-  tray: "tray",
-  popover: "popover",
-  popoverForeground: "popover-foreground",
-  primary: "primary",
-  link: "link",
-  primaryForeground: "primary-foreground",
-  selectionBackground: "selection-background",
-  selectionForeground: "selection-foreground",
-  codeSelection: "code-selection",
-  secondary: "secondary",
-  secondaryForeground: "secondary-foreground",
-  muted: "muted",
-  mutedForeground: "muted-foreground",
-  codeBackground: "code-bg",
-  accent: "accent",
-  accentForeground: "accent-foreground",
-  border: "border",
-  borderStrong: "border-strong",
-  buttonBorder: "button-border",
-  input: "input",
-  ring: "ring",
-  brandAccent: "brand-accent",
-  sidebar: "sidebar",
-  sidebarForeground: "sidebar-foreground",
-  sidebarPrimary: "sidebar-primary",
-  sidebarPrimaryForeground: "sidebar-primary-foreground",
-  sidebarAccent: "sidebar-accent",
-  sidebarAccentForeground: "sidebar-accent-foreground",
-  sidebarBorder: "sidebar-border",
-  sidebarRing: "sidebar-ring",
-  sidebarActive: "sidebar-active",
-  sidebarActiveForeground: "sidebar-active-foreground",
-  sidebarBackground: "sidebar-background",
-  shellBackground: "shell-background",
-} as const satisfies Record<keyof PaletteTokens, string>;
+export { PALETTE_TOKEN_CSS_NAMES };
 
 type PaletteTokenInput = Pick<
   PaletteTokens,

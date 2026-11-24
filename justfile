@@ -105,8 +105,8 @@ storybook-build: _ensure-web
     pnpm --filter web run build:storybook
 
 [group('web')]
-generate-theme-palettes: _ensure-web
-    cd web && node --experimental-strip-types scripts/generate-theme-palettes.mjs
+generate-theme-tokens: _ensure-web
+    cd web && node --experimental-strip-types scripts/generate-theme-tokens.mjs
 
 # --- Electron desktop app ---
 

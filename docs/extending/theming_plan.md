@@ -11,8 +11,9 @@ the same commit that lands each milestone.
 |---|---|---|
 | Step 0 | Done | This plan saved in the fork and linked from `vscode_style_extensions.md`. |
 | M0 | Done | `verify.sh --screens --token-dump --embed` and `--compare` in `my-extensions/dev/verify/screens.py`; baselines of `0c1afd2594` in `my-extensions/dev/verify/baselines/` (96 screens, 16 standalone and 14 embed dumps). Two runs: 0 px, identical dumps. |
-| M1 | Next | Token registry and generator; non-palette colours moved. |
-| M2 to M11 | Queued | Wait for the user after M1. |
+| M1 | Done | `web/src/theme/tokens/` (registry, workbench, status, chart); `PaletteTokens` and `PALETTE_TOKEN_CSS_NAMES` derived from it; `scripts/generate-theme-tokens.mjs` writes `src/themeTokens.generated.css` (`just generate-theme-tokens`, pre-commit `web-theme-token-generation`). 37 non-palette colour tokens (59 declarations) left `index.css`; its remaining `:root`/`.dark` tokens (shadows, radii, insets, motion) are listed in `registry.test.ts` for M2/M3. Against the M0 baselines: identical dumps, 0 px. |
+| M2 | Next | Waits for the user. |
+| M3 to M11 | Queued | |
 
 Resume notes:
 
@@ -62,7 +63,7 @@ Paths are relative to the omnigent repo root unless they start with `my-extensio
 - Palettes: `web/src/lib/themePalette.ts`.
   - `PaletteTokens` :63, `PALETTE_TOKEN_CSS_NAMES` :105, `PALETTES` :220.
   - `applyThemePalette` :745 stamps `data-theme` on `getThemeRoots()` (`lib/host.ts`).
-- Generator: `web/scripts/generate-theme-palettes.mjs` writes `web/src/themePalettes.generated.css`. Pre-commit `--check` is at `.pre-commit-config.yaml:89`.
+- Generator (before M1): `web/scripts/generate-theme-palettes.mjs` wrote `web/src/themePalettes.generated.css`; M1 renamed both (see the token model). Pre-commit `--check` is at `.pre-commit-config.yaml:89`.
 - Custom theme: `lib/customTheme.ts:528` writes `--custom-{light,dark}-*`. Mode comes from next-themes `.dark` (`components/theme/ThemeProvider.tsx`).
 - Boot order: `main.tsx:117-134` and `embed.tsx` apply font/custom/palette before first paint. Contributions apply before activation (`vscodeExtensions/host.ts` `contribute()`, `contributions.ts` `parseContributions`).
 - Non-palette colours live only in `index.css` `:root` (~186) and `.dark` (~310): status, destructive, primary-cta, chart, session-active, tag-pink, tooltip-bg, foreground-tertiary.
@@ -101,8 +102,8 @@ Paths are relative to the omnigent repo root unless they start with `my-extensio
   - `PaletteTokens` is derived from the registry.
   - The CSS-only tokens move into the registry with byte-identical defaults.
 - Generator: `generate-theme-tokens.mjs` writes `web/src/themeTokens.generated.css`.
-  - Defaults go in `:root:not(.dark)` and `.dark`.
-  - Derived formulas are re-emitted on `:root, .dark, [data-theme]`, so embed inner roots resolve them.
+  - Defaults go in `:root` and `.dark` (as built in M1: `:root` rather than `:root:not(.dark)`, so dark mode keeps inheriting a light-only default exactly as the hand-written blocks did).
+  - Derived formulas are re-emitted on the palette-stamped roots (`[data-theme]:not(.dark)` and `.dark[data-theme]`), so embed inner roots resolve them. `derived` is computed from the value (`isDerivedValue`), not stored.
   - Palette blocks are generated as today.
 - Extension colours (`contributes.colors`) register at runtime as `--x-<publisher>-<name>-<id>`.
 

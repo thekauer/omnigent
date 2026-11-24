@@ -83,11 +83,11 @@ repos:
         # fights the tooling), and protobuf bindings (gen_protobuf.py --check).
         exclude: ^(omnigent/server/static/web-ui/assets/|web/.*\.xcassets/|web/.*\.icon/|web/src/gen/)
 
-      - id: web-theme-palette-generation
-        name: web theme palette CSS generation
+      - id: web-theme-token-generation
+        name: web theme token CSS generation
         language: system
-        entry: bash -c 'test -x web/node_modules/.bin/prettier && cd web && node --experimental-strip-types scripts/generate-theme-palettes.mjs --check'
-        files: ^(pnpm-lock\.yaml|web/(package\.json|\.prettierrc\.json|scripts/generate-theme-palettes\.mjs|src/(themePalettes\.generated\.css|lib/themePalette\.ts)))$
+        entry: bash -c 'test -x web/node_modules/.bin/prettier && cd web && node --experimental-strip-types scripts/generate-theme-tokens.mjs --check'
+        files: ^(pnpm-lock\.yaml|web/(package\.json|\.prettierrc\.json|scripts/generate-theme-tokens\.mjs|src/(themeTokens\.generated\.css|lib/themePalette\.ts|lib/host\.ts|theme/tokens/[^/]+\.ts)))$
         pass_filenames: false
 
       - id: web-oxlint

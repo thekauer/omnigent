@@ -3,7 +3,8 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist-mono";
-@import "./themePalettes.generated.css";
+/* Colour token defaults and palettes, generated from src/theme/tokens/registry.ts. */
+@import "./themeTokens.generated.css";
 
 /* Streamdown ships utility classes pre-compiled in its dist; this @source
  * pragma tells Tailwind v4 to scan those files so the classes survive the
@@ -192,16 +193,9 @@
   --icon-container-default: 16px;
   --ui-shadow-neutral-rgb: 0 0 0;
   --ui-shadow-warm-rgb: 60 40 10;
-  /* Onboarding wizard page surface — a hair off the white card so it reads as a
-     distinct backdrop (the card stays var(--card)). */
-  --onboarding-wizard-background: #fcfbfb;
-  --onboarding-modal-border: #0000001a;
   --onboarding-modal-shadow: 0 24px 80px 8px #00000012;
   /* The shadow-lg recipe, per theme, for both hover and typing. */
   --composer-shadow: 0 6px 20px -8px rgb(0 0 0 / 12%);
-  --composer-header-bg: color-mix(in srgb, var(--background) 94%, black);
-  --primary-cta: #11171c;
-  --primary-cta-foreground: #fff;
 
   /* User-controlled UI font family (see Appearance settings /
    * lib/uiFontPreferences.ts). Deliberately left unset here so the `html` rule's
@@ -268,37 +262,6 @@
       var(--omnigent-bottom-bar-visible)
   );
 
-  /* Tertiary gray for lighter/disabled/placeholder text. */
-  --foreground-tertiary: #a1a1aa;
-  --destructive: #c8324c;
-  --destructive-foreground: #fff;
-  /* success/warning/info repointed onto the named status hues below so
-     * the ~45 existing badges/indicators adopt the brand status palette. */
-  --success: #2ea65c;
-  --warning: #d4972a;
-  --info: #3b8ff5;
-  /* The warning amber, deepened to read as text on every palette's popover. */
-  --search-match-foreground: #7b5300;
-  /* Session active / idle-alive blue — a deeper, saturated azure
-     * that harmonizes with the brand blues (#2272b4 / #3b8ff5) and reads
-     * with strong contrast on the white card surface. */
-  --session-active: #2f7fd4;
-  /* Weaker panel border for low-contrast dividers. */
-  --border-weak: #ececee;
-  --button-icon-hover-color: #27272a;
-  /* Pink tag surface — a translucent wash, so it tints whatever it sits on. */
-  --tag-pink: rgba(240, 1, 150, 0.06);
-  /* Named status hues. success/warning/info above mirror green/yellow/blue. */
-  --status-blue: #3b8ff5;
-  --status-green: #2ea65c;
-  --status-yellow: #d4972a;
-  --status-red: #f04858;
-  --status-gray: #8e99a4;
-  --chart-1: #3b8ff5;
-  --chart-2: #2272b4;
-  --chart-3: #2ea65c;
-  --chart-4: #d4972a;
-  --chart-5: #8e99a4;
   --radius: 0.5rem;
   --radius-otto-button: 6px;
   --radius-otto-sm: 8px;
@@ -308,60 +271,11 @@
 }
 
 .dark {
-  --app-shell-bg: var(--background);
-  --session-composer-mask-bg: var(--app-shell-bg);
-  --foreground-tertiary: rgb(245 245 244 / 24%);
-  --sidebar-surface-image:
-    linear-gradient(transparent 35%, rgb(255 255 255 / 6%)),
-    linear-gradient(135deg, rgb(255 255 255 / 4%), transparent 60%);
-  --composer-header-bg: color-mix(in srgb, var(--app-shell-bg) 97%, white);
-  --composer-surface-bg: color-mix(in srgb, var(--app-shell-bg) 95%, white);
-  --primary-cta: #e8ecf0;
-  --primary-cta-foreground: #11171c;
-  --menu-surface-bg: var(--composer-surface-bg);
-  --card-surface-bg: color-mix(
-    in srgb,
-    color-mix(in srgb, var(--card) 95%, white) 75%,
-    transparent
-  );
-  --menu-surface-border: rgb(255 255 255 / 8%);
   --menu-surface-backdrop-filter: blur(24px) saturate(120%);
-  --segmented-active-bg: rgb(255 255 255 / 12%);
-  --segmented-inactive-bg: transparent;
-  --segmented-trough-bg: rgb(255 255 255 / 6%);
   --ui-shadow-neutral-rgb: 0 0 0;
   --ui-shadow-warm-rgb: 0 0 0;
-  --onboarding-wizard-background: #131315;
-  --onboarding-modal-border: #ffffff14;
   --onboarding-modal-shadow: 0 24px 80px 8px #00000038;
   --composer-shadow: 0 6px 20px -8px rgb(0 0 0 / 80%);
-  --destructive: #e65b77;
-  --destructive-foreground: #fff;
-  /* success/warning/info repointed onto the status hues below, mirroring
-     * light mode so dark mode doesn't carry a second green/yellow/blue. */
-  --success: #2ea65c;
-  --warning: #d4972a;
-  --info: #3b8ff5;
-  /* The warning amber, lightened to read as text on every dark palette's popover. */
-  --search-match-foreground: #efb14a;
-  /* Session active / idle-alive blue, lightened for the dark glass card so
-     * the small dot keeps adequate contrast against the dark canvas (the
-     * light-mode #2f7fd4 reads too dim here). */
-  --session-active: #5ca4f5;
-  /* Pink tag surface — a heavier wash than light, since 6% all but vanishes
-     * against the dark canvas. */
-  --tag-pink: rgba(240, 1, 150, 0.15);
-  --status-blue: #3b8ff5;
-  --status-green: #2ea65c;
-  --status-yellow: #d4972a;
-  --status-red: #f04858;
-  --status-gray: #8e99a4;
-  --chart-1: oklch(0.64 0.22 254);
-  --chart-2: oklch(0.65 0.14 200);
-  --chart-3: oklch(0.68 0.15 145);
-  --chart-4: oklch(0.75 0.16 70);
-  --chart-5: oklch(0.65 0.008 240);
-  --tooltip-bg: #2a2440;
 }
 
 /* Main-sidebar item labels use the same text-ui semantic step as Appearance

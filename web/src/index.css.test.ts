@@ -41,9 +41,9 @@ vi.mock("./hooks/useAgents", () => ({ useSessionAgent: () => ({ data: undefined 
 // Relative to the vitest root (web/) — import.meta.url is not a file://
 // URL inside vitest's module graph, so it can't locate the file.
 const indexCssSource = readFileSync("src/index.css", "utf8");
-const generatedPaletteCssSource = readFileSync("src/themePalettes.generated.css", "utf8");
+const generatedTokenCssSource = readFileSync("src/themeTokens.generated.css", "utf8");
 const centerGlowSvgSource = readFileSync("src/assets/omnigent-center-glow.svg", "utf8");
-const cssSource = `${generatedPaletteCssSource}\n${indexCssSource}`;
+const cssSource = `${generatedTokenCssSource}\n${indexCssSource}`;
 
 // Innermost `selector { ... }` blocks with their match indices, shared by
 // every rule-extraction below so the block grammar lives in one place.
@@ -200,8 +200,9 @@ describe("index.css backdrop-filter glass rules", () => {
 });
 
 describe("palette-aware surface composition", () => {
-  const lightTokens = indexCssSource.match(/:root \{[^}]*\}/)?.[0];
-  const darkTokens = indexCssSource.match(/\.dark \{[^}]*\}/)?.[0];
+  // The token defaults, generated from the token registry (theme/tokens).
+  const lightTokens = generatedTokenCssSource.match(/^:root \{[^}]*\}/m)?.[0];
+  const darkTokens = generatedTokenCssSource.match(/^\.dark \{[^}]*\}/m)?.[0];
   const appShellRule = indexCssSource.match(/\.dark \.app-shell \{[^}]*\}/)?.[0];
   const sidebarRule = indexCssSource.match(
     /\.dark \.omnigent-native-sidebar-surface,[\s\S]*?\.dark \.omnigent-sidebar-panel \{[^}]*\}/,
@@ -216,10 +217,10 @@ describe("palette-aware surface composition", () => {
   const cardRule = extractBackdropFilterRules().find((rule) => rule.includes(".bg-card"));
 
   it("keeps generated palette CSS limited to root tokens", () => {
-    expect(generatedPaletteCssSource).not.toContain(".app-shell");
-    expect(generatedPaletteCssSource).not.toContain(".conversations-sidebar");
-    expect(generatedPaletteCssSource).toContain("--shell-background:");
-    expect(generatedPaletteCssSource).toContain("--sidebar-background:");
+    expect(generatedTokenCssSource).not.toContain(".app-shell");
+    expect(generatedTokenCssSource).not.toContain(".conversations-sidebar");
+    expect(generatedTokenCssSource).toContain("--shell-background:");
+    expect(generatedTokenCssSource).toContain("--sidebar-background:");
   });
 
   it("uses the palette canvas under the fixed white SVG glow", () => {
@@ -271,7 +272,11 @@ describe("palette-aware surface composition", () => {
     expect(lightTokens).toContain("--primary-cta-foreground: #fff");
     expect(darkTokens).toContain("--primary-cta: #e8ecf0");
     expect(darkTokens).toContain("--primary-cta-foreground: #11171c");
-    expect(generatedPaletteCssSource).not.toContain("--primary-cta");
+    const paletteRules = [
+      ...generatedTokenCssSource.matchAll(/^[^{}\n]*data-theme[^{}]*\{[^}]*\}/gm),
+    ];
+    expect(paletteRules.length).toBeGreaterThan(14);
+    for (const [paletteRule] of paletteRules) expect(paletteRule).not.toContain("--primary-cta");
   });
 
   it("keeps menu surfaces white in light mode", () => {
@@ -916,7 +921,7 @@ describe("index.css sidebar canvas", () => {
 });
 
 describe("index.css composer and menu surfaces", () => {
-  const darkTokens = cssSource.match(/\.dark \{\s*--app-shell-bg:[\s\S]*?\n\}/)?.[0];
+  const darkTokens = generatedTokenCssSource.match(/^\.dark \{[^}]*\}/m)?.[0];
   const queuedSurface = cssSource.match(/\.composer-queued-surface \{[^}]*\}/)?.[0];
 
   it("composes dark elevated surfaces over the opaque app-shell base", () => {
@@ -1196,7 +1201,7 @@ describe("index.css mobile sidebar transparency", () => {
     expect(darkPalette).toBeGreaterThan(-1);
     expect(mobile).toBeGreaterThan(lightPalette);
     expect(mobile).toBeGreaterThan(darkPalette);
-    expect(generatedPaletteCssSource).not.toContain(".conversations-sidebar {");
+    expect(generatedTokenCssSource).not.toContain(".conversations-sidebar {");
   });
 });
 
