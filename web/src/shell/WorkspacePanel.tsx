@@ -92,7 +92,6 @@ import { scrollTabIntoView, WorkspaceTabsScroller } from "./WorkspaceTabsScrolle
 import { resolveWorkspaceActiveView } from "./workspaceActiveView";
 import { FileViewer } from "./FileViewer";
 import { ResponsiveViewerSlot } from "./ResponsiveViewerSlot";
-import { PullRequestPanel } from "./PullRequestPanel";
 import type { ChangedSort } from "@/lib/changedSort";
 import { useTerminalStatuses } from "./useTerminalStatuses";
 import { extensionRailTab, extensionRailTabViewId, type RightRailTab } from "./railTabs";
@@ -2120,13 +2119,10 @@ function WorkspacePanelImpl({
                 onFocused={clearBrowserFocus}
                 className="min-h-0 flex-1"
               />
-            ) : scopeView === "github" ? (
-              <RenderErrorBoundary name="pull requests" resetKey={conversationId}>
-                <PullRequestPanel conversationId={conversationId} active={open && !inert} />
-              </RenderErrorBoundary>
             ) : scopeView === "extension" && activeView.extensionViewId !== null ? (
               <RenderErrorBoundary
-                name="this view"
+                // The Pull Requests tab keeps the name its failure has always said.
+                name={rightRailTab === "github" ? "pull requests" : "this view"}
                 resetKey={JSON.stringify([conversationId, activeView.extensionViewId])}
               >
                 <ExtensionRailView

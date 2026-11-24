@@ -11,6 +11,8 @@ import * as contentSearch from "./omnigent.content-search/extension";
 import contentSearchManifest from "./omnigent.content-search/package.json";
 import * as files from "./omnigent.files/extension";
 import filesManifest from "./omnigent.files/package.json";
+import * as pullRequests from "./omnigent.pull-requests/extension";
+import pullRequestsManifest from "./omnigent.pull-requests/package.json";
 import * as tasks from "./omnigent.tasks/extension";
 import tasksManifest from "./omnigent.tasks/package.json";
 
@@ -24,6 +26,7 @@ export const BUILT_IN_EXTENSIONS: readonly BuiltInExtension[] = Object.freeze([
   { manifest: changesManifest, module: changes },
   { manifest: contentSearchManifest, module: contentSearch },
   { manifest: filesManifest, module: files },
+  { manifest: pullRequestsManifest, module: pullRequests },
   { manifest: tasksManifest, module: tasks },
 ]);
 

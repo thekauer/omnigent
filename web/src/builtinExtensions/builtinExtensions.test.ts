@@ -361,6 +361,7 @@ describe("built-in extensions", () => {
       "omnigent.changes",
       "omnigent.content-search",
       "omnigent.files",
+      "omnigent.pull-requests",
       "omnigent.tasks",
     ]);
     expect(error).toHaveBeenCalledWith(expect.stringContaining("invalid built-in extension"));
@@ -380,6 +381,7 @@ describe("built-in extensions", () => {
     expect(registry.get("omnigent.content-search.view")).toMatchObject({
       builtInTab: "content-search",
     });
+    expect(registry.get("omnigent.pull-requests.view")).toMatchObject({ builtInTab: "github" });
     await runtime.builtInsStarted;
     expect(runtime.host.isActive("omnigent.changes")).toBe(true);
     expect(registry.get("omnigent.changes.view")?.tree).toBeDefined();

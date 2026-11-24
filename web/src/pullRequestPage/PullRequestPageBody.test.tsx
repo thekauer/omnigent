@@ -5,7 +5,10 @@ import type { ComponentProps, ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { usePullRequestInfo, usePullRequestReadPriority } from "@/hooks/usePullRequests";
-import { type PullRequestPanelDetails, refreshSessionPullRequests } from "@/shell/PullRequestPanel";
+import {
+  type PullRequestPanelDetails,
+  refreshSessionPullRequests,
+} from "@/shell/PullRequestPanelDetails";
 
 import { PullRequestPageBody, pullRequestPageTab } from "./PullRequestPageBody";
 import { useStoredPullRequestFallback } from "./useStoredPullRequestFallback";
@@ -18,7 +21,7 @@ vi.mock("@/hooks/usePullRequests", () => ({
   usePullRequestInfo: vi.fn(() => ({ data: undefined })),
   usePullRequestReadPriority: vi.fn(),
 }));
-vi.mock("@/shell/PullRequestPanel", () => ({
+vi.mock("@/shell/PullRequestPanelDetails", () => ({
   PullRequestPanelDetails: (props: ComponentProps<typeof PullRequestPanelDetails>) => {
     captured.details = props;
     return <div data-testid="details">{props.refreshButton as ReactNode}</div>;

@@ -17,7 +17,8 @@ import { useFilesTreePageCommands } from "@/shell/fileTree/useFilesTreePageComma
 import { useFilesTreeShowRequests } from "@/shell/fileTree/treeRoot";
 import { isFilePositionPending } from "@/shell/filePositionState";
 import type { FilePosition } from "@/shell/FileViewerContext";
-import { PullRequestPanel } from "@/shell/PullRequestPanel";
+import { ExtensionRailView } from "@/shell/extensionViews/ExtensionRailView";
+import { builtInTabView, useRailViews } from "@/shell/railViews";
 import { PullRequestPageBody } from "@/pullRequestPage/PullRequestPageBody";
 
 import type { OpenOptions } from "../planOpen";
@@ -335,6 +336,29 @@ function ChangesPlaceView({
   );
 }
 
+/** The session's pull requests as the Pull Requests tab's view lists them, each opening in its own tab. */
+function PullRequestsListPage({
+  conversationId,
+  active,
+  onOpenPullRequest,
+}: {
+  conversationId: string;
+  active: boolean;
+  onOpenPullRequest: (url: string, section?: "summary" | "comments" | "changes") => void;
+}) {
+  const { views, settled } = useRailViews();
+  const view = builtInTabView(views, "github");
+  return view ? (
+    <ExtensionRailView
+      viewId={view.id}
+      settled={settled}
+      conversationId={conversationId}
+      visible={active}
+      onOpenPullRequest={onOpenPullRequest}
+    />
+  ) : null;
+}
+
 function PullRequestPlaceView({
   conversationId,
   place,
@@ -368,7 +392,7 @@ function PullRequestPlaceView({
         </div>
       )}
       {place.kind === "pulls" ? (
-        <PullRequestPanel
+        <PullRequestsListPage
           conversationId={conversationId}
           active={active}
           onOpenPullRequest={(url, section) => run(pullRequestChosen(url, section))}

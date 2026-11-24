@@ -73,9 +73,10 @@ vi.mock("./Sidebar", () => ({
   ),
   isMobileViewport: vi.fn(() => false),
 }));
-vi.mock("./PullRequestPanel", () => ({
-  selectPullRequestInPanel: vi.fn(),
-  PullRequestPanel: () => {
+vi.mock("./revealPullRequest", () => ({ revealPullRequest: vi.fn() }));
+// The tab's page is the built-in Pull Requests extension's view; its content has its own tests.
+vi.mock("./extensionViews/ViewPullRequests", () => ({
+  ViewPullRequests: () => {
     if (pullRequestFault.error) throw pullRequestFault.error;
     return <div data-testid="github-panel">Pull request details</div>;
   },
@@ -104,7 +105,7 @@ import { AppShell } from "./AppShell";
 import { FileViewerContext, useFolderOpener, useOpenGithubTab } from "./FileViewerContext";
 import { revealInFiles } from "./revealInFiles";
 import { type BuiltInHarness, startBuiltIns } from "@/test/builtInExtensions";
-import { selectPullRequestInPanel } from "./PullRequestPanel";
+import { revealPullRequest } from "./revealPullRequest";
 import { isMobileViewport } from "./Sidebar";
 import { usePullRequestInfo } from "@/hooks/usePullRequests";
 import { useConversations } from "@/hooks/useConversations";
@@ -132,7 +133,7 @@ afterEach(() => {
 });
 
 beforeEach(() => {
-  vi.mocked(selectPullRequestInPanel).mockClear();
+  vi.mocked(revealPullRequest).mockClear();
   pullRequestFault.error = null;
   window.addEventListener("error", suppressPullRequestFault);
   // The rail persists per-session state (selected tab, width) in
@@ -285,11 +286,7 @@ describe("opening Pull Requests from the composer", () => {
     renderShell();
 
     fireEvent.click(screen.getByRole("button", { name: "Open selected PR" }));
-    expect(selectPullRequestInPanel).toHaveBeenLastCalledWith(
-      expect.any(QueryClient),
-      "conv_ws",
-      LINKED_PR,
-    );
+    expect(revealPullRequest).toHaveBeenLastCalledWith("conv_ws", LINKED_PR);
 
     const drawer = screen.getByTestId("github-panel-drawer");
     expect(drawer).toHaveAttribute("data-state", "open");
@@ -311,11 +308,7 @@ describe("opening Pull Requests from the composer", () => {
       renderShell();
 
       fireEvent.click(screen.getByRole("button", { name: "Open selected PR" }));
-      expect(selectPullRequestInPanel).toHaveBeenLastCalledWith(
-        expect.any(QueryClient),
-        "conv_ws",
-        LINKED_PR,
-      );
+      expect(revealPullRequest).toHaveBeenLastCalledWith("conv_ws", LINKED_PR);
 
       const workspace = screen.getByRole("complementary", { name: "Workspace" });
       expect(within(workspace).getByRole("tab", { name: "Pull Requests" })).toHaveAttribute(

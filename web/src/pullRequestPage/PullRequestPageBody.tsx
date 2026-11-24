@@ -12,7 +12,7 @@ import {
   PullRequestPanelDetails,
   type PullRequestSubtab,
   refreshSessionPullRequests,
-} from "@/shell/PullRequestPanel";
+} from "@/shell/PullRequestPanelDetails";
 import { ALL_PULL_REQUESTS_LABEL } from "@/shell/workspaceCommands/model";
 
 import { useStoredPullRequestFallback } from "./useStoredPullRequestFallback";

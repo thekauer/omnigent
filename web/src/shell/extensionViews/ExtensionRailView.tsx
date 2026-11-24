@@ -67,6 +67,8 @@ import {
 } from "./treeRows";
 import { SessionTreeRow } from "./SessionTreeRow";
 import { ViewSearchForm } from "./ViewSearchForm";
+import { ViewPullRequests } from "./ViewPullRequests";
+import type { WorkspaceBridge } from "../workspaceBridge";
 import { ViewPlan } from "./ViewPlan";
 
 const ViewGraph = lazy(() =>
@@ -1160,6 +1162,8 @@ export function ExtensionRailView({
   closeLabel = "Close",
   focusToken = 0,
   onFocused,
+  onOpenPullRequest,
+  bridge,
 }: {
   viewId: string;
   /** Whether extensions have finished loading, so a missing view is really gone. */
@@ -1175,6 +1179,10 @@ export function ExtensionRailView({
   focusToken?: number;
   /** Called once a focus request was carried out. */
   onFocused?: () => void;
+  /** A pull request view on a page that shows each pull request on its own opens them here. */
+  onOpenPullRequest?: (url: string, section?: "summary" | "comments" | "changes") => void;
+  /** The workspace bridge a page's list watch goes through (the window's by default). */
+  bridge?: WorkspaceBridge;
 }) {
   const { views } = useRailViews(registry);
   const view = views.find((candidate) => candidate.id === viewId);
@@ -1194,6 +1202,24 @@ export function ExtensionRailView({
     return settled ? null : (
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-muted-foreground">
         <Spinner />
+      </div>
+    );
+  }
+  if (view.pullRequests) {
+    // Pull requests draw their own bar, as the classic tab did: no title bar.
+    return (
+      <div
+        data-testid={`extension-view-${view.id}`}
+        className="flex min-h-0 flex-1 flex-col overflow-hidden"
+      >
+        <ViewPullRequests
+          view={view}
+          content={view.pullRequests}
+          conversationId={conversationId}
+          visible={visible}
+          onOpenPullRequest={onOpenPullRequest}
+          bridge={bridge}
+        />
       </div>
     );
   }

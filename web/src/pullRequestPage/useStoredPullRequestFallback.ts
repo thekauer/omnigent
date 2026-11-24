@@ -5,7 +5,7 @@ import type { PullRequestAssociation, usePullRequestInfo } from "@/hooks/usePull
 import { storesSessionPullRequests, useSessionPullRequests } from "@/hooks/useSessionPullRequests";
 import { useServerInfo } from "@/lib/CapabilitiesContext";
 import { pullRequestKey } from "@/lib/pullRequestReference";
-import { useHostOffline } from "@/shell/PullRequestPanel";
+import { useHostOffline } from "@/shell/PullRequestPanelDetails";
 
 export interface StoredPullRequestFallback {
   /** The server's copy of the PR while offline. */

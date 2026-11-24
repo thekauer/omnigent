@@ -10,7 +10,6 @@ import {
   Suspense,
 } from "react";
 import { createPortal } from "react-dom";
-import { useQueryClient } from "@tanstack/react-query";
 import { useDraggable, useDroppable } from "@dnd-kit/core";
 import { useServerInfo } from "@/lib/CapabilitiesContext";
 import { isFeatureEnabled } from "@/lib/capabilities";
@@ -79,9 +78,10 @@ import { WorkspacePanel } from "@/shell/WorkspacePanel";
 import { extensionRailTabViewId } from "@/shell/railTabs";
 import { useRailViewIds } from "@/shell/railViews";
 import { useWorkspaceBridgeSource } from "@/shell/useWorkspaceBridgeSource";
+import { WorkspacePullRequestsPublisher } from "@/shell/useWorkspacePullRequestsSource";
 import { WorkspaceTasksPublisher } from "@/shell/useWorkspaceTasksSource";
 import { revealInFiles } from "@/shell/revealInFiles";
-import { selectPullRequestInPanel } from "@/shell/PullRequestPanel";
+import { revealPullRequest } from "@/shell/revealPullRequest";
 import { citedFilePosition } from "@/shell/filePositionState";
 import { useGridSessions } from "./GridSessionsContext";
 import { ENABLED_COMPOSER_INPUT_SELECTOR } from "@/components/composer/engine/composerInput";
@@ -113,7 +113,6 @@ export function GridSessionPane({
   workspacePanel: GridWorkspacePanelProps;
   onOpenWorkspace: () => void;
 }) {
-  const queryClient = useQueryClient();
   const { session, isLoading: sessionLoading } = useSession(sessionId);
   const state = useConversationEntryState(sessionId);
   const canEdit = useCanEdit(sessionId);
@@ -393,7 +392,7 @@ export function GridSessionPane({
           return;
         }
         navigateWorkspace("", undefined, () => {
-          if (prUrl) selectPullRequestInPanel(queryClient, sessionId, prUrl);
+          if (prUrl) revealPullRequest(sessionId, prUrl);
           showTab("github");
           onOpenWorkspace();
         });
@@ -424,7 +423,6 @@ export function GridSessionPane({
       tabsSidebar,
       openFile,
       registerNavigationGuard,
-      queryClient,
       navigateWorkspace,
       showTab,
       onOpenWorkspace,
@@ -479,6 +477,11 @@ export function GridSessionPane({
     >
       <FileViewerContext.Provider value={fileContext}>
         <WorkspaceTasksPublisher source={workspaceSource} sessionId={sessionId} active={selected} />
+        <WorkspacePullRequestsPublisher
+          source={workspaceSource}
+          sessionId={sessionId}
+          active={selected}
+        />
         <section
           ref={setPaneRef}
           style={{ gridArea: area }}

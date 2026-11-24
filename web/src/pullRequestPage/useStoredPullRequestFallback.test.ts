@@ -16,7 +16,7 @@ vi.mock("@/hooks/useSessionPullRequests", () => ({
   storesSessionPullRequests: () => state.storesPrs,
   useSessionPullRequests: () => ({ data: state.stored }),
 }));
-vi.mock("@/shell/PullRequestPanel", () => ({ useHostOffline: () => state.hostOffline }));
+vi.mock("@/shell/PullRequestPanelDetails", () => ({ useHostOffline: () => state.hostOffline }));
 
 const storedPr = (url: string): PullRequestAssociation => ({
   url,

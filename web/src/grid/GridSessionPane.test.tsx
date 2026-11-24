@@ -35,7 +35,7 @@ import { useTerminalFirst } from "@/shell/TerminalFirstContext";
 import { retrySession, updateSession } from "@/lib/sessionsApi";
 import { toast } from "sonner";
 import { revealInFiles } from "@/shell/revealInFiles";
-import { selectPullRequestInPanel } from "@/shell/PullRequestPanel";
+import { revealPullRequest } from "@/shell/revealPullRequest";
 import { conversationRegistry } from "@/store/conversationRegistry";
 import { gridCellComposerKey, useChatStore } from "@/store/chatStore";
 import { clearSessionDrafts, setSessionDraft } from "@/lib/sessionDrafts";
@@ -109,7 +109,7 @@ vi.mock("@/components/blocks/TerminalView", () => ({
 }));
 
 vi.mock("@/canvas/CanvasWorkspace", () => ({ CanvasWorkspace: () => null }));
-vi.mock("@/shell/PullRequestPanel", () => ({ selectPullRequestInPanel: vi.fn() }));
+vi.mock("@/shell/revealPullRequest", () => ({ revealPullRequest: vi.fn() }));
 vi.mock("@/shell/revealInFiles", () => ({ revealInFiles: vi.fn() }));
 vi.mock("@/hooks/useSidebarData", () => ({
   useLoadedConversations: () => ({}),
@@ -492,7 +492,7 @@ it("opens chat-linked folders and PRs in that pane's workspace", () => {
   fireEvent.click(first.getByText("Open folder"));
   fireEvent.click(first.getByText("Open PR"));
   expect(revealInFiles).not.toHaveBeenCalledWith("first", expect.anything());
-  expect(selectPullRequestInPanel).not.toHaveBeenCalled();
+  expect(revealPullRequest).not.toHaveBeenCalled();
   expect(screen.getByTestId("workspace-first")).toHaveAttribute("data-tab", "subagents");
   expect(screen.getByTestId("workspace-first")).toHaveAttribute("aria-hidden", "true");
 
@@ -507,7 +507,7 @@ it("opens chat-linked folders and PRs in that pane's workspace", () => {
   fireEvent.click(
     within(screen.getByRole("region", { name: "second (active)" })).getByText("Open PR"),
   );
-  expect(selectPullRequestInPanel).toHaveBeenCalledWith(queryClient, "second", LINKED_PR);
+  expect(revealPullRequest).toHaveBeenCalledWith("second", LINKED_PR);
   expect(workspace).toHaveAttribute("data-tab", "github");
 });
 
@@ -1038,7 +1038,7 @@ it("shows each cell's sidebar as tabs with the flag on, routing its links there"
   tabsRouting.enabled = true;
   tabsRouting.routes = [];
   tabsRouting.hosts = [];
-  vi.mocked(selectPullRequestInPanel).mockClear();
+  vi.mocked(revealPullRequest).mockClear();
   onTestFinished(() => {
     tabsRouting.enabled = false;
     // Later cases assert this reveal was never asked for their cells.
@@ -1068,7 +1068,7 @@ it("shows each cell's sidebar as tabs with the flag on, routing its links there"
       ["openWorkspaceTerminal", "first", "terminal:t1"],
     ]),
   );
-  expect(selectPullRequestInPanel).not.toHaveBeenCalled();
+  expect(revealPullRequest).not.toHaveBeenCalled();
 });
 
 it("puts the selected cell's workspace in front for extension views, and drops a saved tab whose view is gone", () => {

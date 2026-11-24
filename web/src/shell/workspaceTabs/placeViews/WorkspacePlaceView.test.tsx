@@ -9,7 +9,8 @@ import { isMacPlatform } from "@/lib/hotkeys";
 import type { PullRequestPageBody } from "@/pullRequestPage/PullRequestPageBody";
 import type * as ReviewLayout from "@/components/diff-review/reviewLayout";
 import type { ChangesReview } from "@/shell/ChangesReview";
-import type { PullRequestPanel } from "@/shell/PullRequestPanel";
+import type { ExtensionRailView } from "@/shell/extensionViews/ExtensionRailView";
+import type * as RailViewsModule from "@/shell/railViews";
 import { stopFilePosition } from "@/shell/filePositionState";
 import {
   REVEAL_ACTIVE_FILE_PALETTE_LABEL,
@@ -29,7 +30,7 @@ import { WorkspacePlaceView, type WorkspacePlaceViewProps } from "./WorkspacePla
 const captured = vi.hoisted(() => ({
   tree: null as ComponentProps<typeof FilesPageTree> | null,
   viewer: null as ComponentProps<typeof FilesPageViewer> | null,
-  list: null as ComponentProps<typeof PullRequestPanel> | null,
+  list: null as ComponentProps<typeof ExtensionRailView> | null,
   page: null as ComponentProps<typeof PullRequestPageBody> | null,
   review: null as ComponentProps<typeof ChangesReview> | null,
 }));
@@ -58,11 +59,17 @@ vi.mock("./FilesPageViewer", () => ({
     );
   },
 }));
-vi.mock("@/shell/PullRequestPanel", () => ({
-  PullRequestPanel: (props: ComponentProps<typeof PullRequestPanel>) => {
+// The list is the built-in Pull Requests extension's view, which has its own tests.
+vi.mock("@/shell/extensionViews/ExtensionRailView", () => ({
+  ExtensionRailView: (props: ComponentProps<typeof ExtensionRailView>) => {
     captured.list = props;
     return <div data-testid="pull-request-list" />;
   },
+}));
+vi.mock("@/shell/railViews", async (importOriginal) => ({
+  ...(await importOriginal<typeof RailViewsModule>()),
+  builtInTabView: (_views: unknown, tab: string) =>
+    tab === "github" ? { id: "omnigent.pull-requests.view" } : undefined,
 }));
 vi.mock("@/pullRequestPage/PullRequestPageBody", () => ({
   PullRequestPageBody: (props: ComponentProps<typeof PullRequestPageBody>) => {
@@ -433,7 +440,11 @@ describe("pull request tab", () => {
   it("shows the session's pull requests in upstream's panel", () => {
     renderView({ kind: "pulls" }, { active: false });
     expect(screen.getByTestId("pull-request-list")).toBeInTheDocument();
-    expect(captured.list).toMatchObject({ conversationId: "conv_1", active: false });
+    expect(captured.list).toMatchObject({
+      viewId: "omnigent.pull-requests.view",
+      conversationId: "conv_1",
+      visible: false,
+    });
     expect(screen.queryByRole("status")).toBeNull();
   });
 

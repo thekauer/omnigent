@@ -3,11 +3,14 @@ import type { Comment } from "@/hooks/useComments";
 import { clearLocalReviewContexts, usePendingLocalReviewContexts } from "@/lib/localReviewContext";
 import { CapabilitiesProvider } from "@/lib/CapabilitiesContext";
 import { FALLBACK_SERVER_INFO } from "@/lib/capabilities";
-// Tests for PullRequestPanel — the stacked "Files changed" view. The GitHub data
-// hooks and the heavy MonacoDiffViewer are mocked; IntersectionObserver (absent
-// in jsdom) is stubbed to fire immediately so lazy sections mount.
+// The Pull Requests tab as users see it: the built-in extension in the real host,
+// drawn by the host's pull request view, its data published by a workspace
+// surface from the same hooks the app uses. Ported from the classic
+// PullRequestPanel tests: the GitHub data hooks and the heavy diff viewer are
+// mocked; IntersectionObserver (absent in jsdom) is stubbed to fire immediately
+// so lazy sections mount.
 
-import { MobilePanelDrawer } from "./MobilePanelDrawer";
+import { MobilePanelDrawer } from "@/shell/MobilePanelDrawer";
 import {
   act,
   render,
@@ -134,6 +137,12 @@ vi.mock("@/hooks/usePullRequests", async (importOriginal) => {
     }),
     uploadPullRequestAttachment: vi.fn(),
     usePullRequestReadPriority: vi.fn(),
+    // The host's details and rows read what the surface's reads cached.
+    usePullRequestInfoSnapshot: vi.fn(
+      (...args: Parameters<typeof original.usePullRequestInfoSnapshot>) =>
+        state.realPrHooks ? original.usePullRequestInfoSnapshot(...args) : state.info,
+    ),
+    postPullRequestComment: vi.fn(),
     usePullRequestInfo: vi.fn((...args: Parameters<typeof original.usePullRequestInfo>) =>
       state.realPrHooks ? original.usePullRequestInfo(...args) : state.info,
     ),
@@ -237,12 +246,17 @@ import {
 } from "@/hooks/usePullRequests";
 
 import {
-  PullRequestPanel,
-  selectPullRequestInPanel,
   derivePullRequestPanelState,
   LARGE_DIFF_THRESHOLD,
   type PullRequestSubtab,
-} from "./PullRequestPanel";
+} from "@/shell/PullRequestPanelDetails";
+import type { BuiltInHarness } from "@/test/builtInExtensions";
+import {
+  PullRequestsPage,
+  revealPullRequestIn,
+  settlePullRequests,
+  startPullRequests,
+} from "@/test/pullRequestsFixture";
 import { RunnerOfflineError } from "@/hooks/useWorkspaceChangedFiles";
 import { viewedStorageKey } from "@/lib/pullRequestViewed";
 
@@ -278,44 +292,79 @@ function file(
   };
 }
 
-function renderPanel(
+let harness: BuiltInHarness | undefined;
+
+// Started before any test switches to fake timers, which the host's start would wait on.
+beforeEach(async () => {
+  harness = await startPullRequests("conv_1");
+});
+
+afterEach(async () => {
+  await harness?.dispose();
+  harness = undefined;
+});
+
+/** The tab for a session, as the classic panel took it, drawn through the host. */
+function PullRequestPanel(props: {
+  conversationId: string;
+  active?: boolean;
+  onOpenPullRequest?: (url: string, section?: PullRequestSubtab) => void;
+}) {
+  return (
+    <PullRequestsPage
+      harness={harness!}
+      conversationId={props.conversationId}
+      active={props.active ?? true}
+      onOpenPullRequest={props.onOpenPullRequest}
+    />
+  );
+}
+
+async function renderPanel(
   mobile = false,
   active?: boolean,
   onOpenPullRequest?: (url: string, section?: PullRequestSubtab) => void,
 ) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+  const view = render(
+    <PullRequestPanel
+      conversationId="conv_1"
+      active={active}
+      onOpenPullRequest={onOpenPullRequest}
+    />,
+    {
+      wrapper: ({ children }) => (
+        <CapabilitiesProvider info={{ ...FALLBACK_SERVER_INFO, comment_anchor_metadata: true }}>
+          <QueryClientProvider client={client}>
+            {mobile ? (
+              <MobilePanelDrawer open title="Pull Requests" onClose={() => {}}>
+                {children}
+              </MobilePanelDrawer>
+            ) : (
+              children
+            )}
+          </QueryClientProvider>
+        </CapabilitiesProvider>
+      ),
+    },
+  );
+  await settlePullRequests();
   return {
     client,
-    ...render(
-      <PullRequestPanel
-        conversationId="conv_1"
-        active={active}
-        onOpenPullRequest={onOpenPullRequest}
-      />,
-      {
-        wrapper: ({ children }) => (
-          <CapabilitiesProvider info={{ ...FALLBACK_SERVER_INFO, comment_anchor_metadata: true }}>
-            <QueryClientProvider client={client}>
-              {mobile ? (
-                <MobilePanelDrawer open title="Pull Requests" onClose={() => {}}>
-                  {children}
-                </MobilePanelDrawer>
-              ) : (
-                children
-              )}
-            </QueryClientProvider>
-          </CapabilitiesProvider>
-        ),
-      },
-    ),
+    ...view,
+    /** Draws again, then lets the published data reach the view. */
+    rerender: async (ui: React.ReactElement) => {
+      view.rerender(ui);
+      await settlePullRequests();
+    },
   };
 }
 
 /** Render, then switch to the Changes tab — Summary is the default, so the
  *  diff view (and its toolbar) only exists after activating Changes. Radix
  *  tabs select on pointer-down, so mouseDown (not click) flips the tab. */
-function renderChanges() {
-  const r = renderPanel();
+async function renderChanges() {
+  const r = await renderPanel();
   fireEvent.mouseDown(screen.getByRole("tab", { name: "Changes" }));
   return r;
 }
@@ -331,8 +380,8 @@ function fileRowButtons(name: RegExp) {
 }
 
 /** Render, then switch to the Comments tab (see renderChanges). */
-function renderComments() {
-  const r = renderPanel();
+async function renderComments() {
+  const r = await renderPanel();
   fireEvent.mouseDown(screen.getByRole("tab", { name: /^Comments/ }));
   return r;
 }
@@ -482,7 +531,7 @@ describe("PullRequestPanel", () => {
       );
       vi.stubGlobal("fetch", fetchMock);
       const user = userEvent.setup();
-      const { client, rerender } = renderPanel(mobile);
+      const { client, rerender } = await renderPanel(mobile);
       if (multiple) {
         await user.click(
           await screen.findByRole("button", { name: "acme/app #6000 — chore: dummy PR" }),
@@ -501,10 +550,7 @@ describe("PullRequestPanel", () => {
       await act(() => client.refetchQueries({ queryKey: ["github-info", "conv_1"] }));
       expect(await screen.findByText("Updated by polling")).toBeVisible();
 
-      expect(client.getQueryData(["pull-request-panel-view", "conv_1"])).toMatchObject({
-        subtab: "comments",
-      });
-      rerender(<PullRequestPanel conversationId="conv_other" />);
+      await rerender(<PullRequestPanel conversationId="conv_other" />);
       if (multiple) {
         expect(await screen.findByRole("list", { name: "Pull requests" })).toBeVisible();
       } else {
@@ -514,7 +560,7 @@ describe("PullRequestPanel", () => {
         );
       }
       fetchMock.mockClear();
-      rerender(<PullRequestPanel conversationId="conv_1" />);
+      await rerender(<PullRequestPanel conversationId="conv_1" />);
       expect(screen.getByText("Updated by polling")).toBeVisible();
       expect(screen.getByRole("tab", { name: "Comments" })).toHaveAttribute(
         "aria-selected",
@@ -523,12 +569,12 @@ describe("PullRequestPanel", () => {
       expect(fetchMock).not.toHaveBeenCalled();
 
       // Even a stale response remains visible while the return refresh is pending.
-      rerender(<div />);
+      await rerender(<div />);
       await act(() =>
         client.invalidateQueries({ queryKey: ["github-info", "conv_1"], refetchType: "none" }),
       );
       refreshing = true;
-      rerender(<PullRequestPanel conversationId="conv_1" />);
+      await rerender(<PullRequestPanel conversationId="conv_1" />);
       expect(screen.getByText("Updated by polling")).toBeVisible();
       expect(screen.getByRole("tab", { name: "Comments" })).toHaveAttribute(
         "aria-selected",
@@ -584,7 +630,7 @@ describe("PullRequestPanel", () => {
         }),
       );
       const user = userEvent.setup();
-      const { client } = renderPanel();
+      const { client } = await renderPanel();
       await user.click(await screen.findByRole("button", { name: "Merge" }));
       const confirm = await screen.findByRole("button", { name: "Squash and merge" });
       const dialog = screen.getByRole("dialog");
@@ -656,7 +702,7 @@ describe("PullRequestPanel", () => {
       }),
     );
     const user = userEvent.setup();
-    const { client } = renderPanel();
+    const { client } = await renderPanel();
     await screen.findByRole("link", { name: /PR 1/ });
     let resolveStored: (value: {
       prs: PullRequestAssociation[];
@@ -713,7 +759,7 @@ describe("PullRequestPanel", () => {
           ...(count > 1 ? [OTHER_PR] : []),
         ],
       });
-      const { client } = renderPanel(true);
+      const { client } = await renderPanel(true);
       const invalidate = vi.spyOn(client, "invalidateQueries");
       const heading = screen.getByRole("heading", { name: "Pull Requests" });
       const header = heading.closest("header")!;
@@ -740,7 +786,7 @@ describe("PullRequestPanel", () => {
   );
 
   it("shows the PR title in the header and CI check pills on the Summary tab", async () => {
-    renderPanel();
+    await renderPanel();
     // The header names the panel, never the provider.
     const heading = screen.getByRole("heading", { name: "Pull Requests" });
     expect(heading).not.toHaveAttribute("title");
@@ -778,7 +824,7 @@ describe("PullRequestPanel", () => {
     ];
     const refetchQueries = vi.spyOn(QueryClient.prototype, "refetchQueries");
     onTestFinished(() => refetchQueries.mockRestore());
-    const { rerender } = renderPanel(false, false);
+    const { rerender } = await renderPanel(false, false);
 
     // A collapsed rail keeps the panel mounted but must not poll.
     expect(await screen.findByText("chore: dummy PR")).toBeInTheDocument();
@@ -794,7 +840,7 @@ describe("PullRequestPanel", () => {
     expect(refetchQueries).not.toHaveBeenCalled();
 
     vi.mocked(usePullRequestInfo).mockClear();
-    rerender(<PullRequestPanel conversationId="conv_1" active />);
+    await rerender(<PullRequestPanel conversationId="conv_1" active />);
     for (const pr of state.stored.conv_1) {
       expect(usePullRequestInfo).toHaveBeenCalledWith("conv_1", { poll: "list", prUrl: pr.url });
     }
@@ -816,13 +862,13 @@ describe("PullRequestPanel", () => {
       poll: true,
       prUrl: url,
     });
-    rerender(<PullRequestPanel conversationId="conv_1" active={false} />);
+    await rerender(<PullRequestPanel conversationId="conv_1" active={false} />);
     expect(usePullRequestInfo).toHaveBeenLastCalledWith("conv_1", {
       poll: false,
       prUrl: url,
     });
     expect(usePullRequestReadPriority).toHaveBeenLastCalledWith("conv_1", undefined);
-    rerender(<PullRequestPanel conversationId="conv_1" active />);
+    await rerender(<PullRequestPanel conversationId="conv_1" active />);
     expect(usePullRequestInfo).toHaveBeenLastCalledWith("conv_1", {
       poll: true,
       prUrl: url,
@@ -858,7 +904,7 @@ describe("PullRequestPanel", () => {
         { name: "another skipped job", bucket: "skipped", url: null },
       ],
     };
-    renderPanel();
+    await renderPanel();
 
     for (const label of ["1 cancelled", "2 skipped"]) {
       expect(screen.getByRole("button", { name: label })).toHaveClass(
@@ -874,7 +920,7 @@ describe("PullRequestPanel", () => {
     expect(rows.map((row) => row.textContent)).toEqual(["skipped job", "another skipped job"]);
   });
 
-  it("shows each assigned reviewer with its current state and team kind", () => {
+  it("shows each assigned reviewer with its current state and team kind", async () => {
     state.info!.data!.pr!.reviewers = [
       { login: "alice", kind: "user", state: "PENDING" },
       { login: "bob", kind: "user", state: "APPROVED" },
@@ -882,7 +928,7 @@ describe("PullRequestPanel", () => {
       { login: "platform-team", kind: "team", state: "CHANGES_REQUESTED" },
       { login: "former-reviewer", kind: "user", state: "DISMISSED" },
     ];
-    renderPanel();
+    await renderPanel();
 
     expect(screen.getByRole("heading", { name: "Reviewers" })).toBeInTheDocument();
     for (const [subject, status] of [
@@ -905,23 +951,23 @@ describe("PullRequestPanel", () => {
     ).toBeTruthy();
   });
 
-  it("shows an empty reviewer section when the host reports no reviewers", () => {
+  it("shows an empty reviewer section when the host reports no reviewers", async () => {
     state.info!.data!.pr!.reviewers = [];
-    renderPanel();
+    await renderPanel();
 
     expect(screen.getByRole("heading", { name: "Reviewers" })).toBeInTheDocument();
     expect(screen.getByText("No reviewers assigned.")).toBeInTheDocument();
   });
 
-  it("omits reviewers for a host that does not include the optional field", () => {
-    renderPanel();
+  it("omits reviewers for a host that does not include the optional field", async () => {
+    await renderPanel();
 
     expect(screen.queryByRole("heading", { name: "Reviewers" })).toBeNull();
   });
 
-  it("updates reviewers when the active PR changes", () => {
+  it("updates reviewers when the active PR changes", async () => {
     state.info!.data!.pr!.reviewers = [{ login: "alice", kind: "user", state: "PENDING" }];
-    const { rerender } = renderPanel();
+    const { rerender } = await renderPanel();
     expect(screen.getByRole("listitem", { name: "alice: Pending" })).toBeInTheDocument();
 
     state.info!.data!.pr = {
@@ -930,7 +976,7 @@ describe("PullRequestPanel", () => {
       title: "chore: another PR",
       reviewers: [{ login: "platform-team", kind: "team", state: "APPROVED" }],
     };
-    rerender(<PullRequestPanel conversationId="conv_1" />);
+    await rerender(<PullRequestPanel conversationId="conv_1" />);
 
     expect(screen.queryByRole("listitem", { name: "alice: Pending" })).toBeNull();
     expect(
@@ -953,8 +999,8 @@ describe("PullRequestPanel", () => {
       };
     });
 
-    it("opens the title and description editors on the selected PR", () => {
-      renderPanel();
+    it("opens the title and description editors on the selected PR", async () => {
+      await renderPanel();
 
       fireEvent.click(screen.getByRole("button", { name: "Edit title" }));
       expect(screen.getByRole("textbox", { name: "Pull request title" })).toHaveValue(
@@ -984,9 +1030,9 @@ describe("PullRequestPanel", () => {
           delete state.info!.data!.selected_pr_url;
         },
       ],
-    ])("offers no title or description editing to %s", (_caller, setup) => {
+    ])("offers no title or description editing to %s", async (_caller, setup) => {
       setup();
-      renderPanel();
+      await renderPanel();
 
       expect(screen.queryByRole("button", { name: "Edit title" })).not.toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "Edit description" })).not.toBeInTheDocument();
@@ -1011,8 +1057,8 @@ describe("PullRequestPanel", () => {
       };
     });
 
-    it("wires the rows and the picker to the selected PR", () => {
-      renderPanel();
+    it("wires the rows and the picker to the selected PR", async () => {
+      await renderPanel();
 
       fireEvent.click(screen.getByRole("button", { name: "Withdraw review request from alice" }));
       expect(state.updateReviewers.mutate).toHaveBeenLastCalledWith({
@@ -1050,9 +1096,9 @@ describe("PullRequestPanel", () => {
           delete state.info!.data!.selected_pr_url;
         },
       ],
-    ])("shows reviewers read-only for %s", (_caller, setup) => {
+    ])("shows reviewers read-only for %s", async (_caller, setup) => {
       setup();
-      renderPanel();
+      await renderPanel();
 
       expect(screen.getByRole("listitem", { name: "alice: Pending" })).toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "Request reviewers" })).toBeNull();
@@ -1077,9 +1123,9 @@ describe("PullRequestPanel", () => {
       };
     });
 
-    it("lists the PR's labels by name between reviewers and checks", () => {
+    it("lists the PR's labels by name between reviewers and checks", async () => {
       state.info!.data!.pr!.reviewers = [];
-      renderPanel();
+      await renderPanel();
 
       const list = screen.getByRole("list", { name: "Labels" });
       expect(
@@ -1108,8 +1154,8 @@ describe("PullRequestPanel", () => {
       expect(row.nextElementSibling).toHaveAttribute("data-slot", "separator");
     });
 
-    it("wires editing to the selected PR: chips remove, and the picker loads on open", () => {
-      renderPanel();
+    it("wires editing to the selected PR: chips remove, and the picker loads on open", async () => {
+      await renderPanel();
 
       fireEvent.click(screen.getByRole("button", { name: "Remove label bug" }));
       expect(state.updateLabels.mutate).toHaveBeenLastCalledWith({
@@ -1136,9 +1182,9 @@ describe("PullRequestPanel", () => {
           delete state.info!.data!.capabilities;
         },
       ],
-    ])("shows labels read-only for %s", (_caller, setup) => {
+    ])("shows labels read-only for %s", async (_caller, setup) => {
       setup();
-      renderPanel();
+      await renderPanel();
 
       expect(screen.getByRole("list", { name: "Labels" })).toBeInTheDocument();
       expect(screen.queryByRole("button", { name: "Edit labels" })).toBeNull();
@@ -1158,9 +1204,9 @@ describe("PullRequestPanel", () => {
           delete state.info!.data!.selected_pr_url;
         },
       ],
-    ])("omits labels when the host %s", (_case, setup) => {
+    ])("omits labels when the host %s", async (_case, setup) => {
       setup();
-      renderPanel();
+      await renderPanel();
 
       expect(screen.queryByRole("heading", { name: "Labels" })).toBeNull();
     });
@@ -1181,8 +1227,8 @@ describe("PullRequestPanel", () => {
       };
     });
 
-    it("sits below the checks and opens the merge dialog", () => {
-      renderPanel();
+    it("sits below the checks and opens the merge dialog", async () => {
+      await renderPanel();
 
       const merge = screen.getByRole("region", { name: "Merge" });
       const checks = screen.getByText("Checks").closest("section")!;
@@ -1198,7 +1244,7 @@ describe("PullRequestPanel", () => {
       [true, undefined, false],
     ])(
       "offers the PR's accounts to merge as (switching: %s, merge as account: %s)",
-      (switching, mergeAsAccount, offered) => {
+      async (switching, mergeAsAccount, offered) => {
         state.info!.data!.capabilities!.account_switching = switching;
         state.info!.data!.capabilities!.merge_as_account = mergeAsAccount;
         state.info!.data!.accounts = ["work", "personal"].map((login) => ({
@@ -1208,7 +1254,7 @@ describe("PullRequestPanel", () => {
           host: "github.com",
         }));
         state.info!.data!.selected_account = "work";
-        renderPanel();
+        await renderPanel();
 
         // The repository resolved, so only the merge dialog asks for an account.
         expect(screen.queryByRole("combobox", { name: "GitHub account" })).toBeNull();
@@ -1225,8 +1271,8 @@ describe("PullRequestPanel", () => {
       },
     );
 
-    it("divides the metadata from the description", () => {
-      renderPanel();
+    it("divides the metadata from the description", async () => {
+      await renderPanel();
 
       const divider = [...document.querySelectorAll('[data-slot="separator"]')].at(-1)!;
       const merge = screen.getByRole("region", { name: "Merge" });
@@ -1276,9 +1322,9 @@ describe("PullRequestPanel", () => {
           state.info!.data!.pr!.state = "MERGED";
         },
       ],
-    ])("is hidden for %s", (_case, setup) => {
+    ])("is hidden for %s", async (_case, setup) => {
       setup();
-      renderPanel();
+      await renderPanel();
 
       expect(screen.queryByRole("region", { name: "Merge" })).toBeNull();
     });
@@ -1288,9 +1334,9 @@ describe("PullRequestPanel", () => {
     ["OPEN", "Open", "text-green-700"],
     ["CLOSED", "Closed", "text-red-700"],
     ["MERGED", "Merged", "text-purple-700"],
-  ])("shows a %s status pill beside the PR title", (stateName, label, tone) => {
+  ])("shows a %s status pill beside the PR title", async (stateName, label, tone) => {
     state.info!.data!.pr!.state = stateName;
-    renderPanel();
+    await renderPanel();
 
     const pill = screen.getByLabelText(`Pull request status: ${label}`);
     expect(pill).toHaveTextContent(label);
@@ -1309,7 +1355,7 @@ describe("PullRequestPanel", () => {
         url: "https://example.com/pr/6000#c1",
       },
     ];
-    renderPanel();
+    await renderPanel();
     // Summary is the default — the diff sections aren't mounted yet.
     expect(screen.queryByTestId("diff")).toBeNull();
     expect(await screen.findByText(/This PR does the thing\./)).toBeInTheDocument();
@@ -1328,7 +1374,7 @@ describe("PullRequestPanel", () => {
     expect(screen.queryByText("Checks")).toBeNull();
   });
 
-  it("renders GitHub comments in order, including ones without a URL or time", () => {
+  it("renders GitHub comments in order, including ones without a URL or time", async () => {
     const keyWarnings = watchKeyWarnings();
     state.info!.data!.pr!.comments = [
       {
@@ -1346,7 +1392,7 @@ describe("PullRequestPanel", () => {
       { author: null, body: "Third", created_at: null, url: null },
       { author: null, body: "Fourth", created_at: null, url: null },
     ];
-    renderComments();
+    await renderComments();
 
     expect(screen.getByRole("tab", { name: "Comments 4" })).toBeInTheDocument();
     expect(commentBodies()).toEqual(["First", "Second", "Third", "Fourth"]);
@@ -1357,7 +1403,7 @@ describe("PullRequestPanel", () => {
     ["shared suffixes", ["zoe_data", "amy_data", "a-bot", "z-bot"]],
     ["other suffixes", ["build[bot]", "lint[bot]", "zoe_acme", "amy_acme"]],
     ["ordinary usernames", ["ci[bot]", "bob", "alice"]],
-  ])("spaces comment colors consistently for %s", (_, orderedAuthors) => {
+  ])("spaces comment colors consistently for %s", async (_, orderedAuthors) => {
     const comments = [...orderedAuthors].reverse().map((author) => ({
       author,
       body: `Comment by ${author}`,
@@ -1382,15 +1428,15 @@ describe("PullRequestPanel", () => {
       });
       expect(screen.getByText("unknown").previousElementSibling).not.toHaveAttribute("style");
     };
-    const view = renderComments();
+    const view = await renderComments();
     assertColors();
     view.unmount();
     state.info!.data!.pr!.comments.reverse();
-    renderComments();
+    await renderComments();
     assertColors();
   });
 
-  it("interleaves commits and force pushes with comments without inflating their count", () => {
+  it("interleaves commits and force pushes with comments without inflating their count", async () => {
     const keyWarnings = watchKeyWarnings();
     state.info!.data!.pr!.comments = [
       { author: "reviewer", body: "Please update", created_at: "2026-09-05T08:00:00Z", url: null },
@@ -1417,7 +1463,7 @@ describe("PullRequestPanel", () => {
         message: "Add the feature",
       },
     ];
-    const view = renderComments();
+    const view = await renderComments();
     const rows = screen.getAllByRole("listitem");
     expect(rows).toHaveLength(5);
     expect(rows[0]).toHaveTextContent("octocatcommittedaaaaaaa");
@@ -1449,7 +1495,7 @@ describe("PullRequestPanel", () => {
       url: null,
       message: "Address review",
     });
-    view.rerender(<PullRequestPanel conversationId="conv_1" />);
+    await view.rerender(<PullRequestPanel conversationId="conv_1" />);
     expect(screen.getByText("Looks good").closest("li")).toBe(rows[3]);
     expect(screen.getByText("Address review")).toBeInTheDocument();
     expect(keyWarnings()).toEqual([]);
@@ -1457,7 +1503,7 @@ describe("PullRequestPanel", () => {
 
   it.each(["https://example.com/pr/6000", "javascript:alert(1)", "data:text/html,unsafe"])(
     "keeps incomplete history visible and validates its link: %s",
-    (prUrl) => {
+    async (prUrl) => {
       state.info!.data!.pr!.url = prUrl;
       state.info!.data!.pr!.timeline_events = [
         {
@@ -1470,7 +1516,7 @@ describe("PullRequestPanel", () => {
         },
       ];
       state.info!.data!.pr!.timeline_partial = true;
-      renderComments();
+      await renderComments();
       expect(screen.getByRole("listitem")).toHaveTextContent("unknownforce-pushedthe branch");
       expect(screen.getByRole("status")).toHaveTextContent(
         "Some commit and push history is unavailable.",
@@ -1485,9 +1531,9 @@ describe("PullRequestPanel", () => {
     },
   );
 
-  it("shows empty states when the PR has no body or comments", () => {
+  it("shows empty states when the PR has no body or comments", async () => {
     // The default fixture carries neither a body nor comments.
-    renderPanel();
+    await renderPanel();
     expect(screen.getByText("No description provided.")).toBeInTheDocument();
     expect(screen.queryByTestId("diff")).toBeNull();
 
@@ -1497,7 +1543,7 @@ describe("PullRequestPanel", () => {
     expect(screen.getByText("No comments yet.")).toBeInTheDocument();
   });
 
-  it("marks incomplete checks and comments without claiming they are empty", () => {
+  it("marks incomplete checks and comments without claiming they are empty", async () => {
     state.info!.data!.pr!.checks = {
       passing: 0,
       failing: 0,
@@ -1507,7 +1553,7 @@ describe("PullRequestPanel", () => {
       partial: true,
     };
     state.info!.data!.pr!.comments_partial = true;
-    renderPanel();
+    await renderPanel();
 
     expect(screen.getByText("Checks")).toBeInTheDocument();
     expect(screen.getByText(/Some checks are unavailable/)).toBeInTheDocument();
@@ -1516,11 +1562,11 @@ describe("PullRequestPanel", () => {
     expect(screen.queryByText("No comments yet.")).not.toBeInTheDocument();
   });
 
-  it("explains unreadable checks instead of showing empty counts", () => {
+  it("explains unreadable checks instead of showing empty counts", async () => {
     // The token read the PR but GitHub refused its check runs.
     state.info!.data!.pr!.checks = { passing: 0, failing: 0, pending: 0, total: 0, runs: [] };
     state.info!.data!.pr!.checks_supported = false;
-    renderPanel();
+    await renderPanel();
 
     expect(screen.getByText("Checks")).toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent(
@@ -1533,22 +1579,22 @@ describe("PullRequestPanel", () => {
     expect(screen.getByText("No description provided.")).toBeInTheDocument();
   });
 
-  it("retains loaded comments while indicating that more could not be fetched", () => {
+  it("retains loaded comments while indicating that more could not be fetched", async () => {
     state.info!.data!.pr!.comments_partial = true;
     state.info!.data!.pr!.comments = [
       { author: "reviewer", body: "Loaded comment", created_at: null, url: null },
     ];
-    renderComments();
+    await renderComments();
 
     expect(screen.getByRole("tab", { name: "Comments 1+" })).toBeInTheDocument();
     expect(screen.getByText("Loaded comment")).toBeInTheDocument();
     expect(screen.getByText("Some comments are unavailable.")).toBeInTheDocument();
   });
 
-  it("shows lookup warnings instead of reporting that no request exists", () => {
+  it("shows lookup warnings instead of reporting that no request exists", async () => {
     state.info!.data!.pr = null;
     state.info!.data!.warnings = ["Request lookup failed. Try again shortly."];
-    renderPanel();
+    await renderPanel();
 
     expect(screen.getByRole("status")).toHaveTextContent(
       "Request lookup failed. Try again shortly.",
@@ -1556,11 +1602,11 @@ describe("PullRequestPanel", () => {
     expect(screen.queryByText(/No open PR for/)).not.toBeInTheDocument();
   });
 
-  it("keeps the no-PR state and linking available when another provider fails", () => {
+  it("keeps the no-PR state and linking available when another provider fails", async () => {
     state.info!.data!.pr = null;
     state.info!.data!.tracking_available = true;
     state.info!.data!.discovery_warnings = ["GitLab discovery failed. Refresh to retry."];
-    renderPanel();
+    await renderPanel();
 
     expect(screen.getByText(/No open PR for/)).toBeInTheDocument();
     // The empty state shows the panel title, with no provider to name.
@@ -1573,7 +1619,7 @@ describe("PullRequestPanel", () => {
   });
 
   it("reveals the stacked diff after switching to the Changes tab", async () => {
-    renderPanel();
+    await renderPanel();
     expect(screen.queryByTestId("diff")).toBeNull();
     fireEvent.mouseDown(screen.getByRole("tab", { name: "Changes" }));
     const diffs = await screen.findAllByTestId("diff");
@@ -1597,7 +1643,7 @@ describe("PullRequestPanel", () => {
     // The list's head is pinned, so the mock carries it as an extra field.
     Object.assign(state.changes!.data!, { head_sha: "head" });
     state.diff = { ...state.diff!, head_sha: "head" };
-    renderChanges();
+    await renderChanges();
 
     fireEvent.click(await screen.findByRole("checkbox", { name: "Viewed hello.py" }));
     const key = viewedStorageKey(window.location.origin, "alice", selected);
@@ -1605,7 +1651,7 @@ describe("PullRequestPanel", () => {
   });
 
   it("stacks a diff section per changed file", async () => {
-    renderChanges();
+    await renderChanges();
     const diffs = await screen.findAllByTestId("diff");
     expect(diffs.map((d) => d.getAttribute("data-path"))).toEqual(["hello.py", "src/app.ts"]);
     // index.css binds @pierre/diffs' font variables on this class; outside it the
@@ -1614,7 +1660,7 @@ describe("PullRequestPanel", () => {
   });
 
   it("jumps to and expands a file's section when its sidebar row is clicked", async () => {
-    renderChanges();
+    await renderChanges();
     await screen.findAllByTestId("diff");
     fireEvent.click(screen.getByRole("button", { name: /app\.ts/, expanded: true }));
     expect(screen.getAllByTestId("diff").map((d) => d.getAttribute("data-path"))).toEqual([
@@ -1630,7 +1676,7 @@ describe("PullRequestPanel", () => {
   });
 
   it("collapses a jumped-to file from its header and keeps collapse across tabs", async () => {
-    renderChanges();
+    await renderChanges();
     await screen.findAllByTestId("diff");
     fireEvent.click(screen.getByRole("button", { name: /app\.ts/, expanded: true }));
     fireEvent.click(screen.getAllByRole("button", { name: /app\.ts/ })[0]);
@@ -1651,7 +1697,7 @@ describe("PullRequestPanel", () => {
   });
 
   it("collapses a file's diff when its section header is clicked", async () => {
-    renderChanges();
+    await renderChanges();
     expect(await screen.findAllByTestId("diff")).toHaveLength(2);
     // The section header carries aria-expanded; the sidebar row doesn't.
     const header = screen.getByRole("button", { name: /app\.ts/, expanded: true });
@@ -1662,7 +1708,7 @@ describe("PullRequestPanel", () => {
   });
 
   it("collapses and expands every diff from the toolbar", async () => {
-    renderChanges();
+    await renderChanges();
     expect(await screen.findAllByTestId("diff")).toHaveLength(2);
     fireEvent.click(screen.getByRole("button", { name: "Collapse all diffs" }));
     expect(screen.queryAllByTestId("diff")).toHaveLength(0);
@@ -1680,7 +1726,7 @@ describe("PullRequestPanel", () => {
   });
 
   it("hides and shows the file sidebar from the toolbar", async () => {
-    renderChanges();
+    await renderChanges();
     await screen.findAllByTestId("diff");
     // hello.py appears as a sidebar jump row and as a section header.
     expect(fileRowButtons(/hello\.py/)).toHaveLength(2);
@@ -1692,7 +1738,7 @@ describe("PullRequestPanel", () => {
   });
 
   it("toggles the diff layout between unified and split", async () => {
-    renderChanges();
+    await renderChanges();
     await screen.findAllByTestId("diff");
     // Defaults to unified, so the toggle offers split; clicking flips its label.
     fireEvent.click(screen.getByRole("button", { name: "Switch to split view" }));
@@ -1712,7 +1758,7 @@ describe("PullRequestPanel", () => {
       error: null,
       isFetching: false,
     };
-    renderChanges();
+    await renderChanges();
     // The lone omnigent → runner chain collapses to a single "omnigent/runner"
     // folder row (exact name; the diff section headers carry the full path).
     expect(await screen.findByRole("button", { name: "omnigent/runner" })).toBeInTheDocument();
@@ -1731,7 +1777,7 @@ describe("PullRequestPanel", () => {
       error: null,
       isFetching: false,
     };
-    renderChanges();
+    await renderChanges();
     const folder = await screen.findByRole("button", { name: "omnigent/runner" });
     // Before collapse: the sidebar leaf + the diff section header both match.
     expect(fileRowButtons(/app\.py/)).toHaveLength(2);
@@ -1750,7 +1796,7 @@ describe("PullRequestPanel", () => {
     state.parsedFiles = [
       { name: "omnigent/new_name.py", prevName: "omnigent/old_name.py", type: "rename-pure" },
     ];
-    renderChanges();
+    await renderChanges();
     // No diff body for a 100%-similarity rename — a note instead.
     expect(await screen.findByText("File renamed without changes.")).toBeInTheDocument();
     expect(screen.queryByTestId("diff")).toBeNull();
@@ -1762,19 +1808,19 @@ describe("PullRequestPanel", () => {
     ).toBeInTheDocument();
   });
 
-  it("renders a non-git workspace message without a PR body", () => {
+  it("renders a non-git workspace message without a PR body", async () => {
     state.info = {
       data: { object: "session.github.info", available: false, reason: "not_a_git_repo" },
       isLoading: false,
       error: null,
       isFetching: false,
     };
-    renderPanel();
+    await renderPanel();
     expect(screen.getByText("Not a git repository")).toBeInTheDocument();
     expect(screen.queryByTestId("diff")).toBeNull();
   });
 
-  it("prompts to update the host when it predates the GitHub route", () => {
+  it("prompts to update the host when it predates the GitHub route", async () => {
     // fetchPullRequestInfo synthesizes this payload with no provider.
     state.info = {
       data: {
@@ -1787,66 +1833,69 @@ describe("PullRequestPanel", () => {
       error: null,
       isFetching: false,
     };
-    renderPanel();
+    await renderPanel();
     expect(screen.getByText("Update your host to use the Pull Requests tab")).toBeInTheDocument();
     expect(screen.getByText(/0\.13\.0 or later/)).toBeInTheDocument();
     expect(screen.queryByText(/GitHub/)).toBeNull();
     expect(screen.queryByTestId("diff")).toBeNull();
   });
 
-  it("prompts to install the GitHub CLI when gh is missing", () => {
+  it("prompts to install the GitHub CLI when gh is missing", async () => {
     state.info!.data!.gh_available = false;
-    renderPanel();
+    await renderPanel();
     expect(screen.getByText("GitHub CLI not found")).toBeInTheDocument();
     expect(screen.queryByTestId("diff")).toBeNull();
   });
 
-  it("prompts to check gh auth when the upstream repo can't be resolved", () => {
+  it("prompts to check gh auth when the upstream repo can't be resolved", async () => {
     // Signed in, but `gh repo view` failed → no repo resolved.
     state.info!.data!.authenticated = true;
     state.info!.data!.repo = null;
-    renderPanel();
+    await renderPanel();
     expect(screen.getByText("Can’t reach the upstream repo")).toBeInTheDocument();
     expect(screen.getByText(/gh auth status/)).toBeInTheDocument();
     expect(screen.queryByTestId("diff")).toBeNull();
   });
 
-  it.each([1, 2])("offers the stored PR in the empty state with %i GitHub accounts", (count) => {
-    const url = "https://github.com/acme/app/pull/6000";
-    const info = state.info!.data!;
-    info.pr = null;
-    info.repo = null;
-    info.tracking_available = true;
-    info.selected_pr_url = url;
-    info.prs = [
-      { url, host: "github.com", repository: "acme/app", number: 6000, relationship: "created" },
-    ];
-    info.accounts = ["personal", "work"].slice(0, count).map((login) => ({
-      login,
-      active: login === "personal",
-      state: "success",
-      host: "github.com",
-    }));
-    info.selected_account = "personal";
-    renderPanel();
-    const emptyState = screen.getByText("Can’t reach the upstream repo").parentElement;
-    const link = screen.getByRole("link", { name: "Open the PR on GitHub" });
-    expect(emptyState).toContainElement(link);
-    expect(emptyState).toContainElement(screen.getByText("or", { exact: true }));
-    expect(link).toHaveAttribute("href", url);
-    expect(link).toHaveAttribute("target", "_blank");
-    const account = screen.queryByRole("combobox", { name: "GitHub account" });
-    if (count > 1) {
-      expect(emptyState).toContainElement(account);
-      expect(
-        account!.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING,
-      ).toBeTruthy();
-    } else {
-      expect(account).toBeNull();
-    }
-  });
+  it.each([1, 2])(
+    "offers the stored PR in the empty state with %i GitHub accounts",
+    async (count) => {
+      const url = "https://github.com/acme/app/pull/6000";
+      const info = state.info!.data!;
+      info.pr = null;
+      info.repo = null;
+      info.tracking_available = true;
+      info.selected_pr_url = url;
+      info.prs = [
+        { url, host: "github.com", repository: "acme/app", number: 6000, relationship: "created" },
+      ];
+      info.accounts = ["personal", "work"].slice(0, count).map((login) => ({
+        login,
+        active: login === "personal",
+        state: "success",
+        host: "github.com",
+      }));
+      info.selected_account = "personal";
+      await renderPanel();
+      const emptyState = screen.getByText("Can’t reach the upstream repo").parentElement;
+      const link = screen.getByRole("link", { name: "Open the PR on GitHub" });
+      expect(emptyState).toContainElement(link);
+      expect(emptyState).toContainElement(screen.getByText("or", { exact: true }));
+      expect(link).toHaveAttribute("href", url);
+      expect(link).toHaveAttribute("target", "_blank");
+      const account = screen.queryByRole("combobox", { name: "GitHub account" });
+      if (count > 1) {
+        expect(emptyState).toContainElement(account);
+        expect(
+          account!.compareDocumentPosition(link) & Node.DOCUMENT_POSITION_FOLLOWING,
+        ).toBeTruthy();
+      } else {
+        expect(account).toBeNull();
+      }
+    },
+  );
 
-  it("names an extensible provider's account selector", () => {
+  it("names an extensible provider's account selector", async () => {
     const info = state.info!.data!;
     info.repo = null;
     info.provider = "forge";
@@ -1874,11 +1923,11 @@ describe("PullRequestPanel", () => {
       line_counts: true,
       linked_pr_diff: true,
     };
-    renderPanel();
+    await renderPanel();
     expect(screen.getByRole("combobox", { name: "Example Forge account" })).toBeInTheDocument();
   });
 
-  it("hides the account selector when the provider can't switch accounts", () => {
+  it("hides the account selector when the provider can't switch accounts", async () => {
     const info = state.info!.data!;
     info.repo = null;
     info.accounts = ["personal", "work"].map((login) => ({
@@ -1894,12 +1943,12 @@ describe("PullRequestPanel", () => {
       line_counts: true,
       linked_pr_diff: true,
     };
-    renderPanel();
+    await renderPanel();
     expect(screen.getByText("Can’t reach the upstream repo")).toBeInTheDocument();
     expect(screen.queryByRole("combobox", { name: "GitHub account" })).toBeNull();
   });
 
-  it("names the remote host when no provider supports the remote", () => {
+  it("names the remote host when no provider supports the remote", async () => {
     state.info = {
       data: {
         object: "session.github.info",
@@ -1912,7 +1961,7 @@ describe("PullRequestPanel", () => {
       error: null,
       isFetching: false,
     };
-    renderPanel();
+    await renderPanel();
     expect(screen.getByText("No supported remote")).toBeInTheDocument();
     expect(screen.getByText("git.example.com")).toBeInTheDocument();
     expect(screen.queryByTestId("diff")).toBeNull();
@@ -1924,7 +1973,7 @@ describe("PullRequestPanel", () => {
 
   it.each(["git.example.com", "github.com-work"])(
     "shows provider setup for unrecognized host %s",
-    (remoteHost) => {
+    async (remoteHost) => {
       state.info = {
         data: {
           object: "session.github.info",
@@ -1937,7 +1986,7 @@ describe("PullRequestPanel", () => {
         error: null,
         isFetching: false,
       };
-      renderPanel();
+      await renderPanel();
       // A second line under the sentence about the host; commands are set as code.
       const hint = screen.getByText(/couldn’t identify the git provider/);
       const note = screen.getByText(/On the execution host, run/);
@@ -1957,7 +2006,7 @@ describe("PullRequestPanel", () => {
     },
   );
 
-  it("leaves out the sign-in line when the remote's host is unknown", () => {
+  it("leaves out the sign-in line when the remote's host is unknown", async () => {
     state.info = {
       data: {
         object: "session.github.info",
@@ -1969,7 +2018,7 @@ describe("PullRequestPanel", () => {
       error: null,
       isFetching: false,
     };
-    renderPanel();
+    await renderPanel();
     expect(
       screen.getByText("Omnigent couldn’t identify this workspace’s git provider."),
     ).toBeInTheDocument();
@@ -1985,28 +2034,28 @@ describe("PullRequestPanel", () => {
       expect(screen.queryByText(/GitHub/)).toBeNull();
     };
 
-    it("is neutral while the first load runs", () => {
+    it("is neutral while the first load runs", async () => {
       state.info = { isLoading: true, error: null, isFetching: true };
-      renderPanel();
+      await renderPanel();
       expect(screen.getByText("Loading pull requests…")).toBeInTheDocument();
       neutralHeading();
     });
 
-    it("is neutral when the first load fails", () => {
+    it("is neutral when the first load fails", async () => {
       state.info = { isLoading: false, error: new Error("boom"), isFetching: false };
-      renderPanel();
+      await renderPanel();
       expect(screen.getByText("Couldn’t load pull request info: boom")).toBeInTheDocument();
       neutralHeading();
     });
 
-    it("is neutral while the runner is offline", () => {
+    it("is neutral while the runner is offline", async () => {
       state.info = { isLoading: false, error: new RunnerOfflineError(), isFetching: false };
-      renderPanel();
+      await renderPanel();
       expect(screen.getByText(/The agent is asleep/)).toBeInTheDocument();
       neutralHeading();
     });
 
-    it("is neutral when the host is outdated", () => {
+    it("is neutral when the host is outdated", async () => {
       state.info = {
         data: {
           object: "session.github.info",
@@ -2018,11 +2067,11 @@ describe("PullRequestPanel", () => {
         error: null,
         isFetching: false,
       };
-      renderPanel();
+      await renderPanel();
       neutralHeading();
     });
 
-    it("says pull requests are unavailable without naming a provider", () => {
+    it("says pull requests are unavailable without naming a provider", async () => {
       state.info = {
         data: {
           object: "session.github.info",
@@ -2034,7 +2083,7 @@ describe("PullRequestPanel", () => {
         error: null,
         isFetching: false,
       };
-      renderPanel();
+      await renderPanel();
       expect(screen.getByText("Pull requests aren’t available")).toBeInTheDocument();
       expect(screen.getByText(/no pull request information/)).toBeInTheDocument();
       neutralHeading();
@@ -2042,7 +2091,7 @@ describe("PullRequestPanel", () => {
 
     it.each([undefined, null, "github", "example_forge"])(
       "is neutral in a non-git workspace when the host's provider is %j",
-      (provider) => {
+      async (provider) => {
         state.info = {
           data: {
             object: "session.github.info",
@@ -2054,13 +2103,13 @@ describe("PullRequestPanel", () => {
           error: null,
           isFetching: false,
         };
-        renderPanel();
+        await renderPanel();
         expect(screen.getByText("Not a git repository")).toBeInTheDocument();
         neutralHeading();
       },
     );
 
-    it("is neutral above the PR picker in a non-git workspace", () => {
+    it("is neutral above the PR picker in a non-git workspace", async () => {
       const url = "https://github.com/acme/app/pull/6000";
       state.info = {
         data: {
@@ -2084,7 +2133,7 @@ describe("PullRequestPanel", () => {
         error: null,
         isFetching: false,
       };
-      renderPanel();
+      await renderPanel();
       const heading = screen.getByRole("heading", { name: "Pull Requests" });
       expect(heading.querySelector("svg")).toBeNull();
       expect(screen.queryByText("GitHub")).toBeNull();
@@ -2094,9 +2143,9 @@ describe("PullRequestPanel", () => {
       );
     });
 
-    it("keeps naming GitHub for a host that omits the provider", () => {
+    it("keeps naming GitHub for a host that omits the provider", async () => {
       // The default fixture is a ready payload with no `provider`.
-      renderPanel();
+      await renderPanel();
       // The heading stays neutral; GitHub is named beside the PR's own title.
       expect(screen.getByRole("heading", { name: "Pull Requests" })).toBeInTheDocument();
       const provider = screen.getByTitle("GitHub");
@@ -2104,7 +2153,7 @@ describe("PullRequestPanel", () => {
       expect(provider.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
     });
 
-    it("names a switched-to PR's own provider, and stays neutral while it loads", () => {
+    it("names a switched-to PR's own provider, and stays neutral while it loads", async () => {
       const url = "https://forge.example.test/contoso/web/_git/app/pullrequest/7";
       state.info!.data = {
         ...state.info!.data!,
@@ -2125,14 +2174,14 @@ describe("PullRequestPanel", () => {
           },
         ],
       };
-      const { rerender } = renderPanel();
+      const { rerender } = await renderPanel();
       fireEvent.click(
         screen.getByRole("button", { name: /^(?!Actions for).*contoso\/web\/app !7$/ }),
       );
       expect(screen.getByTitle("Example Forge")).toHaveTextContent("Example Forge");
       // Mid-switch there's no request to name, and the header never named one.
       state.info = { isLoading: true, error: null, isFetching: true };
-      rerender(<PullRequestPanel conversationId="conv_1" />);
+      await rerender(<PullRequestPanel conversationId="conv_1" />);
       expect(screen.getByText("Loading pull requests…")).toBeInTheDocument();
       expect(screen.getByRole("heading", { name: "Pull Requests" })).toBeInTheDocument();
       expect(screen.queryByTitle("Example Forge")).toBeNull();
@@ -2166,9 +2215,9 @@ describe("PullRequestPanel", () => {
       pr: null,
     });
 
-    it("uses the generic label and names the missing CLI", () => {
+    it("uses the generic label and names the missing CLI", async () => {
       state.info!.data = gitlab({ authenticated: false, cli: { name: "glab", available: false } });
-      renderPanel();
+      await renderPanel();
       expect(screen.getByRole("heading", { name: "Pull Requests" })).not.toHaveAttribute("title");
       // No PR to hang the provider off, so the empty state's copy names it.
       expect(screen.getByText("gitlab CLI not found")).toBeInTheDocument();
@@ -2177,36 +2226,36 @@ describe("PullRequestPanel", () => {
       expect(screen.queryByText(/GitHub/)).toBeNull();
     });
 
-    it("shows a GitLab merge request authenticated by a token without a CLI", () => {
+    it("shows a GitLab merge request authenticated by a token without a CLI", async () => {
       const { repo, pr } = state.info!.data!;
       state.info!.data = {
         ...gitlab({ cli: null }),
         repo,
         pr: { ...pr!, url: "https://git.example.com/acme/app/-/merge_requests/6000" },
       };
-      renderPanel();
+      await renderPanel();
       expect(screen.getByText("chore: dummy PR")).toBeInTheDocument();
       expect(screen.queryByText(/CLI not found/)).toBeNull();
     });
 
-    it("shows the GitLab token error without asking to install a CLI", () => {
+    it("shows the GitLab token error without asking to install a CLI", async () => {
       state.info!.data = gitlab({
         authenticated: false,
         cli: null,
         hint: "Check `GITLAB_TOKEN` on the execution host.",
       });
-      renderPanel();
+      await renderPanel();
       expect(screen.getByText("Can’t reach the upstream repo")).toBeInTheDocument();
       expect(screen.getByText("GITLAB_TOKEN")).toHaveClass("font-mono");
       expect(screen.queryByText(/CLI not found/)).toBeNull();
     });
 
-    it("shows the host's sign-in hint when the repo can't be reached", () => {
+    it("shows the host's sign-in hint when the repo can't be reached", async () => {
       state.info!.data = gitlab({
         authenticated: false,
         hint: "Run `glab auth login` on the host.",
       });
-      renderPanel();
+      await renderPanel();
       expect(screen.getByText("Can’t reach the upstream repo")).toBeInTheDocument();
       expect(screen.getByText("glab auth login")).toHaveClass("font-mono");
       expect(screen.queryByText(/gh auth status/)).toBeNull();
@@ -2263,9 +2312,9 @@ describe("PullRequestPanel", () => {
       ...over,
     });
 
-    it("shows the provider, the repo, and a !-prefixed PR with no account selector", () => {
+    it("shows the provider, the repo, and a !-prefixed PR with no account selector", async () => {
       state.info!.data = forge();
-      renderPanel();
+      await renderPanel();
       const provider = screen.getByTitle("Example Forge");
       expect(provider.querySelector("svg")).toHaveAttribute("aria-hidden", "true");
       expect(screen.getByText(/contoso\/web\/app/)).toBeInTheDocument();
@@ -2291,7 +2340,7 @@ describe("PullRequestPanel", () => {
           }),
         ],
       });
-      renderPanel();
+      await renderPanel();
       fireEvent.click(screen.getByRole("button", { name: "Link a PR" }));
       expect(screen.getByRole("textbox", { name: "Pull request URL" })).toHaveAttribute(
         "placeholder",
@@ -2306,18 +2355,18 @@ describe("PullRequestPanel", () => {
       ).toBeVisible();
     });
 
-    it("goes straight to the PR when signed in without the Example Forge CLI", () => {
+    it("goes straight to the PR when signed in without the Example Forge CLI", async () => {
       state.info!.data = forge({ auth: auth({ cli: { name: "forge", available: false } }) });
-      renderPanel();
+      await renderPanel();
       expect(screen.getByText("Add the widget")).toBeInTheDocument();
       expect(screen.queryByText("Example Forge CLI not found")).toBeNull();
     });
 
-    it("prompts to install the Example Forge CLI, or set a token, when signed out without it", () => {
+    it("prompts to install the Example Forge CLI, or set a token, when signed out without it", async () => {
       state.info!.data = forge({
         auth: auth({ authenticated: false, cli: { name: "forge", available: false } }),
       });
-      renderPanel();
+      await renderPanel();
       expect(screen.getByText("Example Forge CLI not found")).toBeInTheDocument();
       expect(screen.getByText("forge")).toHaveClass("font-mono");
       expect(screen.getByText("forge login")).toHaveClass("font-mono");
@@ -2325,9 +2374,9 @@ describe("PullRequestPanel", () => {
       expect(screen.queryByTestId("diff")).toBeNull();
     });
 
-    it("shows the Example Forge sign-in hint when the repo can't be reached", () => {
+    it("shows the Example Forge sign-in hint when the repo can't be reached", async () => {
       state.info!.data = forge({ auth: auth({ authenticated: false }), repo: null, pr: null });
-      renderPanel();
+      await renderPanel();
       expect(screen.getByText("Can’t reach the upstream repo")).toBeInTheDocument();
       expect(screen.getByText("forge login")).toHaveClass("font-mono");
       expect(screen.getByText("FORGE_TOKEN")).toHaveClass("font-mono");
@@ -2335,7 +2384,7 @@ describe("PullRequestPanel", () => {
       expect(screen.queryByRole("combobox", { name: "GitHub account" })).toBeNull();
     });
 
-    it("links the stored PR in its own provider's name when no provider serves the remote", () => {
+    it("links the stored PR in its own provider's name when no provider serves the remote", async () => {
       state.info!.data = {
         object: "session.github.info",
         available: false,
@@ -2346,7 +2395,7 @@ describe("PullRequestPanel", () => {
         selected_pr_url: prUrl,
         prs: [association()],
       };
-      renderPanel();
+      await renderPanel();
       expect(screen.getByText("No supported remote")).toBeInTheDocument();
       expect(screen.getByRole("link", { name: "Open the PR on Example Forge" })).toHaveAttribute(
         "href",
@@ -2368,7 +2417,7 @@ describe("PullRequestPanel", () => {
       const withPr = (over: Partial<PullRequest>): PullRequestInfo =>
         forge({ pr: { ...forge().pr!, ...over } });
 
-      it("renders every comment of a thread whose replies share one URL", () => {
+      it("renders every comment of a thread whose replies share one URL", async () => {
         const keyWarnings = watchKeyWarnings();
         state.info!.data = withPr({
           comments: [
@@ -2382,7 +2431,7 @@ describe("PullRequestPanel", () => {
             comment({ body: "Fair, resolving this.", created_at: "2026-09-05T08:15:09.000Z" }),
           ],
         });
-        renderComments();
+        await renderComments();
 
         expect(screen.getByRole("tab", { name: "Comments 3" })).toBeInTheDocument();
         expect(commentBodies()).toEqual([
@@ -2399,18 +2448,18 @@ describe("PullRequestPanel", () => {
         expect(keyWarnings()).toEqual([]);
       });
 
-      it("keeps comments apart when they match on URL, time, and author", () => {
+      it("keeps comments apart when they match on URL, time, and author", async () => {
         const keyWarnings = watchKeyWarnings();
         state.info!.data = withPr({
           comments: [comment({ body: "First of two" }), comment({ body: "Second of two" })],
         });
-        renderComments();
+        await renderComments();
 
         expect(commentBodies()).toEqual(["First of two", "Second of two"]);
         expect(keyWarnings()).toEqual([]);
       });
 
-      it("keeps an unchanged comment card mounted when a poll adds a reply above it", () => {
+      it("keeps an unchanged comment card mounted when a poll adds a reply above it", async () => {
         const keyWarnings = watchKeyWarnings();
         const first = comment({
           body: "Thread one",
@@ -2430,12 +2479,12 @@ describe("PullRequestPanel", () => {
           url: first.url,
         });
         state.info!.data = withPr({ comments: [first, second] });
-        const { rerender } = renderComments();
+        const { rerender } = await renderComments();
         const card = screen.getByText("Thread two").closest("li");
 
         // The next poll returns a reply to the first thread, ahead of the second.
         state.info = { ...state.info!, data: withPr({ comments: [first, reply, second] }) };
-        rerender(<PullRequestPanel conversationId="conv_1" />);
+        await rerender(<PullRequestPanel conversationId="conv_1" />);
 
         expect(commentBodies()).toEqual(["Thread one", "Reply in thread one", "Thread two"]);
         expect(screen.getByText("Thread two").closest("li")).toBe(card);
@@ -2462,7 +2511,7 @@ describe("PullRequestPanel", () => {
             ],
           },
         });
-        renderPanel();
+        await renderPanel();
 
         await user.hover(screen.getByRole("button", { name: /5\s*passed/ }));
         const rows = await screen.findAllByRole("listitem");
@@ -2488,7 +2537,7 @@ describe("PullRequestPanel", () => {
       patch: "",
       unavailable_reason: "pr_outside_workspace",
     };
-    renderChanges();
+    await renderChanges();
     expect(
       await screen.findByText("Diff unavailable for a PR outside this workspace's repository"),
     ).toBeInTheDocument();
@@ -2505,7 +2554,7 @@ describe("PullRequestPanel", () => {
       unavailable_reason: "truncated",
       message,
     };
-    renderChanges();
+    await renderChanges();
 
     expect(await screen.findByText(expected!)).toBeInTheDocument();
     expect(screen.queryByText(/outside this workspace/)).not.toBeInTheDocument();
@@ -2515,7 +2564,7 @@ describe("PullRequestPanel", () => {
   it("reports a failed diff fetch instead of silently rendering empty file sections", async () => {
     state.diff = null;
     state.diffError = new Error("Diff request timed out.");
-    renderChanges();
+    await renderChanges();
 
     expect(await screen.findByText("Diff request timed out.")).toBeInTheDocument();
     expect(screen.queryByTestId("diff")).toBeNull();
@@ -2524,7 +2573,7 @@ describe("PullRequestPanel", () => {
   it("reports a failed file list without claiming there are no changes", async () => {
     state.changes!.data = undefined;
     state.changes!.error = new Error("Could not load changed files.");
-    renderChanges();
+    await renderChanges();
     expect(await screen.findByRole("alert")).toHaveTextContent("Could not load changed files.");
     expect(screen.queryByText("No changes vs base.")).toBeNull();
   });
@@ -2533,7 +2582,7 @@ describe("PullRequestPanel", () => {
     vi.mocked(parsePatchFiles).mockImplementationOnce(() => {
       throw new Error("bad patch");
     });
-    renderChanges();
+    await renderChanges();
     expect(await screen.findByRole("alert")).toHaveTextContent("Couldn’t read the PR diff.");
     expect(screen.queryByText("No text diff available for this file.")).toBeNull();
   });
@@ -2542,7 +2591,7 @@ describe("PullRequestPanel", () => {
     state.info!.error = new Error("Request timed out.");
     const invalidate = vi.spyOn(QueryClient.prototype, "invalidateQueries").mockResolvedValue();
     onTestFinished(() => invalidate.mockRestore());
-    renderPanel();
+    await renderPanel();
     await userEvent.click(screen.getByRole("button", { name: "Refresh" }));
     expect(invalidate.mock.calls.map(([filters]) => filters?.queryKey?.[0])).toEqual([
       "github-info",
@@ -2557,7 +2606,7 @@ describe("PullRequestPanel", () => {
 
   it("marks an incomplete changed-file list while retaining loaded file diffs", async () => {
     state.changes!.data!.has_more = true;
-    renderChanges();
+    await renderChanges();
 
     expect(await screen.findByText("The changed-file list is incomplete.")).toBeInTheDocument();
     expect(screen.getAllByTestId("diff")).toHaveLength(2);
@@ -2579,7 +2628,7 @@ describe("PullRequestPanel", () => {
           ? ""
           : "diff --git a/widget.py b/widget.py\n--- a/widget.py\n+++ b/widget.py\n@@ -1 +1 @@\n-old\n+new\n",
       };
-      const { container } = renderChanges();
+      const { container } = await renderChanges();
 
       expect(await screen.findAllByText("No text diff available for this file.")).toHaveLength(2);
       for (const path of ["__init__.py", "image.png"]) {
@@ -2602,27 +2651,27 @@ describe("PullRequestPanel", () => {
       data: [],
       warning: "Changed-file lookup failed.",
     };
-    renderChanges();
+    await renderChanges();
 
     expect(await screen.findByText("Changed-file lookup failed.")).toBeInTheDocument();
     expect(screen.getAllByText("Changed files are unavailable.").length).toBeGreaterThan(0);
     expect(screen.queryByText("No changes vs base.")).not.toBeInTheDocument();
   });
 
-  it("shows a no-open-PR empty state (naming the branch) and hides the diff", () => {
+  it("shows a no-open-PR empty state (naming the branch) and hides the diff", async () => {
     state.info!.data!.pr = null;
-    renderPanel();
+    await renderPanel();
     expect(screen.getByText(/No open PR for/)).toBeInTheDocument();
     expect(screen.getByText("test/pr-view")).toBeInTheDocument();
     expect(screen.queryByTestId("diff")).toBeNull();
     expect(screen.queryByRole("button", { name: "Link a PR" })).not.toBeInTheDocument();
   });
 
-  it("offers linking beneath the empty-state description when tracking is available", () => {
+  it("offers linking beneath the empty-state description when tracking is available", async () => {
     state.info!.data!.pr = null;
     state.info!.data!.prs = [];
     state.info!.data!.tracking_available = true;
-    renderPanel();
+    await renderPanel();
     const description = screen.getByText(/Pull requests created in this session appear here/);
     const link = screen.getByRole("button", { name: "Link a PR" });
     expect(description.parentElement).toContainElement(link);
@@ -2650,7 +2699,7 @@ describe("PullRequestPanel", () => {
       error: null,
       isFetching: false,
     };
-    renderChanges();
+    await renderChanges();
     // Exactly at the threshold: diff renders, no affordance.
     expect(await screen.findByTestId("diff")).toBeInTheDocument();
     expect(screen.queryByText(/Large diff/)).toBeNull();
@@ -2661,7 +2710,7 @@ describe("PullRequestPanel", () => {
       { name: "hello.py", unifiedLineCount: LARGE_DIFF_THRESHOLD + 1 },
       { name: "src/app.ts" },
     ];
-    renderChanges();
+    await renderChanges();
     // The oversized file shows the affordance; the normal file renders its diff.
     expect(await screen.findByText(/Large diff/)).toBeInTheDocument();
     expect(
@@ -2681,7 +2730,7 @@ describe("PullRequestPanel", () => {
       error: null,
       isFetching: false,
     };
-    renderChanges();
+    await renderChanges();
     await screen.findByText(/Large diff/);
     fireEvent.click(screen.getByRole("button", { name: "Show diff" }));
     expect(await screen.findByTestId("diff")).toHaveAttribute("data-path", "hello.py");
@@ -2717,7 +2766,7 @@ describe("derivePullRequestPanelState", () => {
     ...over,
   });
 
-  it("orders transient states ahead of data", () => {
+  it("orders transient states ahead of data", async () => {
     expect(derivePullRequestPanelState(q({ isLoading: true })).kind).toBe("loading");
     expect(derivePullRequestPanelState(q({ error: new RunnerOfflineError() })).kind).toBe(
       "runner-offline",
@@ -2725,14 +2774,14 @@ describe("derivePullRequestPanelState", () => {
     expect(derivePullRequestPanelState(q({ error: new Error("boom") })).kind).toBe("error");
   });
 
-  it("reads an offline sandbox as sandbox-offline unless info was cached before it stopped", () => {
+  it("reads an offline sandbox as sandbox-offline unless info was cached before it stopped", async () => {
     const asleep = (over: Parameters<typeof q>[0]) => ({ ...q(over), sandboxAsleep: true });
     expect(derivePullRequestPanelState(asleep({ isLoading: true })).kind).toBe("sandbox-offline");
     expect(derivePullRequestPanelState(asleep({})).kind).toBe("sandbox-offline");
     expect(derivePullRequestPanelState(asleep({ data: ready })).kind).toBe("ready");
   });
 
-  it("maps each unavailable reason to its own state", () => {
+  it("maps each unavailable reason to its own state", async () => {
     expect(derivePullRequestPanelState(q({ data: undefined })).kind).toBe("unavailable");
     expect(
       derivePullRequestPanelState(
@@ -2751,7 +2800,7 @@ describe("derivePullRequestPanelState", () => {
     ).toBe("host-outdated");
   });
 
-  it("walks the gh layer: cli → auth → repo → pr → ready", () => {
+  it("walks the gh layer: cli → auth → repo → pr → ready", async () => {
     expect(derivePullRequestPanelState(q({ data: { ...ready, gh_available: false } }))).toEqual({
       kind: "no-cli",
       cli: "gh",
@@ -2767,7 +2816,7 @@ describe("derivePullRequestPanelState", () => {
     expect(derivePullRequestPanelState(q({ data: ready }))).toEqual({ kind: "ready" });
   });
 
-  it("reads the remote host and the provider's auth from the payload", () => {
+  it("reads the remote host and the provider's auth from the payload", async () => {
     expect(
       derivePullRequestPanelState(
         q({
@@ -2795,7 +2844,7 @@ describe("derivePullRequestPanelState", () => {
     expect(derivePullRequestPanelState(q({ data: az({}) }))).toEqual({ kind: "ready" });
   });
 
-  it("stops at a missing CLI only while signed out", () => {
+  it("stops at a missing CLI only while signed out", async () => {
     const azNoCli = (authenticated: boolean, over: Partial<PullRequestInfo> = {}) => ({
       ...ready,
       provider: "example_forge",
@@ -2840,10 +2889,10 @@ describe("session PR selection", () => {
           OTHER_PR,
         ],
       });
-      const { client, rerender } = renderPanel(false, active);
+      const { rerender } = await renderPanel(false, active);
       expect(await screen.findByRole("list", { name: "Pull requests" })).toBeVisible();
 
-      act(() => selectPullRequestInPanel(client, "conv_1", OTHER_PR.url));
+      await revealPullRequestIn(harness!, "conv_1", OTHER_PR.url);
 
       expect(await screen.findByRole("tab", { name: "Summary" })).toHaveAttribute(
         "aria-selected",
@@ -2855,9 +2904,9 @@ describe("session PR selection", () => {
         prUrl: OTHER_PR.url,
       });
 
-      rerender(<div />);
-      selectPullRequestInPanel(client, "conv_1", state.info!.data!.pr!.url);
-      rerender(<PullRequestPanel conversationId="conv_1" active={active} />);
+      await rerender(<div />);
+      await revealPullRequestIn(harness!, "conv_1", state.info!.data!.pr!.url);
+      await rerender(<PullRequestPanel conversationId="conv_1" active={active} />);
       expect(screen.getByRole("tab", { name: "Summary" })).toHaveAttribute("aria-selected", "true");
       expect(usePullRequestInfo).toHaveBeenLastCalledWith("conv_1", {
         poll: active,
@@ -2882,7 +2931,7 @@ describe("session PR selection", () => {
       prs: [association],
     });
     if (stored) state.stored.conv_1 = [association];
-    const { client, rerender } = renderPanel();
+    const { client, rerender } = await renderPanel();
 
     expect(await screen.findByRole("tab", { name: "Summary" })).toBeVisible();
     expect(screen.queryByRole("list", { name: "Pull requests" })).toBeNull();
@@ -2890,12 +2939,12 @@ describe("session PR selection", () => {
     expect(screen.getByRole("button", { name: "Unlink PR" })).toBeEnabled();
     expect(usePullRequestInfo).toHaveBeenLastCalledWith("conv_1", { poll: true, prUrl: url });
     fireEvent.mouseDown(screen.getByRole("tab", { name: "Changes" }));
-    rerender(<PullRequestPanel conversationId="conv_1" />);
+    await rerender(<PullRequestPanel conversationId="conv_1" />);
     expect(screen.getByRole("tab", { name: "Changes" })).toHaveAttribute("aria-selected", "true");
 
     Object.assign(state.info!.data!, { prs: [association, OTHER_PR] });
     if (stored) state.stored.conv_2 = [association, OTHER_PR];
-    rerender(<PullRequestPanel conversationId="conv_2" />);
+    await rerender(<PullRequestPanel conversationId="conv_2" />);
     expect(await screen.findByRole("list", { name: "Pull requests" })).toBeVisible();
     expect(screen.queryByRole("tab", { name: "Summary" })).toBeNull();
 
@@ -2908,7 +2957,7 @@ describe("session PR selection", () => {
         });
       });
     }
-    rerender(<PullRequestPanel conversationId="conv_2" />);
+    await rerender(<PullRequestPanel conversationId="conv_2" />);
     expect(await screen.findByRole("tab", { name: "Summary" })).toBeVisible();
     expect(screen.queryByRole("list", { name: "Pull requests" })).toBeNull();
     expect(screen.queryByRole("button", { name: /All pull requests/ })).toBeNull();
@@ -2933,7 +2982,7 @@ describe("session PR selection", () => {
     ],
   ] as const)(
     "shows a compact merge action only when eligible: %s",
-    (_name, overrides, expected) => {
+    async (_name, overrides, expected) => {
       const pr = {
         ...state.info!.data!.pr!,
         checks: { total: 1, passing: 1, failing: 0, pending: 0, runs: [] },
@@ -2956,13 +3005,13 @@ describe("session PR selection", () => {
           },
         ],
       });
-      renderPanel();
+      await renderPanel();
       expect(!!screen.queryByRole("button", { name: "Merge" })).toBe(expected);
       expect(screen.queryByRole("tab", { name: "Summary" })).toBeNull();
     },
   );
 
-  it("offers the PR's accounts to merge as from its compact row", () => {
+  it("offers the PR's accounts to merge as from its compact row", async () => {
     const pr = {
       ...state.info!.data!.pr!,
       checks: { total: 1, passing: 1, failing: 0, pending: 0, runs: [] },
@@ -2998,7 +3047,7 @@ describe("session PR selection", () => {
         },
       ],
     });
-    renderPanel();
+    await renderPanel();
 
     expect(screen.queryByRole("tab", { name: "Summary" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Merge" }));
@@ -3045,7 +3094,7 @@ describe("session PR selection", () => {
           },
         ],
       });
-      renderPanel();
+      await renderPanel();
       if (reason === "read-only") {
         const user = userEvent.setup();
         await user.click(screen.getByRole("button", { name: "Actions for example/repo #6000" }));
@@ -3106,7 +3155,7 @@ describe("session PR selection", () => {
         ],
       },
     };
-    const { rerender } = renderPanel();
+    const { rerender } = await renderPanel();
     await user.click(screen.getByRole("button", { name: "Actions for example/two #42" }));
     expect(screen.getByRole("menuitem", { name: "Open in GitHub" })).toHaveAttribute("href", two);
     await user.click(screen.getByRole("menuitem", { name: "Copy PR link" }));
@@ -3114,6 +3163,10 @@ describe("session PR selection", () => {
     await user.click(screen.getByRole("button", { name: "Actions for example/two #42" }));
     await user.click(screen.getByRole("menuitem", { name: "Unlink PR" }));
     expect(state.unlink.mutate).toHaveBeenCalledWith(two, expect.any(Object));
+    // The unlink settles (the mock's never does by itself), which frees its buttons.
+    await act(async () => {
+      vi.mocked(state.unlink.mutate).mock.calls[0][1].onSuccess({ prs: [] });
+    });
 
     expect(screen.queryByRole("tab", { name: "Summary" })).toBeNull();
     await user.click(screen.getByRole("button", { name: "example/two #42 — Second repository" }));
@@ -3125,13 +3178,13 @@ describe("session PR selection", () => {
     expect(screen.getByRole("button", { name: "All pull requests (2)" })).toBeVisible();
 
     state.info = { isLoading: true, error: null, isFetching: true };
-    rerender(<PullRequestPanel conversationId="conv_1" />);
+    await rerender(<PullRequestPanel conversationId="conv_1" />);
     expect(screen.getByText("Loading pull requests…")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Link a PR" })).toBeEnabled();
     expect(screen.getByRole("button", { name: "Unlink PR" })).toBeEnabled();
 
     state.info = { isLoading: false, error: new Error("Metadata unavailable"), isFetching: false };
-    rerender(<PullRequestPanel conversationId="conv_1" />);
+    await rerender(<PullRequestPanel conversationId="conv_1" />);
     expect(screen.getByRole("link", { name: "Open the PR on GitHub" })).toHaveAttribute(
       "href",
       two,
@@ -3145,7 +3198,7 @@ describe("session PR selection", () => {
     });
 
     state.info = { isLoading: true, error: null, isFetching: true };
-    rerender(<PullRequestPanel conversationId="conv_other" />);
+    await rerender(<PullRequestPanel conversationId="conv_other" />);
     expect(screen.queryByRole("button", { name: /All pull requests/ })).toBeNull();
   });
 
@@ -3176,7 +3229,7 @@ describe("session PR selection", () => {
         relationship: "inferred",
       },
     ];
-    const { client } = renderPanel();
+    const { client } = await renderPanel();
 
     const list = await screen.findByRole("list", { name: "Pull requests" });
     expect(within(list).getByLabelText("Pull request status: Merged")).toBeVisible();
@@ -3206,6 +3259,7 @@ describe("session PR selection", () => {
       client.setQueryData(["session-pull-requests", "conv_1"], remaining);
       onSuccess(remaining);
     });
+    await settlePullRequests();
     // A PR the host never fetched has no sync time to show.
     expect(within(screen.getByTestId("github-stored-pr")).getByRole("status")).toHaveTextContent(
       /^To load the PR details, please reconnect the session’s host\.$/,
@@ -3219,6 +3273,7 @@ describe("session PR selection", () => {
       client.setQueryData(["session-pull-requests", "conv_1"], { prs: [], synced: true });
       callbacks.onSuccess({ prs: [] });
     });
+    await settlePullRequests();
     expect(screen.queryByRole("list", { name: "Pull requests" })).toBeNull();
     expect(screen.queryByTestId("github-stored-pr")).toBeNull();
   });
@@ -3259,7 +3314,7 @@ describe("session PR selection", () => {
         },
       });
       state.stored.conv_1 = prs;
-      const { rerender } = renderPanel();
+      const { rerender } = await renderPanel();
       if (prCount === 1) {
         await screen.findByRole("tab", { name: "Summary" });
         expect(screen.queryByRole("list", { name: "Pull requests" })).toBeNull();
@@ -3276,7 +3331,7 @@ describe("session PR selection", () => {
       state.info = { ...state.info!, error: reason === "error" ? new RunnerOfflineError() : null };
       state.serveable = reason === "health" ? false : undefined;
       state.sandboxAsleep = reason === "sandbox";
-      rerender(<PullRequestPanel conversationId="conv_1" />);
+      await rerender(<PullRequestPanel conversationId="conv_1" />);
 
       expect(screen.queryByRole("region", { name: "Merge" })).toBeNull();
       expect(screen.queryByRole("button", { name: "66 passed" })).toBeNull();
@@ -3306,7 +3361,7 @@ describe("session PR selection", () => {
       state.info = online;
       state.serveable = true;
       state.sandboxAsleep = false;
-      rerender(<PullRequestPanel conversationId="conv_1" />);
+      await rerender(<PullRequestPanel conversationId="conv_1" />);
       expect(screen.getByRole("tab", { name: "Summary" })).toBeVisible();
       if (prCount > 1) {
         await user.click(screen.getByRole("button", { name: "All pull requests (2)" }));
@@ -3341,7 +3396,7 @@ describe("session PR selection", () => {
       });
       state.info = { ...state.info!, error: offline ? new RunnerOfflineError() : null };
       state.stored.conv_1 = [cached];
-      const { client } = renderPanel();
+      const { client } = await renderPanel();
       await screen.findByRole("button", { name: "Unlink PR" });
       expect(screen.queryByRole("button", { name: /All pull requests/ })).toBeNull();
       act(() => {
@@ -3368,18 +3423,18 @@ describe("session PR selection", () => {
         },
       ],
     });
-    const { rerender } = renderPanel();
+    const { rerender } = await renderPanel();
     await user.click(await screen.findByRole("button", { name: "Link a PR" }));
     await user.type(
       screen.getByRole("textbox", { name: "Pull request URL" }),
       "https://github.com/acme/app/pull/7",
     );
     state.serveable = false;
-    rerender(<PullRequestPanel conversationId="conv_1" />);
+    await rerender(<PullRequestPanel conversationId="conv_1" />);
     expect(screen.getByRole("textbox", { name: "Pull request URL" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Link" })).toBeDisabled();
     state.serveable = true;
-    rerender(<PullRequestPanel conversationId="conv_1" />);
+    await rerender(<PullRequestPanel conversationId="conv_1" />);
     expect(screen.getByRole("button", { name: "Link" })).toBeEnabled();
     expect(screen.getByRole("textbox", { name: "Pull request URL" })).toHaveValue(
       "https://github.com/acme/app/pull/7",
@@ -3412,7 +3467,7 @@ describe("session PR selection", () => {
         selected_pr_url: undefined,
       });
       state.stored.conv_1 = [];
-      renderPanel();
+      await renderPanel();
 
       expect(await screen.findByText(message)).toBeInTheDocument();
       expect(screen.getByText(/No open PR for/)).toBeInTheDocument();
@@ -3420,7 +3475,7 @@ describe("session PR selection", () => {
     },
   );
 
-  it("still offers to link a PR on an older server while the host is disconnected", () => {
+  it("still offers to link a PR on an older server while the host is disconnected", async () => {
     state.storesPrs = false;
     state.serveable = false;
     Object.assign(state.info!.data!, {
@@ -3429,7 +3484,7 @@ describe("session PR selection", () => {
       pr: null,
       selected_pr_url: undefined,
     });
-    renderPanel();
+    await renderPanel();
 
     expect(screen.getByRole("button", { name: "Link a PR" })).toBeEnabled();
   });
@@ -3438,7 +3493,7 @@ describe("session PR selection", () => {
     state.info = { isLoading: false, error: new RunnerOfflineError(), isFetching: false };
     state.stored.conv_1 = [];
     state.unsynced.add("conv_1");
-    renderPanel();
+    await renderPanel();
 
     expect(
       await screen.findByText(
@@ -3447,7 +3502,7 @@ describe("session PR selection", () => {
     ).toBeInTheDocument();
   });
 
-  it("keeps an older server's offline panel as it was", () => {
+  it("keeps an older server's offline panel as it was", async () => {
     state.storesPrs = false;
     Object.assign(state.info!.data!, {
       tracking_available: true,
@@ -3464,7 +3519,7 @@ describe("session PR selection", () => {
       ],
     });
     state.info = { ...state.info!, error: new RunnerOfflineError() };
-    renderPanel();
+    await renderPanel();
 
     expect(screen.queryByTestId("github-stored-pr")).toBeNull();
     expect(screen.getByRole("button", { name: "Link a PR" })).toBeEnabled();
@@ -3486,7 +3541,7 @@ describe("session PR selection", () => {
           is_draft: true,
         },
       ];
-      renderPanel();
+      await renderPanel();
 
       // The details remount once the selection settles on the stored PR.
       await waitFor(() =>
@@ -3519,7 +3574,7 @@ describe("session PR selection", () => {
         state_checked_at: null,
       },
     ];
-    renderPanel();
+    await renderPanel();
 
     return waitFor(() =>
       expect(within(screen.getByTestId("github-stored-pr")).getByRole("status")).toHaveTextContent(
@@ -3547,7 +3602,7 @@ describe("session PR selection", () => {
           state_checked_at: null,
         },
       ];
-      renderPanel();
+      await renderPanel();
       await waitFor(() =>
         expect(
           within(screen.getByTestId("github-stored-pr")).getByRole("status"),
@@ -3560,7 +3615,7 @@ describe("session PR selection", () => {
 
   it.each([undefined, null, "", "   "])(
     "falls back to the PR identity when its title is %j",
-    (title) => {
+    async (title) => {
       const url = "https://github.com/example/one/pull/42";
       Object.assign(state.info!.data!, {
         tracking_available: true,
@@ -3577,7 +3632,7 @@ describe("session PR selection", () => {
           },
         ],
       });
-      renderPanel();
+      await renderPanel();
       const picker = screen.getByRole("list", { name: "Pull requests" });
       expect(screen.getByRole("button", { name: "example/one #42" })).toHaveTextContent(
         /^example\/one #42$/,
@@ -3587,7 +3642,7 @@ describe("session PR selection", () => {
     },
   );
 
-  it("keeps the host and inferred marker alongside a trimmed PR title", () => {
+  it("keeps the host and inferred marker alongside a trimmed PR title", async () => {
     const url = "https://github.example.com/example/one/pull/42";
     Object.assign(state.info!.data!, {
       tracking_available: true,
@@ -3604,7 +3659,7 @@ describe("session PR selection", () => {
         },
       ],
     });
-    renderPanel();
+    await renderPanel();
     const picker = screen.getByRole("list", { name: "Pull requests" });
     const label = "github.example.com/example/one #42 (from branch) — Fix session selection";
     expect(picker).toHaveTextContent(label.replace(" — ", " · "));
@@ -3612,7 +3667,7 @@ describe("session PR selection", () => {
     expect(screen.getByRole("button", { name: label })).toBeVisible();
   });
 
-  it("passes the selected PR and revisions into file queries", () => {
+  it("passes the selected PR and revisions into file queries", async () => {
     const url = "https://github.com/example/two/pull/42";
     state.info = {
       isLoading: false,
@@ -3639,7 +3694,7 @@ describe("session PR selection", () => {
         },
       },
     };
-    renderPanel();
+    await renderPanel();
     expect(usePullRequestChangedFiles).toHaveBeenLastCalledWith("conv_1", true, url, "base:head");
   });
 });
@@ -3651,7 +3706,7 @@ it.each([
   [true, undefined, false],
 ])(
   "gates comment posting on edit access %s and host capability %s",
-  (canEdit, capability, visible) => {
+  async (canEdit, capability, visible) => {
     state.canEdit = canEdit;
     state.info!.data!.selected_pr_url = state.info!.data!.pr!.url;
     state.info!.data!.capabilities = {
@@ -3661,14 +3716,14 @@ it.each([
       linked_pr_diff: false,
       comment_posting: capability,
     };
-    renderComments();
+    await renderComments();
     expect(screen.queryByRole("textbox", { name: "New PR comment" }) !== null).toBe(visible);
   },
 );
 
 it.each(["capabilities", "selected_pr_url"] as const)(
   "hides comment posting without %s",
-  (missing) => {
+  async (missing) => {
     state.info!.data!.selected_pr_url = state.info!.data!.pr!.url;
     state.info!.data!.capabilities = {
       account_switching: false,
@@ -3679,7 +3734,7 @@ it.each(["capabilities", "selected_pr_url"] as const)(
     };
     if (missing === "capabilities") delete state.info!.data!.capabilities;
     else delete state.info!.data!.selected_pr_url;
-    renderComments();
+    await renderComments();
     expect(screen.queryByRole("textbox", { name: "New PR comment" })).toBeNull();
     expect(screen.getByText("No comments yet.").parentElement).toHaveClass("pb-16");
   },
@@ -3734,7 +3789,7 @@ it("saves a local comment as agent context and retains earlier revisions", async
     fetch.mockRestore();
     clearLocalReviewContexts("conv_1");
   });
-  const { client } = renderChanges();
+  const { client } = await renderChanges();
   const contexts = renderHook(() => usePendingLocalReviewContexts("conv_1"));
   await userEvent.click(screen.getByRole("button", { name: "Start a new review conversation" }));
   expect(
@@ -3847,7 +3902,7 @@ describe("a host that shows each pull request in a place of its own", () => {
     const user = userEvent.setup();
     listPrs([FIRST, OTHER_PR]);
     const onOpenPullRequest = vi.fn();
-    renderPanel(false, true, onOpenPullRequest);
+    await renderPanel(false, true, onOpenPullRequest);
     const list = screen.getByRole("list", { name: "Pull requests" });
     await user.click(within(list).getByRole("button", { name: "acme/app #6001" }));
     expect(onOpenPullRequest).toHaveBeenCalledWith(OTHER_PR.url);
@@ -3859,7 +3914,7 @@ describe("a host that shows each pull request in a place of its own", () => {
     const user = userEvent.setup();
     listPrs([FIRST]);
     const onOpenPullRequest = vi.fn();
-    renderPanel(false, true, onOpenPullRequest);
+    await renderPanel(false, true, onOpenPullRequest);
     const list = screen.getByRole("list", { name: "Pull requests" });
     expect(screen.queryByRole("tab", { name: "Summary" })).toBeNull();
     await user.click(within(list).getByRole("button", { name: "acme/app #6000" }));
@@ -3886,7 +3941,7 @@ describe("a host that shows each pull request in a place of its own", () => {
     setUp();
     const url = state.info!.data!.pr!.url;
     const onOpenPullRequest = vi.fn();
-    renderPanel(false, true, onOpenPullRequest);
+    await renderPanel(false, true, onOpenPullRequest);
     expect(screen.queryByRole("tab", { name: "Summary" })).toBeNull();
     const list = screen.getByRole("list", { name: "Pull requests" });
     await user.click(
@@ -3895,17 +3950,17 @@ describe("a host that shows each pull request in a place of its own", () => {
     expect(onOpenPullRequest).toHaveBeenCalledWith(url);
   });
 
-  it("titles an older host's list and keeps its Refresh", () => {
+  it("titles an older host's list and keeps its Refresh", async () => {
     state.storesPrs = false;
-    renderPanel(false, true, vi.fn());
+    await renderPanel(false, true, vi.fn());
     expect(screen.getByRole("list", { name: "Pull requests" })).toBeVisible();
     expect(screen.getByRole("heading", { name: "Pull Requests" })).toBeVisible();
     expect(screen.getByRole("button", { name: /Refresh/ })).toBeVisible();
   });
 
-  it("still shows the branch's pull request itself without a host to hand it to", () => {
+  it("still shows the branch's pull request itself without a host to hand it to", async () => {
     state.storesPrs = false;
-    renderPanel(false, true);
+    await renderPanel(false, true);
     expect(screen.getByRole("tab", { name: "Summary" })).toBeVisible();
     expect(screen.queryByRole("list", { name: "Pull requests" })).toBeNull();
   });

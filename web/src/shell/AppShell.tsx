@@ -159,7 +159,7 @@ import { projectNameFromHomePath } from "@/projectHome/projectHomeNavigation";
 import { MobileHeaderControlsProvider } from "./MobileHeaderControlsSlot";
 import type { FilePosition, OpenFileOptions, FileNavigationGuard } from "./FileViewerContext";
 import { revealInFiles } from "./revealInFiles";
-import { selectPullRequestInPanel } from "./PullRequestPanel";
+import { revealPullRequest } from "./revealPullRequest";
 import type { ChangedSort } from "@/lib/changedSort";
 import { openSessionFromView, SubagentPanelOpenerContext } from "./subagentPanelOpener";
 import { isMobileViewport, Sidebar } from "./Sidebar";
@@ -198,6 +198,7 @@ import {
 import { extensionRailTabViewId, type RightRailTab } from "./railTabs";
 import { useRailViewIds } from "./railViews";
 import { useWorkspaceBridgeSource } from "./useWorkspaceBridgeSource";
+import { WorkspacePullRequestsPublisher } from "./useWorkspacePullRequestsSource";
 import { WorkspaceTasksPublisher } from "./useWorkspaceTasksSource";
 import { sessionNavigationSearch } from "@/lib/sessionNavigation";
 
@@ -2933,7 +2934,7 @@ function AppShellImpl() {
   // Deselect files/shells so the chosen panel owns its content slot.
   const openGithubTab = useCallback(
     (prUrl?: string) => {
-      if (prUrl && conversationId) selectPullRequestInPanel(queryClient, conversationId, prUrl);
+      if (prUrl && conversationId) revealPullRequest(conversationId, prUrl);
       if (classicDrawers()) {
         openGithubPanel();
         return;
@@ -2965,7 +2966,6 @@ function AppShellImpl() {
     [
       revealTabsSidebar,
       conversationId,
-      queryClient,
       terminalFirst,
       setPanelInitialKey,
       openGithubPanel,
@@ -3778,6 +3778,11 @@ function AppShellImpl() {
                 active={!canvasMode && !gridRoute}
                 // A task's click or a workflow started from the phone's drawer shows the chat.
                 onLeave={() => setTasksPanelOpen(false)}
+              />
+              <WorkspacePullRequestsPublisher
+                source={workspaceSource}
+                sessionId={serverConversationId}
+                active={!canvasMode && !gridRoute}
               />
             </GridWorkspace>
           </div>

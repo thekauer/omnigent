@@ -76,9 +76,9 @@ vi.mock("./Sidebar", () => ({
   Sidebar: () => <div data-testid="sidebar" />,
   isMobileViewport: vi.fn(() => false),
 }));
-vi.mock("./PullRequestPanel", () => ({
-  selectPullRequestInPanel: vi.fn(),
-  PullRequestPanel: () => <div data-testid="github-panel">Pull request details</div>,
+// The Pull Requests tab is the built-in extension's view; its content has its own tests.
+vi.mock("./extensionViews/ViewPullRequests", () => ({
+  ViewPullRequests: () => <div data-testid="github-panel" />,
 }));
 vi.mock("./FileViewer", () => ({
   FileViewer: () => <div data-testid="file-viewer" />,

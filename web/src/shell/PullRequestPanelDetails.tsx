@@ -1,9 +1,10 @@
 // Serves every git provider. Runtime names (query keys, routes, test ids) keep
 // the `github` prefix because they are stable wire ids.
 //
-// PullRequestPanel — the right-rail "Pull Requests" tab: the session branch's PR
-// (number, title, state, CI summary, reviewers, labels, link out) and the branch-vs-base diff.
-// Provider-visible text comes from lib/gitProviders.ts.
+// One pull request's details, drawn by the host for the Pull Requests tab (the
+// built-in `omnigent.pull-requests` extension's view) and a pull request's own
+// page: its number, title, state, CI summary, reviewers, labels, merge, comments
+// and the branch-vs-base diff. Provider-visible text comes from lib/gitProviders.ts.
 //
 // Layout is GitHub's "Files changed": every file's diff stacked in one scroll
 // view, with the sidebar as a jump-to-file navigator that also highlights the
@@ -15,8 +16,7 @@
 //
 // Data comes from the runner's read-only PR resource API (see
 // hooks/usePullRequests.ts), which shells out to the provider CLI + `git`.
-// While the runner and host are offline, the server's stored PRs
-// (hooks/useSessionPullRequests.ts) keep the list and the selected PR's last
+// While the runner and host are offline, the server's stored PR keeps its last
 // summary.
 // `derivePullRequestPanelState` is the single switch that turns the info query
 // into what the panel shows: an outdated host, a non-git workspace, an
@@ -24,16 +24,11 @@
 // PR each render their own empty state, and an associated PR falls through to
 // the header + stacked diff.
 
-import { createPortal } from "react-dom";
-import { useMobilePanelHeaderTarget } from "./MobilePanelDrawer";
 import { PullRequestCommentComposer } from "./PullRequestCommentComposer";
 import { usePullRequestReviewThreads } from "@/hooks/usePullRequestReviewThreads";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { skipToken, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
+import { useMemo } from "react";
+import type { QueryClient } from "@tanstack/react-query";
 import {
-  ArrowLeftIcon,
-  CopyIcon,
-  EllipsisIcon,
   AlertCircleIcon,
   BanIcon,
   CircleCheckIcon,
@@ -48,29 +43,14 @@ import {
   KeyRoundIcon,
   Loader2Icon,
   type LucideIcon,
-  PlusIcon,
-  RefreshCwIcon,
   ServerOffIcon,
   TerminalIcon,
-  Trash2Icon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { copyText } from "@/lib/clipboard";
-import { toast } from "sonner";
-import { useLocalReviewNavigation } from "@/lib/localReviewContext";
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { MessageResponse } from "@/components/ai-elements/message";
 import {
   Select,
@@ -87,15 +67,6 @@ import {
   useWorkspaceServeable,
 } from "@/hooks/useWorkspaceChangedFiles";
 import { useSandboxStarting } from "@/hooks/useSessionReconnect";
-import {
-  sessionPullRequestsKey,
-  type StoredPullRequests,
-  storedListToShow,
-  storesSessionPullRequests,
-  useSessionPullRequests,
-  useUnlinkSessionPr,
-} from "@/hooks/useSessionPullRequests";
-import { useServerInfo } from "@/lib/CapabilitiesContext";
 import { gitProviderCopy, type GitProviderCopy } from "@/lib/gitProviders";
 import { parseHttpUrl } from "@/lib/openLinkInApp";
 import { absoluteTime, relativeTime } from "@/lib/relativeTime";
@@ -103,10 +74,8 @@ import {
   normalizePullRequestInfo,
   usePullRequestChangedFiles,
   usePullRequestDiff,
-  usePullRequestInfo,
-  usePullRequestReadPriority,
+  type usePullRequestInfo,
   useSetPullRequestPreference,
-  useUpdateSessionPr,
   type NormalizedPullRequestInfo,
   type PullRequestAssociation,
   type PullRequestCheckRun,
@@ -121,10 +90,9 @@ import {
   PullRequestTitle,
 } from "./PullRequestDetails";
 import { PullRequestLabels } from "./PullRequestLabels";
-import { mergeButtonState, PullRequestMerge } from "./PullRequestMerge";
+import { PullRequestMerge } from "./PullRequestMerge";
 import { PullRequestReviewers } from "./PullRequestReviewers";
 import { PanelMessage, PullRequestChangesTab } from "./PullRequestChangesTab";
-import { IconButton } from "./PullRequestFileSection";
 
 export { LARGE_DIFF_THRESHOLD } from "./PullRequestFileSection";
 
@@ -159,7 +127,7 @@ function PullRequestEmptyState({
 /** The panel's heading, hidden from sight (not from screen readers) where the PR
  *  list and its controls need the room. The provider stays out of it: it belongs to
  *  each request, so {@link PullRequestProviderIcon} carries it beside the title. */
-function PanelTitle({ showTitle = false }: { showTitle?: boolean }) {
+export function PanelTitle({ showTitle = false }: { showTitle?: boolean }) {
   return (
     <h2 className={cn("shrink-0 font-medium text-ui", !showTitle && "sr-only")}>Pull Requests</h2>
   );
@@ -236,7 +204,7 @@ function GithubAccountSelector({
 }
 
 /** The accounts the merge dialog offers, when the host merges as the one it sends. */
-function mergeAccounts(info: NormalizedPullRequestInfo | undefined) {
+export function mergeAccounts(info: NormalizedPullRequestInfo | undefined) {
   return info?.capabilities.account_switching && info.capabilities.merge_as_account
     ? info.auth
     : undefined;
@@ -316,7 +284,13 @@ function PullRequestProviderIcon({ copy }: { copy: GitProviderCopy }) {
 }
 
 /** Compact PR state shown beside the title in the shared panel header. */
-function PullRequestStatus({ state, isDraft = false }: { state: string; isDraft?: boolean }) {
+export function PullRequestStatus({
+  state,
+  isDraft = false,
+}: {
+  state: string;
+  isDraft?: boolean;
+}) {
   const normalized = state.toUpperCase();
   const visual =
     normalized === "OPEN" && isDraft
@@ -369,7 +343,7 @@ const CHECK_ROW_CLASS = "flex items-center gap-2 px-1.5 py-1.5";
  * A job with an http(s) run URL links to it. Renders nothing when the bucket
  * is empty. The full list shows — the card is height-capped and scrolls.
  */
-function CheckPill({
+export function CheckPill({
   label,
   count,
   runs,
@@ -592,7 +566,7 @@ function PullRequestTimelineRow({
   );
 }
 
-function PullRequestCheckCounts({
+export function PullRequestCheckCounts({
   checks,
   compact = false,
 }: {
@@ -795,210 +769,7 @@ function PullRequestCommentsTab({
 }
 
 /** A PR's picker label, in its own provider's copy (else the session's). */
-function pullRequestLabel(pr: PullRequestAssociation, sessionProvider?: string | null): string {
-  const copy = gitProviderCopy(pr.provider ?? sessionProvider, undefined, pr.provider_display);
-  const host = pr.host === copy.defaultHost ? "" : `${pr.host}/`;
-  const inferred = pr.relationship === "inferred" ? " (from branch)" : "";
-  const identity = `${host}${pr.repository} ${copy.prNumberPrefix}${pr.number}${inferred}`;
-  const title = pr.title?.trim();
-  return title ? `${identity} — ${title}` : identity;
-}
-
-type Associations = Pick<
-  PullRequestInfo,
-  "prs" | "tracking_available" | "selected_pr_url" | "provider" | "provider_display"
->;
 export type PullRequestSubtab = "summary" | "comments" | "changes";
-
-function PullRequestListRow({
-  conversationId,
-  active,
-  association,
-  onSelect,
-  onUnlink,
-  unlinkPending,
-  hostOffline,
-  sandboxAsleep,
-}: {
-  conversationId: string;
-  active: boolean;
-  association: PullRequestAssociation;
-  onSelect: () => void;
-  onUnlink?: () => void;
-  unlinkPending: boolean;
-  hostOffline: boolean;
-  sandboxAsleep: boolean;
-}) {
-  const sandboxStarting = useSandboxStarting(conversationId);
-  const info = usePullRequestInfo(conversationId, {
-    poll: active ? "list" : false,
-    prUrl: association.url,
-  });
-  const canEdit = useCanEdit(conversationId);
-  const data = info.data ? normalizePullRequestInfo(info.data) : undefined;
-  const offline = hostOffline || info.error instanceof RunnerOfflineError;
-  const cachedPr = data?.pr?.url === association.url ? data.pr : undefined;
-  const pr = !offline ? cachedPr : undefined;
-  const summary = pr ?? association;
-  const checks = pr?.checks;
-  const mergeState = pr ? mergeButtonState(pr) : undefined;
-  const ready =
-    canEdit &&
-    !info.error &&
-    data?.capabilities.merging &&
-    pr?.state === "OPEN" &&
-    !pr.is_draft &&
-    mergeState?.kind === "ready";
-  const checksUnavailable = checks?.partial || pr?.checks_supported === false;
-  const checkStatus = (
-    <>
-      {checks && <PullRequestCheckCounts checks={checks} compact />}
-      {checksUnavailable && <span title="Some checks could not be loaded">Incomplete checks</span>}
-    </>
-  );
-  const title = (pr?.title ?? association.title)?.trim();
-  const identity = pullRequestLabel({ ...association, title: null });
-  const label = title ? `${identity} — ${title}` : identity;
-  const providerCopy = gitProviderCopy(
-    association.provider,
-    undefined,
-    association.provider_display,
-  );
-  const href = /^https:\/\//.test(association.url)
-    ? parseHttpUrl(association.url)?.href
-    : undefined;
-  return (
-    <li className="flex min-w-0 items-center gap-2 rounded-md px-1.5 hover:bg-muted/50">
-      <button
-        type="button"
-        onClick={onSelect}
-        title={label}
-        aria-label={label}
-        className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 py-2 text-left text-ui focus-visible:outline-ring"
-      >
-        <GitPullRequestIcon
-          aria-hidden
-          className={cn(
-            "size-4 shrink-0",
-            !summary.state || summary.is_draft
-              ? "text-muted-foreground"
-              : summary.state === "OPEN"
-                ? "text-green-600"
-                : summary.state === "MERGED"
-                  ? "text-purple-500"
-                  : "text-red-500",
-          )}
-        />
-        <span className="truncate">
-          <span className="text-muted-foreground">{identity}</span>
-          {title && (
-            <>
-              {" "}
-              · <span className="font-medium">{title}</span>
-            </>
-          )}
-        </span>
-      </button>
-      <div className="flex max-w-[45%] shrink-0 flex-wrap items-center justify-end gap-1 text-xs text-muted-foreground">
-        {offline ? (
-          <>
-            {association.state && (
-              <PullRequestStatus
-                state={association.state}
-                isDraft={association.is_draft === true}
-              />
-            )}
-            <TooltipProvider>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <span tabIndex={0} role="status" className="inline-flex items-center gap-1">
-                    <ServerOffIcon aria-hidden className="size-3" />
-                    {sandboxAsleep
-                      ? sandboxStarting
-                        ? "Sandbox starting"
-                        : "Sandbox asleep"
-                      : "Host offline"}
-                  </span>
-                </TooltipTrigger>
-                <TooltipContent className="max-w-xs">
-                  {storedPullRequestHint(association, sandboxAsleep, sandboxStarting)}
-                </TooltipContent>
-              </Tooltip>
-            </TooltipProvider>
-          </>
-        ) : ready && pr ? (
-          (checksUnavailable || !!checks?.failing || !!checks?.pending) && checkStatus
-        ) : info.error ? (
-          <span title={String(info.error)}>Status unavailable</span>
-        ) : !pr ? (
-          <span>{info.isLoading ? "Loading…" : "Status unavailable"}</span>
-        ) : pr.state !== "OPEN" ? (
-          <PullRequestStatus state={pr.state} />
-        ) : (
-          <>
-            {pr.is_draft && <span>Draft</span>}
-            {checkStatus}
-            {!checksUnavailable && checks?.total === 0 && !pr.is_draft && (
-              <span title={mergeState && "hint" in mergeState ? mergeState.hint : undefined}>
-                No checks
-              </span>
-            )}
-          </>
-        )}
-        {cachedPr && (
-          <PullRequestMerge
-            compact
-            showTrigger={!!ready}
-            unavailable={offline || !!info.error || !canEdit || !data?.capabilities.merging}
-            conversationId={conversationId}
-            prUrl={association.url}
-            pr={cachedPr}
-            accounts={mergeAccounts(data)}
-          />
-        )}
-      </div>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon-xs"
-            aria-label={`Actions for ${identity}`}
-            className="shrink-0"
-          >
-            <EllipsisIcon aria-hidden className="size-3.5" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          {canEdit && onUnlink && (
-            <>
-              <DropdownMenuItem disabled={unlinkPending} onSelect={onUnlink}>
-                <Trash2Icon aria-hidden /> Unlink PR
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-            </>
-          )}
-          {href && (
-            <DropdownMenuItem asChild>
-              <a href={href} target="_blank" rel="noreferrer">
-                <ExternalLinkIcon aria-hidden /> Open in {providerCopy.label}
-              </a>
-            </DropdownMenuItem>
-          )}
-          <DropdownMenuItem
-            onSelect={() => {
-              void copyText(association.url).then(
-                () => toast.success("PR link copied"),
-                () => toast.error("Couldn’t copy PR link"),
-              );
-            }}
-          >
-            <CopyIcon aria-hidden /> Copy PR link
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </li>
-  );
-}
 
 /** Read every pull request query of a session again, as the panel's Refresh does. */
 export function refreshSessionPullRequests(
@@ -1018,463 +789,6 @@ export function refreshSessionPullRequests(
   );
 }
 
-interface PullRequestPanelView {
-  selected?: string;
-  showingDetails: boolean;
-  subtab: PullRequestSubtab;
-}
-
-const DEFAULT_PANEL_VIEW: PullRequestPanelView = { showingDetails: false, subtab: "summary" };
-
-export function selectPullRequestInPanel(
-  queryClient: QueryClient,
-  conversationId: string,
-  prUrl: string,
-) {
-  queryClient.setQueryData<PullRequestPanelView>(["pull-request-panel-view", conversationId], {
-    selected: prUrl,
-    showingDetails: true,
-    subtab: "summary",
-  });
-}
-
-export function PullRequestPanel({
-  conversationId,
-  active = true,
-  onOpenPullRequest,
-}: {
-  conversationId: string;
-  /** False while the panel is mounted but hidden (collapsed rail); pauses the poll. */
-  active?: boolean;
-  /**
-   * Shows a chosen pull request somewhere of its own, such as a sidebar tab. The panel then
-   * stays a list, even of one, and hands over each pull request it would have opened.
-   */
-  onOpenPullRequest?: (url: string, section?: PullRequestSubtab) => void;
-}) {
-  const mobileHeaderTarget = useMobilePanelHeaderTarget();
-  const inMobileDrawer = mobileHeaderTarget !== undefined;
-  const queryClient = useQueryClient();
-  const viewKey = ["pull-request-panel-view", conversationId];
-  const { data: cachedView = DEFAULT_PANEL_VIEW } = useQuery<PullRequestPanelView>({
-    queryKey: viewKey,
-    queryFn: skipToken,
-    initialData: DEFAULT_PANEL_VIEW,
-    gcTime: 30 * 60_000,
-  });
-  // Keep interactions synchronous; the shared entry restores the view on navigation.
-  const [localView, setLocalView] = useState({ conversationId, cachedView, view: cachedView });
-  const cacheChanged =
-    localView.conversationId !== conversationId || localView.cachedView !== cachedView;
-  if (cacheChanged) {
-    setLocalView({ conversationId, cachedView, view: cachedView });
-  }
-  const view = cacheChanged ? cachedView : localView.view;
-  const selected = view.selected;
-  const showingDetails = view.showingDetails && !onOpenPullRequest;
-  const activeTab = view.subtab;
-  const updateView = useCallback(
-    (update: Partial<typeof view>) => {
-      const next = queryClient.setQueryData<typeof view>(
-        ["pull-request-panel-view", conversationId],
-        (current) => ({
-          showingDetails: false,
-          subtab: "summary",
-          ...current,
-          ...update,
-        }),
-      );
-      setLocalView((current) => ({ ...current, conversationId, view: next! }));
-    },
-    [queryClient, conversationId],
-  );
-  const changeSelection = useCallback(
-    (next?: string) => updateView({ selected: next, subtab: "summary" }),
-    [updateView],
-  );
-  const setActiveTab = (value: PullRequestSubtab) => updateView({ subtab: value });
-  const localReviewTarget = useLocalReviewNavigation(conversationId);
-  const openElsewhere = useRef(onOpenPullRequest);
-  openElsewhere.current = onOpenPullRequest;
-  useEffect(() => {
-    const prUrl = localReviewTarget?.anchor_metadata?.pr_url;
-    if (!prUrl) return;
-    if (openElsewhere.current) openElsewhere.current(prUrl, "changes");
-    else updateView({ selected: prUrl, showingDetails: true, subtab: "changes" });
-  }, [localReviewTarget, updateView]);
-  const [linking, setLinking] = useState(false);
-  const [url, setUrl] = useState("");
-  const info = usePullRequestInfo(conversationId, {
-    poll: active ? (selected && !showingDetails ? "list" : true) : false,
-    prUrl: selected,
-  });
-  usePullRequestReadPriority(conversationId, active && showingDetails ? selected : undefined);
-  const showPullRequestList = () => {
-    updateView({ showingDetails: false, subtab: "summary" });
-  };
-  // Re-enabling the poll only restarts its timer; refresh stale info as the rail reopens.
-  const wasActive = useRef(active);
-  useEffect(() => {
-    if (active && !wasActive.current) {
-      void queryClient.refetchQueries({ queryKey: ["github-info", conversationId], stale: true });
-    }
-    wasActive.current = active;
-  }, [active, conversationId, queryClient]);
-  const [refreshing, setRefreshing] = useState(false);
-  const refresh = async () => {
-    setRefreshing(true);
-    try {
-      await refreshSessionPullRequests(queryClient, conversationId);
-    } finally {
-      setRefreshing(false);
-    }
-  };
-  const refreshIcon = (
-    <RefreshCwIcon className={cn("size-3.5", refreshing && "animate-spin")} aria-hidden="true" />
-  );
-  const refreshButton = (
-    <Button size="sm" variant="ghost" disabled={refreshing} onClick={refresh}>
-      {refreshIcon}
-      Refresh
-    </Button>
-  );
-  // Servers that store PRs decide which PRs the session links, so the controls
-  // survive a selection switch and the runner and host being offline. Live info
-  // then only supplies the selected PR's details.
-  const storesPrs = storesSessionPullRequests(useServerInfo());
-  const stored = useSessionPullRequests(conversationId, info.data);
-  const hostOffline = useHostOffline(conversationId, info);
-  const sandboxAsleep = useWorkspaceAsleep(conversationId);
-  const sandboxStarting = useSandboxStarting(conversationId);
-  // Linking verifies the PR with the host's provider account.
-  const linkNeedsHost = storesPrs && hostOffline;
-  const [knownAssociations, setKnownAssociations] = useState<{
-    sessionId: string;
-    data: Associations;
-  }>();
-  useEffect(() => {
-    if (info.data) {
-      const { prs, tracking_available, selected_pr_url, provider, provider_display } = info.data;
-      setKnownAssociations({
-        sessionId: conversationId,
-        data: { prs, tracking_available, selected_pr_url, provider, provider_display },
-      });
-    }
-  }, [conversationId, info.data]);
-  // Switching the metadata query must not unmount the session's PR controls.
-  const live =
-    info.data ??
-    (knownAssociations?.sessionId === conversationId ? knownAssociations.data : undefined);
-  // A host that doesn't track PRs shows only its branch PR.
-  const linked =
-    storesPrs && (!live || live.tracking_available === true)
-      ? storedListToShow(stored.data, live !== undefined)
-      : undefined;
-  const associations: Associations | undefined =
-    linked === undefined
-      ? live
-      : {
-          prs: linked,
-          tracking_available: live?.tracking_available ?? true,
-          selected_pr_url: linked.some((pr) => pr.url === live?.selected_pr_url)
-            ? live?.selected_pr_url
-            : linked[0]?.url,
-          provider: live?.provider ?? linked[0]?.provider,
-          provider_display: live?.provider_display ?? linked[0]?.provider_display,
-        };
-  // Offline before the server imported the session's PRs: there may be some it can't show.
-  const notSynced = storesPrs && hostOffline && stored.data?.synced === false;
-  const panelState = derivePullRequestPanelState(info);
-  // No provider is known without a payload, or in a non-git workspace (older hosts omit it).
-  const copy = gitProviderCopy(
-    associations && panelState.kind !== "not-a-git-repo" ? associations.provider : null,
-    undefined,
-    associations?.provider_display,
-  );
-  const update = useUpdateSessionPr(conversationId);
-  const unlink = useUnlinkSessionPr(conversationId);
-  useEffect(() => {
-    if (linked !== undefined && selected && !linked.some((pr) => pr.url === selected)) {
-      changeSelection(associations?.selected_pr_url);
-    } else if (!selected && associations?.selected_pr_url) {
-      changeSelection(associations.selected_pr_url);
-    }
-  }, [selected, associations?.selected_pr_url, linked, changeSelection]);
-  const prs = associations?.prs ?? [];
-  useEffect(() => {
-    if (prs.length === 1) updateView({ showingDetails: true });
-  }, [updateView, prs.length]);
-  const selectedPr = prs.find((pr) => pr.url === (selected ?? associations?.selected_pr_url));
-  const detailsInfo =
-    linked?.length === 0 && info.data
-      ? { ...info, data: { ...info.data, pr: null, selected_pr_url: undefined } }
-      : info;
-  const linkInEmptyState =
-    prs.length === 0 && derivePullRequestPanelState(detailsInfo).kind === "no-pr";
-  // A host that lists no linked PRs, being older or not yet synced, may still send the branch's.
-  const branchPr = onOpenPullRequest && prs.length === 0 ? detailsInfo.data?.pr : undefined;
-  const listedPrs: PullRequestAssociation[] =
-    branchPr && detailsInfo.data
-      ? [
-          {
-            url: branchPr.url,
-            host: parseHttpUrl(branchPr.url)?.host ?? "",
-            repository: detailsInfo.data.repo?.name_with_owner ?? "",
-            number: branchPr.number,
-            title: branchPr.title,
-            relationship: "inferred",
-            state: branchPr.state,
-            is_draft: branchPr.is_draft,
-          },
-        ]
-      : prs;
-  const unlinkPr = (prUrl: string) =>
-    unlink.mutate(prUrl, {
-      onSuccess: (remaining) => {
-        if (prUrl === selected) changeSelection(remaining.prs[0]?.url);
-      },
-    });
-  const linkControls = (
-    <>
-      {linking && (
-        <form
-          className="mt-2 flex gap-2"
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              event.preventDefault();
-              event.stopPropagation();
-              setLinking(false);
-            }
-          }}
-          onSubmit={(event) => {
-            event.preventDefault();
-            if (linkNeedsHost) return;
-            update.mutate(
-              { url, action: "attach" },
-              {
-                onSuccess: async (data) => {
-                  if (storesPrs && data.prs) {
-                    const key = sessionPullRequestsKey(conversationId);
-                    await queryClient.cancelQueries({ queryKey: key });
-                    queryClient.setQueryData<StoredPullRequests>(key, (previous) => ({
-                      prs: data.prs!.map((pr) => ({
-                        ...previous?.prs.find((storedPr) => storedPr.url === pr.url),
-                        ...pr,
-                      })),
-                      synced: previous?.synced ?? false,
-                    }));
-                  }
-                  changeSelection(data.selected_pr_url);
-                  setLinking(false);
-                  setUrl("");
-                },
-              },
-            );
-          }}
-        >
-          <Input
-            aria-label="Pull request URL"
-            autoFocus
-            type="url"
-            required
-            disabled={linkNeedsHost}
-            value={url}
-            onChange={(event) => setUrl(event.target.value)}
-            placeholder={copy.prUrlPlaceholder}
-            className="flex-1 focus-visible:ring-0"
-          />
-          <Button type="submit" disabled={update.isPending || linkNeedsHost}>
-            Link
-          </Button>
-          <Button type="button" variant="outline" onClick={() => setLinking(false)}>
-            Cancel
-          </Button>
-        </form>
-      )}
-      {update.isError && (
-        <p role="alert" className="mt-1 text-ui text-destructive">
-          {update.error.message}
-        </p>
-      )}
-    </>
-  );
-  const fallbackCopy = gitProviderCopy(
-    selectedPr?.provider ?? associations?.provider,
-    undefined,
-    selectedPr?.provider_display ?? associations?.provider_display,
-  );
-  const openPrFallback =
-    associations?.tracking_available && selected && !info.isLoading && !info.data?.pr ? (
-      <div className="mt-2 flex flex-col items-center gap-2 text-ui">
-        <span className="text-muted-foreground">or</span>
-        <a
-          href={selected}
-          target="_blank"
-          rel="noreferrer"
-          className="text-foreground underline underline-offset-4"
-        >
-          Open the PR on {fallbackCopy.label}
-        </a>
-      </div>
-    ) : undefined;
-  const showTrackingControls = !!associations?.tracking_available && !linkInEmptyState;
-  const showsList =
-    (listedPrs.length > 1 || (!!onOpenPullRequest && listedPrs.length > 0)) && !showingDetails;
-  // A host's list, without tracking controls, still needs the panel's title and Refresh.
-  const handsOffList = !!onOpenPullRequest && showsList;
-  const headerActions = (
-    <TooltipProvider delayDuration={0}>
-      <IconButton label="Refresh" disabled={refreshing} onClick={refresh}>
-        {refreshIcon}
-      </IconButton>
-      {showTrackingControls && (
-        <IconButton
-          label={linkNeedsHost ? "Link a PR (needs the host online)" : "Link a PR"}
-          disabled={linkNeedsHost}
-          onClick={() => setLinking(!linking)}
-        >
-          <PlusIcon className="size-3.5" aria-hidden="true" />
-        </IconButton>
-      )}
-      {showTrackingControls && selectedPr && showingDetails && (
-        <IconButton
-          label="Unlink PR"
-          disabled={unlink.isPending}
-          onClick={() => unlinkPr(selectedPr.url)}
-        >
-          <Trash2Icon className="size-3.5" aria-hidden="true" />
-        </IconButton>
-      )}
-    </TooltipProvider>
-  );
-  return (
-    <div className="flex h-full min-h-0 flex-col">
-      {mobileHeaderTarget?.actions && createPortal(headerActions, mobileHeaderTarget.actions)}
-      {mobileHeaderTarget?.title &&
-        showingDetails &&
-        prs.length > 1 &&
-        createPortal(
-          <div data-mobile-panel-title>
-            <Button
-              variant="ghost"
-              size="sm"
-              className="-ml-2"
-              aria-label={`All pull requests (${prs.length})`}
-              onClick={showPullRequestList}
-            >
-              <ArrowLeftIcon className="size-3.5" /> All pull requests
-            </Button>
-          </div>,
-          mobileHeaderTarget.title,
-        )}
-      {showTrackingControls ? (
-        !inMobileDrawer && (
-          <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-2">
-            {!inMobileDrawer && <PanelTitle showTitle={!showingDetails || prs.length <= 1} />}
-            <div className="ml-auto flex min-w-0 flex-1 items-center gap-2">
-              {prs.length > 1 && showingDetails && (
-                <Button variant="ghost" size="sm" onClick={showPullRequestList}>
-                  <ArrowLeftIcon className="size-3.5" /> All pull requests ({prs.length})
-                </Button>
-              )}
-              <div className="ml-auto flex shrink-0 items-center gap-1">
-                {!inMobileDrawer && headerActions}
-              </div>
-            </div>
-          </div>
-        )
-      ) : !inMobileDrawer && (panelState.kind !== "ready" || handsOffList) ? (
-        <div className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-border px-2">
-          <PanelTitle showTitle />
-          {refreshButton}
-        </div>
-      ) : null}
-      {showTrackingControls && (linking || update.isError) && (
-        <div className="shrink-0 border-b border-border p-2 [&>:first-child]:mt-0">
-          {linkControls}
-        </div>
-      )}
-      {unlink.isError && (
-        <p role="alert" className="shrink-0 border-b border-border p-2 text-ui text-destructive">
-          Couldn’t unlink: {unlink.error.message}
-        </p>
-      )}
-      {info.data?.warnings?.length || info.data?.discovery_warnings?.length ? (
-        <p
-          role="status"
-          className="shrink-0 border-b border-border p-2 text-ui text-muted-foreground"
-        >
-          {[...(info.data?.warnings ?? []), ...(info.data?.discovery_warnings ?? [])].join(" ")}
-        </p>
-      ) : null}
-      <div className="min-h-0 flex-1">
-        {showsList ? (
-          <ul aria-label="Pull requests" className="h-full overflow-y-auto">
-            {listedPrs.map((pr) => (
-              <PullRequestListRow
-                key={pr.url}
-                conversationId={conversationId}
-                active={active}
-                association={{
-                  ...pr,
-                  provider: pr.provider ?? associations?.provider ?? undefined,
-                  provider_display:
-                    pr.provider_display ?? associations?.provider_display ?? undefined,
-                }}
-                hostOffline={hostOffline}
-                sandboxAsleep={sandboxAsleep}
-                unlinkPending={unlink.isPending}
-                onUnlink={
-                  associations?.tracking_available && !branchPr ? () => unlinkPr(pr.url) : undefined
-                }
-                onSelect={() => {
-                  if (onOpenPullRequest) onOpenPullRequest(pr.url);
-                  else updateView({ selected: pr.url, showingDetails: true, subtab: "summary" });
-                }}
-              />
-            ))}
-          </ul>
-        ) : (
-          <PullRequestPanelDetails
-            key={`${conversationId}:${selected ?? ""}`}
-            conversationId={conversationId}
-            info={detailsInfo}
-            active={active}
-            activeTab={activeTab}
-            setActiveTab={setActiveTab}
-            storedPr={storesPrs && hostOffline ? selectedPr : undefined}
-            notSynced={notSynced && !selectedPr}
-            showHeading={!inMobileDrawer && !showTrackingControls}
-            refreshButton={!inMobileDrawer && !showTrackingControls ? refreshButton : undefined}
-            emptyStateAction={
-              associations?.tracking_available && linkInEmptyState ? (
-                <div className="mt-2 w-full max-w-sm">
-                  {linkNeedsHost ? (
-                    <p role="status" className="text-ui text-muted-foreground">
-                      {sandboxAsleep
-                        ? sandboxStarting
-                          ? "Starting the session’s sandbox. You can link a PR once it’s back online."
-                          : "To link a PR, send a message to start the session’s sandbox."
-                        : "To link a PR, please reconnect the session’s host."}
-                    </p>
-                  ) : (
-                    <>
-                      {!linking && <Button onClick={() => setLinking(true)}>Link a PR</Button>}
-                      {linkControls}
-                    </>
-                  )}
-                </div>
-              ) : (
-                openPrFallback
-              )
-            }
-          />
-        )}
-      </div>
-    </div>
-  );
-}
-
 /**
  * Whether neither the runner nor the host can answer, so the panel falls back
  * to the server's stored PRs. Live info cached before they went away counts as
@@ -1489,7 +803,7 @@ export function useHostOffline(
   return serveable === false || sandboxAsleep || info.error instanceof RunnerOfflineError;
 }
 
-function storedPullRequestHint(
+export function storedPullRequestHint(
   pr: PullRequestAssociation,
   sandboxAsleep: boolean,
   sandboxStarting: boolean,

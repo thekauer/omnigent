@@ -6,7 +6,6 @@ import { ExecutionLogsPanel } from "./ExecutionLogsPanel";
 import { FilesPanelDrawer } from "./FilesPanelDrawer";
 import { InlineTerminalsSection } from "./InlineTerminalsSection";
 import { MobilePanelDrawer } from "./MobilePanelDrawer";
-import { PullRequestPanel } from "./PullRequestPanel";
 import { TerminalsPanel } from "./TerminalsPanel";
 
 export interface AppShellWorkspacePanelsProps {
@@ -152,7 +151,11 @@ export function AppShellWorkspacePanels({
           testId="github-panel-drawer"
         >
           <RenderErrorBoundary name="pull requests" resetKey={conversationId}>
-            <PullRequestPanel conversationId={conversationId} />
+            <BuiltInTabView
+              tab="github"
+              conversationId={conversationId}
+              visible={githubPanelOpen}
+            />
           </RenderErrorBoundary>
         </MobilePanelDrawer>
       )}
@@ -185,13 +188,13 @@ export function AppShellWorkspacePanels({
   );
 }
 
-/** A built-in tab's extension view in a phone's drawer (Agents, Content search, Tasks). */
+/** A built-in tab's extension view in a phone's drawer (Agents, Content search, Tasks, Pull Requests). */
 function BuiltInTabView({
   tab,
   conversationId,
   visible,
 }: {
-  tab: "subagents" | "content-search" | "tasks";
+  tab: "subagents" | "content-search" | "tasks" | "github";
   conversationId: string;
   visible: boolean;
 }) {
