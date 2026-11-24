@@ -8,6 +8,9 @@ import { useLoadedConversations } from "@/hooks/useSidebarData";
 import { useComposerContext } from "@/hooks/useComposerContext";
 import { useSlashCompletion } from "@/hooks/useSlashCompletion";
 import { useMcpRegistrySelection } from "@/hooks/useMcpRegistry";
+import { useMcpConnections } from "@/hooks/useMcpConnections";
+import { readLastMcpConnections, writeLastMcpConnections } from "@/lib/mcpPreferences";
+import { McpConnectionPicker } from "./McpConnectionPicker";
 import { McpRegistryLaunchPicker } from "./McpRegistryLaunchPicker";
 import {
   HarnessPicker,
@@ -235,6 +238,7 @@ import {
   getCliServerUrl,
   getOmnigentConnectHostCommand,
   getOmnigentHostConfig,
+  getOmnigentMcpConnections,
   getOmnigentServerIdentity,
 } from "@/lib/host";
 import { quoteShellArgument } from "@/lib/shell";
@@ -2134,6 +2138,8 @@ interface LandingDraft {
   /** Parked at prompt-link consumption: the composer keeps it in step with edits. */
   fromLink?: boolean;
   mcpRegistryServices: string[];
+  /** The host MCP connections picked for a sandbox on a provider that takes them. */
+  mcpConnections: ReadonlySet<string>;
   // `?project=` context the draft was composed under ("" = plain visit).
   // A draft restored under a DIFFERENT project only brings back its text and
   // attachments — the agent/host/workspace slots are discarded so the new
@@ -2968,6 +2974,42 @@ function NewChatLandingContent({
     effectiveSandboxProvider !== null &&
     info.sandbox_provider_capabilities?.[effectiveSandboxProvider]?.multi_repo === true;
   const maxSandboxRepos = sandboxMultiRepo ? MAX_SANDBOX_REPOS : 1;
+  // The host's MCP connections, for a sandbox whose provider takes its own MCP
+  // services. Restored from the last session, and saved on every toggle.
+  const [selectedMcpConnections, setSelectedMcpConnections] = useState<ReadonlySet<string>>(
+    () => restoredDraft?.mcpConnections ?? new Set(readLastMcpConnections()),
+  );
+  const toggleMcpConnection = useCallback((name: string, next: boolean) => {
+    setSelectedMcpConnections((previous) => {
+      const updated = new Set(previous);
+      if (next) updated.add(name);
+      else updated.delete(name);
+      writeLastMcpConnections([...updated]);
+      return updated;
+    });
+  }, []);
+  const mcpConnectionsEnabled =
+    sandboxSelected &&
+    info !== "loading" &&
+    effectiveSandboxProvider !== null &&
+    info.sandbox_provider_capabilities?.[effectiveSandboxProvider]?.mcp_selection === true &&
+    getOmnigentMcpConnections() != null;
+  const { data: listedMcpConnections, statusesPending: mcpConnectionStatusesPending } =
+    useMcpConnections(selectedMcpConnections);
+  // Sends only the picks the host still offers once it answered; until then, or
+  // when listing failed, the saved picks as they are, for the server to check.
+  const mcpConnectionsForLaunch = useMemo(() => {
+    if (!mcpConnectionsEnabled) return [];
+    const known = mcpConnectionStatusesPending ? undefined : listedMcpConnections;
+    return [...selectedMcpConnections].filter(
+      (name) => !known || known.some((connection) => connection.name === name),
+    );
+  }, [
+    mcpConnectionsEnabled,
+    mcpConnectionStatusesPending,
+    listedMcpConnections,
+    selectedMcpConnections,
+  ]);
   const [pendingRepoUrl, setPendingRepoUrl] = useState("");
   const [sandboxRepoPopoverOpen, setSandboxRepoPopoverOpen] = useState(false);
   const sandboxRepoPopoverRef = useRef<HTMLDivElement>(null);
@@ -3184,6 +3226,7 @@ function NewChatLandingContent({
   const draftRef = useRef<LandingDraft>(null as unknown as LandingDraft);
   draftRef.current = {
     mcpRegistryServices,
+    mcpConnections: selectedMcpConnections,
     project: projectParam,
     message,
     files,
@@ -6519,6 +6562,7 @@ function NewChatLandingContent({
         if (mcpServicesForLaunch.length) {
           metadata.mcp_registry_services = mcpServicesForLaunch;
         }
+        if (mcpConnectionsForLaunch.length) metadata.mcp_services = mcpConnectionsForLaunch;
         // A config-seeded workspace is omitted on a `project_id` create so the
         // server default-fills it (same field semantics as the JSON path).
         if (
@@ -6602,6 +6646,7 @@ function NewChatLandingContent({
           // server default-fills it from the project config.
           ...(agentFromProjectConfig ? {} : { agent_id: effectiveAgentId }),
           ...(mcpServicesForLaunch.length ? { mcp_registry_services: mcpServicesForLaunch } : {}),
+          ...(mcpConnectionsForLaunch.length ? { mcp_services: mcpConnectionsForLaunch } : {}),
           ...(createProjectId !== null ? { project_id: createProjectId } : {}),
           ...(sandboxSelected
             ? {
@@ -7222,6 +7267,9 @@ function NewChatLandingContent({
             }}
             rememberedProfileId={rememberedSandboxProfileId}
           />
+          {mcpConnectionsEnabled && (
+            <McpConnectionPicker selected={selectedMcpConnections} onToggle={toggleMcpConnection} />
+          )}
         </ComposerWorkspaceBar>
       )}
       {!sandboxSelected && (

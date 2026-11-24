@@ -2093,6 +2093,21 @@ def register_core_routes(
             }
             parsed_metadata = parsed_metadata.model_copy(update={"labels": labels})
             spec = selected_mcp_spec(spec, labels)
+        if parsed_metadata.mcp_services:
+            from omnigent.server.session_mcp_selection import session_create_mcp_labels
+
+            provider_labels = await asyncio.to_thread(
+                session_create_mcp_labels,
+                request,
+                parsed_metadata.mcp_services,
+                host_type=parsed_metadata.host_type,
+                sandbox_provider=parsed_metadata.sandbox_provider,
+                spec=spec,
+                user_id=user_id,
+            )
+            parsed_metadata = parsed_metadata.model_copy(
+                update={"labels": {**parsed_metadata.labels, **provider_labels}}
+            )
 
         # Caller-supplied external host: validate the workspace against
         # the uploaded spec's os_env boundary BEFORE creating the row

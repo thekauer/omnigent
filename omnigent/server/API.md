@@ -684,6 +684,17 @@ already uploaded or registered an agent. The response is the full
     support. Deleting a managed session terminates its sandbox
     (best-effort), including a session deleted mid-provision.
 
+  mcp_services (string[], default [])
+    MCP services for a `host_type: "managed"` create on a provider that
+    sets its own MCP selection (its `sandbox_provider_capabilities` entry
+    reports `mcp_selection`), such as per-user OAuth-backed connections.
+    The provider validates them and records them as its own session
+    labels, as for a scheduled task's `mcp_services`. 400 outside a
+    managed create or on a provider without its own selection; the
+    provider's own error (e.g. 403 for a service the user hasn't signed
+    in to) otherwise, before any session is created. The multipart
+    bundle create takes it in `metadata` the same way.
+
   host_id (string or null)
     Host to launch the runner on. When set, `workspace` is required
     and validated against the agent's `os_env.cwd` boundary on that

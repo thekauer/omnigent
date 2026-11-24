@@ -9054,6 +9054,106 @@ describe("NewChatLandingScreen", () => {
     expect(body.sandbox_provider).toBe("e2b");
   });
 
+  describe("host MCP connections", () => {
+    const CONNECTIONS_KEY = "omnigent:last-mcp-connections";
+    const GITHUB = { name: "tools.github", displayName: "GitHub", authorized: true };
+    // "box" takes its own MCP services; "plain" takes the registry's.
+    const providerInfo: Partial<ServerInfo> = {
+      managed_sandboxes_enabled: true,
+      sandbox_provider: "box",
+      sandbox_providers: ["box", "plain"],
+      sandbox_provider_capabilities: { box: { mcp_selection: true }, plain: {} },
+    };
+
+    function hostConnections(list: () => Promise<(typeof GITHUB)[]>) {
+      setOmnigentHostConfig({ mcpConnections: { list, authorize: async () => undefined } });
+    }
+
+    beforeEach(() => {
+      authenticatedFetchMock.mockImplementation(
+        async (path) =>
+          new Response(
+            JSON.stringify(
+              path === "/git/credentials" ? { credentials: [] } : { id: "conv_mcp_connections" },
+            ),
+            { status: 200 },
+          ),
+      );
+    });
+
+    it("shows the picker for a provider that takes them and sends the saved picks", async () => {
+      hostConnections(async () => [GITHUB]);
+      localStorage.setItem(CONNECTIONS_KEY, JSON.stringify(["tools.github"]));
+      renderLanding(providerInfo);
+      expect(await screen.findByTestId("new-chat-landing-mcps-chip")).toHaveTextContent("MCPs · 1");
+
+      const { body } = await submitAndReadBody();
+      expect(body).toMatchObject({
+        host_type: "managed",
+        sandbox_provider: "box",
+        mcp_services: ["tools.github"],
+      });
+      expect(body).not.toHaveProperty("mcp_registry_services");
+    });
+
+    it.each([
+      { listing: "empty", services: [], expected: undefined },
+      { listing: "nonempty", services: [GITHUB], expected: ["tools.github"] },
+    ])(
+      "reconciles saved picks against a successful $listing listing",
+      async ({ services, expected }) => {
+        hostConnections(async () => services);
+        localStorage.setItem(CONNECTIONS_KEY, JSON.stringify(["tools.github", "tools.hidden"]));
+        const { client } = renderLanding(providerInfo);
+        await waitFor(() =>
+          expect(client.getQueryState(["mcp-connections"])?.status).toBe("success"),
+        );
+
+        const { body } = await submitAndReadBody();
+        expect(body.mcp_services).toEqual(expected);
+      },
+    );
+
+    it("keeps the saved picks for the server to check when the host listing fails", async () => {
+      hostConnections(async () => {
+        throw new Error("listing unavailable");
+      });
+      localStorage.setItem(CONNECTIONS_KEY, JSON.stringify(["tools.github", "tools.hidden"]));
+      const { client } = renderLanding(providerInfo);
+      await waitFor(() => expect(client.getQueryState(["mcp-connections"])?.status).toBe("error"));
+
+      const { body } = await submitAndReadBody();
+      expect(body.mcp_services).toEqual(["tools.github", "tools.hidden"]);
+    });
+
+    it("hides the picker and sends nothing on a provider without its own selection", async () => {
+      hostConnections(async () => [GITHUB]);
+      localStorage.setItem(CONNECTIONS_KEY, JSON.stringify(["tools.github"]));
+      renderLanding(providerInfo);
+      expect(await screen.findByTestId("new-chat-landing-mcps-chip")).toBeInTheDocument();
+
+      fireEvent.pointerDown(screen.getByTestId("new-chat-landing-host-chip"), { button: 0 });
+      fireEvent.click(screen.getByTestId("new-chat-landing-sandbox-option-plain"));
+      await waitFor(() => expect(screen.queryByTestId("new-chat-landing-mcps-chip")).toBeNull());
+
+      const { body } = await submitAndReadBody();
+      expect(body.sandbox_provider).toBe("plain");
+      expect(body).not.toHaveProperty("mcp_services");
+    });
+
+    it("shows no picker without the host capability", async () => {
+      localStorage.setItem(CONNECTIONS_KEY, JSON.stringify(["tools.github"]));
+      renderLanding(providerInfo);
+      await waitFor(() =>
+        expect(screen.getByTestId("new-chat-landing-host-chip")).toBeInTheDocument(),
+      );
+      expect(screen.queryByTestId("new-chat-landing-mcps-chip")).toBeNull();
+
+      const { body } = await submitAndReadBody();
+      expect(body).not.toHaveProperty("mcp_services");
+    });
+  });
+
   it("reopens on the last-picked provider and highlights its row", async () => {
     // The sticky pick: choosing e2b persists it, so a fresh landing (module
     // draft reset, storage kept) reselects e2b and lights its row up rather

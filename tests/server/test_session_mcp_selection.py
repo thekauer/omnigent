@@ -16,6 +16,7 @@ from omnigent.server.session_mcp_selection import (
     RegistryMcpSelection,
     host_sandbox,
     mcp_selection_for,
+    session_create_mcp_labels,
     session_mcp_label_keys,
     session_mcp_services,
     task_sandbox,
@@ -374,3 +375,80 @@ async def test_worker_on_a_connected_host_gets_the_registry_form_of_a_usable_ser
     assert await _inherit(
         _PerServiceSelection(), {}, worker_host_id="laptop", registry_services={"source-only"}
     ) == {"omnigent.mcp_service.source-only": "1"}
+
+
+def _create_request(deployment: ManagedSandboxDeployment | None) -> SimpleNamespace:
+    return SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(sandbox_config=deployment)))
+
+
+def test_a_managed_create_takes_its_providers_mcp_services_as_labels() -> None:
+    deployment = ManagedSandboxDeployment(
+        configs=(
+            _provider("plain"),
+            _provider("box", _ListSelection("deployment.mcp_services")),
+        )
+    )
+    labels = session_create_mcp_labels(
+        _create_request(deployment),
+        ["tools.github", "tools.slack"],
+        host_type="managed",
+        sandbox_provider="box",
+        spec=None,
+        user_id="alice",
+    )
+    assert labels == {"deployment.mcp_services": '["tools.github", "tools.slack"]'}
+    # Naming none adds no labels, wherever the session runs.
+    assert (
+        session_create_mcp_labels(
+            _create_request(None),
+            [],
+            host_type="external",
+            sandbox_provider=None,
+            spec=None,
+            user_id="alice",
+        )
+        == {}
+    )
+
+
+@pytest.mark.parametrize(
+    ("host_type", "provider", "message"),
+    [
+        ("external", "box", "requires host_type=managed"),
+        ("managed", "plain", "does not take MCP services"),
+        ("managed", "missing", "does not take MCP services"),
+        # No provider named takes the deployment's default, the plain one here.
+        ("managed", None, "does not take MCP services"),
+    ],
+)
+def test_mcp_services_are_refused_where_no_provider_selection_applies(
+    host_type, provider, message
+) -> None:
+    deployment = ManagedSandboxDeployment(
+        configs=(_provider("plain"), _provider("box", _PerServiceSelection()))
+    )
+    with pytest.raises(OmnigentError, match=message) as raised:
+        session_create_mcp_labels(
+            _create_request(deployment),
+            ["tools.github"],
+            host_type=host_type,
+            sandbox_provider=provider,
+            spec=None,
+            user_id="alice",
+        )
+    assert raised.value.code == ErrorCode.INVALID_INPUT
+
+
+def test_a_managed_create_reports_a_service_its_provider_rejects() -> None:
+    deployment = ManagedSandboxDeployment(
+        configs=(_provider("box", _PerServiceSelection(frozenset({"tools.slack"}))),)
+    )
+    with pytest.raises(OmnigentError, match="revoked"):
+        session_create_mcp_labels(
+            _create_request(deployment),
+            ["tools.github", "tools.slack"],
+            host_type="managed",
+            sandbox_provider="box",
+            spec=None,
+            user_id="alice",
+        )

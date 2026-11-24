@@ -2482,6 +2482,39 @@ def test_provider_ui_capabilities_report_which_providers_take_a_moved_session() 
     assert capabilities["profiled"]["accepts_session_move"] is False
 
 
+def test_provider_ui_capabilities_report_providers_with_their_own_mcp_selection() -> None:
+    """Only a provider that sets its own MCP selection reports it, so the new-session
+    screen offers that provider's MCP services."""
+
+    class _Selection:
+        def validate(self, request, services, *, spec, user_id):
+            return tuple(services)
+
+        def session_labels(self, services):
+            return {}
+
+        def selected_services(self, labels):
+            return ()
+
+    deployment = ManagedSandboxDeployment(
+        configs=tuple(
+            ManagedSandboxConfig(
+                server_url="https://s",
+                provider=provider,
+                token_ttl_s=3600,
+                launcher_factory=FakeSandboxLauncher,
+                mcp_selection=selection,
+            )
+            for provider, selection in (("own", _Selection()), ("registry", None))
+        )
+    )
+
+    capabilities = deployment.provider_ui_capabilities()
+
+    assert capabilities["own"]["mcp_selection"] is True
+    assert "mcp_selection" not in capabilities["registry"]
+
+
 def test_provider_ui_capabilities_enable_inference_only_on_configured_target() -> None:
     launcher = FakeSandboxLauncher()
     profile = {

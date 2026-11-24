@@ -1054,6 +1054,10 @@ class ManagedSandboxDeployment:
                     # create, so the move route refuses it as a destination.
                     "accepts_session_move": not config.manages_profiles,
                 }
+                if config.mcp_selection is not None:
+                    # Sessions here take the provider's own MCP services
+                    # (``mcp_services`` on create), not the server registry's.
+                    caps[config.provider]["mcp_selection"] = True
                 from omnigent.inference_config import parse_inference_config
                 from omnigent.server.inference_catalog import ambient_gateway_providers
 

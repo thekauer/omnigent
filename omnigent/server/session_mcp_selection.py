@@ -108,6 +108,39 @@ def mcp_selection_for(sandbox: ManagedSandboxConfig | None) -> SessionMcpSelecti
     return configured if configured is not None else RegistryMcpSelection()
 
 
+def session_create_mcp_labels(
+    request: Request,
+    services: Sequence[str],
+    *,
+    host_type: str,
+    sandbox_provider: str | None,
+    spec: AgentSpec | None,
+    user_id: str | None,
+) -> dict[str, str]:
+    """Labels that start a new session in a managed sandbox with *services*.
+
+    The services are the sandbox provider's own (its ``mcp_selection``), as a
+    scheduled task's fired sessions use, so only a managed create on a provider
+    that sets one may name them. Raises ``OmnigentError`` otherwise, or when the
+    provider rejects a service. Blocking: the provider may check credentials.
+    """
+    if not services:
+        return {}
+    if host_type != "managed":
+        raise OmnigentError(
+            "mcp_services requires host_type=managed", code=ErrorCode.INVALID_INPUT
+        )
+    deployment = getattr(request.app.state, "sandbox_config", None)
+    sandbox = deployment.for_provider(sandbox_provider) if deployment is not None else None
+    selection = sandbox.mcp_selection if sandbox is not None else None
+    if selection is None:
+        raise OmnigentError(
+            "This sandbox provider does not take MCP services", code=ErrorCode.INVALID_INPUT
+        )
+    validated = selection.validate(request, services, spec=spec, user_id=user_id)
+    return selection.session_labels(validated)
+
+
 def task_sandbox(
     deployment: ManagedSandboxDeployment | None, execution_target: str
 ) -> ManagedSandboxConfig | None:

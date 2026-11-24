@@ -6704,6 +6704,14 @@
             "title": "Mcp Registry Services",
             "type": "array"
           },
+          "mcp_services": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 40,
+            "title": "Mcp Services",
+            "type": "array"
+          },
           "model_override": {
             "anyOf": [
               {
@@ -9240,6 +9248,14 @@
             "title": "Mcp Registry Services",
             "type": "array"
           },
+          "mcp_services": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 40,
+            "title": "Mcp Services",
+            "type": "array"
+          },
           "model_override": {
             "anyOf": [
               {
@@ -9514,6 +9530,14 @@
             },
             "maxItems": 40,
             "title": "Mcp Registry Services",
+            "type": "array"
+          },
+          "mcp_services": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 40,
+            "title": "Mcp Services",
             "type": "array"
           },
           "model_override": {

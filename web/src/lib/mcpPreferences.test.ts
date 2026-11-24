@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { readLastMcpServices, writeLastMcpServices } from "./mcpPreferences";
+import {
+  readLastMcpConnections,
+  readLastMcpServices,
+  writeLastMcpConnections,
+  writeLastMcpServices,
+} from "./mcpPreferences";
 
 afterEach(() => {
   localStorage.clear();
@@ -55,5 +60,15 @@ describe("mcpPreferences", () => {
     });
     expect(() => writeLastMcpServices(["system.ai.github"])).not.toThrow();
     expect(readLastMcpServices()).toEqual([]);
+  });
+
+  it("keeps host MCP connections apart from registry services", () => {
+    writeLastMcpServices(["github"]);
+    writeLastMcpConnections(["tools.github", "tools.slack"]);
+    expect(readLastMcpServices()).toEqual(["github"]);
+    expect(readLastMcpConnections()).toEqual(["tools.github", "tools.slack"]);
+    writeLastMcpConnections([]);
+    expect(readLastMcpServices()).toEqual(["github"]);
+    expect(readLastMcpConnections()).toEqual([]);
   });
 });

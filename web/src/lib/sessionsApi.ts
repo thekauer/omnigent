@@ -945,6 +945,8 @@ export async function createBundledSession(
     terminal_launch_args?: string[];
     git?: { branch_name: string; base_branch?: string; existing_worktree?: boolean } | null;
     mcp_registry_services?: string[];
+    /** A managed sandbox provider's own MCP services; see `mcp_selection`. */
+    mcp_services?: string[];
   } = {},
   initialFiles: File[] = [],
 ): Promise<{ id: string; agentId?: string }> {

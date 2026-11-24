@@ -1786,6 +1786,9 @@ class _SessionCreateRequestBase(_SandboxProfileSelection):
     mcp_registry_services: list[McpRegistryServiceId] = Field(
         default_factory=list, max_length=MAX_MCP_REGISTRY_SERVICES
     )
+    # MCP services of a managed sandbox provider with its own selection,
+    # e.g. per-user OAuth-backed connections; the provider validates them.
+    mcp_services: list[str] = Field(default_factory=list, max_length=MAX_MCP_REGISTRY_SERVICES)
     title: str | None = Field(default=None, max_length=USER_SESSION_TITLE_MAX_CHARS)
     labels: dict[str, str] = Field(default_factory=dict)
     sibling_source_id: str | None = None
@@ -2039,6 +2042,9 @@ class SessionCreateMetadata(_SandboxProfileSelection):
     mcp_registry_services: list[McpRegistryServiceId] = Field(
         default_factory=list, max_length=MAX_MCP_REGISTRY_SERVICES
     )
+    # MCP services of a managed sandbox provider with its own selection,
+    # e.g. per-user OAuth-backed connections; the provider validates them.
+    mcp_services: list[str] = Field(default_factory=list, max_length=MAX_MCP_REGISTRY_SERVICES)
 
     title: str | None = Field(default=None, max_length=USER_SESSION_TITLE_MAX_CHARS)
     project_id: str | None = None

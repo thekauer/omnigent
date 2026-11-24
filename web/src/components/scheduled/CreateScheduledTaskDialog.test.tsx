@@ -38,6 +38,8 @@ import { SERVER_INFO_OFFLINE_FALLBACK } from "@/lib/bootCapabilities";
 import type { ServerInfo } from "@/lib/capabilities";
 import type { AutomationSourceSession } from "@/lib/automationFromSession";
 import { MemoryRouter } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { setOmnigentHostConfig } from "@/lib/host";
 import {
   decodeTriggerPrompt,
   emptyTriggerFields,
@@ -8062,5 +8064,100 @@ describe("CreateScheduledTaskDialog MCP services", () => {
     view.rerender(<CreateScheduledTaskDialog open onOpenChange={vi.fn()} />);
     expect(await screen.findByTestId("task-mcp-services-trigger")).toBeInTheDocument();
     expect(screen.queryByTestId("task-mcp-services-menu")).not.toBeInTheDocument();
+  });
+});
+
+describe("CreateScheduledTaskDialog host MCP connections", () => {
+  // New sandbox runs launch on the default provider, "box", which takes its own MCP services.
+  const providerInfo: Partial<ServerInfo> = {
+    features: { automations_v2: true },
+    managed_sandboxes_enabled: true,
+    sandbox_provider: "box",
+    sandbox_provider_capabilities: { box: { mcp_selection: true } },
+    scheduled_task_mcp_services: true,
+  };
+
+  function renderOnSandbox(info: Partial<ServerInfo> = {}, withConnections = true) {
+    // Registry tests above leave calls on the module mock, and restoreAllMocks keeps them.
+    vi.mocked(registryRequest).mockClear();
+    setOmnigentHostConfig(
+      withConnections
+        ? {
+            mcpConnections: {
+              list: async () => [
+                { name: "tools.github", displayName: "GitHub", authorized: true },
+                { name: "tools.slack", displayName: "Slack", authorized: true },
+              ],
+              authorize: async () => undefined,
+            },
+          }
+        : {},
+    );
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    return renderBase(
+      <QueryClientProvider client={queryClient}>
+        <CapabilitiesProvider info={{ ...SERVER_INFO_OFFLINE_FALLBACK, ...providerInfo, ...info }}>
+          <CreateScheduledTaskDialog open onOpenChange={vi.fn()} />
+        </CapabilitiesProvider>
+      </QueryClientProvider>,
+    );
+  }
+
+  afterEach(() => setOmnigentHostConfig({}));
+
+  function openAdvanced() {
+    const trigger = screen.getByTestId("task-advanced-settings-trigger");
+    if (trigger.getAttribute("aria-expanded") !== "true") fireEvent.click(trigger);
+  }
+
+  function chooseSandbox() {
+    const trigger = screen.getByTestId("task-host-trigger");
+    fireEvent.pointerDown(trigger, new MouseEvent("pointerdown", { bubbles: true, button: 0 }));
+    fireEvent.click(trigger);
+    fireEvent.click(screen.getByTestId("task-host-sandbox-option"));
+  }
+
+  it("saves the connections a new sandbox automation starts with", async () => {
+    renderOnSandbox();
+    fireEvent.change(screen.getByTestId("task-name-input"), { target: { value: "Nightly" } });
+    fireEvent.change(screen.getByTestId("task-prompt-input"), { target: { value: "Triage" } });
+    chooseSandbox();
+    openAdvanced();
+    fireEvent.click(await screen.findByTestId("new-chat-landing-mcps-chip"));
+    fireEvent.click(await screen.findByTestId("new-chat-landing-mcp-toggle-tools.github"));
+    await waitFor(() =>
+      expect(screen.getByTestId("new-chat-landing-mcps-chip")).toHaveTextContent("MCPs · 1"),
+    );
+    // The provider's own services replace the registry's picker.
+    expect(screen.queryByTestId("task-mcp-services-trigger")).not.toBeInTheDocument();
+    expect(registryRequest).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByTestId("create-scheduled-task-submit"));
+
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
+    expect(mutateAsync.mock.calls[0][0]).toMatchObject({
+      executionTarget: "managed_sandbox",
+      mcpServices: ["tools.github"],
+    });
+  });
+
+  it("offers no MCP services on such a provider without the host capability", () => {
+    renderOnSandbox({ enabled_connections: ["mcp"] }, false);
+    chooseSandbox();
+    openAdvanced();
+    expect(screen.getByTestId("task-advanced-settings-trigger")).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
+    // The registry's services would not run there, so its picker stays hidden too.
+    expect(screen.queryByTestId("task-mcp-services-field")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("new-chat-landing-mcps-chip")).not.toBeInTheDocument();
+  });
+
+  it("keeps the registry picker on a provider that takes the registry's services", async () => {
+    renderOnSandbox({ enabled_connections: ["mcp"], sandbox_provider_capabilities: { box: {} } });
+    chooseSandbox();
+    openAdvanced();
+    expect(await screen.findByTestId("task-mcp-services-trigger")).toBeInTheDocument();
+    expect(screen.queryByTestId("new-chat-landing-mcps-chip")).not.toBeInTheDocument();
   });
 });

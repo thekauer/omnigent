@@ -163,6 +163,11 @@ export interface ServerInfo {
       accepts_session_move?: boolean;
       inference_models?: boolean;
       default_models?: boolean;
+      /**
+       * Sessions here take the provider's own MCP services (`mcp_services`
+       * on create), which the host's MCP-connections picker offers.
+       */
+      mcp_selection?: boolean;
       repo_catalog?: { name: string; url: string }[];
     }
   >;

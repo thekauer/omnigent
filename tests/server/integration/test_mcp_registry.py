@@ -293,6 +293,123 @@ async def test_invalid_launch_selection_creates_no_session(
     launch.assert_not_awaited()
 
 
+class _ProviderSelection:
+    """A sandbox provider that records its own MCP services in one label."""
+
+    def validate(self, request, services, *, spec, user_id):
+        if "tools.revoked" in services:
+            from omnigent.errors import ErrorCode, OmnigentError
+
+            raise OmnigentError("Sign in to tools.revoked", code=ErrorCode.FORBIDDEN)
+        return tuple(dict.fromkeys(services))
+
+    def session_labels(self, services):
+        return {"box.mcp_services": json.dumps(list(services))}
+
+    def selected_services(self, labels):
+        return tuple(json.loads(labels.get("box.mcp_services", "[]")))
+
+
+def _provider_selection_deployment():
+    from dataclasses import replace
+
+    from omnigent.server.managed_hosts import ManagedSandboxDeployment, parse_sandbox_config
+
+    plain = parse_sandbox_config(
+        {"provider": "modal", "server_url": "https://managed.example.test"}
+    ).default
+    return ManagedSandboxDeployment(
+        configs=(replace(plain, provider="box", mcp_selection=_ProviderSelection()), plain)
+    )
+
+
+@pytest.mark.parametrize("upload", [False, True])
+async def test_provider_mcp_services_label_the_session_before_launch(
+    client, app, monkeypatch, upload
+):
+    from omnigent.runtime import get_conversation_store
+    from omnigent.server.managed_hosts import ManagedLaunchTracker
+    from omnigent.server.routes.sessions import routes_core
+
+    source = await create_test_session(client, name="provider-mcp")
+    launched_labels = []
+    launch_finished = asyncio.Event()
+
+    async def launch(*, session_id, **kwargs):
+        launched_labels.append(get_conversation_store().get_conversation(session_id).labels)
+        launch_finished.set()
+
+    monkeypatch.setattr(routes_core, "_run_managed_launch", launch)
+    app.state.sandbox_config = _provider_selection_deployment()
+    app.state.host_store = object()
+    app.state.managed_launches = ManagedLaunchTracker()
+    metadata = {
+        "host_type": "managed",
+        "sandbox_provider": "box",
+        "mcp_services": ["tools.github", "tools.github", "tools.slack"],
+    }
+    if upload:
+        response = await client.post(
+            "/v1/sessions",
+            data={"metadata": json.dumps(metadata)},
+            files={
+                "bundle": ("agent.tar.gz", build_agent_bundle("provider-mcp"), "application/gzip")
+            },
+        )
+    else:
+        response = await client.post(
+            "/v1/sessions", json={"agent_id": source["agent_id"], **metadata}
+        )
+    assert response.status_code == 201, response.text
+    await asyncio.wait_for(launch_finished.wait(), timeout=5)
+    assert launched_labels[0]["box.mcp_services"] == '["tools.github", "tools.slack"]'
+    assert not any(key.startswith("omnigent.mcp_service.") for key in launched_labels[0])
+
+
+@pytest.mark.parametrize("upload", [False, True])
+@pytest.mark.parametrize(
+    "metadata,status",
+    [
+        # Only a managed create lands in a provider's sandbox.
+        ({"mcp_services": ["tools.github"]}, 400),
+        # The plain provider takes the registry's services, not its own.
+        ({"host_type": "managed", "sandbox_provider": "modal", "mcp_services": ["x"]}, 400),
+        (
+            {"host_type": "managed", "sandbox_provider": "box", "mcp_services": ["tools.revoked"]},
+            403,
+        ),
+    ],
+)
+async def test_unusable_provider_mcp_services_create_no_session(
+    client, app, monkeypatch, upload, metadata, status
+):
+    from omnigent.runtime import get_conversation_store
+    from omnigent.server.managed_hosts import ManagedLaunchTracker
+    from omnigent.server.routes.sessions import routes_core
+
+    source = await create_test_session(client)
+    launch = AsyncMock()
+    create = Mock(side_effect=AssertionError("selection must be rejected before persistence"))
+    monkeypatch.setattr(routes_core, "_run_managed_launch", launch)
+    app.state.sandbox_config = _provider_selection_deployment()
+    app.state.host_store = object()
+    app.state.managed_launches = ManagedLaunchTracker()
+    monkeypatch.setattr(get_conversation_store(), "create_session_with_agent", create)
+    if upload:
+        response = await client.post(
+            "/v1/sessions",
+            data={"metadata": json.dumps(metadata)},
+            files={"bundle": ("agent.tar.gz", build_agent_bundle("launch"), "application/gzip")},
+        )
+    else:
+        response = await client.post(
+            "/v1/sessions", json={"agent_id": source["agent_id"], **metadata}
+        )
+    assert response.status_code == status, response.text
+    create.assert_not_called()
+    launch.assert_not_awaited()
+
+
 @pytest.mark.parametrize("nested", [False, True])
 async def test_registry_sidecars_are_rejected_before_persistence(
     client, tmp_path, monkeypatch, nested

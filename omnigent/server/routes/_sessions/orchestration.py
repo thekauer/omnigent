@@ -13402,6 +13402,25 @@ async def _create_session_from_existing_agent(
         for service_id in body.mcp_registry_services:
             _require_registry_service(request, service_id, user_id)
         registry_labels = registry_selection_labels(selection_spec, body.mcp_registry_services)
+    if body.mcp_services:
+        from omnigent.server.session_mcp_selection import session_create_mcp_labels
+
+        if body.sub_agent_name:
+            raise OmnigentError(
+                "Named sub-agents use their authored MCP services",
+                code=ErrorCode.INVALID_INPUT,
+            )
+        registry_labels.update(
+            await asyncio.to_thread(
+                session_create_mcp_labels,
+                request,
+                body.mcp_services,
+                host_type=body.host_type,
+                sandbox_provider=body.sandbox_provider,
+                spec=selection_spec,
+                user_id=user_id,
+            )
+        )
 
     # Validate the host workspace before creating a session or worktree.
     canonical_workspace: str | None = body.workspace
@@ -13443,7 +13462,12 @@ async def _create_session_from_existing_agent(
         runner_router=runner_router,
     )
     inherited_mcp_labels: dict[str, str] = {}
-    if created_by is not None and not body.mcp_registry_services and not body.sub_agent_name:
+    if (
+        created_by is not None
+        and not body.mcp_registry_services
+        and not body.mcp_services
+        and not body.sub_agent_name
+    ):
         inherited_mcp_labels = await _inherited_mcp_labels(
             request,
             created_by,
