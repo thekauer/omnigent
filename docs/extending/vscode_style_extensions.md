@@ -17,12 +17,14 @@ entries, commands, progress notifications and the host reconnect provider seam,
 with the server wake moved onto it; and queue item 3 (Changes 2): extension views
 in the classic rail, host-rendered tree views, view/title actions with `when`
 clauses and context keys, built-in workspace commands, changed-files events and
-a per-chat-session `workspaceState`; and phases M1 to M4 of queue item 4:
-built-in extensions load in every build, and the Changes, Content search,
-Agents, Tasks and Files tabs are the built-in `omnigent.changes`,
-`omnigent.content-search`, `omnigent.agents`, `omnigent.tasks` and
-`omnigent.files` extensions (Changes 2 retired into the first). Item 2 is
-still open; next is the Pull Requests tab.
+a per-chat-session `workspaceState`; and queue item 4 (tab migration, M1 to
+M5): built-in extensions load in every build, and the Changes, Content
+search, Agents, Tasks, Files and Pull Requests tabs are the built-in
+`omnigent.changes`, `omnigent.content-search`, `omnigent.agents`,
+`omnigent.tasks`, `omnigent.files` and `omnigent.pull-requests` extensions
+(Changes 2 retired into the first). Queue item 2's recognition part is done
+too: the git host provider seam, with GitHub built in and the private host
+in `thekauer.dev`. What stays in core is listed under "Left in core" below.
 
 **Queue, in order.** Deployment-specific details (machine and host names, exact
 commands, the private Git host's URL shape) are kept in the personal extensions
@@ -47,11 +49,14 @@ repository's reference policy keeps them out of here.
 2. **Private Git host PR links** in the Pull Requests tab (a GitHub
    Enterprise-style host with numbered shards, such as
    `https://N.git.example.com/<org>/<repo>/pull/<number>` with any N).
-   - A git-host provider seam, with GitHub as the built-in and the private host
-     in `thekauer.dev`.
-   - If the server cannot fetch from the private host, the dev extension's Node
-     part fetches the PR on the developer's machine with its local `gh`
-     credentials.
+   - **Done: recognition.** The git host provider seam (scope item 33), with
+     GitHub as the built-in and the private host in `thekauer.dev`: its links
+     get chips in the chat and read as pull requests in the link input.
+   - **Open: linking.** Linking such a pull request still fails in the
+     installed host daemon, not the UI (recorded in the personal extensions
+     README). If the server cannot fetch from the private host, the dev
+     extension's Node part could fetch the PR on the developer's machine with
+     its local `gh` credentials; that waits for the user.
 3. **Done: Changes 2,** a new right-panel tab in `thekauer.dev`
    (`src/features/changes2.js`), scope items 12 to 17 below.
    - The session's changed files with VS Code's two view/title commands, "View
@@ -100,11 +105,18 @@ repository's reference policy keeps them out of here.
      and `omnigent.revealInFiles` for the shell); FilesPanel and FolderTree
      are gone, their rows moved to `shell/fileTreeRows.tsx` (the host's tree
      view draws them), and `revealFolderInFilesPanel` became the command.
-   - **Next:**
-     1. **Pull Requests** (`github`): not a tree: PR details, checks, merge
-        controls. Needs webview-like custom content or a richer host-drawn
-        "details" view kind, the git-host provider seam (queue item 2), and
-        write commands with confirmation, so it goes last.
+   - **Done, M5: Pull Requests.** Scope items 33 to 36.
+     `omnigent.pull-requests` reproduces the classic tab on the API (the
+     session's pull requests as plain data with a watch and its focus, the
+     `omnigent.pullRequests.*` commands, a host-drawn pull request view whose
+     details, diff and review threads the host draws, like VS Code's diff
+     editor); PullRequestPanel and `selectPullRequestInPanel` are gone, the
+     details stay as `PullRequestPanelDetails` (the pull request page draws
+     them too), and the `github` tab routes to the extension view.
+   - **Left in core** (not tabs, or not rail tabs): terminals, the in-app
+     browser, side chats, the file viewer, and the v2 sidebar's Files page
+     (`FilesPageTree`), which needs views in the v2 sidebar (on the "Later"
+     list). Each pull request's details stay host-drawn content.
 
 Stop after item 4. The rest of the "Later" list waits for the user.
 
@@ -795,6 +807,97 @@ sessionId, kind })` browses a folder (`kind: "folder"`, the default) or
     a rail tab, its tree is a different component, and moving it needs
     views in the v2 sidebar (on the "Later" list).
 
+33. **Git host providers** (`web/src/lib/gitHostProviders.ts`, shipped in
+    builds; like a VS Code `DocumentLinkProvider` per host).
+    - `git.registerHostProvider({ id, matchUrl(url) })`, where `matchUrl`
+      answers plain data, `{ host, owner, repo, number }`, or `undefined`.
+      Providers are asked in registration order after the built-in GitHub
+      one (`github`, github.com links: https, no port or credentials, the
+      pull request's own path); the first match wins. A throw, a malformed
+      answer or a promise counts as no match and is logged.
+      `git.matchPullRequestUrl(url)` returns the match with `providerId`.
+    - The GitHub-shaped path parsing the built-in provider owns serves the
+      link input (`pullRequestReference`: a provider's own link reads as its
+      pull request, typed link kept), code host links (`codeHosts`, github.com
+      through the provider, GitHub Enterprise hosts from evidence as before),
+      the chat's pull request chips (`ChatMarkdown`: any provider's link gets
+      the `repo#N` chip, redrawn when a provider registers late) and the tab
+      sub-page folding (`pullRequestSubpage`). No change for GitHub links.
+34. **API additions for M5** (`omnigent.d.ts`).
+    - `pullRequests.activeSessionPullRequests` (`SessionPullRequests`: the
+      status of the pull request in focus and of the list, the provider's
+      label and link placeholder, whether the host tracks links, host
+      offline, whether linking needs the host, the sandbox state, not
+      synced, whether the viewer may edit, the pull requests in display
+      order, the branch's own one, the host's choice, whether the server
+      lists them, whether the focused one was read, the host's warnings and
+      a review comment asking to open its pull request). Each
+      `SessionPullRequest` carries its identity, provider, stored state and
+      its live read (`loading`, `error`, `offline` with the hint, `details`
+      with checks and their runs, reviewers, labels, merge readiness and the
+      comment count, `cached`, `canMerge`). Frozen, coalesced per microtask.
+    - `pullRequests.watchActiveSessionPullRequests()` returns a
+      `PullRequestsWatch` whose `focus` (`{ sessionId, url, details }`) says
+      which pull request to read first and whether its details are on
+      screen, which sets the poll as the classic tab did (the details' pace,
+      or the list's, each listed one read while the list shows). The host
+      adds a passive watch for a drawn but hidden view (reads, no polling,
+      the content's `selectedUrl` first) and a list watch for a page that
+      lists them.
+    - Commands, each for the workspace on screen (while its pull requests
+      are watched) and refusing another session:
+      `omnigent.pullRequests.link(sessionId, url)` (resolves to the host's
+      `selectedUrl`), `.unlink(sessionId, url)` (to the `remaining` urls),
+      `.refresh(sessionId)`, `.merge(sessionId, url, { method, expectedHead,
+account? })`, `.updateLabels(sessionId, url, { add, remove })`,
+      `.updateReviewers(sessionId, url, { add, remove })` and
+      `.postComment(sessionId, url, body)`; they run the same mutations as
+      the host-drawn controls.
+    - `window.createPullRequestView(viewId)`: a `PullRequestView` with
+      `content`, `visible`, `onDidChangeVisibility` and `dispose()`.
+      `PullRequestViewContent` is plain data the host checks
+      (`pullRequestContent.ts`) and draws (`shell/extensionViews/ViewPullRequests.tsx`):
+      the bar's `actions` (icon buttons; a phone draws them in its drawer's
+      header), `back`, the `bar` (the toolbar with the heading, or the
+      heading and a Refresh button), the `linkForm` (its submit gets the
+      typed link appended), the `alert` and `note` lines, and a `body`: a
+      list of rows (identity, title, status, the host's compact merge
+      control, unlink, open on the provider, copy) or one pull request's
+      details (url, section and the command a picked section runs, the
+      stored copy offline, not synced, the empty state's link, note or open
+      link). `page` is the same for a page that opens each pull request on
+      its own. Content is kept per session for grid cells.
+    - The `plus` and `trash-2` icons on the allowlist.
+35. **The built-in Pull Requests tab** (`builtinExtensions/omnigent.pull-requests/`).
+    The bar with Refresh (spinning), Link a PR (disabled with "needs the
+    host online" while the server keeps the list and the host is away) and
+    Unlink PR, the heading shown or only read out, "All pull requests (N)"
+    back to the list; the link form with Escape, its pending and failed
+    states and the cached list seeded from the answer; the rows with their
+    state icon, label, title, status (offline with the hint, Loading,
+    Status unavailable, the state pill, checks and Incomplete checks, Draft,
+    No checks with the merge hint), the compact merge control and the ⋯
+    menu (Unlink PR, Open in the provider, Copy PR link); the unlink alert
+    and the host's warnings; the details of the one selected (opening a
+    lone one, keeping a just-linked one while the list catches up, falling
+    back when it is unlinked), Summary, Comments and Changes per chat
+    session; every empty state with the link button, the "To link a PR"
+    lines or "Open the PR on GitHub"; the stored copy and "not synced yet"
+    offline; a review comment opening its pull request on Changes. The tab
+    keeps its id (`github`), place, label, icon, ⌃N digit, visibility
+    rule and its "Unable to display pull requests." boundary; it has no
+    badge, as before.
+36. **Shell wiring.** `github` joins the built-in tabs whose page is the
+    extension view (`resolveWorkspaceActiveView`), still only where its old
+    rule allowed; WorkspacePanel, grid cells, the phone drawer and the v2
+    sidebar's pull request list (`pulls` place, drawing `page` and opening
+    each one in its own tab) draw `ExtensionRailView`; the `pull` place
+    draws the host's details as before. AppShell and each grid cell mount a
+    `WorkspacePullRequestsPublisher` on their workspace source; the
+    composer's and grid's pull request links run
+    `omnigent.pull-requests.reveal` through the workspace bridge
+    (`shell/revealPullRequest.ts`).
+
 ### Security and trust model
 
 A dev-path extension is trusted local code, like a folder passed to VS Code's
@@ -888,56 +991,59 @@ Plain ESM with `// @ts-check`; no build step.
 
 ## VS Code to Omnigent mapping
 
-| VS Code                                                              | Omnigent prototype                                            | Notes                                              |
-| -------------------------------------------------------------------- | ------------------------------------------------------------- | -------------------------------------------------- |
-| `import * as vscode from "vscode"`                                   | `import * as omnigent from "omnigent"`                        | Per-extension instance, resolved by the dev plugin |
-| `package.json` `publisher.name` id                                   | same                                                          |                                                    |
-| `engines.vscode`                                                     | `engines.omnigent`                                            | Validated as a range, not enforced yet             |
-| `main` / `browser`                                                   | same                                                          | ES modules; `main` runs in a dev server child      |
-| `activationEvents` `*`, `onStartupFinished`                          | same                                                          | Other events warn                                  |
-| `activate(context)` / `deactivate()`                                 | same                                                          | Async supported                                    |
-| `ExtensionContext.subscriptions`, `.extension.id`                    | same, plus `.extension.version`                               | No storage, URIs or secrets yet                    |
-| `Disposable`, `Disposable.from`                                      | same                                                          |                                                    |
-| `Event<T>`, `EventEmitter<T>`                                        | same                                                          | Errors reported against the extension              |
-| `window.createStatusBarItem(id?, alignment?, priority?)`             | `window.createSessionHeaderItem(id?, alignment?, priority?)`  | Header slot left of the agent info button          |
-| `StatusBarAlignment`                                                 | `SessionHeaderItemAlignment`                                  | `Right` sits next to the anchor                    |
-| `StatusBarItem.text`, `.tooltip`, `.show()`, `.hide()`, `.dispose()` | same                                                          | Plain text; no `$(icon)`, no `command`, no colors  |
-| `window.activeTextEditor`, `onDidChangeActiveTextEditor`             | `sessions.activeSession`, `onDidChangeActiveSession`          |                                                    |
-| (none)                                                               | `sessions.onDidChangeUsage`, `sessions.activeSessionUsage`    | Plain-data usage of the active session             |
-| `commands.registerCommand`, `commands.executeCommand`                | same                                                          | JSON args and results; page or Node                |
-| `window.withProgress`                                                | same                                                          | Notification only; `{ title }`                     |
-| `window.showInformationMessage`, `showErrorMessage`                  | same                                                          | Toasts; no buttons                                 |
-| `window.createOutputChannel(name, { log: true })`                    | `window.createOutputChannel(name)` (Node only)                | Lines go to the dev server output                  |
-| `workspace.registerRemoteAuthorityResolver`                          | `hosts.registerReconnectProvider`                             | For "Reconnect host"; plain host data              |
-| `import * as vscode from "vscode"` in `main`                         | `import * as omnigent from "omnigent/node"`                   | A smaller API than the page's                      |
-| `contributes.views` (view containers)                                | `contributes.views["omnigent.rightPanel"]`                    | Tabs in the classic workspace rail                 |
-| `window.createTreeView(id, { treeDataProvider })`                    | same                                                          | Host-drawn rows; no DnD or multi-select            |
-| `TreeDataProvider`, `TreeItem`, `TreeItemCollapsibleState`           | same, plain data                                              | Plus `decoration` and `gitStatus` on items         |
-| `TreeView.title`, `.description`, `.message`, `.badge`               | same                                                          |                                                    |
-| `contributes.commands` (`title`, `icon`, `toggled`)                  | same                                                          | Lucide icon names from an allowlist                |
-| `contributes.menus["view/title"]`, group `navigation`                | same                                                          | Other groups (the "..." menu) not shown yet        |
-| `when` clauses, `setContext`                                         | same, a subset                                                | No `=~`, `in`, `<`/`>` or `not in` yet             |
-| `ExtensionContext.workspaceState` (`Memento`)                        | same                                                          | Per chat session, not per workspace                |
-| `vscode.open` and SCM resource states                                | `omnigent.openFile`, `workspace.getChangedFiles`              | Plain paths, the session's changed files           |
-| Built-in extensions (`extensions/` in the VS Code repo)              | `web/src/builtinExtensions/<publisher.name>/`                 | Bundled, activated at startup in every build       |
-| `TreeView.visible`, `onDidChangeVisibility`                          | same                                                          | Visible while a drawn copy is on screen            |
-| `workspace.getConfiguration`, `onDidChangeConfiguration`             | same, for `omnigent.files.*`                                  | `config.*` context keys as in VS Code              |
-| `contributes.submenus` and submenu menus                             | same, in `view/title`                                         | Drawn as a dropdown naming the toggled entry       |
-| `TreeView.message` as a `MarkdownString` with command links          | `[text](command:id)` in a plain string                        | No other markdown                                  |
-| `SourceControl.inputBox`                                             | `TreeView.searchInput` with `contributes.views[].searchInput` | Query, toggles and fields; per chat session        |
-| `workspace.findTextInFiles`, `TextSearchQuery`                       | same, plus `validateTextSearchQuery`                          | One result list, not a match callback              |
-| `CancellationTokenSource`                                            | same                                                          |                                                    |
-| `contributes.keybindings`                                            | same, a subset                                                | One chord; letters, digits, F-keys                 |
-| `<view>.focus` and `view.<id>.visible` context keys                  | `<view>.focus` and `view.<id>.available`                      | Available: the tab is in the strip                 |
-| `withProgress({ location: { viewId } })`                             | same                                                          | Per chat session                                   |
-| `TreeItemLabel.highlights`, `AccessibilityInformation`               | same                                                          | Plus `TreeItem.line` for text matches              |
-| `WebviewView` (closest), `MarkdownString`                            | `window.createPlanView`, Markdown goals drawn by the host     | Plain data, host-drawn; see deviations             |
-| (none)                                                               | `sessions.activeSessionTasks`, `watchActiveSessionTasks`      | The tasks of the workspace on screen               |
-| `workspace.fs.readDirectory`, `FileSystemError.code`                 | same, plain entries and a named error                         | Paths, not `Uri`s; cached by the host              |
-| `workspace.findFiles`                                                | same, with a name pattern, globs and a folder                 | One result list, at most 500                       |
-| `workspace.rootPath`, `FileSystemWatcher`                            | `rootPath`, `workspace.onDidChangeFiles`                      | One event for "listings may be stale"              |
-| `TreeView.reveal`, `selection`, `onDidChangeSelection`               | same                                                          | Needs `getParent` and item ids                     |
-| (none)                                                               | `TreeView.location`, `onDidChangeLocation`                    | The host's location bar                            |
+| VS Code                                                              | Omnigent prototype                                            | Notes                                               |
+| -------------------------------------------------------------------- | ------------------------------------------------------------- | --------------------------------------------------- |
+| `import * as vscode from "vscode"`                                   | `import * as omnigent from "omnigent"`                        | Per-extension instance, resolved by the dev plugin  |
+| `package.json` `publisher.name` id                                   | same                                                          |                                                     |
+| `engines.vscode`                                                     | `engines.omnigent`                                            | Validated as a range, not enforced yet              |
+| `main` / `browser`                                                   | same                                                          | ES modules; `main` runs in a dev server child       |
+| `activationEvents` `*`, `onStartupFinished`                          | same                                                          | Other events warn                                   |
+| `activate(context)` / `deactivate()`                                 | same                                                          | Async supported                                     |
+| `ExtensionContext.subscriptions`, `.extension.id`                    | same, plus `.extension.version`                               | No storage, URIs or secrets yet                     |
+| `Disposable`, `Disposable.from`                                      | same                                                          |                                                     |
+| `Event<T>`, `EventEmitter<T>`                                        | same                                                          | Errors reported against the extension               |
+| `window.createStatusBarItem(id?, alignment?, priority?)`             | `window.createSessionHeaderItem(id?, alignment?, priority?)`  | Header slot left of the agent info button           |
+| `StatusBarAlignment`                                                 | `SessionHeaderItemAlignment`                                  | `Right` sits next to the anchor                     |
+| `StatusBarItem.text`, `.tooltip`, `.show()`, `.hide()`, `.dispose()` | same                                                          | Plain text; no `$(icon)`, no `command`, no colors   |
+| `window.activeTextEditor`, `onDidChangeActiveTextEditor`             | `sessions.activeSession`, `onDidChangeActiveSession`          |                                                     |
+| (none)                                                               | `sessions.onDidChangeUsage`, `sessions.activeSessionUsage`    | Plain-data usage of the active session              |
+| `commands.registerCommand`, `commands.executeCommand`                | same                                                          | JSON args and results; page or Node                 |
+| `window.withProgress`                                                | same                                                          | Notification only; `{ title }`                      |
+| `window.showInformationMessage`, `showErrorMessage`                  | same                                                          | Toasts; no buttons                                  |
+| `window.createOutputChannel(name, { log: true })`                    | `window.createOutputChannel(name)` (Node only)                | Lines go to the dev server output                   |
+| `workspace.registerRemoteAuthorityResolver`                          | `hosts.registerReconnectProvider`                             | For "Reconnect host"; plain host data               |
+| `import * as vscode from "vscode"` in `main`                         | `import * as omnigent from "omnigent/node"`                   | A smaller API than the page's                       |
+| `contributes.views` (view containers)                                | `contributes.views["omnigent.rightPanel"]`                    | Tabs in the classic workspace rail                  |
+| `window.createTreeView(id, { treeDataProvider })`                    | same                                                          | Host-drawn rows; no DnD or multi-select             |
+| `TreeDataProvider`, `TreeItem`, `TreeItemCollapsibleState`           | same, plain data                                              | Plus `decoration` and `gitStatus` on items          |
+| `TreeView.title`, `.description`, `.message`, `.badge`               | same                                                          |                                                     |
+| `contributes.commands` (`title`, `icon`, `toggled`)                  | same                                                          | Lucide icon names from an allowlist                 |
+| `contributes.menus["view/title"]`, group `navigation`                | same                                                          | Other groups (the "..." menu) not shown yet         |
+| `when` clauses, `setContext`                                         | same, a subset                                                | No `=~`, `in`, `<`/`>` or `not in` yet              |
+| `ExtensionContext.workspaceState` (`Memento`)                        | same                                                          | Per chat session, not per workspace                 |
+| `vscode.open` and SCM resource states                                | `omnigent.openFile`, `workspace.getChangedFiles`              | Plain paths, the session's changed files            |
+| Built-in extensions (`extensions/` in the VS Code repo)              | `web/src/builtinExtensions/<publisher.name>/`                 | Bundled, activated at startup in every build        |
+| `TreeView.visible`, `onDidChangeVisibility`                          | same                                                          | Visible while a drawn copy is on screen             |
+| `workspace.getConfiguration`, `onDidChangeConfiguration`             | same, for `omnigent.files.*`                                  | `config.*` context keys as in VS Code               |
+| `contributes.submenus` and submenu menus                             | same, in `view/title`                                         | Drawn as a dropdown naming the toggled entry        |
+| `TreeView.message` as a `MarkdownString` with command links          | `[text](command:id)` in a plain string                        | No other markdown                                   |
+| `SourceControl.inputBox`                                             | `TreeView.searchInput` with `contributes.views[].searchInput` | Query, toggles and fields; per chat session         |
+| `workspace.findTextInFiles`, `TextSearchQuery`                       | same, plus `validateTextSearchQuery`                          | One result list, not a match callback               |
+| `CancellationTokenSource`                                            | same                                                          |                                                     |
+| `contributes.keybindings`                                            | same, a subset                                                | One chord; letters, digits, F-keys                  |
+| `<view>.focus` and `view.<id>.visible` context keys                  | `<view>.focus` and `view.<id>.available`                      | Available: the tab is in the strip                  |
+| `withProgress({ location: { viewId } })`                             | same                                                          | Per chat session                                    |
+| `TreeItemLabel.highlights`, `AccessibilityInformation`               | same                                                          | Plus `TreeItem.line` for text matches               |
+| `WebviewView` (closest), `MarkdownString`                            | `window.createPlanView`, Markdown goals drawn by the host     | Plain data, host-drawn; see deviations              |
+| (none)                                                               | `sessions.activeSessionTasks`, `watchActiveSessionTasks`      | The tasks of the workspace on screen                |
+| `workspace.fs.readDirectory`, `FileSystemError.code`                 | same, plain entries and a named error                         | Paths, not `Uri`s; cached by the host               |
+| `workspace.findFiles`                                                | same, with a name pattern, globs and a folder                 | One result list, at most 500                        |
+| `workspace.rootPath`, `FileSystemWatcher`                            | `rootPath`, `workspace.onDidChangeFiles`                      | One event for "listings may be stale"               |
+| `TreeView.reveal`, `selection`, `onDidChangeSelection`               | same                                                          | Needs `getParent` and item ids                      |
+| (none)                                                               | `TreeView.location`, `onDidChangeLocation`                    | The host's location bar                             |
+| `languages.registerDocumentLinkProvider` (closest)                   | `git.registerHostProvider`, `git.matchPullRequestUrl`         | Plain `{ host, owner, repo, number }`; GitHub first |
+| `vscode.diff` (the diff editor opened by command)                    | `window.createPullRequestView`, host-drawn details and diff   | Plain data; see deviations                          |
+| (none)                                                               | `pullRequests.activeSessionPullRequests`, watch with a focus  | The pull requests of the workspace on screen        |
 
 Deviations and why:
 
@@ -1059,6 +1165,34 @@ Deviations and why:
 - New: "Reveal in Files" in the file viewer's View settings menu, and the
   host tree's keyboard navigation and selection (`aria-selected`).
 
+- The Pull Requests tab is a pull request view, a host-drawn content kind
+  with no VS Code equivalent. The extension decides the bar, the link
+  form, the list or the pull request shown, the words and every command;
+  the host draws each pull request's details (its header, checks,
+  reviewers, labels, merge dialog, description and comments with their
+  composer, the diff with its review threads), as VS Code draws its diff
+  editor when an extension opens one by command. The details are shared
+  with the pull request page, which stays core, so the two never drift.
+- The data API reports facts (statuses, live reads, stored copies) the
+  host derives from its queries; a few strings come from the host because
+  they need its formatting or provider copy: the offline hint with its
+  absolute "Last sync time", the provider's label and link placeholder.
+- The pull requests are read only while watched: a drawn view watches
+  them (passively while hidden), so with the tab never opened nothing is
+  read, as before. The commands act through the surface reading them, so
+  they need the pull requests watched. A grid cell not in front draws its
+  session's last content and does not poll, as for Tasks; the classic
+  panel in such a cell polled on its own.
+- The v2 sidebar's pull request list draws the view's `page` layout and
+  opens rows itself (as `openSessionFromView` lets the workspace decide),
+  instead of a second view.
+- A just-linked pull request stays selected for two reads of the data
+  while the list catches up; the classic panel got the same from React
+  batching its cache writes with the selection.
+- A provider's `matchUrl` must answer synchronously (the chat draws links
+  as it renders); a promise counts as no match and is logged. The chat
+  chip for github.com no longer matches a link with credentials in it.
+
 ## Later
 
 - `item.command` on header items.
@@ -1118,7 +1252,8 @@ corepack pnpm exec vite build --outDir /tmp/omnigent-build-check && \
     "invalid when clause" "omnigent.changes.view" "omnigent.content-search.view" \
     "omnigent.agents.view" "omnigent.openSubagent" "omnigent.tasks.view" \
     "omnigent.tasks.runTaskAction" "picker:workflow" "omnigent.files.view" \
-    "omnigent.revealInFiles" "omnigent.toggleFilterFields"; do grep -rlqF "$s" /tmp/omnigent-build-check || exit 1; done
+    "omnigent.revealInFiles" "omnigent.toggleFilterFields" "omnigent.pull-requests.view" \
+    "omnigent.pullRequests.link" "omnigent.pull-requests.reveal"; do grep -rlqF "$s" /tmp/omnigent-build-check || exit 1; done
 corepack pnpm exec tsc -b   # app and node (vite config) projects
 ```
 
@@ -1288,6 +1423,25 @@ What the suites cover:
   going to the surface in front.
 - `GridSessionPane.test.tsx`: the selected cell's workspace in front, and a
   saved `ext:` tab without its view falling back.
+- `omnigent.pull-requests/pullRequestsView.test.tsx` (the classic
+  PullRequestPanel tests, all ported, run through the real host with the
+  surface's publisher; three settle a mocked mutation or the publisher's
+  coalescing explicitly, one asserts the Comments tab instead of the
+  removed view cache key) and `pullRequestsModel.test.ts`: the selection
+  following the data, a just-linked one, review comments, labels, every
+  row status, merging, unlinking and opening, and the content of each
+  state. The changes tab, details, labels, merge, reviewers, file section,
+  review threads and `useSessionPullRequests` tests stay as they were
+  (their components are the host's). `pullRequestsApi.test.ts`: the data
+  as frozen copies following the surface in front, watches with focus,
+  list and passive ones, the commands and their refusals, the view
+  content checks, per-session content, visibility, and extension git host
+  providers. `gitHostProviders.test.ts`: the GitHub provider, the order,
+  unregistering and refusals; `pullRequestReference.test.ts` and
+  `ChatMarkdown.fileLinks.test.tsx` cover a provider's links.
+  `AppShell.pullRequestTabVisibility.test.tsx`, `GridSessionPane.test.tsx`
+  and `WorkspacePlaceView.test.tsx` check the reveal command, the drawer,
+  the boundary and the sidebar page.
 - `ChatHeader.test.tsx`: items render immediately left of `agent-info-trigger` in
   order, update live, show the tooltip, stay out without a session or while
   pending, and leave the DOM unchanged when no item is visible.
@@ -1369,6 +1523,19 @@ OMNI_UI_REPO=<omnigent checkout> ./verify/verify.sh            # mocked + prod
     Changes tab through the viewer's "Reveal in Files". `prod` and `live`
     open the Files tab and a folder in it (reads only). `--only-files` runs
     just these.
+  - The built-in Pull Requests tab, on a mocked session with two stored
+    pull requests (an open one with checks, reviewers, labels, a comment,
+    a diff and a review thread; a merged one) and an offline session: the
+    list and its statuses, linking a third (the POST reaches the mock
+    only) and unlinking it (the DELETE likewise), the details with the
+    checks, reviewers and labels, the merge dialog with the repository's
+    methods (closed, never confirmed), Comments with its composer, Changes
+    with the diff and the thread, the offline rows and the stored copy,
+    and no badge; with `--classic-repo` every reading must equal the
+    classic tab's, and the side-by-side screenshots are `list`,
+    `details`, `merge`, `changes` and `offline`. `prod` and `live` open
+    the tab, a pull request and its Changes (reads only). `--only-prs`
+    runs just these.
 - `prod`: starts the dev server (port 5182) against the real backend with CLI
   profile auth, aborts every non-GET request from the page, and checks a real
   session shows a `$` value left of the info button (`prod.png`).
