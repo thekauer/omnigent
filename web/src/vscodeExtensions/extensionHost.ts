@@ -13,7 +13,7 @@ import { registerBuiltInCommands } from "./builtinCommands";
 import { CommandRegistry } from "./commands";
 import { Disposable } from "./base";
 import { ContextKeyService } from "./contextKeys";
-import { KeybindingService } from "./keybindings";
+import { type KeybindingScope, KeybindingService } from "./keybindings";
 import { type ExtensionDescription, ExtensionHost, type ExtensionHostOptions } from "./host";
 import { toastNotifications } from "./progress";
 import { sessionHeaderItems } from "./sessionHeaderItems";
@@ -41,6 +41,8 @@ export interface ExtensionRuntimeOptions {
   /** The window's git host providers by default. */
   gitHosts?: GitHostProviderRegistry;
   hostOptions?: Partial<ExtensionHostOptions>;
+  /** Where contributed keybindings dispatch; the whole window by default. */
+  keybindingScope?: KeybindingScope;
 }
 
 /** Builds the host and its services, and starts the built-in extensions. */
@@ -87,6 +89,7 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
     contextKeys,
     executeCommand: (command) => commands.execute(command, [], () => {}),
     logError: (message, error) => console.error(`[omnigent-extensions] ${message}`, error),
+    scope: options.keybindingScope,
   });
   const sessionTree = new SessionTreeService(bridge);
   const tasks = new TasksService(bridge);
@@ -151,10 +154,14 @@ let disposing: Promise<void> | undefined;
 /** Created after `disposing` settles, for a hold taken meanwhile. */
 let restarting = false;
 
+// Embeds share the window with their host page: their keybindings dispatch only
+// from inside a mounted app root. The standalone app owns the page.
+const EMBED_KEYBINDING_SCOPE = "appRoot" satisfies KeybindingScope;
+
 function ensureRuntime(): void {
   if (runtime || restarting) return;
   if (!disposing) {
-    runtime = createExtensionRuntime();
+    runtime = createExtensionRuntime({ keybindingScope: EMBED_KEYBINDING_SCOPE });
     return;
   }
   // The previous runtime's views keep their ids until its disposal finishes, so
@@ -163,7 +170,9 @@ function ensureRuntime(): void {
   const viewsLoaded = railViews.beginLoading();
   void disposing.finally(() => {
     restarting = false;
-    if (holds > 0 || pinned) runtime ??= createExtensionRuntime();
+    if (holds > 0 || pinned) {
+      runtime ??= createExtensionRuntime({ keybindingScope: EMBED_KEYBINDING_SCOPE });
+    }
     viewsLoaded();
   });
 }
@@ -177,6 +186,7 @@ function cancelScheduledDispose(): void {
 /**
  * The window's extension runtime, kept for the page's lifetime; created, with
  * the built-ins started, on first call. For the standalone app and the dev loader.
+ * Its keybindings dispatch from anywhere in the window.
  */
 export function startExtensionHost(): ExtensionRuntime {
   pinned = true;
@@ -192,7 +202,8 @@ export function startExtensionHost(): ExtensionRuntime {
  * Starts the window's extension runtime, with the built-ins, unless it already
  * runs. Idempotent and synchronous, so a caller can run it before its first
  * render and the built-in views are registered by then. It takes no hold: pair
- * it with {@link retainExtensionHost}.
+ * it with {@link retainExtensionHost}. Started here, for embeds, its keybindings
+ * dispatch only from inside a mounted `.omnigent-app` root.
  */
 export function ensureExtensionHost(): void {
   cancelScheduledDispose();

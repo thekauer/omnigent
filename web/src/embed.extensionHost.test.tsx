@@ -1,6 +1,6 @@
 // The embed runs the window's extension host, so the built-in right-panel tabs
 // (now built-in extensions) exist in an embedded OmnigentApp as they do standalone.
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { StrictMode } from "react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -221,5 +221,37 @@ describe("embedded extension host", () => {
     }
     expect({ subscriptions, listeners: listeners.size }).toEqual(baseline);
     expect(subscriptions).toBe(0);
+  });
+
+  it("runs embedded keybindings only from inside a mounted app root", async () => {
+    render(app());
+    const runtime = currentExtensionHost()!;
+    await act(async () => {
+      await runtime.builtInsStarted;
+    });
+    runtime.contextKeys.setHost("view.omnigent.content-search.view.available", true);
+    const execute = vi.spyOn(runtime.commands, "execute");
+    const hostInput = document.createElement("input");
+    document.body.append(hostInput);
+    const chord = { code: "KeyF", ctrlKey: true, shiftKey: true };
+    try {
+      // Content search's chord, pressed in the host page's own field and on its body,
+      // reaches the host page untouched.
+      hostInput.focus();
+      expect(fireEvent.keyDown(hostInput, chord)).toBe(true);
+      hostInput.blur();
+      expect(fireEvent.keyDown(document.body, chord)).toBe(true);
+      expect(execute).not.toHaveBeenCalled();
+      // From inside the app root it runs, as standalone.
+      const inside = document.querySelector(".omnigent-app")!.firstElementChild as HTMLElement;
+      expect(fireEvent.keyDown(inside, chord)).toBe(false);
+      expect(execute).toHaveBeenCalledWith(
+        "omnigent.content-search.view.focus",
+        [],
+        expect.any(Function),
+      );
+    } finally {
+      hostInput.remove();
+    }
   });
 });

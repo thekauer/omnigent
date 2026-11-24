@@ -4,6 +4,8 @@
 // is in a text field (`inputFocus`), only Ctrl or Cmd chords run, so typing,
 // including Option and AltGr characters, reaches the field. On macOS only Cmd
 // chords run there: Control-letter keys are Cocoa's text editing (⌃A, ⌃E, ⌃K...).
+// An embedded app shares the window with its host page, so it scopes the listener
+// to its own roots: keys pressed elsewhere on the page are the host's.
 import { isMacPlatform, isTextEntry } from "@/lib/hotkeys";
 import { canonicalKeyChord } from "./appKeyChords";
 import type { ContextKeyService } from "./contextKeys";
@@ -12,12 +14,25 @@ import type { KeybindingContribution } from "./contributions";
 /** Context key set while keyboard focus is in a field that takes typed text. */
 export const INPUT_FOCUS_CONTEXT_KEY = "inputFocus";
 
+/** The class of an embedded app's scope root, the outer element of each mounted OmnigentApp. */
+export const APP_ROOT_CLASS = "omnigent-app";
+
+/**
+ * Where key presses dispatch bindings. `window`: anywhere in the page, as the
+ * standalone app owns the page. `appRoot`: only from inside a mounted app root
+ * (`.omnigent-app`), so an embed leaves the host page's own keys, including
+ * those pressed with focus on its fields or on the body, alone.
+ */
+export type KeybindingScope = "window" | "appRoot";
+
 export interface KeybindingServiceOptions {
   contextKeys: ContextKeyService;
   executeCommand: (command: string) => Promise<unknown>;
   logError: (message: string, error?: unknown) => void;
   isMac?: boolean;
   target?: Pick<Window, "addEventListener" | "removeEventListener">;
+  /** `window` by default. */
+  scope?: KeybindingScope;
 }
 
 type KeyEventLike = Pick<
@@ -55,6 +70,19 @@ function passesTextField(chord: string, mac: boolean): boolean {
   return chord.includes("cmd+") || (!mac && chord.startsWith("ctrl+"));
 }
 
+/** Whether an event's path runs through a mounted app root. */
+export function isInAppRoot(event: Pick<Event, "composedPath">): boolean {
+  return event
+    .composedPath()
+    .some(
+      (node) =>
+        typeof Element !== "undefined" &&
+        node instanceof Element &&
+        node.classList.contains(APP_ROOT_CLASS) &&
+        node.isConnected,
+    );
+}
+
 function takesText(element: unknown): boolean {
   return (
     typeof HTMLElement !== "undefined" && element instanceof HTMLElement && isTextEntry(element)
@@ -81,13 +109,24 @@ export class KeybindingService {
     this.target = options.target ?? (typeof window === "undefined" ? undefined : window);
   }
 
-  /** Keeps `inputFocus` in step with focus: set while a text field has it. */
+  /** Whether the event happened where this service dispatches. */
+  private inScope(event: Event): boolean {
+    return (this.options.scope ?? "window") === "window" || isInAppRoot(event);
+  }
+
+  /**
+   * Keeps `inputFocus` in step with focus: set while a text field has it. Scoped
+   * to the app roots, a field of the host page is not the app's input focus.
+   */
   private readonly onFocusIn = (event: FocusEvent): void => {
-    this.setInputFocus(takesText(event.target));
+    this.setInputFocus(this.inScope(event) && takesText(event.target));
   };
 
   private readonly onFocusOut = (event: FocusEvent): void => {
-    this.setInputFocus(takesText(event.relatedTarget));
+    // Focus moving to another field inside the scope sets it again on its focusin.
+    this.setInputFocus(
+      (this.options.scope ?? "window") === "window" && takesText(event.relatedTarget),
+    );
   };
 
   /** A host key, outside the extensions' cap; an error is logged, never thrown into the page. */
@@ -109,6 +148,7 @@ export class KeybindingService {
 
   private handleKeyDown(event: KeyboardEvent): void {
     if (event.repeat || event.isComposing) return;
+    if (!this.inScope(event)) return;
     const mac = this.options.isMac ?? isMacPlatform();
     const chord = chordOfEvent(event, mac);
     if (chord === undefined) return;

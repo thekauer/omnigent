@@ -370,3 +370,89 @@ describe("inputFocus past the extensions' context key cap", () => {
     expect(logError).toHaveBeenCalledWith("could not set inputFocus", expect.any(Error));
   });
 });
+
+describe("KeybindingService scope", () => {
+  function scoped(scope: "window" | "appRoot" | undefined) {
+    const contextKeys = new ContextKeyService();
+    contextKeys.set("ready", true);
+    const executeCommand = vi.fn(() => Promise.resolve(undefined));
+    const keybindings = new KeybindingService({
+      contextKeys,
+      executeCommand,
+      logError: vi.fn(),
+      isMac: false,
+      target: window,
+      scope,
+    });
+    const { contributions } = parseContributions("pub.ext", {
+      keybindings: [{ command: "pub.ext.find", key: "ctrl+shift+9", when: "ready" }],
+    });
+    keybindings.add("pub.ext", contributions.keybindings);
+    const root = document.createElement("div");
+    root.className = "omnigent-app";
+    const inner = document.createElement("div");
+    const appInput = document.createElement("input");
+    inner.append(appInput);
+    root.append(inner);
+    const hostInput = document.createElement("input");
+    document.body.append(root, hostInput);
+    const press = (target: EventTarget) => {
+      const event = new KeyboardEvent("keydown", {
+        code: "Digit9",
+        ctrlKey: true,
+        shiftKey: true,
+        bubbles: true,
+        cancelable: true,
+      });
+      target.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    const cleanup = () => {
+      keybindings.dispose();
+      root.remove();
+      hostInput.remove();
+    };
+    return { contextKeys, executeCommand, root, inner, appInput, hostInput, press, cleanup };
+  }
+
+  it.each([undefined, "window"] as const)(
+    "dispatches from anywhere in the window (%s)",
+    (scope) => {
+      const s = scoped(scope);
+      try {
+        expect(s.press(s.hostInput)).toBe(true);
+        expect(s.press(document.body)).toBe(true);
+        expect(s.press(s.inner)).toBe(true);
+        expect(s.executeCommand).toHaveBeenCalledTimes(3);
+      } finally {
+        s.cleanup();
+      }
+    },
+  );
+
+  it("scoped to app roots, leaves keys pressed elsewhere on the page to it", () => {
+    const s = scoped("appRoot");
+    try {
+      // The host page's own field and its body keep the chord, unprevented.
+      s.hostInput.focus();
+      expect(s.press(s.hostInput)).toBe(false);
+      expect(s.contextKeys.lookup()(INPUT_FOCUS_CONTEXT_KEY)).toBeUndefined();
+      s.hostInput.blur();
+      expect(s.press(document.body)).toBe(false);
+      expect(s.press(window)).toBe(false);
+      expect(s.executeCommand).not.toHaveBeenCalled();
+      // Inside the app root, including its own fields, it runs.
+      expect(s.press(s.inner)).toBe(true);
+      s.appInput.focus();
+      expect(s.contextKeys.lookup()(INPUT_FOCUS_CONTEXT_KEY)).toBe(true);
+      expect(s.press(s.appInput)).toBe(true);
+      expect(s.executeCommand).toHaveBeenCalledTimes(2);
+      // A detached root no longer counts.
+      s.root.remove();
+      expect(s.press(s.inner)).toBe(false);
+      expect(s.executeCommand).toHaveBeenCalledTimes(2);
+    } finally {
+      s.cleanup();
+    }
+  });
+});
