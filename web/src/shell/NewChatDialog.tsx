@@ -236,6 +236,7 @@ import {
 } from "./projectPrefill";
 import {
   getCliServerUrl,
+  DEFAULT_CONNECT_HOST_COMMAND,
   getOmnigentConnectHostCommand,
   getOmnigentHostConfig,
   getOmnigentMcpConnections,
@@ -621,18 +622,16 @@ export function ConnectHostInstructions({
   onSshConnected?: (hostId: string) => void;
 }) {
   // Managed servers add the Lakebox connect path. Other builds show only the
-  // plain `omni host` command. Driven by /v1/info.
+  // plain `omnigent host` command. Driven by /v1/info.
   const info = useServerInfo();
   // "loading" counts as no managed hints until the probe resolves, so the
   // Lakebox option never flashes in.
   const databricksFeatures = info !== "loading" && info.databricks_features;
   const quotedServerUrl = quoteShellArgument(serverUrl);
-  // A host-configured wrapper command replaces the whole `omni host` line.
+  // A host-configured wrapper command replaces the whole `omnigent host` line.
   const connectHostCommand = getOmnigentConnectHostCommand();
   const hostCommand =
-    connectHostCommand && connectHostCommand.trim() !== ""
-      ? connectHostCommand
-      : `omni host --server ${quotedServerUrl}`;
+    connectHostCommand ?? `${DEFAULT_CONNECT_HOST_COMMAND} --server ${quotedServerUrl}`;
   const sshConnectAvailable = useSshConnectAvailable();
   return (
     <div className="flex flex-col gap-4 rounded-lg border border-dashed border-border p-4">

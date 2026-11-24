@@ -99,14 +99,17 @@ describe("buildImportConnectHostCommand", () => {
     ).toBe("acme-cli host --server 'https://omnigent.example.com/api?x=1'");
   });
 
-  it.each([undefined, null, "", "  "])("falls back to omnigent host for %j", (command) => {
-    expect(
-      buildImportConnectHostCommand({
-        serverUrl: "https://omnigent.example.com",
-        connectHostCommand: command,
-      }),
-    ).toBe("omnigent host --server 'https://omnigent.example.com'");
-  });
+  it.each([undefined, null, "", "  ", "acme-cli login && acme-cli host", "acme-cli host # x"])(
+    "falls back to omnigent host for %j",
+    (command) => {
+      expect(
+        buildImportConnectHostCommand({
+          serverUrl: "https://omnigent.example.com",
+          connectHostCommand: command,
+        }),
+      ).toBe("omnigent host --server 'https://omnigent.example.com'");
+    },
+  );
 });
 
 describe("ImportSessionsPanel", () => {
@@ -120,6 +123,8 @@ describe("ImportSessionsPanel", () => {
   it.each([
     [undefined, `omnigent host --server '${window.location.origin}'`],
     ["acme-cli host", `acme-cli host --server '${window.location.origin}'`],
+    ["  acme-cli host\t", `acme-cli host --server '${window.location.origin}'`],
+    ["acme-cli host; rm -rf ~", `omnigent host --server '${window.location.origin}'`],
   ])("shows the command that brings a machine online (connect command %j)", (command, shown) => {
     setOmnigentHostConfig(command === undefined ? {} : { connectHostCommand: command });
     onTestFinished(() => setOmnigentHostConfig({}));

@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useHosts } from "@/hooks/useHosts";
-import { getCliServerUrl, getOmnigentConnectHostCommand } from "@/lib/host";
+import {
+  DEFAULT_CONNECT_HOST_COMMAND,
+  getCliServerUrl,
+  getOmnigentConnectHostCommand,
+  normalizeConnectHostCommand,
+} from "@/lib/host";
 import { Link } from "@/lib/routing";
 import { quoteShellArgument } from "@/lib/shell";
 import { CliCommandBlock } from "./CliCommandBlock";
@@ -68,10 +73,8 @@ export function buildImportConnectHostCommand({
   connectHostCommand?: string | null;
 }): string {
   const quotedServerUrl = quoteShellArgument(serverUrl);
-  if (connectHostCommand && connectHostCommand.trim() !== "") {
-    return `${connectHostCommand.trim()} --server ${quotedServerUrl}`;
-  }
-  return `omnigent host --server ${quotedServerUrl}`;
+  const command = normalizeConnectHostCommand(connectHostCommand) ?? DEFAULT_CONNECT_HOST_COMMAND;
+  return `${command} --server ${quotedServerUrl}`;
 }
 
 export function ImportSessionsPanel() {

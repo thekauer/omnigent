@@ -13,7 +13,11 @@ import { useSessionActionRestrictions } from "@/hooks/useSessionActionRestrictio
 import { SESSION_ACTIONS_LOADING } from "@/lib/sessionCapabilities";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { quoteShellArgument } from "@/lib/shell";
-import { getOmnigentConnectHostCommand } from "@/lib/host";
+import {
+  DEFAULT_CONNECT_HOST_COMMAND,
+  getOmnigentConnectHostCommand,
+  normalizeConnectHostCommand,
+} from "@/lib/host";
 import { CliCommandBlock } from "./CliCommandBlock";
 import { ForkSessionForm } from "./ForkSessionDialog";
 import { SwitchHostDialog } from "./SwitchHostDialog";
@@ -95,8 +99,9 @@ export function buildReconnectCommand({
   // dialog AND remains valid when pasted into a shell.
   const quotedServerUrl = quoteShellArgument(serverUrl);
   if (state === "host_offline") {
-    if (connectHostCommand && connectHostCommand.trim() !== "") return connectHostCommand;
-    return ["omnigent host \\", `  --server ${quotedServerUrl}`].join("\n");
+    const configured = normalizeConnectHostCommand(connectHostCommand);
+    if (configured !== undefined) return configured;
+    return [`${DEFAULT_CONNECT_HOST_COMMAND} \\`, `  --server ${quotedServerUrl}`].join("\n");
   }
   // Every native TUI wrapper resumes through its own verb (`omnigent devin
   // --resume …`), and the verb is the registry key — the generic

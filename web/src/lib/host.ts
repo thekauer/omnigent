@@ -230,7 +230,10 @@ export interface OmnigentHostConfig {
    * wrapper CLI which already targets this server and signs in on first use.
    * The connect and reconnect instructions show it as given; the session
    * import panel appends `--server <url>`, so a machine registers with this
-   * server. When omitted, the UI builds `omni host --server <url>` from
+   * server. It must therefore be a single simple command, with no `&&`, `||`,
+   * `|`, `;`, `#` or line break: a value with one is ignored, with a console
+   * warning, and the UI shows its default. Surrounding whitespace is trimmed.
+   * When omitted, the UI builds `omnigent host --server <url>` from
    * {@link getCliServerUrl}.
    */
   connectHostCommand?: string;
@@ -429,12 +432,46 @@ export function getOmnigentSidebarCacheTtlSeconds(): OmnigentHostConfig["sidebar
   return hostConfig.sidebarCacheTtlSeconds;
 }
 
+/** The CLI command that connects a machine as a host, without a configured replacement. */
+export const DEFAULT_CONNECT_HOST_COMMAND = "omnigent host";
+
+/** Shell syntax that would chain, pipe or comment out a command `--server` is appended to. */
+const COMPOUND_COMMAND = /&&|\|\||[|;#\r\n]/;
+
+const warnedConnectHostCommands = new Set<string>();
+
 /**
- * The host-provided connect-a-host command, or `undefined` when none is
- * configured. Absence means the UI builds `omni host --server <url>` itself.
+ * A connect-a-host command as the UI uses it: trimmed, or `undefined` when it
+ * is empty or not a single simple command (see
+ * {@link OmnigentHostConfig.connectHostCommand}), so the caller falls back to
+ * its default. An unusable value warns once.
+ */
+export function normalizeConnectHostCommand(
+  command: string | null | undefined,
+): string | undefined {
+  if (typeof command !== "string") return undefined;
+  const trimmed = command.trim();
+  if (trimmed === "") return undefined;
+  if (COMPOUND_COMMAND.test(trimmed)) {
+    if (!warnedConnectHostCommands.has(trimmed)) {
+      warnedConnectHostCommands.add(trimmed);
+      console.warn(
+        "[omnigent] connectHostCommand must be a single simple command (no &&, ||, |, ;, # or " +
+          "line breaks), since --server is appended to it; showing the default instead.",
+      );
+    }
+    return undefined;
+  }
+  return trimmed;
+}
+
+/**
+ * The host-provided connect-a-host command, trimmed, or `undefined` when none
+ * is configured or it is unusable. Absence means the UI builds
+ * `omnigent host --server <url>` itself.
  */
 export function getOmnigentConnectHostCommand(): OmnigentHostConfig["connectHostCommand"] {
-  return hostConfig.connectHostCommand;
+  return normalizeConnectHostCommand(hostConfig.connectHostCommand);
 }
 
 /**

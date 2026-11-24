@@ -91,15 +91,28 @@ describe("buildReconnectCommand", () => {
     expect(cmd).toBe("acme-cli host --background");
   });
 
-  it.each([null, "", "   "])("keeps omnigent host for a %j connect command", (override) => {
+  it("trims a host's connect command", () => {
     const cmd = buildReconnectCommand({
       conversationId: "conv_host1",
       serverUrl: "https://omnigent.example.com",
       state: "host_offline",
-      connectHostCommand: override,
+      connectHostCommand: "  acme-cli host --background\n",
     });
-    expect(cmd).toBe("omnigent host \\\n  --server 'https://omnigent.example.com'");
+    expect(cmd).toBe("acme-cli host --background");
   });
+
+  it.each([null, "", "   ", "acme-cli login && acme-cli host", "acme-cli host | cat"])(
+    "keeps omnigent host for a %j connect command",
+    (override) => {
+      const cmd = buildReconnectCommand({
+        conversationId: "conv_host1",
+        serverUrl: "https://omnigent.example.com",
+        state: "host_offline",
+        connectHostCommand: override,
+      });
+      expect(cmd).toBe("omnigent host \\\n  --server 'https://omnigent.example.com'");
+    },
+  );
 
   it("keeps the resume form for local_stranded despite a connect command", () => {
     const cmd = buildReconnectCommand({

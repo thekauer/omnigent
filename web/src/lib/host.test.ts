@@ -2,8 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   getCliServerUrl,
+  getOmnigentConnectHostCommand,
   hostFetch,
   hostPollIntervalMs,
+  normalizeConnectHostCommand,
   resolveMediaUrl,
   resolveWebSocketUrl,
   setOmnigentHostConfig,
@@ -231,5 +233,35 @@ describe("hostPollIntervalMs", () => {
 
   it("keeps the default without overrides", () => {
     expect(hostPollIntervalMs("canvasPullRequests", 300_000)).toBe(300_000);
+  });
+});
+
+describe("connectHostCommand", () => {
+  it("trims a single simple command", () => {
+    expect(normalizeConnectHostCommand("  acme-cli host --background \t")).toBe(
+      "acme-cli host --background",
+    );
+    setOmnigentHostConfig({ connectHostCommand: " acme-cli host " });
+    expect(getOmnigentConnectHostCommand()).toBe("acme-cli host");
+  });
+
+  it.each([undefined, null, "", "   "])("treats %j as not configured", (command) => {
+    expect(normalizeConnectHostCommand(command)).toBeUndefined();
+  });
+
+  it.each([
+    "acme-cli login && acme-cli host",
+    "acme-cli host || true",
+    "acme-cli host | tee log",
+    "acme-cli login; acme-cli host",
+    "acme-cli host # registers",
+    "acme-cli login\nacme-cli host",
+    "acme-cli login\racme-cli host",
+  ])("refuses the compound command %j, warning once", (command) => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    setOmnigentHostConfig({ connectHostCommand: command });
+    expect(getOmnigentConnectHostCommand()).toBeUndefined();
+    expect(getOmnigentConnectHostCommand()).toBeUndefined();
+    expect(warn).toHaveBeenCalledTimes(1);
   });
 });

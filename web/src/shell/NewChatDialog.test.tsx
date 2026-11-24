@@ -6420,7 +6420,7 @@ describe("NewChatLandingScreen", () => {
 
     expect(screen.getByTestId("connect-host-dialog")).toBeTruthy();
     expect(screen.getByTestId("connect-host-command")).toHaveTextContent(
-      `omni host --server '${window.location.origin}/api?profile=dev&glob=*'`,
+      `omnigent host --server '${window.location.origin}/api?profile=dev&glob=*'`,
     );
 
     const lakeboxTab = screen.getByRole("tab", { name: "Databricks Lakebox" });
@@ -6434,8 +6434,8 @@ describe("NewChatLandingScreen", () => {
   it.each([
     ["the plain instructions", false],
     ["the local-machine tab", true],
-  ])("shows a host's connect command in place of omni host in %s", (_name, managed) => {
-    setOmnigentHostConfig({ connectHostCommand: "acme-cli host --background" });
+  ])("shows a host's connect command in place of omnigent host in %s", (_name, managed) => {
+    setOmnigentHostConfig({ connectHostCommand: "  acme-cli host --background " });
     renderLanding({ databricks_features: managed });
     fireEvent.pointerDown(screen.getByTestId("new-chat-landing-host-chip"), { button: 0 });
     fireEvent.click(screen.getByTestId("new-chat-landing-connect-host"));
@@ -6445,16 +6445,20 @@ describe("NewChatLandingScreen", () => {
     );
   });
 
-  it("keeps omni host when the host's connect command is blank", () => {
-    setOmnigentHostConfig({ connectHostCommand: "  " });
-    renderLanding();
-    fireEvent.pointerDown(screen.getByTestId("new-chat-landing-host-chip"), { button: 0 });
-    fireEvent.click(screen.getByTestId("new-chat-landing-connect-host"));
+  it.each(["  ", "acme-cli login && acme-cli host"])(
+    "keeps omnigent host when the host's connect command is %j",
+    (command) => {
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+      setOmnigentHostConfig({ connectHostCommand: command });
+      renderLanding();
+      fireEvent.pointerDown(screen.getByTestId("new-chat-landing-host-chip"), { button: 0 });
+      fireEvent.click(screen.getByTestId("new-chat-landing-connect-host"));
 
-    expect(screen.getByTestId("connect-host-command")).toHaveTextContent(
-      `omni host --server '${window.location.origin}'`,
-    );
-  });
+      expect(screen.getByTestId("connect-host-command")).toHaveTextContent(
+        `omnigent host --server '${window.location.origin}'`,
+      );
+    },
+  );
 
   const sshDesktop = { kind: "electron", connectSshHost: vi.fn() };
   it.each([
