@@ -31,6 +31,16 @@ export function activate(context) {
     omnigent.commands.registerCommand("acme.node.fail", () => {
       throw new Error("the command failed");
     }),
+    omnigent.commands.registerCommand("acme.node.refused", () =>
+      ["omnigent.openFile", "acme.other.steal", "acmenode.x"].map((id) => {
+        try {
+          omnigent.commands.registerCommand(id, () => "taken");
+          return "registered";
+        } catch (error) {
+          return error.message;
+        }
+      }),
+    ),
   );
 }
 `;
@@ -210,12 +220,26 @@ describe("Node extension host", () => {
       url: "/__omnigent/extensions",
       tokenHeader: COMMAND_TOKEN_HEADER,
       nodeCommands: {
-        "acme.node": ["acme.node.echo", "acme.node.fail", "acme.node.steps"],
+        "acme.node": ["acme.node.echo", "acme.node.fail", "acme.node.refused", "acme.node.steps"],
         "acme.other": ["acme.other.run"],
       },
     });
     expect(endpoint.nodeCommands["acme.broken"]).toBeUndefined();
     expect(token).toMatch(/^[A-Za-z0-9_-]{40,}$/);
+  });
+
+  it("refuses Node command ids outside the extension's own namespace", async () => {
+    const answer = await post("acme.node", "acme.node.refused", []);
+    expect(lines(answer)).toEqual([
+      {
+        type: "result",
+        value: [
+          "command 'omnigent.openFile': the 'omnigent.' namespace is reserved for built-in commands",
+          "command 'acme.other.steal' must start with the extension id ('acme.node.')",
+          "command 'acmenode.x' must start with the extension id ('acme.node.')",
+        ],
+      },
+    ]);
   });
 
   it("runs a command with JSON arguments and streams its result as NDJSON", async () => {

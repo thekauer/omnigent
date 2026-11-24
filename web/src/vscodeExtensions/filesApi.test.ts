@@ -21,7 +21,7 @@ import { CancellationTokenSource, EventEmitter } from "./base";
 import { ContextKeyService } from "./contextKeys";
 import { OPEN_IN_SUBMENU, parseContributions, TOGGLE_FILTER_FIELDS_COMMAND } from "./contributions";
 import { createExtensionRuntime } from "./extensionHost";
-import { createTreeViewModel, sanitizeTreeItem } from "./treeView";
+import { createTreeViewModel, REVEAL_TIMEOUT_MS, sanitizeTreeItem } from "./treeView";
 import { ViewsService } from "./viewsService";
 import { WorkspaceService } from "./workspaceService";
 
@@ -206,7 +206,7 @@ describe("workspace files", () => {
     await runtime.dispose();
   });
 
-  it("lets the shell run extension commands through the bridge while a host runs", async () => {
+  it("lets the shell run built-in commands through the bridge while a host runs", async () => {
     const { bridge } = workspace();
     await expect(bridge.executeCommand("x.y")).rejects.toThrow(/no extension host/);
     const runtime = createExtensionRuntime({
@@ -215,11 +215,19 @@ describe("workspace files", () => {
       builtIns: [],
     });
     const handler = vi.fn((...args: unknown[]) => args.length);
-    runtime.commands.register("pub.ext", "pub.ext.run", handler);
-    await expect(bridge.executeCommand("pub.ext.run", "a", { b: 1 })).resolves.toBe(2);
+    runtime.commands.register("omnigent.files", "omnigent.files.run", handler, { builtIn: true });
+    await expect(bridge.executeCommand("omnigent.files.run", "a", { b: 1 })).resolves.toBe(2);
     expect(handler).toHaveBeenCalledWith("a", { b: 1 });
+    // An extension's commands, and unknown ones, are not the shell's to run.
+    const extension = vi.fn();
+    runtime.commands.register("pub.ext", "pub.ext.run", extension);
+    await expect(bridge.executeCommand("pub.ext.run")).rejects.toThrow(/not a built-in command/);
+    await expect(bridge.executeCommand("pub.ext.missing")).rejects.toThrow(
+      /not a built-in command/,
+    );
+    expect(extension).not.toHaveBeenCalled();
     await runtime.dispose();
-    await expect(bridge.executeCommand("pub.ext.run")).rejects.toThrow(/no extension host/);
+    await expect(bridge.executeCommand("omnigent.files.run")).rejects.toThrow(/no extension host/);
   });
 });
 
@@ -269,9 +277,10 @@ function views() {
       onDidChangeChangedFiles: state.changed.event,
     },
   });
-  const { contributions, warnings } = parseContributions("pub.files", MANIFEST);
+  // The location bar and the host-drawn menu entries are for built-in extensions.
+  const { contributions, warnings } = parseContributions("pub.files", MANIFEST, { builtIn: true });
   expect(warnings).toEqual([]);
-  service.addExtension("pub.files", contributions);
+  service.addExtension("pub.files", contributions, { builtIn: true });
   service.extensionSettled("pub.files");
   const a: Node = { id: "a" };
   const b: Node = { id: "b", parent: a };
@@ -339,6 +348,56 @@ describe("tree view reveal and selection", () => {
     );
     await expect(withParent.reveal("x", undefined, "s1")).rejects.toThrow(/TreeItem.id/);
     expect(registry.getSnapshot().views).toEqual([]);
+  });
+
+  it("rejects a reveal whose lookups hang, and settles it when the view goes away", async () => {
+    vi.useFakeTimers();
+    try {
+      const hanging = createTreeViewModel<string>(
+        {
+          getChildren: () => [],
+          getTreeItem: (id) => ({ id }),
+          getParent: () => new Promise<string>(() => {}),
+        },
+        { executeCommand: () => Promise.resolve(), logError: () => {} },
+      );
+      const revealed = hanging.reveal("x", undefined, "s1");
+      const outcome = expect(revealed).rejects.toThrow("reveal timed out after 30000 ms");
+      await vi.advanceTimersByTimeAsync(REVEAL_TIMEOUT_MS);
+      await outcome;
+      expect(hanging.model.takeReveal?.("s1")).toBeUndefined();
+      const item = createTreeViewModel<string>(
+        {
+          getChildren: () => [],
+          getTreeItem: () => new Promise(() => {}),
+          getParent: () => undefined,
+        },
+        { executeCommand: () => Promise.resolve(), logError: () => {} },
+      );
+      const pending = item.reveal("x", undefined, "s1");
+      item.dispose();
+      await expect(pending).rejects.toThrow("the tree view was disposed");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("drops a reveal no drawn tree took within the timeout", async () => {
+    vi.useFakeTimers();
+    try {
+      const { tree, view, nodes } = views();
+      await tree.reveal(nodes.c, undefined);
+      await vi.advanceTimersByTimeAsync(REVEAL_TIMEOUT_MS - 1);
+      await tree.reveal(nodes.b, undefined);
+      // A newer reveal restarts the wait.
+      await vi.advanceTimersByTimeAsync(REVEAL_TIMEOUT_MS - 1);
+      expect(view().tree!.takeReveal?.("s1")).toMatchObject({ handle: "id:b" });
+      await tree.reveal(nodes.c, undefined);
+      await vi.advanceTimersByTimeAsync(REVEAL_TIMEOUT_MS);
+      expect(view().tree!.takeReveal?.("s1")).toBeUndefined();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("reports the rows the user selected as elements", async () => {
@@ -409,6 +468,65 @@ describe("tree view location and filter fields", () => {
       [TOGGLE_FILTER_FIELDS_COMMAND, "filterFields", "filter"],
     ]);
     expect(view().actions[1].tooltip).toBe("Globs");
+  });
+
+  it("keeps the location bar and the host-drawn entries for built-in extensions", () => {
+    const { contributions, warnings } = parseContributions("pub.files", MANIFEST);
+    expect(contributions.views[0].location).toBeUndefined();
+    expect(contributions.viewTitleMenu).toEqual([]);
+    expect(warnings).toEqual([
+      expect.stringContaining('"location" is for built-in extensions'),
+      expect.stringContaining(`${OPEN_IN_SUBMENU} is for built-in extensions`),
+      expect.stringContaining(`${TOGGLE_FILTER_FIELDS_COMMAND} is for built-in extensions`),
+    ]);
+    const registry = new RailViewRegistry();
+    const service = new ViewsService({
+      registry,
+      contextKeys: new ContextKeyService(),
+      executeCommand: () => Promise.resolve(),
+      showError: () => {},
+    });
+    service.addExtension("pub.files", contributions);
+    expect(registry.get(VIEW)?.locationBar).toBeUndefined();
+    expect(registry.get(VIEW)?.actions).toEqual([]);
+    service.dispose();
+  });
+
+  it("reads only the extension's own keys in the host-drawn entries' tooltips", () => {
+    const registry = new RailViewRegistry();
+    const contextKeys = new ContextKeyService();
+    contextKeys.setHost("pub.other.secret", "leaked");
+    contextKeys.setHost("pub.files.mode", "tree");
+    const service = new ViewsService({
+      registry,
+      contextKeys,
+      executeCommand: () => Promise.resolve(),
+      showError: () => {},
+    });
+    const manifest = {
+      ...MANIFEST,
+      menus: {
+        "view/title": [
+          {
+            submenu: OPEN_IN_SUBMENU,
+            group: "navigation",
+            tooltip: "Open ${pub.other.secret}${pub.files.mode}",
+          },
+          {
+            command: TOGGLE_FILTER_FIELDS_COMMAND,
+            group: "filter",
+            tooltip: "Globs ${pub.other.secret}${pub.files.mode}",
+          },
+        ],
+      },
+    };
+    const { contributions } = parseContributions("pub.files", manifest, { builtIn: true });
+    service.addExtension("pub.files", contributions, { builtIn: true });
+    expect(registry.get(VIEW)?.actions.map((action) => action.tooltip)).toEqual([
+      "Open tree",
+      "Globs tree",
+    ]);
+    service.dispose();
   });
 
   it("warns about malformed filter fields", () => {

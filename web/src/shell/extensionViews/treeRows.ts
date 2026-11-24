@@ -1,7 +1,7 @@
 // Pure helpers of the extension tree view: which rows are visible, and the
 // expand state each view keeps per chat session.
 
-import type { RailTreeNode } from "../railViews";
+import type { RailRevealRequest, RailTreeNode } from "../railViews";
 
 /** The cache key of the roots' children. */
 export const ROOT_KEY = "";
@@ -87,6 +87,42 @@ export function keyboardTarget(
     }
   }
   return undefined;
+}
+
+/** A muted line that stands in for rows still coming, such as "Loading…" under a folder. */
+export function isPlaceholderNode(node: RailTreeNode): boolean {
+  return (
+    node.collapsible === "none" &&
+    !node.hasCommand &&
+    node.icon === undefined &&
+    node.resourcePath === undefined
+  );
+}
+
+/**
+ * Whether a reveal can no longer match: a level of its path (the roots, then
+ * each ancestor's children) loaded since the reveal was asked (`asked`, the
+ * children then) lacks the next handle. A level still loading (not there, or
+ * showing a placeholder), or not reloaded since, may yet match.
+ */
+export function revealCannotMatch(
+  request: RailRevealRequest,
+  children: ReadonlyMap<string, readonly RailTreeNode[]>,
+  asked: ReadonlyMap<string, readonly RailTreeNode[]>,
+): boolean {
+  let parent = ROOT_KEY;
+  for (const handle of [...request.ancestors, request.handle]) {
+    const level = children.get(parent);
+    if (level === undefined) return false;
+    if (level === asked.get(parent) || level.some(isPlaceholderNode)) {
+      if (!level.some((node) => node.handle === handle)) return false;
+      parent = handle;
+      continue;
+    }
+    if (!level.some((node) => node.handle === handle)) return true;
+    parent = handle;
+  }
+  return false;
 }
 
 /** Whether the rows read as a list (no folders), which spaces them like the Changes list. */

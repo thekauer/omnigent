@@ -419,6 +419,9 @@ export function parseContributions(
               };
             }
           }
+          if (entry.location === true && !options.builtIn) {
+            warnings.push(`${where}: "location" is for built-in extensions; ignoring it`);
+          }
           const searchInput =
             entry.searchInput === undefined
               ? undefined
@@ -431,7 +434,7 @@ export function parseContributions(
             ...(builtInTab === undefined ? {} : { builtInTab }),
             ...(filter === undefined ? {} : { filter }),
             ...(searchInput === undefined ? {} : { searchInput }),
-            ...(entry.location === true ? { location: true } : {}),
+            ...(entry.location === true && options.builtIn ? { location: true } : {}),
           });
         });
       }
@@ -509,6 +512,16 @@ export function parseContributions(
         entries.slice(0, MAX_ENTRIES).forEach((entry: unknown, index) => {
           const item = menuItemOf(entry, `contributes.menus["${menu}"][${index}]`, warnings);
           if (!item) return;
+          // The host draws these entries itself (the Open In menu, the filter's fields toggle).
+          if (
+            !options.builtIn &&
+            (item.submenu === OPEN_IN_SUBMENU || item.command === TOGGLE_FILTER_FIELDS_COMMAND)
+          ) {
+            warnings.push(
+              `contributes.menus["${menu}"][${index}]: ${item.submenu ?? item.command} is for built-in extensions; ignoring it`,
+            );
+            return;
+          }
           if (item.submenu !== undefined && menu !== "view/title") {
             warnings.push(
               `contributes.menus["${menu}"][${index}]: nested submenus are not supported`,

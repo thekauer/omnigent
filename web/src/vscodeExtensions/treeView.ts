@@ -20,6 +20,11 @@ const MAX_LABEL = 200;
 const MAX_LONG_LABEL = 2000;
 const MAX_REVEAL_DEPTH = 64;
 const MAX_REVEAL_EXPAND = 3;
+/**
+ * How long `reveal` may spend looking up the element and its ancestors, and how
+ * long a queued reveal waits for its tree to be drawn before it is dropped.
+ */
+export const REVEAL_TIMEOUT_MS = 30_000;
 const MAX_DESCRIPTION = 200;
 const MAX_TOOLTIP = 500;
 const MAX_PATH = 4096;
@@ -349,8 +354,14 @@ export function createTreeViewModel<T>(
     return Object.freeze(nodes);
   };
 
-  // Reveals waiting for their session's tree to be drawn, one per session (the latest wins).
-  const pendingReveals = new Map<string, RailRevealRequest>();
+  // Reveals waiting for their session's tree to be drawn, one per session (the latest wins);
+  // each expires, so a tree drawn much later does not jump to an old request.
+  const pendingReveals = new Map<
+    string,
+    { request: RailRevealRequest; expiry: ReturnType<typeof setTimeout> }
+  >();
+  // Lookups in flight; disposing the view settles them, so none waits for its timer.
+  const lookupsInFlight = new Set<() => void>();
   const revealListeners = new Set<() => void>();
   let selection: readonly T[] = Object.freeze([]);
   const selectionListeners = new Set<(selection: readonly T[]) => void>();
@@ -363,12 +374,27 @@ export function createTreeViewModel<T>(
     return handleOfId(item.id);
   };
 
-  const reveal = async (
+  /** `lookup`, or a rejection once it ran longer than the reveal timeout. */
+  const withinRevealTimeout = <R>(lookup: Promise<R>): Promise<R> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let cancel = () => {};
+    const timedOut = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        reject(new Error(`reveal timed out after ${REVEAL_TIMEOUT_MS} ms`));
+      }, REVEAL_TIMEOUT_MS);
+      cancel = () => reject(new Error("the tree view was disposed"));
+    });
+    lookupsInFlight.add(cancel);
+    return Promise.race([lookup, timedOut]).finally(() => {
+      clearTimeout(timer);
+      lookupsInFlight.delete(cancel);
+    });
+  };
+
+  const revealRequest = async (
     element: T,
     revealOptions: omnigent.TreeViewRevealOptions | undefined,
-    sessionId: string | undefined,
-  ): Promise<void> => {
-    if (disposed) return;
+  ): Promise<RailRevealRequest> => {
     if (typeof provider.getParent !== "function") {
       throw new Error("reveal needs a TreeDataProvider with getParent");
     }
@@ -384,7 +410,7 @@ export function createTreeViewModel<T>(
       current = await settle(provider.getParent(current));
     }
     const expand = revealOptions?.expand;
-    const request: RailRevealRequest = Object.freeze({
+    return Object.freeze({
       handle,
       ancestors: Object.freeze(ancestors),
       select: revealOptions?.select !== false,
@@ -396,8 +422,27 @@ export function createTreeViewModel<T>(
             ? Math.max(0, Math.min(MAX_REVEAL_EXPAND, Math.floor(expand)))
             : 0,
     });
+  };
+
+  // Resolves once the reveal is queued for the drawn tree, not once its row is on screen.
+  const reveal = async (
+    element: T,
+    revealOptions: omnigent.TreeViewRevealOptions | undefined,
+    sessionId: string | undefined,
+  ): Promise<void> => {
     if (disposed) return;
-    pendingReveals.set(sessionKeyOf(sessionId), request);
+    const request = await withinRevealTimeout(revealRequest(element, revealOptions));
+    if (disposed) return;
+    const key = sessionKeyOf(sessionId);
+    const previous = pendingReveals.get(key);
+    if (previous) clearTimeout(previous.expiry);
+    const pending = {
+      request,
+      expiry: setTimeout(() => {
+        if (pendingReveals.get(key) === pending) pendingReveals.delete(key);
+      }, REVEAL_TIMEOUT_MS),
+    };
+    pendingReveals.set(key, pending);
     for (const listener of [...revealListeners]) listener();
   };
 
@@ -405,9 +450,11 @@ export function createTreeViewModel<T>(
     getChildren,
     takeReveal: (sessionId) => {
       const key = sessionKeyOf(sessionId);
-      const request = pendingReveals.get(key);
+      const pending = pendingReveals.get(key);
+      if (!pending) return undefined;
+      clearTimeout(pending.expiry);
       pendingReveals.delete(key);
-      return request;
+      return pending.request;
     },
     subscribeReveal: (listener) => {
       revealListeners.add(listener);
@@ -458,7 +505,9 @@ export function createTreeViewModel<T>(
       listeners.clear();
       revealListeners.clear();
       selectionListeners.clear();
+      for (const pending of pendingReveals.values()) clearTimeout(pending.expiry);
       pendingReveals.clear();
+      for (const cancel of [...lookupsInFlight]) cancel();
       subscription?.dispose();
       elements.clear();
       commands.clear();

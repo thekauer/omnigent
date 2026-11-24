@@ -9,6 +9,7 @@ import {
   type WorkspaceFile,
 } from "@/hooks/useWorkspaceChangedFiles";
 import { isValidSort } from "@/lib/changedSort";
+import { UnexpectedListingError } from "@/lib/unexpectedListingError";
 import {
   type ContentSearchResult,
   contentSearchPattern,
@@ -119,18 +120,54 @@ function toChangedFile(file: WorkspaceChangedFile): omnigent.ChangedFile {
 const MAX_LOCATION_LENGTH = 4096;
 const MAX_PATTERN_LENGTH = 1000;
 
-/** A folder path as the API takes it: "" (the root), workspace-relative, or absolute. */
+/** `part` with its percent-escapes decoded, as a server that decodes again would read it. */
+function decodedSegment(part: string): string {
+  let current = part;
+  for (let round = 0; round < 3 && current.includes("%"); round += 1) {
+    let next: string;
+    try {
+      next = decodeURIComponent(current);
+    } catch {
+      return current;
+    }
+    if (next === current) break;
+    current = next;
+  }
+  return current;
+}
+
+/**
+ * A folder path as the API takes it: "" (the root), workspace-relative, or
+ * absolute. Empty and "." segments of a relative path are dropped, so
+ * `"./web/"` is `"web"`. Neither form may hold a ".." segment, an escaped dot
+ * segment or separator (`%2e%2e`, `%2f`, `%5c`) or a backslash, and an absolute
+ * path may not hold a "." either: the browser resolves dot segments before
+ * sending, so any of them could carry a request outside the filesystem routes.
+ */
 function locationOf(value: unknown, what: string): string {
   if (value === undefined) return "";
   if (typeof value !== "string" || value.length > MAX_LOCATION_LENGTH) {
     throw new TypeError(`${what} needs a folder path`);
   }
-  const trimmed = value === "/" ? value : value.replace(/\/+$/, "");
-  // A relative path must not climb out of the workspace.
-  if (!trimmed.startsWith("/") && trimmed.split("/").some((part) => part === "..")) {
-    throw new TypeError(`${what}: a workspace path cannot contain ".."`);
+  if (value.includes("\\")) throw new TypeError(`${what}: a folder path cannot contain "\\"`);
+  const absolute = value.startsWith("/");
+  const parts: string[] = [];
+  for (const part of value.split("/")) {
+    if (part === "") continue;
+    const decoded = decodedSegment(part);
+    if (part === ".." || decoded === "..") {
+      throw new TypeError(`${what}: a folder path cannot contain ".."`);
+    }
+    if (decoded !== part && (decoded === "." || /[/\\]/.test(decoded))) {
+      throw new TypeError(`${what}: a folder path cannot contain an escaped "." or separator`);
+    }
+    if (part === ".") {
+      if (absolute) throw new TypeError(`${what}: an absolute folder path cannot contain "."`);
+      continue;
+    }
+    parts.push(part);
   }
-  return trimmed;
+  return absolute ? `/${parts.join("/")}` : parts.join("/");
 }
 
 /** Joins a folder ("" the root) and a path relative to it. */
@@ -150,6 +187,25 @@ function toFileEntry(file: WorkspaceFile, location: string): omnigent.FileEntry 
   });
 }
 
+const UNEXPECTED_RESPONSE = "the workspace returned an unexpected response";
+
+/** The listing entries a reader returned, or a clean error when it is not a list of entries. */
+function entriesOf(value: unknown): readonly WorkspaceFile[] {
+  if (
+    !Array.isArray(value) ||
+    !value.every(
+      (file: unknown) =>
+        typeof file === "object" &&
+        file !== null &&
+        typeof (file as WorkspaceFile).path === "string" &&
+        typeof (file as WorkspaceFile).name === "string",
+    )
+  ) {
+    throw new UnexpectedListingError();
+  }
+  return value as readonly WorkspaceFile[];
+}
+
 function fileSystemError(error: unknown): omnigent.FileSystemError {
   const code: omnigent.FileSystemErrorCode =
     error instanceof WorkspaceUnavailableError
@@ -159,7 +215,15 @@ function fileSystemError(error: unknown): omnigent.FileSystemError {
         : error instanceof PathUnreachableError
           ? "NoPermissions"
           : "Unknown";
-  const message = error instanceof Error ? error.message : String(error);
+  // A malformed answer is a clean Unknown, not the text of whatever read it wrong.
+  const message =
+    error instanceof UnexpectedListingError
+      ? UNEXPECTED_RESPONSE
+      : error instanceof Error
+        ? error.message
+        : typeof error === "string"
+          ? error
+          : UNEXPECTED_RESPONSE;
   const result = new Error(message) as Error & {
     code: omnigent.FileSystemErrorCode;
     reachableRoots: readonly string[];
@@ -167,7 +231,9 @@ function fileSystemError(error: unknown): omnigent.FileSystemError {
   result.name = "FileSystemError";
   result.code = code;
   result.reachableRoots = Object.freeze(
-    error instanceof PathUnreachableError ? [...error.reachableRoots] : [],
+    error instanceof PathUnreachableError && Array.isArray(error.reachableRoots)
+      ? error.reachableRoots.filter((root): root is string => typeof root === "string")
+      : [],
   );
   return result;
 }
@@ -243,7 +309,7 @@ export class WorkspaceService {
     const location = locationOf(path, "readDirectory");
     if (this.bridge.getState().sessionId === null) throw fileSystemError("no workspace is open");
     try {
-      const files = await this.bridge.readDirectory(location);
+      const files = entriesOf(await this.bridge.readDirectory(location));
       return Object.freeze(files.map((file) => toFileEntry(file, location)));
     } catch (error) {
       throw fileSystemError(error);
@@ -284,12 +350,17 @@ export class WorkspaceService {
         cancelled,
       ]);
       if (token?.isCancellationRequested) throw canceledError();
+      if (typeof result !== "object" || result === null) throw new UnexpectedListingError();
+      const files = entriesOf(result.files);
       return Object.freeze({
-        files: Object.freeze(result.files.map((file) => toFileEntry(file, location))),
-        limitHit: result.truncated,
+        files: Object.freeze(files.map((file) => toFileEntry(file, location))),
+        limitHit: result.truncated === true,
       });
     } catch (error) {
       if (controller.signal.aborted || token?.isCancellationRequested) throw canceledError();
+      if (error instanceof UnexpectedListingError) {
+        throw new Error(UNEXPECTED_RESPONSE, { cause: error });
+      }
       throw error instanceof Error ? error : new Error(String(error));
     } finally {
       subscription?.dispose();
@@ -406,10 +477,7 @@ export class WorkspaceService {
         );
       }
       if (sessionChanged) this.sessionEmitter.fire(next.sessionId ?? undefined);
-      if (
-        !sessionChanged &&
-        (next.filesRevision ?? 0) !== (previous.filesRevision ?? 0)
-      ) {
+      if (!sessionChanged && (next.filesRevision ?? 0) !== (previous.filesRevision ?? 0)) {
         this.fileSystemEmitter.fire(Object.freeze({ sessionId: next.sessionId ?? undefined }));
       }
       if (!filesChanged) return;

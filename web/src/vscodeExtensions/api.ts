@@ -104,6 +104,7 @@ export function createExtensionApi(
   extensionId: string,
   services: HostServices,
   logError: ExtensionLogger,
+  { builtIn = false }: { builtIn?: boolean } = {},
 ): ExtensionApiHandle {
   const resources = new Set<DisposableLike>();
   // Once disposed (deactivate, failed or timed-out activation), the instance is
@@ -325,7 +326,9 @@ export function createExtensionApi(
       refuse("registerCommand");
       return new Disposable(() => {});
     }
-    const registration = services.commands.register(extensionId, id, handler as CommandHandler);
+    const registration = services.commands.register(extensionId, id, handler as CommandHandler, {
+      builtIn,
+    });
     const tracked = track(
       new Disposable(() => {
         resources.delete(tracked);

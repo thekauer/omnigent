@@ -126,7 +126,9 @@ export class ExtensionHost {
     for (const warning of warnings) {
       this.log.warn(`[omnigent-extensions] ${extension.id}: ${warning}`);
     }
-    const removeViews = this.services.views.addExtension(extension.id, contributions);
+    const removeViews = this.services.views.addExtension(extension.id, contributions, {
+      builtIn: extension.builtIn === true,
+    });
     const removeKeybindings = this.services.keybindings?.add(
       extension.id,
       contributions.keybindings,
@@ -225,7 +227,9 @@ export class ExtensionHost {
   ): Promise<ActivationResult> {
     const logError = (message: string, error?: unknown) =>
       this.log.error(`[omnigent-extensions] ${extension.id}: ${message}`, error);
-    const apiHandle = createExtensionApi(extension.id, this.services, logError);
+    const apiHandle = createExtensionApi(extension.id, this.services, logError, {
+      builtIn: extension.builtIn === true,
+    });
     // Registered before the import: the entry's `import "omnigent"` looks it up.
     const unregisterApi = registerExtensionApi(extension.id, apiHandle.api);
     const context: omnigent.ExtensionContext = Object.freeze({

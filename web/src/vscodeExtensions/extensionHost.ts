@@ -61,8 +61,10 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
     showError: (message) => toastNotifications.error(message),
     workspace,
     // VS Code's `<view>.focus`: the workspace on screen shows the view's tab and focuses it.
-    registerFocusCommand: (extensionId, command, viewId) =>
-      commands.register(extensionId, command, () => bridge.rail()?.reveal(viewId) ?? false),
+    registerFocusCommand: (extensionId, command, viewId, builtIn) =>
+      commands.register(extensionId, command, () => bridge.rail()?.reveal(viewId) ?? false, {
+        builtIn,
+      }),
   });
   // `view.<id>.available` while the workspace on screen can show that view's tab.
   let availableViews = new Set<string>();
@@ -98,8 +100,9 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
     },
     ...options.hostOptions,
   });
-  // The shell runs extension commands (such as `omnigent.revealInFiles`) through its bridge.
-  bridge.setCommandRunner((command, args) => commands.execute(command, args, () => {}));
+  // The shell runs built-in commands (such as `omnigent.revealInFiles`) through its bridge;
+  // an extension's commands, in the page or on the Node side, are not the shell's to run.
+  bridge.setCommandRunner((command, args) => commands.executeBuiltIn(command, args));
   const builtInsStarted = host.start(options.builtIns ?? builtInExtensions());
   return {
     host,

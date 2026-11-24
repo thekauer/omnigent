@@ -3,7 +3,7 @@
 // opening a session or sub-agent.
 import type { WorkspaceBridge, WorkspaceTaskAction } from "@/shell/workspaceBridge";
 import { Disposable } from "./base";
-import type { CommandRegistry } from "./commands";
+import type { CommandHandler, CommandRegistry } from "./commands";
 import type { ContextKeyService } from "./contextKeys";
 
 export const BUILT_IN_COMMAND_OWNER = "omnigent";
@@ -62,11 +62,13 @@ export function registerBuiltInCommands(
   commands: CommandRegistry,
   services: { contextKeys: ContextKeyService; workspace: WorkspaceBridge },
 ): Disposable {
+  const register = (id: string, handler: CommandHandler) =>
+    commands.register(BUILT_IN_COMMAND_OWNER, id, handler, { builtIn: true });
   return Disposable.from(
-    commands.register(BUILT_IN_COMMAND_OWNER, SET_CONTEXT_COMMAND, (key, value) => {
+    register(SET_CONTEXT_COMMAND, (key, value) => {
       services.contextKeys.set(key, value);
     }),
-    commands.register(BUILT_IN_COMMAND_OWNER, OPEN_FILE_COMMAND, (path, position) => {
+    register(OPEN_FILE_COMMAND, (path, position) => {
       if (typeof path !== "string" || path === "" || path.length > MAX_PATH) {
         throw new TypeError(`${OPEN_FILE_COMMAND} needs a workspace path`);
       }
@@ -74,65 +76,55 @@ export function registerBuiltInCommands(
       if (at) services.workspace.openFile(path, at);
       else services.workspace.openFile(path);
     }),
-    commands.register(BUILT_IN_COMMAND_OWNER, OPEN_SESSION_COMMAND, (sessionId) => {
+    register(OPEN_SESSION_COMMAND, (sessionId) => {
       services.workspace.openSession(sessionIdOf(OPEN_SESSION_COMMAND, sessionId), {
         asSubagent: false,
       });
     }),
-    commands.register(BUILT_IN_COMMAND_OWNER, OPEN_SUBAGENT_COMMAND, (sessionId) => {
+    register(OPEN_SUBAGENT_COMMAND, (sessionId) => {
       services.workspace.openSession(sessionIdOf(OPEN_SUBAGENT_COMMAND, sessionId), {
         asSubagent: true,
       });
     }),
-    commands.register(BUILT_IN_COMMAND_OWNER, REFRESH_CHANGED_FILES_COMMAND, () =>
-      services.workspace.refreshChangedFiles(),
-    ),
-    commands.register(BUILT_IN_COMMAND_OWNER, REFRESH_FILES_COMMAND, () =>
-      services.workspace.refreshFiles(),
-    ),
-    commands.register(BUILT_IN_COMMAND_OWNER, SHOW_IN_CHAT_COMMAND, (sessionId, markerId) => {
+    register(REFRESH_CHANGED_FILES_COMMAND, () => services.workspace.refreshChangedFiles()),
+    register(REFRESH_FILES_COMMAND, () => services.workspace.refreshFiles()),
+    register(SHOW_IN_CHAT_COMMAND, (sessionId, markerId) => {
       const id = sessionIdOf(SHOW_IN_CHAT_COMMAND, sessionId);
       const marker = textOf(SHOW_IN_CHAT_COMMAND, "a marker id", markerId);
       if (marker === "") throw new TypeError(`${SHOW_IN_CHAT_COMMAND} needs a marker id`);
       services.workspace.tasksActions(id).showInChat(marker);
     }),
-    commands.register(BUILT_IN_COMMAND_OWNER, OPEN_WORKFLOW_COMMAND, (workflowId) => {
+    register(OPEN_WORKFLOW_COMMAND, (workflowId) => {
       const id = textOf(OPEN_WORKFLOW_COMMAND, "a workflow id", workflowId);
       if (id === "") throw new TypeError(`${OPEN_WORKFLOW_COMMAND} needs a workflow id`);
       services.workspace.tasksActions().openWorkflow(id);
     }),
-    commands.register(
-      BUILT_IN_COMMAND_OWNER,
-      TASKS_RUN_ACTION_COMMAND,
-      (sessionId, action, taskName) => {
-        const id = sessionIdOf(TASKS_RUN_ACTION_COMMAND, sessionId);
-        if (!TASK_ACTIONS.includes(action as WorkspaceTaskAction)) {
-          throw new TypeError(
-            `${TASKS_RUN_ACTION_COMMAND} needs one of ${TASK_ACTIONS.join(", ")}`,
-          );
-        }
-        services.workspace
-          .tasksActions(id)
-          .taskAction(
-            action as WorkspaceTaskAction,
-            textOf(TASKS_RUN_ACTION_COMMAND, "a task name", taskName),
-          );
-      },
-    ),
-    commands.register(BUILT_IN_COMMAND_OWNER, TASKS_STOP_COMMAND, (sessionId) => {
+    register(TASKS_RUN_ACTION_COMMAND, (sessionId, action, taskName) => {
+      const id = sessionIdOf(TASKS_RUN_ACTION_COMMAND, sessionId);
+      if (!TASK_ACTIONS.includes(action as WorkspaceTaskAction)) {
+        throw new TypeError(`${TASKS_RUN_ACTION_COMMAND} needs one of ${TASK_ACTIONS.join(", ")}`);
+      }
+      services.workspace
+        .tasksActions(id)
+        .taskAction(
+          action as WorkspaceTaskAction,
+          textOf(TASKS_RUN_ACTION_COMMAND, "a task name", taskName),
+        );
+    }),
+    register(TASKS_STOP_COMMAND, (sessionId) => {
       services.workspace.tasksActions(sessionIdOf(TASKS_STOP_COMMAND, sessionId)).stopWork();
     }),
-    commands.register(BUILT_IN_COMMAND_OWNER, TASKS_CONTINUE_PLAN_COMMAND, (sessionId, name) => {
+    register(TASKS_CONTINUE_PLAN_COMMAND, (sessionId, name) => {
       services.workspace
         .tasksActions(sessionIdOf(TASKS_CONTINUE_PLAN_COMMAND, sessionId))
         .continuePlan(optionalText(TASKS_CONTINUE_PLAN_COMMAND, "a plan name", name) ?? null);
     }),
-    commands.register(BUILT_IN_COMMAND_OWNER, TASKS_SAVE_AS_WORKFLOW_COMMAND, (sessionId, name) => {
+    register(TASKS_SAVE_AS_WORKFLOW_COMMAND, (sessionId, name) => {
       services.workspace
         .tasksActions(sessionIdOf(TASKS_SAVE_AS_WORKFLOW_COMMAND, sessionId))
         .saveWorkflow(optionalText(TASKS_SAVE_AS_WORKFLOW_COMMAND, "a plan name", name) ?? "");
     }),
-    commands.register(BUILT_IN_COMMAND_OWNER, TASKS_START_WORKFLOW_COMMAND, (sessionId, choice) => {
+    register(TASKS_START_WORKFLOW_COMMAND, (sessionId, choice) => {
       const id = sessionIdOf(TASKS_START_WORKFLOW_COMMAND, sessionId);
       const record = (typeof choice === "object" && choice !== null ? choice : {}) as {
         description?: unknown;
@@ -153,7 +145,7 @@ export function registerBuiltInCommands(
         ...(workflowId === undefined ? {} : { workflowId }),
       });
     }),
-    commands.register(BUILT_IN_COMMAND_OWNER, TASKS_RELOAD_COMMAND, (sessionId) => {
+    register(TASKS_RELOAD_COMMAND, (sessionId) => {
       services.workspace.tasksActions(sessionIdOf(TASKS_RELOAD_COMMAND, sessionId)).reload();
     }),
   );

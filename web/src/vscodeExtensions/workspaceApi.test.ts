@@ -246,7 +246,10 @@ describe("built-in commands", () => {
     expect(refreshChangedFiles).toHaveBeenCalledOnce();
     await expect(run(SET_CONTEXT_COMMAND, "bad key", 1)).rejects.toThrow(TypeError);
     // Extensions cannot take over a built-in id.
-    expect(() => commands.register("pub.ext", SET_CONTEXT_COMMAND, () => {})).toThrow(/exists/);
+    expect(() => commands.register("pub.ext", SET_CONTEXT_COMMAND, () => {})).toThrow(
+      /must start with the extension id/,
+    );
+    expect(() => commands.register("pub.ext", OPEN_FILE_COMMAND, () => {})).toThrow(/reserved/);
     unregister();
     registration.dispose();
     expect(commands.has(OPEN_FILE_COMMAND)).toBe(false);

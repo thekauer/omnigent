@@ -198,6 +198,15 @@ function createApi(extension) {
   function registerCommand(id, handler, options) {
     if (typeof id !== "string" || id === "") throw new TypeError("command id must be a string");
     if (typeof handler !== "function") throw new TypeError("command handler must be a function");
+    // As in the page: `omnigent.` is the host's, and an extension's ids start with its own id.
+    if (id.startsWith("omnigent.")) {
+      throw new Error(
+        `command '${id}': the 'omnigent.' namespace is reserved for built-in commands`,
+      );
+    }
+    if (!id.startsWith(`${extension.id}.`)) {
+      throw new Error(`command '${id}' must start with the extension id ('${extension.id}.')`);
+    }
     const timeoutMs = options?.timeoutMs;
     if (
       timeoutMs !== undefined &&

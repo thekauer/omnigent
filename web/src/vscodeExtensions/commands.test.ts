@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { CommandRegistry, toPlainJson } from "./commands";
+import { CommandRegistry, commandIdProblem, toPlainJson } from "./commands";
+import { createNodeCommandRoute } from "./nodeCommands";
 import type { NodeCommandRoute } from "./nodeCommands";
 
 function nodeRoute(owners: Record<string, string>): NodeCommandRoute & {
@@ -43,13 +44,66 @@ describe("CommandRegistry", () => {
     await expect(registry.execute("pub.a.run", [], vi.fn())).resolves.toBe(2);
   });
 
+  it("keeps an extension's commands in its own namespace and omnigent. for built-ins", () => {
+    const registry = new CommandRegistry();
+    expect(() => registry.register("pub.a", "omnigent.openFile", () => 1)).toThrow(/reserved/);
+    expect(() => registry.register("omnigent.evil", "omnigent.evil.run", () => 1)).toThrow(
+      /reserved/,
+    );
+    expect(() => registry.register("pub.a", "pub.b.run", () => 1)).toThrow(
+      "command 'pub.b.run' must start with the extension id ('pub.a.')",
+    );
+    expect(() => registry.register("pub.a", "pub.ab", () => 1)).toThrow(/must start/);
+    expect(() => registry.register("pub.a", "run", () => 1)).toThrow(/must start/);
+    registry.register("pub.a", "pub.a.run", () => 1);
+    registry.register("omnigent", "setContext", () => 1, { builtIn: true });
+    registry.register("omnigent.files", "omnigent.revealInFiles", () => 1, { builtIn: true });
+    expect(registry.isBuiltIn("omnigent.revealInFiles")).toBe(true);
+    expect(registry.isBuiltIn("setContext")).toBe(true);
+    expect(registry.isBuiltIn("pub.a.run")).toBe(false);
+    expect(commandIdProblem("acme.tools", "acme.tools.listHosts")).toBeUndefined();
+  });
+
+  it("runs only built-in commands for the shell", async () => {
+    const node = nodeRoute({ "pub.b.node": "pub.b" });
+    const registry = new CommandRegistry(node);
+    const builtIn = vi.fn(() => "built in");
+    const extension = vi.fn(() => "extension");
+    registry.register("omnigent.files", "omnigent.revealInFiles", builtIn, { builtIn: true });
+    registry.register("pub.a", "pub.a.run", extension);
+    await expect(registry.executeBuiltIn("omnigent.revealInFiles", ["x"])).resolves.toBe(
+      "built in",
+    );
+    await expect(registry.executeBuiltIn("pub.a.run", [])).rejects.toThrow(
+      "command 'pub.a.run' is not a built-in command",
+    );
+    await expect(registry.executeBuiltIn("pub.b.node", [])).rejects.toThrow(/not a built-in/);
+    expect(extension).not.toHaveBeenCalled();
+    expect(node.execute).not.toHaveBeenCalled();
+  });
+
+  it("does not route a Node command outside its extension's namespace", () => {
+    const route = createNodeCommandRoute(
+      {
+        url: "/x",
+        token: "t",
+        tokenHeader: "h",
+        nodeCommands: { "pub.b": ["pub.b.run", "omnigent.openFile", "pub.a.steal"] },
+      },
+      vi.fn(),
+    );
+    expect(route.ownerOf("pub.b.run")).toBe("pub.b");
+    expect(route.ownerOf("omnigent.openFile")).toBeUndefined();
+    expect(route.ownerOf("pub.a.steal")).toBeUndefined();
+  });
+
   it("refuses duplicate ids, including ids a Node entry registered", () => {
     const registry = new CommandRegistry(nodeRoute({ "pub.b.node": "pub.b" }));
     registry.register("pub.a", "pub.a.run", () => 1);
-    expect(() => registry.register("pub.b", "pub.a.run", () => 2)).toThrow(
+    expect(() => registry.register("pub.a", "pub.a.run", () => 2)).toThrow(
       "command 'pub.a.run' already exists",
     );
-    expect(() => registry.register("pub.a", "pub.b.node", () => 2)).toThrow(
+    expect(() => registry.register("pub.b", "pub.b.node", () => 2)).toThrow(
       "command 'pub.b.node' already exists",
     );
   });

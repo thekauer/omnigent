@@ -607,6 +607,24 @@ describe("Files tab tree", () => {
     );
   });
 
+  it("selects the row the first arrow key focuses, as VS Code does", async () => {
+    await start({ listings: { "": [dir("src"), file("README.md")], src: [file("a.ts")] } });
+    render(view());
+    const src = await folder("src");
+    src.focus();
+    fireEvent.click(src);
+    await screen.findByText("a.ts");
+    fireEvent.keyDown(src, { key: "ArrowDown" });
+    const child = screen.getByRole("button", { name: "a.ts" });
+    await waitFor(() => expect(child).toHaveFocus());
+    expect(child.closest("[data-tree-item]")).toHaveAttribute("aria-selected", "true");
+    expect(document.querySelectorAll("[aria-selected=true]")).toHaveLength(1);
+    // From the list itself (nothing focused in it yet), the first row takes focus and selection.
+    fireEvent.keyDown(document.querySelector("section") as HTMLElement, { key: "ArrowDown" });
+    await waitFor(() => expect(src).toHaveFocus());
+    expect(src.closest("[data-tree-item]")).toHaveAttribute("aria-selected", "true");
+  });
+
   it("moves between rows with the arrow keys and opens and closes folders", async () => {
     await start({ listings: { "": [dir("src"), file("README.md")], src: [file("a.ts")] } });
     render(view());
@@ -976,6 +994,62 @@ describe("Files tab browse location", () => {
     await waitFor(() =>
       expect(util.closest("[data-tree-item]")).toHaveAttribute("aria-selected", "true"),
     );
+  });
+
+  it("drops a reveal whose row never shows, so it does not fire once the file appears", async () => {
+    const listings: Record<string, WorkspaceFile[]> = { "": [dir("src")], src: [file("a.ts")] };
+    await start({ listings });
+    render(view());
+    await folder("src");
+    await act(() =>
+      harness.bridge.executeCommand("omnigent.revealInFiles", "src/ghost.ts", {
+        sessionId: "conv_abc",
+        kind: "file",
+      }),
+    );
+    expect(await screen.findByText("a.ts")).toBeInTheDocument();
+    await new Promise((resolve) => {
+      setTimeout(resolve, 50);
+    });
+    harness.readDirectory.mockImplementation((location) =>
+      Promise.resolve(location === "src" ? [file("a.ts"), file("ghost.ts")] : [dir("src")]),
+    );
+    await harness.publish({ filesRevision: 3 });
+    const ghost = await screen.findByText("ghost.ts");
+    await new Promise((resolve) => {
+      setTimeout(resolve, 50);
+    });
+    expect(ghost.closest("[data-tree-item]")).not.toHaveAttribute("aria-selected");
+  });
+
+  it("drops a reveal asked in another conversation", async () => {
+    await start({ listings: { "": [dir("src")], src: [file("a.ts")] } });
+    let answer: (files: WorkspaceFile[]) => void = () => {};
+    const { rerender } = render(view("conv_abc"));
+    await folder("src");
+    harness.readDirectory.mockImplementation((location) =>
+      location === "src"
+        ? new Promise((resolve) => {
+            answer = resolve;
+          })
+        : Promise.resolve([dir("src")]),
+    );
+    await act(() =>
+      harness.bridge.executeCommand("omnigent.revealInFiles", "src/a.ts", {
+        sessionId: "conv_abc",
+        kind: "file",
+      }),
+    );
+    await harness.publish({ sessionId: "conv_xyz" });
+    rerender(view("conv_xyz"));
+    await harness.publish({ sessionId: "conv_abc" });
+    rerender(view("conv_abc"));
+    await act(async () => answer([file("a.ts")]));
+    const row = await screen.findByText("a.ts");
+    await new Promise((resolve) => {
+      setTimeout(resolve, 50);
+    });
+    expect(row.closest("[data-tree-item]")).not.toHaveAttribute("aria-selected");
   });
 
   it("says why a folder may not be browsed instead of an empty tree", async () => {

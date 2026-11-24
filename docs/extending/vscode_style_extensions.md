@@ -294,7 +294,11 @@ Stop after item 4. The rest of the "Later" list waits for the user.
    shared by all extensions, as in VS Code. `registerCommand` returns a
    `Disposable`; a duplicate id (page or Node) throws. `executeCommand` runs a
    page command or routes to the Node command of the same id, and rejects for
-   an unknown one. Arguments and results are copied as JSON.
+   an unknown one. Arguments and results are copied as JSON. An extension's
+   command ids start with its own id, and `omnigent.` is reserved for
+   built-in owners (page and Node alike); the shell's bridge
+   (`omnigent.revealInFiles` from the file viewer) runs only built-in
+   commands.
 10. **Progress and messages** (`progress.ts`, on the app's sonner toasts).
     `window.withProgress({ title }, task)` shows a loading toast with the
     latest reported message; it is dismissed when the task resolves and
@@ -745,6 +749,8 @@ description?, workflowId? })` and `.reload(sessionId)`; plus
       menu entries: `omnigent.toggleFilterFields` (the fields toggle, with
       its dot while fields hold text) and the `omnigent.openIn` submenu (the
       Open In menu for the view's location), placed by the manifest.
+      `location: true` and these two entries are for built-in extensions;
+      a dev extension's are ignored with a warning.
     - A collapsible folder row runs its command on a double click; a
       non-collapsible folder resource is the search results' folder row;
       a file label with a `/` is drawn as a path, truncated at its start; a

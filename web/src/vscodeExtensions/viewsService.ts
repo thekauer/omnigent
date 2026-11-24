@@ -102,7 +102,12 @@ export interface ViewsServiceOptions {
    * Registers each view's `<view id>.focus` command (VS Code's); it resolves to
    * whether the workspace on screen could reveal the view.
    */
-  registerFocusCommand?: (extensionId: string, command: string, viewId: string) => Disposable;
+  registerFocusCommand?: (
+    extensionId: string,
+    command: string,
+    viewId: string,
+    builtIn: boolean,
+  ) => Disposable;
 }
 
 interface TreeViewEntry {
@@ -427,7 +432,11 @@ export class ViewsService {
   }
 
   /** Registers an extension's views, commands and menus; returns their removal. */
-  addExtension(extensionId: string, contributions: ExtensionContributions): () => void {
+  addExtension(
+    extensionId: string,
+    contributions: ExtensionContributions,
+    { builtIn = false }: { builtIn?: boolean } = {},
+  ): () => void {
     const added: string[] = [];
     const focusCommands: Disposable[] = [];
     for (const command of contributions.commands) {
@@ -474,7 +483,12 @@ export class ViewsService {
         host: this.viewHost(view.id, () => (this.views.get(view.id) === entry ? entry : undefined)),
       });
       added.push(view.id);
-      const focus = this.options.registerFocusCommand?.(extensionId, `${view.id}.focus`, view.id);
+      const focus = this.options.registerFocusCommand?.(
+        extensionId,
+        `${view.id}.focus`,
+        view.id,
+        builtIn,
+      );
       if (focus) focusCommands.push(focus);
     }
     this.refreshActions();
@@ -564,7 +578,7 @@ export class ViewsService {
           id,
           kind: id === OPEN_IN_SUBMENU ? "openIn" : "filterFields",
           title: id === OPEN_IN_SUBMENU ? "Open in" : "Files to include / exclude",
-          tooltip: interpolate(item.tooltip, lookup),
+          tooltip: interpolate(item.tooltip, tooltipKeys),
           icon: undefined,
           toggled: undefined,
           tone: undefined,

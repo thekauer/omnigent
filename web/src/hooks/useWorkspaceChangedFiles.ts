@@ -23,6 +23,7 @@ import { useConversationEntryState } from "@/hooks/useConversationEntryState";
 import { useSession } from "@/hooks/useSession";
 import { livenessRowFromSession, useSessionLiveness } from "@/hooks/useSessionLiveness";
 import { authenticatedFetch } from "@/lib/identity";
+import { UnexpectedListingError } from "@/lib/unexpectedListingError";
 import { listDirectoryViaWorkspaceApi, searchFilesViaWorkspaceApi } from "@/lib/workspaceApi";
 import { isTempConvId } from "@/lib/tempConversationId";
 import { useChatStore } from "@/store/chatStore";
@@ -377,6 +378,21 @@ interface FilesystemListResponse {
   truncated?: boolean;
 }
 
+function isFilesystemListResponse(json: unknown): json is FilesystemListResponse {
+  if (typeof json !== "object" || json === null) return false;
+  const { data } = json as { data?: unknown };
+  return (
+    Array.isArray(data) &&
+    data.every(
+      (entry: unknown) =>
+        typeof entry === "object" &&
+        entry !== null &&
+        typeof (entry as { path?: unknown }).path === "string" &&
+        typeof (entry as { name?: unknown }).name === "string",
+    )
+  );
+}
+
 /**
  * Normalize a raw filesystem list payload into `WorkspaceFile[]` whose paths
  * are relative to the browsed location.
@@ -404,6 +420,7 @@ function mapFilesystemEntries(
       prefix,
       echoed && path.startsWith(echoed) ? path.slice(echoed.length) : path,
     );
+  if (!isFilesystemListResponse(json)) throw new UnexpectedListingError();
   return json.data.map((e) => ({
     path: rebased(e.path),
     name: e.name,
@@ -532,7 +549,19 @@ export function browseLocationSegment(location: string): string {
   // front door among them — merge back to a single "/", silently turning an
   // absolute path into a workspace-relative one and listing a nonexistent
   // path under the workspace.
-  return location.replace(/^\//, "").split("/").map(encodeURIComponent).join("/");
+  //
+  // Dot segments never reach the URL: the browser resolves a literal ".." (and
+  // its "%2e%2e" spelling) before sending, so one would climb out of the
+  // filesystem route to any other authenticated endpoint. A "." is dropped (it
+  // names the same folder); a ".." is refused.
+  const segments = location
+    .replace(/^\//, "")
+    .split("/")
+    .filter((segment) => segment !== ".");
+  if (segments.includes("..")) {
+    throw new TypeError(`a browse location cannot contain "..": ${JSON.stringify(location)}`);
+  }
+  return segments.map(encodeURIComponent).join("/");
 }
 
 /**

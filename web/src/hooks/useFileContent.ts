@@ -82,7 +82,14 @@ export function workspaceFileMediaUrl(conversationId: string, path: string): str
   const hostId = getSessionHost(conversationId);
   if (isHostRoutingEnabled() && hostId === null) return null;
   if (hostId && !isHostKeyless(hostId)) query.omnigent_slice_key = hostId;
-  return resolveMediaUrl(workspaceFileUrl(conversationId, path, query));
+  let url: string;
+  try {
+    url = workspaceFileUrl(conversationId, path, query);
+  } catch {
+    // A path no filesystem URL can name: the authenticated fetch reports it.
+    return null;
+  }
+  return resolveMediaUrl(url);
 }
 
 /**

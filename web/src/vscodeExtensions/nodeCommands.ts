@@ -1,5 +1,6 @@
 // Runs commands registered by extensions' Node entries, through the dev
 // server's command endpoint (vite.omnigentNodeExtensions.ts). Dev only.
+import { commandIdProblem } from "./commands";
 
 /** What the dev plugin's virtual module tells the page. Plain data. */
 export interface CommandEndpoint {
@@ -59,7 +60,10 @@ export function createNodeCommandRoute(
 ): NodeCommandRoute {
   const owners = new Map<string, string>();
   for (const [extensionId, commands] of Object.entries(endpoint.nodeCommands)) {
-    for (const command of commands) owners.set(command, extensionId);
+    for (const command of commands) {
+      // The Node host refuses such ids; one that still arrives is not routed.
+      if (commandIdProblem(extensionId, command) === undefined) owners.set(command, extensionId);
+    }
   }
   return {
     ownerOf: (command) => owners.get(command),

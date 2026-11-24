@@ -58,6 +58,7 @@ import {
   keyboardTarget,
   missingChildren,
   readExpandState,
+  revealCannotMatch,
   ROOT_KEY,
   type TreeRowMotion,
   type VisibleTreeRow,
@@ -83,6 +84,8 @@ const SESSION_ROW_GAP_PX = 1;
 const TREE_MOTION_MS = 180;
 // A revealed row flashes for as long as the shared flash animation plays.
 const REVEAL_FLASH_MS = 800;
+/** How long a reveal waits for its row, as `TreeView.reveal` waits for the tree to be drawn. */
+const REVEAL_TIMEOUT_MS = 30_000;
 
 const TONE_CLASS: Record<RailTreeDecorationTone, string> = {
   added: "text-green-600 dark:text-green-400",
@@ -933,8 +936,27 @@ function ViewTree({
   const [revealed, setRevealed] = useState<string | null>(null);
   const [revealTick, setRevealTick] = useState(0);
   const pendingReveal = useRef<RailRevealRequest | null>(null);
+  // The children loaded when the pending reveal arrived: only a level loaded since can rule it out.
+  const childrenAtReveal = useRef<ReadonlyMap<string, readonly RailTreeNode[]>>(new Map());
+  const childrenRef = useRef(children);
+  childrenRef.current = children;
+  const revealExpiry = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const flashTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => () => clearTimeout(flashTimer.current), []);
+  useEffect(
+    () => () => {
+      clearTimeout(flashTimer.current);
+      clearTimeout(revealExpiry.current);
+    },
+    [],
+  );
+  // A reveal belongs to the conversation it was asked in; another one on screen drops it.
+  useEffect(
+    () => () => {
+      pendingReveal.current = null;
+      clearTimeout(revealExpiry.current);
+    },
+    [conversationId],
+  );
   useEffect(() => {
     const take = tree.takeReveal;
     if (!take) return;
@@ -946,6 +968,12 @@ function ViewTree({
         true,
       );
       pendingReveal.current = request;
+      childrenAtReveal.current = childrenRef.current;
+      // A row that never shows up (it was removed, or its ancestors never load) is given up on.
+      clearTimeout(revealExpiry.current);
+      revealExpiry.current = setTimeout(() => {
+        if (pendingReveal.current === request) pendingReveal.current = null;
+      }, REVEAL_TIMEOUT_MS);
       setRevealTick((value) => value + 1);
     };
     apply();
@@ -953,6 +981,8 @@ function ViewTree({
   }, [tree, conversationId, setOpen]);
   const ready = loaded && !stale;
   const focusIndex = useRef<number | null>(null);
+  // Whether the row focused next is also selected (the keyboard), as VS Code's selection follows focus.
+  const focusSelects = useRef(false);
   const [focusTick, setFocusTick] = useState(0);
   const focusRow = useCallback(
     (index: number) => {
@@ -960,6 +990,7 @@ function ViewTree({
       if (!row) return;
       select(row.node.handle);
       focusIndex.current = index;
+      focusSelects.current = true;
       virtualizer.scrollToIndex(index);
       setFocusTick((value) => value + 1);
     },
@@ -969,20 +1000,31 @@ function ViewTree({
   useEffect(() => {
     const index = focusIndex.current;
     if (index === null) return;
-    const button = scrollRef.current?.querySelector<HTMLElement>(
-      `[data-index="${index}"] button, [data-index="${index}"] a`,
-    );
-    if (!button) return;
+    const item = scrollRef.current?.querySelector<HTMLElement>(`[data-index="${index}"]`);
+    const button = item?.querySelector<HTMLElement>("button, a");
+    if (!item || !button) return;
     focusIndex.current = null;
     button.focus({ preventScroll: true });
+    // The row drawn at the index may have changed since the key was pressed (a folder's
+    // children just loaded): the row that takes focus is the one selected.
+    const handle = item.dataset.treeItem;
+    if (focusSelects.current && handle !== undefined && handle !== selected) select(handle);
+    focusSelects.current = false;
   });
   useEffect(() => {
     const request = pendingReveal.current;
     if (!request || !ready) return;
     const index = rows.findIndex((row) => row.node.handle === request.handle);
-    // Not there yet: a lazy ancestor is still loading.
-    if (index === -1) return;
+    if (index === -1) {
+      // Not there yet while a lazy ancestor is still loading; dropped once it cannot be.
+      if (revealCannotMatch(request, children, childrenAtReveal.current)) {
+        pendingReveal.current = null;
+        clearTimeout(revealExpiry.current);
+      }
+      return;
+    }
     pendingReveal.current = null;
+    clearTimeout(revealExpiry.current);
     virtualizer.scrollToIndex(index, { align: "center", behavior: "smooth" });
     setRevealed(request.handle);
     clearTimeout(flashTimer.current);
@@ -990,9 +1032,10 @@ function ViewTree({
     if (request.select) select(request.handle);
     if (request.focus) {
       focusIndex.current = index;
+      focusSelects.current = request.select;
       setFocusTick((value) => value + 1);
     }
-  }, [rows, ready, revealTick, virtualizer, select]);
+  }, [rows, children, ready, revealTick, virtualizer, select]);
   // Arrow keys, Home and End move between rows; Right and Left open, close or go to the parent.
   const onKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
     if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;

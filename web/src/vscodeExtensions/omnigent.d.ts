@@ -378,6 +378,7 @@ declare module "omnigent" {
    * of the title (a view that contributes `location: true`): the folder's name
    * or path, Back one folder, Back to working folder, and, where the session
    * may browse its host, a folder picker. Both paths are absolute.
+   * `location: true` is honored for built-in extensions only.
    */
   export interface ViewLocation {
     readonly path: string;
@@ -433,6 +434,13 @@ declare module "omnigent" {
      * provider must implement `getParent`, and the element and its ancestors
      * need a `TreeItem.id`. In the chat session on screen at the call; when the
      * view is not drawn, it is revealed as soon as it is.
+     *
+     * Resolves once the reveal is queued for the tree, not once the row is on
+     * screen. Rejects when the element's or an ancestor's lookup
+     * (`getTreeItem`, `getParent`) takes longer than 30 seconds. A queued
+     * reveal is dropped when no tree takes it within 30 seconds, when another
+     * conversation comes on screen, or when a loaded folder on its path lacks
+     * the row.
      */
     reveal: (element: T, options?: TreeViewRevealOptions) => Promise<void>;
     /** The folder the view browses; see {@link ViewLocation}. */
@@ -746,8 +754,10 @@ declare module "omnigent" {
    */
   export namespace commands {
     /**
-     * Register a command. An id that already exists (in the page or on the
-     * Node side) throws.
+     * Register a command. Its id starts with the extension id
+     * (`<publisher>.<name>.`); the `omnigent.` namespace is reserved for
+     * built-in commands. An id outside it, or one that already exists (in the
+     * page or on the Node side), throws.
      *
      * @returns A {@link Disposable} that unregisters the command.
      */
@@ -881,8 +891,11 @@ declare module "omnigent" {
     /**
      * The entries of a folder of the workspace on screen: `""` for the
      * workspace root, a workspace-relative folder, or an absolute path on the
-     * session's host (owners of sessions that may browse it). Listings are
-     * cached by the host and reloaded once stale.
+     * session's host (owners of sessions that may browse it). Empty and `.`
+     * segments of a relative path are ignored; a `..` segment, an escaped dot
+     * segment or separator (`%2e`, `%2f`, `%5c`), a backslash, or a `.` in an
+     * absolute path is refused with a `TypeError`. Listings are cached by the
+     * host and reloaded once stale.
      */
     readDirectory: (path: string) => Promise<readonly FileEntry[]>;
   }
@@ -1207,7 +1220,9 @@ declare module "omnigent/node" {
   export namespace commands {
     /**
      * Register a command the page can run. Arguments arrive and results leave
-     * as JSON (at most 1 MiB). An id that already exists throws.
+     * as JSON (at most 1 MiB). As in the page, the id starts with the extension
+     * id and `omnigent.` is reserved; an id outside it, or one that already
+     * exists, throws.
      */
     export function registerCommand(
       command: string,

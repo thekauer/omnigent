@@ -18,6 +18,7 @@ import {
 import { useServerInfo } from "@/lib/CapabilitiesContext";
 import { isFeatureEnabled } from "@/lib/capabilities";
 import type { ChangedSort } from "@/lib/changedSort";
+import { UnexpectedListingError } from "@/lib/unexpectedListingError";
 import { useChatStore } from "@/store/chatStore";
 import { fileListStatus } from "./fileListStatus";
 import {
@@ -50,6 +51,7 @@ export function readWorkspaceDirectory(
       staleTime: LISTING_STALE_MS,
     })
     .then((result) => {
+      if (typeof result !== "object" || result === null) throw new UnexpectedListingError();
       if (!result.available) throw new WorkspaceUnavailableError();
       return result.data;
     });
