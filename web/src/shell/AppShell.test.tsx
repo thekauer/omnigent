@@ -246,11 +246,6 @@ vi.mock("./InlineTerminalsSection", () => ({
     </div>
   ),
 }));
-vi.mock("./SubagentsPanel", () => ({
-  SubagentsPanel: ({ conversationId }: { conversationId: string }) => (
-    <div data-testid="subagents-panel" data-conversation-id={conversationId} />
-  ),
-}));
 // The real WorkspacePanel mounts a rail xterm for an open shell tab; stub the
 // low-level view to a marker echoing the attached terminal id.
 vi.mock("@/components/blocks/TerminalView", () => ({
@@ -316,7 +311,7 @@ import {
 const useEnvironmentMock = vi.mocked(useWorkspaceEnvironment);
 const useChangedFilesMock = vi.mocked(useWorkspaceChangedFiles);
 
-import { useChildSessions } from "@/hooks/useChildSessions";
+import { childSessionsQueryKey, useChildSessions } from "@/hooks/useChildSessions";
 
 const useChildSessionsMock = vi.mocked(useChildSessions);
 
@@ -594,6 +589,16 @@ function sessionShellTree(
   ),
 ) {
   return shellTree(client, path, <Route path="c/:conversationId" element={content} />);
+}
+
+/** The children the mocked hook currently returns for the session on screen. */
+function mockedChildren(): readonly unknown[] {
+  return useChildSessionsMock.getMockImplementation()?.("conv_abc", undefined).children ?? [];
+}
+
+/** What the Agents view reads: a session's child list in the query cache, as the hook fetches it. */
+function seedChildren(client: QueryClient, sessionId: string, children: readonly unknown[]): void {
+  client.setQueryData(childSessionsQueryKey(sessionId), children);
 }
 
 function renderShell(
@@ -2626,7 +2631,7 @@ describe("Subagents tab", () => {
     expect(screen.getByTestId("files-panel")).toBeInTheDocument();
   });
 
-  it("shows the Agents tab and mounts its panel once there's more than one agent", () => {
+  it("shows the Agents tab and mounts its panel once there's more than one agent", async () => {
     useEnvironmentMock.mockReturnValue({
       data: { available: true, root: null },
       isLoading: false,
@@ -2634,19 +2639,24 @@ describe("Subagents tab", () => {
     mockConversations([{ id: "conv_abc", permission_level: null }]);
     useChildSessionsMock.mockReturnValue(oneChild);
 
-    renderShell("/c/conv_abc");
+    renderShell("/c/conv_abc", undefined, {
+      seedQueryClient: (client) => seedChildren(client, "conv_abc", oneChild.children),
+    });
 
     // Agents is no longer the default tab — click to open it.
     const subagentsTab = screen.getByRole("tab", { name: /Agents/i });
     expect(subagentsTab).toBeInTheDocument();
     fireEvent.mouseDown(subagentsTab);
-    expect(screen.getByTestId("subagents-panel")).toHaveAttribute(
-      "data-conversation-id",
+    // The built-in Agents view, with the session as its main row and the child under it.
+    const view = await screen.findByTestId("extension-view-omnigent.agents.view");
+    expect(await within(view).findByTestId("subagent-main-row")).toHaveAttribute(
+      "data-root-session-id",
       "conv_abc",
     );
+    expect(await within(view).findByText("auth")).toBeInTheDocument();
   });
 
-  it("renders the Subagents tab in terminal-first sessions too", () => {
+  it("renders the Subagents tab in terminal-first sessions too", async () => {
     // Subagents are spawned independently of terminals, so the tab
     // must be reachable in claude-native sessions where the Terminals
     // tab is intentionally absent.
@@ -2663,7 +2673,9 @@ describe("Subagents tab", () => {
     ]);
     useChildSessionsMock.mockReturnValue(oneChild);
 
-    renderShell("/c/conv_native");
+    renderShell("/c/conv_native", undefined, {
+      seedQueryClient: (client) => seedChildren(client, "conv_native", oneChild.children),
+    });
 
     // No Terminals tab — terminal renders inline in main.
     expect(screen.queryByRole("tab", { name: /Shells/i })).toBeNull();
@@ -2671,13 +2683,13 @@ describe("Subagents tab", () => {
     const subagentsTab = screen.getByRole("tab", { name: /Agents/i });
     expect(subagentsTab).toBeInTheDocument();
     fireEvent.mouseDown(subagentsTab);
-    expect(screen.getByTestId("subagents-panel")).toHaveAttribute(
-      "data-conversation-id",
+    expect(await screen.findByTestId("subagent-main-row")).toHaveAttribute(
+      "data-root-session-id",
       "conv_native",
     );
   });
 
-  it("shows a count badge on the Subagents tab when children exist", () => {
+  it("shows a count badge on the Subagents tab when children exist", async () => {
     useEnvironmentMock.mockReturnValue({
       data: { available: true, root: null },
       isLoading: false,
@@ -2712,18 +2724,20 @@ describe("Subagents tab", () => {
       error: null,
     });
 
-    renderShell("/c/conv_abc");
+    renderShell("/c/conv_abc", undefined, {
+      seedQueryClient: (client) => seedChildren(client, "conv_abc", mockedChildren()),
+    });
 
     // One of the two children is busy → the badge shows working/total
     // ("1/3" — two children + the main agent) with the active green
     // (success) tint, so activity is visible without opening the
     // panel. "1/2" means the main agent was dropped from the total.
-    const tab = screen.getByRole("tab", { name: /Agents\s*1\/3/i });
+    const tab = await screen.findByRole("tab", { name: /Agents\s*1\/3/i });
     expect(tab).toBeInTheDocument();
     expect(within(tab).getByText("1/3").className).toContain("text-success");
   });
 
-  it("shows a plain total (muted, no tint) on the Agents badge when none are working", () => {
+  it("shows a plain total (muted, no tint) on the Agents badge when none are working", async () => {
     useEnvironmentMock.mockReturnValue({
       data: { available: true, root: null },
       isLoading: false,
@@ -2758,18 +2772,20 @@ describe("Subagents tab", () => {
       error: null,
     });
 
-    renderShell("/c/conv_abc");
+    renderShell("/c/conv_abc", undefined, {
+      seedQueryClient: (client) => seedChildren(client, "conv_abc", mockedChildren()),
+    });
 
     // No busy child → plain total "3" (two children + the main agent)
     // in the muted style (no success tint), so a settled fan-out
     // doesn't draw the eye.
-    const tab = screen.getByRole("tab", { name: /Agents\s*3/i });
+    const tab = await screen.findByRole("tab", { name: /Agents\s*3/i });
     const badge = within(tab).getByText("3");
     expect(badge.className).toContain("text-muted-foreground");
     expect(badge.className).not.toContain("text-success");
   });
 
-  it("keeps the idle Agents count badge neutral when a sub-agent spawns off-tab", () => {
+  it("keeps the idle Agents count badge neutral when a sub-agent spawns off-tab", async () => {
     // Idle Agents badge counts are quantity indicators, not warning badges.
     // A new child should update the count without switching to destructive red.
     useEnvironmentMock.mockReturnValue({
@@ -2797,11 +2813,12 @@ describe("Subagents tab", () => {
     });
 
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    seedChildren(qc, "conv_abc", mockedChildren());
     const makeTree = () => sessionShellTree(qc, "/c/conv_abc");
     const { rerender } = render(makeTree());
 
     // 2 = one child + the main agent.
-    let badge = within(screen.getByRole("tab", { name: /Agents/i })).getByText("2");
+    let badge = await within(screen.getByRole("tab", { name: /Agents/i })).findByText("2");
     expect(badge.className).toContain("text-muted-foreground");
     expect(badge.className).not.toContain("bg-destructive");
 
@@ -2834,9 +2851,10 @@ describe("Subagents tab", () => {
       isLoading: false,
       error: null,
     });
+    act(() => seedChildren(qc, "conv_abc", mockedChildren()));
     rerender(makeTree());
 
-    badge = within(screen.getByRole("tab", { name: /Agents/i })).getByText("3");
+    badge = await within(screen.getByRole("tab", { name: /Agents/i })).findByText("3");
     expect(badge.className).toContain("text-muted-foreground");
     expect(badge.className).not.toContain("bg-destructive");
     expect(badge.className).not.toContain("text-white");
@@ -2848,7 +2866,7 @@ describe("Subagents tab", () => {
     expect(badge.className).not.toContain("bg-destructive");
   });
 
-  it("keeps the Agents count badge neutral when children stream in on connect", () => {
+  it("keeps the Agents count badge neutral when children stream in on connect", async () => {
     // Mirror of the terminal connect case: child sessions arrive over SSE
     // (snapshot + live deltas). The count should update without looking like
     // an error on refresh.
@@ -2860,6 +2878,7 @@ describe("Subagents tab", () => {
     useChildSessionsMock.mockReturnValue({ children: [], isLoading: false, error: null });
 
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    seedChildren(qc, "conv_abc", []);
     const makeTree = () => sessionShellTree(qc, "/c/conv_abc");
     const { rerender } = render(makeTree());
 
@@ -2891,10 +2910,11 @@ describe("Subagents tab", () => {
       isLoading: false,
       error: null,
     });
+    act(() => seedChildren(qc, "conv_abc", mockedChildren()));
     rerender(makeTree());
 
     // 3 = two streamed-in children + the main agent.
-    const badge = within(screen.getByRole("tab", { name: /Agents/i })).getByText("3");
+    const badge = await within(screen.getByRole("tab", { name: /Agents/i })).findByText("3");
     expect(badge.className).toContain("text-muted-foreground");
     expect(badge.className).not.toContain("bg-destructive");
     expect(badge.className).not.toContain("text-white");
@@ -5157,7 +5177,7 @@ describe("Right-rail tab switching — file viewer close", () => {
     fireEvent.mouseDown(screen.getByRole("tab", { name: /Agents/i }));
     // Failure: the tab-change handler did not close the viewer when leaving Files.
     expect(screen.queryByTestId("file-viewer-inline")).toBeNull();
-    expect(screen.getByTestId("subagents-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("extension-view-omnigent.agents.view")).toBeInTheDocument();
 
     // Go back to Files — the panel shows, NOT the previously open file.
     fireEvent.mouseDown(screen.getByRole("tab", { name: /^Files$/i }));
@@ -5319,7 +5339,7 @@ describe("Mobile session menu", () => {
     expect(drawer).toHaveClass("mobile-panel-drawer");
   });
 
-  it("opens the Agents drawer and mounts the subagents panel", () => {
+  it("opens the Agents drawer and mounts the subagents panel", async () => {
     useEnvironmentMock.mockReturnValue({
       data: { available: true, root: null },
       isLoading: false,
@@ -5343,14 +5363,16 @@ describe("Mobile session menu", () => {
       error: null,
     });
 
-    renderShell("/c/conv_abc");
+    renderShell("/c/conv_abc", undefined, {
+      seedQueryClient: (client) => seedChildren(client, "conv_abc", mockedChildren()),
+    });
 
     // Drawer starts closed and its content unmounted. Scope to the drawer:
     // the desktop rail renders its own default panel (Files), and jsdom
     // doesn't apply the rail's md:hidden.
     const drawer = screen.getByTestId("subagents-panel-drawer");
     expect(drawer).toHaveAttribute("data-state", "closed");
-    expect(within(drawer).queryByTestId("subagents-panel")).toBeNull();
+    expect(within(drawer).queryByTestId("extension-view-omnigent.agents.view")).toBeNull();
 
     openSessionMenu();
     fireEvent.click(screen.getByRole("menuitem", { name: /Agents/i }));
@@ -5360,10 +5382,12 @@ describe("Mobile session menu", () => {
     // drawer didn't mount its children while open.
     const openDrawer = screen.getByTestId("subagents-panel-drawer");
     expect(openDrawer).toHaveAttribute("data-state", "open");
-    expect(within(openDrawer).getByTestId("subagents-panel")).toHaveAttribute(
-      "data-conversation-id",
+    // The built-in Agents view, its main row the active session and its working child listed.
+    expect(await within(openDrawer).findByTestId("subagent-main-row")).toHaveAttribute(
+      "data-root-session-id",
       "conv_abc",
     );
+    expect(await within(openDrawer).findByText("auth")).toBeInTheDocument();
     expect(openDrawer).toHaveClass("mobile-panel-drawer");
   });
 

@@ -6,7 +6,7 @@ import { extensionRailTabViewId, type RightRailTab } from "./railTabs";
 
 /** The page beneath any open shell or file. */
 export type WorkspaceScopeView =
-  "sidechat" | "browser" | "github" | "tasks" | "subagents" | "empty" | "files" | "extension";
+  "sidechat" | "browser" | "github" | "tasks" | "empty" | "files" | "extension";
 
 export interface WorkspaceSelection {
   rightRailTab: RightRailTab | null;
@@ -32,7 +32,11 @@ export interface WorkspaceViewAvailability {
 }
 
 /** Built-in tabs whose page is a built-in extension's view. */
-export const EXTENSION_BACKED_TABS: readonly RightRailTab[] = ["changes", "content-search"];
+export const EXTENSION_BACKED_TABS: readonly RightRailTab[] = [
+  "changes",
+  "content-search",
+  "subagents",
+];
 
 /** Whether an extension-backed tab has its page here; otherwise it falls back like an unavailable tab. */
 function extensionTabAvailable(
@@ -40,6 +44,7 @@ function extensionTabAvailable(
   availability: WorkspaceViewAvailability,
 ): boolean {
   if (tab === "content-search") return availability.showContentSearch;
+  if (tab === "subagents") return availability.hasAgentTree;
   return true;
 }
 
@@ -90,13 +95,11 @@ export function resolveWorkspaceActiveView(
           ? "github"
           : rightRailTab === "tasks" && availability.showTasksTab
             ? "tasks"
-            : rightRailTab === "subagents" && availability.hasAgentTree
-              ? "subagents"
-              : rightRailTab === null
-                ? "empty"
-                : extensionViewId !== null || extensionBacked
-                  ? "extension"
-                  : "files";
+            : rightRailTab === null
+              ? "empty"
+              : extensionViewId !== null || extensionBacked
+                ? "extension"
+                : "files";
   return {
     terminalKey,
     filePath: terminalKey === null ? selectedFilePath : null,

@@ -9,7 +9,6 @@ import type { ChangedSort } from "@/lib/changedSort";
 import { InlineTerminalsSection } from "./InlineTerminalsSection";
 import { MobilePanelDrawer } from "./MobilePanelDrawer";
 import { PullRequestPanel } from "./PullRequestPanel";
-import { SubagentsPanel } from "./SubagentsPanel";
 import { TasksPanel } from "./TasksPanel";
 import { SessionDescendantRuns } from "@/components/workflows/WorkflowRunRow";
 import { TerminalsPanel } from "./TerminalsPanel";
@@ -141,7 +140,11 @@ export function AppShellWorkspacePanels({
           onClose={() => setSubagentsPanelOpen(false)}
           testId="subagents-panel-drawer"
         >
-          <SubagentsPanel conversationId={conversationId} rootSessionId={rootSessionId} />
+          <BuiltInTabView
+            tab="subagents"
+            conversationId={conversationId}
+            visible={subagentsPanelOpen}
+          />
         </MobilePanelDrawer>
       )}
       {conversationId && (

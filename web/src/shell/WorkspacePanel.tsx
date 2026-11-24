@@ -71,7 +71,6 @@ import { useQuery } from "@tanstack/react-query";
 import { authenticatedFetch } from "@/lib/identity";
 import { MobilePanelDrawer } from "./MobilePanelDrawer";
 import { SUBAGENT_TAB_FALLBACK_LABEL, SubagentTabPane, useSubagentTabLabels } from "./SubagentTab";
-import { type SubagentPanelOpener, SubagentPanelOpenerContext } from "./subagentPanelOpener";
 import { SideChatPane } from "@/components/chat/SideChatPane";
 import { useChatStore } from "@/store/chatStore";
 import { useCanStartSideChat } from "@/hooks/usePermissions";
@@ -98,7 +97,6 @@ import { TasksPanel } from "./TasksPanel";
 import { SessionDescendantRuns } from "@/components/workflows/WorkflowRunRow";
 import { PullRequestPanel } from "./PullRequestPanel";
 import type { ChangedSort } from "@/lib/changedSort";
-import { SubagentsPanel } from "./SubagentsPanel";
 import { useTerminalStatuses } from "./useTerminalStatuses";
 import { extensionRailTab, extensionRailTabViewId, type RightRailTab } from "./railTabs";
 import { useWorkspaceRail } from "./useWorkspaceRail";
@@ -730,13 +728,6 @@ interface WorkspacePanelProps {
   onReveal?: () => void;
   /** Hide the rail; desktop Close uses it when no tab on screen can close. */
   onHide?: () => void;
-  /** How many child agents are actively working (Agents tab badge). */
-  subagentsWorking: number;
-  /**
-   * Total agents in the session tree, main agent included (Agents tab
-   * badge denominator) — starts at 1 for a lone agent.
-   */
-  agentCount: number;
   /**
    * The "root" session id for the Agents tab — the active session's
    * parent when inside a child, else the active id. May be null while
@@ -810,8 +801,6 @@ interface WorkspacePanelProps {
   onMobileSideChatsOpenChange?: (open: boolean) => void;
   /** Reports whether a side-chat or sub-agent tab is open, so a phone can reach the drawer. */
   onHasSideChatTabsChange?: (hasSideChatTabs: boolean) => void;
-  /** Opens a sub-agent from the Agents tab as a rail tab; absent where unsupported (Grid panes). */
-  subagentPanelOpener?: SubagentPanelOpener;
 }
 
 /** A closed tab that Reopen Closed Tab (⇧⌘T) can bring back. */
@@ -905,8 +894,6 @@ function WorkspacePanelImpl({
   showBrowserTab,
   onReveal,
   onHide,
-  subagentsWorking,
-  agentCount,
   rootSessionId,
   selectedFilePath,
   filePosition,
@@ -938,7 +925,6 @@ function WorkspacePanelImpl({
   mobileSideChatsOpen = false,
   onMobileSideChatsOpenChange,
   onHasSideChatTabsChange,
-  subagentPanelOpener,
 }: WorkspacePanelProps) {
   // A view's input to focus once its tab shows (⌘⇧F for Content search, through `<view>.focus`).
   const [viewFocusRequest, setViewFocusRequest] = useState<{
@@ -1495,8 +1481,6 @@ function WorkspacePanelImpl({
       showGithubTab,
       showTasksTab,
       showContentSearch,
-      agentCount,
-      subagentsWorking,
       digit: shortcutFor(tab),
       digitAriaShortcut: tabAriaShortcut(tab),
     });
@@ -2157,10 +2141,6 @@ function WorkspacePanelImpl({
                   )}
                 />
               </RenderErrorBoundary>
-            ) : scopeView === "subagents" && rootSessionId ? (
-              <SubagentPanelOpenerContext.Provider value={subagentPanelOpener ?? null}>
-                <SubagentsPanel conversationId={conversationId} rootSessionId={rootSessionId} />
-              </SubagentPanelOpenerContext.Provider>
             ) : scopeView === "extension" && activeView.extensionViewId !== null ? (
               <RenderErrorBoundary
                 name="this view"

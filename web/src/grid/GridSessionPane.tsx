@@ -682,8 +682,6 @@ export function GridSessionPane({
                   }
                   showBrowserTab={supportsBrowser()}
                   onReveal={onOpenWorkspace}
-                  subagentsWorking={childSessions.filter((child) => child.busy).length}
-                  agentCount={childSessions.length + 1}
                   rootSessionId={rootSessionId}
                   selectedFilePath={canBrowse ? (workspace.selectedFilePath ?? null) : null}
                   filePosition={position}

@@ -3,6 +3,8 @@
 // dev extension's, and an entry module that only uses the extension API.
 import type { ExtensionDescription } from "@/vscodeExtensions/host";
 import { validateManifest } from "@/vscodeExtensions/manifest";
+import * as agents from "./omnigent.agents/extension";
+import agentsManifest from "./omnigent.agents/package.json";
 import * as changes from "./omnigent.changes/extension";
 import changesManifest from "./omnigent.changes/package.json";
 import * as contentSearch from "./omnigent.content-search/extension";
@@ -14,6 +16,7 @@ export interface BuiltInExtension {
 }
 
 export const BUILT_IN_EXTENSIONS: readonly BuiltInExtension[] = Object.freeze([
+  { manifest: agentsManifest, module: agents },
   { manifest: changesManifest, module: changes },
   { manifest: contentSearchManifest, module: contentSearch },
 ]);

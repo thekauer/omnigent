@@ -1,11 +1,8 @@
-import type { AgentCost } from "@/hooks/useAgentCosts";
-import type { ChildSessionInfo } from "@/hooks/useChildSessions";
-import { MAX_TREE_DEPTH } from "@/hooks/useChildSessions";
-import { nativeCodingAgentForSubagentWrapper, WRAPPER_LABEL_KEY } from "@/lib/nativeCodingAgents";
-import type { RailTreeNode } from "./railViews";
-import { childStatus, type AgentActivity } from "./subagentStatus";
+// Layout of a session tree as a graph of cards: each subtree is as wide as its
+// children, a parent centered above them. Pure, over plain nodes.
+import type { RailAgentState, RailTreeNode } from "./railViews";
 
-export type { AgentActivity };
+export type AgentActivity = RailAgentState;
 
 export interface AgentNodeData {
   label: string;
@@ -14,8 +11,6 @@ export interface AgentNodeData {
   sessionId: string;
   isActive: boolean;
   preview: string | null;
-  /** Display cost, when the session overview feature has loaded one. */
-  cost?: AgentCost;
   /** The row the node stands for: its decorations (cost) and command. */
   node?: RailTreeNode;
   [key: string]: unknown;
@@ -51,11 +46,6 @@ export const NODE_WIDTH = 180;
 const NODE_HEIGHT = 60;
 const HORIZONTAL_GAP = 40;
 const VERTICAL_GAP = 30;
-
-export function childActivity(child: ChildSessionInfo): { activity: AgentActivity; label: string } {
-  const status = childStatus(child);
-  return { activity: status.activity, label: status.label };
-}
 
 const edgeDefaults = {
   type: "default",
@@ -135,84 +125,6 @@ export function layoutTree(
 
   place(root, 0, 0);
   return { nodes, edges };
-}
-
-export function buildTree(
-  rootId: string,
-  rootLabel: string,
-  rootActivity: AgentActivity,
-  rootStatusLabel: string,
-  rootPreview: string | null,
-  childrenMap: Map<string, ChildSessionInfo[]>,
-  depth: number,
-  visited = new Set<string>(),
-): TreeNode {
-  visited.add(rootId);
-  const children = childrenMap.get(rootId) ?? [];
-  return {
-    id: rootId,
-    label: rootLabel,
-    activity: rootActivity,
-    statusLabel: rootStatusLabel,
-    preview: rootPreview,
-    children:
-      depth >= MAX_TREE_DEPTH
-        ? []
-        : children
-            .filter((child) => !visited.has(child.id))
-            .map((child) => {
-              const status = childActivity(child);
-              // Native sub-agent children (Claude Task, codex/opencode/
-              // antigravity equivalents) carry the server-resolved display
-              // label in `tool`, while their `session_name` is deliberately
-              // the opaque correlation id — so `tool` must win here. Mirrors
-              // `childPrimaryLabel` in SubagentsPanel, including the
-              // user-added "ui:" title carve-out.
-              const isNativeSubagent =
-                nativeCodingAgentForSubagentWrapper(child.labels?.[WRAPPER_LABEL_KEY]) !==
-                undefined;
-              const isUserAdded = child.title?.startsWith("ui:") ?? false;
-              const label =
-                isNativeSubagent && !isUserAdded
-                  ? (child.tool ?? child.title ?? child.id)
-                  : (child.task_summary ??
-                    child.session_name ??
-                    child.title ??
-                    child.tool ??
-                    child.id);
-              return buildTree(
-                child.id,
-                label,
-                status.activity,
-                status.label,
-                child.last_message_preview,
-                childrenMap,
-                depth + 1,
-                visited,
-              );
-            }),
-  };
-}
-
-export function buildGraphLayout(
-  rootId: string,
-  rootLabel: string,
-  rootActivity: AgentActivity,
-  rootStatusLabel: string,
-  rootPreview: string | null,
-  childrenMap: Map<string, ChildSessionInfo[]>,
-  activeId: string,
-): { nodes: LayoutNode[]; edges: LayoutEdge[] } {
-  const tree = buildTree(
-    rootId,
-    rootLabel,
-    rootActivity,
-    rootStatusLabel,
-    rootPreview,
-    childrenMap,
-    0,
-  );
-  return layoutTree(tree, activeId);
 }
 
 /**

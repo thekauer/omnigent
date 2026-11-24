@@ -1193,9 +1193,8 @@ function AppShellImpl() {
       rootSessionResolved: false,
     };
   }, [serverConversationId, activeSession, walkedRoot, queryClient]);
-  // One-shot fetch (no polling) for the Subagents tab's count badge.
-  // SubagentsPanel mounts its own polling usage of the hook against
-  // the same rootSessionId, so the cache is shared.
+  // One-shot fetch (no polling) for the root walk and the v2 sidebar's count.
+  // The Agents view reads the same cache entry through the extension API.
   const { children: childSessions } = useChildSessions(rootSessionId);
   // Remember the resolved root so a later click into one of its tree
   // members can hold it steady (see ``rootSessionId`` above).
@@ -3659,7 +3658,6 @@ function AppShellImpl() {
                         liveness={liveness}
                         onShellCreateStart={markShellCreateStarted}
                         onShellCreateFailed={clearShellCreatePending}
-                        subagentPanelOpener={openSubagentInPanel}
                       />
                     </Suspense>
                   </ResponsiveViewerSlot>
@@ -3686,8 +3684,6 @@ function AppShellImpl() {
                     showBrowserTab={railTabsAvailable.browser}
                     onReveal={revealRightPanel}
                     onHide={rightPanelOpen ? toggleRightPanel : undefined}
-                    subagentsWorking={subagentsWorking}
-                    agentCount={agentCount}
                     rootSessionId={rootSessionId}
                     selectedFilePath={selectedFilePath}
                     filePosition={filePosition}
@@ -3723,7 +3719,6 @@ function AppShellImpl() {
                     mobileSideChatsOpen={sideChatsPanelOpen}
                     onMobileSideChatsOpenChange={setSideChatsPanelOpen}
                     onHasSideChatTabsChange={setHasSideChatTabs}
-                    subagentPanelOpener={openSubagentInPanel}
                   />
                 )}
               </div>

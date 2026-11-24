@@ -82,9 +82,6 @@ vi.mock("./FilesPanel", () => ({
     return <div data-testid="files-panel-stub" data-session={conversationId} />;
   },
 }));
-vi.mock("./SubagentsPanel", () => ({
-  SubagentsPanel: () => <div data-testid="subagents-stub" />,
-}));
 vi.mock("@/components/BrowserPane/BrowserPane", () => ({
   BrowserPane: ({
     conversationId,
@@ -295,8 +292,6 @@ function renderWorkspace(
         showBrowserTab={overrides.showBrowserTab ?? false}
         onReveal={onReveal}
         onHide={overrides.withHide === false ? undefined : onHide}
-        subagentsWorking={0}
-        agentCount={1}
         rootSessionId={null}
         selectedFilePath={overrides.selectedFilePath ?? null}
         openFiles={overrides.openFiles ?? []}
@@ -734,7 +729,7 @@ describe("WorkspacePanel surface presentation", () => {
     expect(screen.queryByRole("button", { name: "Open new" })).toBeNull();
     expect(screen.queryByTestId("files-panel-stub")).toBeNull();
     expect(screen.queryByTestId("file-viewer-stub")).toBeNull();
-    expect(screen.queryByTestId("subagents-stub")).toBeNull();
+    expect(screen.queryByTestId("extension-view-omnigent.agents.view")).toBeNull();
     expect(useCreateTerminalMock).not.toHaveBeenCalled();
     expect(screen.getByRole("button", { name: "Full screen" })).toBeDisabled();
     expect(screen.getByRole("separator", { name: "Resize panel" })).toHaveAttribute(

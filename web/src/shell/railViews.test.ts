@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
+import { ARIA_MOD_KEY } from "@/components/KeyboardShortcut";
 import {
   BUILT_IN_RAIL_TABS,
   extensionRailTab,
+  TAB_BADGE_BASE,
   extensionRailTabViewId,
   isExtensionRailTab,
   isRailTab,
@@ -23,8 +25,6 @@ const CONTEXT: WorkspacePanelTabContext = {
   showGithubTab: true,
   showTasksTab: true,
   showContentSearch: true,
-  agentCount: 2,
-  subagentsWorking: 1,
   digit: "7",
   digitAriaShortcut: "Control+7",
 };
@@ -215,6 +215,55 @@ describe("resolveWorkspaceActiveView with an extension tab", () => {
         CONTEXT,
       ),
     ).toMatchObject({ ariaLabel: "Changes", badge: null });
+  });
+
+  it("badges Agents from its view: the total, or working/total in the success tone", () => {
+    const registry = new RailViewRegistry();
+    const handle = registry.register({
+      id: "omnigent.agents.view",
+      extensionId: "omnigent.agents",
+      name: "Agents",
+      icon: "bot",
+      builtInTab: "subagents",
+    });
+    const presentation = () =>
+      workspacePanelTabPresentation(
+        railTabDescriptor("subagents", registry.getSnapshot().views)!,
+        CONTEXT,
+      );
+    handle.update({ badge: { value: 2, tooltip: "2", tone: "muted" } });
+    expect(presentation()).toMatchObject({
+      label: "Agents",
+      icon: RAIL_VIEW_ICONS.bot,
+      ariaLabel: "Agents 2",
+      badge: { text: 2, className: `${TAB_BADGE_BASE} sr-only text-muted-foreground` },
+    });
+    handle.update({ badge: { value: 3, tooltip: "1/3", label: "1/3", tone: "success" } });
+    expect(presentation()).toMatchObject({
+      ariaLabel: "Agents 1/3",
+      badge: { text: "1/3", className: `${TAB_BADGE_BASE} sr-only text-success` },
+    });
+  });
+
+  it("keeps Content search's ⌘⇧F in its tooltip when its view stands in for it", () => {
+    const registry = new RailViewRegistry();
+    registry.register({
+      id: "omnigent.content-search.view",
+      extensionId: "omnigent.content-search",
+      name: "Content search",
+      icon: "search",
+      builtInTab: "content-search",
+    });
+    const descriptor = railTabDescriptor("content-search", registry.getSnapshot().views)!;
+    expect(workspacePanelTabPresentation(descriptor, CONTEXT)).toMatchObject({
+      label: "Content search",
+      icon: RAIL_VIEW_ICONS.search,
+      tooltipShortcut: WORKSPACE_PANEL_TABS["content-search"].tooltipShortcut!(CONTEXT),
+      ariaKeyShortcuts: `${ARIA_MOD_KEY}+Shift+F Control+7`,
+    });
+    expect(
+      workspacePanelTabPresentation(descriptor, { ...CONTEXT, showContentSearch: false }),
+    ).toBeNull();
   });
 
   it("skips updates that change nothing", () => {

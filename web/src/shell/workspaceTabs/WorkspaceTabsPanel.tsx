@@ -73,15 +73,13 @@ import { isCommandAvailable } from "@/store/paletteCommands";
 import { usePullRequestListCount } from "@/store/pullRequestListCounts";
 
 import { commandRegionProps } from "../commandContext";
-import { ExtensionRailView } from "../extensionViews/ExtensionRailView";
-import { builtInTabView, useRailViews } from "../railViews";
 import type { WorkspaceChangedFile } from "@/hooks/useWorkspaceChangedFiles";
 import type { ChangedSort } from "@/lib/changedSort";
 import { groupChangedFiles } from "../changedFilesOrder";
 import { startSideChat } from "../sideChatLifecycle";
 import { SUBAGENT_TAB_FALLBACK_LABEL, SubagentTabPane, useSubagentTabLabels } from "../SubagentTab";
-import { type SubagentPanelOpener, SubagentPanelOpenerContext } from "../subagentPanelOpener";
-import { SubagentsPanel } from "../SubagentsPanel";
+import { ExtensionRailView } from "../extensionViews/ExtensionRailView";
+import { builtInTabView, useRailViews } from "../railViews";
 import {
   type WorkspaceCommand,
   type WorkspaceCommandFacts,
@@ -190,7 +188,6 @@ export interface WorkspaceTabsPanelProps {
   liveness?: SessionLiveness;
   onShellCreateStart?: () => void;
   onShellCreateFailed?: () => void;
-  subagentPanelOpener?: SubagentPanelOpener;
   /** Back and Forward, bound where they also work while the sidebar is closed. */
   historyCommands?: readonly WorkspaceHistoryCommand[];
   onHistoryGo?: (direction: WorkspaceHistoryDirection) => void;
@@ -284,14 +281,13 @@ function WorkspaceTabsPanelImpl({
   liveness,
   onShellCreateStart,
   onShellCreateFailed,
-  subagentPanelOpener,
   historyCommands = NO_HISTORY_COMMANDS,
   onHistoryGo,
 }: WorkspaceTabsPanelProps) {
   const { session, tabs, selectedTabId } = useWorkspaceTabs(conversationId);
   const { views: extensionViews, settled: extensionViewsSettled } = useRailViews();
-  // The built-in extension view a page draws (Content search), as the classic rail does.
-  const builtInView = (tab: "content-search", active: boolean) => {
+  // The built-in extension view a page draws (Agents, Content search), as the classic rail does.
+  const builtInView = (tab: "subagents" | "content-search", active: boolean) => {
     const view = builtInTabView(extensionViews, tab);
     return view ? (
       <ExtensionRailView
@@ -914,11 +910,7 @@ function WorkspaceTabsPanelImpl({
         );
       case "agents":
         if (!rootSessionId) return <Unavailable text="This session has no agents yet." />;
-        return (
-          <SubagentPanelOpenerContext.Provider value={subagentPanelOpener ?? null}>
-            <SubagentsPanel conversationId={conversationId} rootSessionId={rootSessionId} />
-          </SubagentPanelOpenerContext.Provider>
-        );
+        return builtInView("subagents", active);
       case "search":
         if (!showContentSearch || !showFilesPanel) {
           return (

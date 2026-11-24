@@ -43,7 +43,7 @@ interface MobilePanelDrawerProps {
   onClose: () => void;
   /**
    * Panel content. Mounted only while ``open`` so panels that poll
-   * (e.g. ``SubagentsPanel``) don't keep running behind a closed drawer —
+   * (e.g. the Agents view) don't keep running behind a closed drawer,
    * unless ``keepMounted`` is set.
    */
   children: ReactNode;

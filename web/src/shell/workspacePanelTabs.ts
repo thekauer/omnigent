@@ -39,8 +39,6 @@ export interface WorkspacePanelTabContext {
   /** Whether the session has a Tasks tab. */
   showTasksTab: boolean;
   showContentSearch: boolean;
-  agentCount: number;
-  subagentsWorking: number;
   /** This tab's ⌃N digit among the visible fixed tabs, if it has one. */
   digit: string | undefined;
   /** `aria-keyshortcuts` for that digit. */
@@ -98,20 +96,11 @@ export const WORKSPACE_PANEL_TABS: Record<WorkspacePanelTab, WorkspacePanelTabDe
     icon: ListChecksIcon,
     shown: ({ showTasksTab }) => showTasksTab,
   },
+  // Its page, label, icon and badge come from the built-in Agents extension's view.
   subagents: {
     label: "Agents",
     icon: BotIcon,
     shown: () => true,
-    ariaLabel: ({ subagentsWorking, agentCount }) =>
-      subagentsWorking > 0 ? `Agents ${subagentsWorking}/${agentCount}` : `Agents ${agentCount}`,
-    badge: ({ subagentsWorking, agentCount }) => ({
-      text: subagentsWorking > 0 ? `${subagentsWorking}/${agentCount}` : agentCount,
-      className: cn(
-        TAB_BADGE_BASE,
-        "sr-only",
-        subagentsWorking > 0 ? "text-success" : "text-muted-foreground",
-      ),
-    }),
   },
 };
 

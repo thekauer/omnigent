@@ -16,9 +16,9 @@ import { SidebarDataProvider } from "@/hooks/useSidebarData";
 // child id IS a known child of the root being viewed, so the rail must
 // stay on Agents.
 //
-// This test renders AppShell with the REAL SubagentsPanel (not the
-// mock used by AppShell.test.tsx) so we can drive a real ``<Link>``
-// click through the router and observe the resulting rail-tab state.
+// This test renders AppShell with the built-in Agents extension's view, so
+// we can drive a real ``<Link>`` click through the router and observe the
+// resulting rail-tab state.
 
 import type * as UseTerminalsModule from "@/hooks/useTerminals";
 import type * as UseWorkspaceChangedFilesModule from "@/hooks/useWorkspaceChangedFiles";
@@ -36,9 +36,9 @@ import { writeOpenSubagentsInPanel } from "@/lib/subagentPanelPreferences";
 import { subagentTabId } from "@/lib/subagentTabs";
 import type { Session } from "@/lib/types";
 import { writeWorkspacePanelDefault } from "@/lib/workspacePanelPreferences";
+import { type BuiltInHarness, startBuiltIns } from "@/test/builtInExtensions";
 
-// Match the AppShell.test.tsx mocks except DO NOT mock SubagentsPanel —
-// we want the real one so its <Link> renders.
+// Match the AppShell.test.tsx mocks; the Agents view's rows are real links.
 vi.mock("@/hooks/useConversations", async (importOriginal) => ({
   ...(await importOriginal<typeof UseConversationsModule>()),
   useConversations: vi.fn(),
@@ -132,9 +132,16 @@ import { childSessionsQueryKey, useChildSessions } from "@/hooks/useChildSession
 import { useSession } from "@/hooks/useSession";
 import { useConversations } from "@/hooks/useConversations";
 
-afterEach(cleanup);
+let builtIns: BuiltInHarness | undefined;
+afterEach(async () => {
+  cleanup();
+  await builtIns?.dispose();
+  builtIns = undefined;
+});
 
-beforeEach(() => {
+beforeEach(async () => {
+  // The Agents tab is the built-in Agents extension's view; AppShell is its workspace source.
+  builtIns = await startBuiltIns({ withSource: false });
   // The rail's open-state persists per session in localStorage; clear it so
   // state written by one test (e.g. a collapse) can't leak into the next.
   localStorage.clear();
@@ -171,7 +178,7 @@ function PathProbe() {
   return <div data-testid="page">{useLocation().pathname}</div>;
 }
 
-describe("click sub-agent in rail (real SubagentsPanel)", () => {
+describe("click sub-agent in rail (the built-in Agents view)", () => {
   it("keeps the Agents tab and rail width across root, child, and sibling navigation", async () => {
     const children = [
       {
@@ -291,8 +298,8 @@ describe("click sub-agent in rail (real SubagentsPanel)", () => {
     // Sanity: the Agents tab must actually be selected before we click in.
     expect(agentsTab).toHaveAttribute("aria-selected", "true");
 
-    // SubagentsPanel renders now that the tab is selected.
-    const childRows = screen.getAllByTestId("subagent-row");
+    // The Agents view renders now that the tab is selected.
+    const childRows = await screen.findAllByTestId("subagent-row");
     expect(childRows).toHaveLength(2);
     expect(childRows[0]).toHaveAttribute("href", "/c/conv_child");
     expect(screen.getByRole("complementary", { name: "Workspace" })).toHaveStyle({
@@ -308,12 +315,12 @@ describe("click sub-agent in rail (real SubagentsPanel)", () => {
       width: "500px",
     });
 
-    fireEvent.click(screen.getAllByTestId("subagent-row")[1]);
+    fireEvent.click((await screen.findAllByTestId("subagent-row"))[1]);
     expect(screen.getByRole("complementary", { name: "Workspace" })).toHaveStyle({
       width: "500px",
     });
 
-    fireEvent.click(screen.getByTestId("subagent-main-row"));
+    fireEvent.click(await screen.findByTestId("subagent-main-row"));
     expect(screen.getByRole("complementary", { name: "Workspace" })).toHaveStyle({
       width: "500px",
     });
@@ -321,7 +328,7 @@ describe("click sub-agent in rail (real SubagentsPanel)", () => {
 
   it.each([undefined, "files"] as const)(
     "returns from a deep-linked child to a root with remembered tab %s",
-    (rememberedTab) => {
+    async (rememberedTab) => {
       vi.mocked(useChildSessions).mockReturnValue({ children: [], isLoading: false, error: null });
       vi.mocked(useSession).mockImplementation((id) => ({
         session: id
@@ -349,6 +356,8 @@ describe("click sub-agent in rail (real SubagentsPanel)", () => {
       if (rememberedTab) writeSessionWorkspaceState("conv_root", { rightRailTab: rememberedTab });
       const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
       qc.setQueryData(["rootSessionId", "conv_child"], "conv_root");
+      // The Agents view reads the root's list from the cache, as the hook would have.
+      qc.setQueryData(childSessionsQueryKey("conv_root"), []);
       render(
         <QueryClientProvider client={qc}>
           <SidebarDataProvider>
@@ -365,7 +374,7 @@ describe("click sub-agent in rail (real SubagentsPanel)", () => {
         </QueryClientProvider>,
       );
       expect(screen.getByRole("tab", { name: /Agents/i })).toHaveAttribute("aria-selected", "true");
-      const mainRow = screen.getByTestId("subagent-main-row");
+      const mainRow = await screen.findByTestId("subagent-main-row");
       expect(mainRow).toHaveAttribute("href", "/c/conv_root");
 
       fireEvent.click(mainRow);

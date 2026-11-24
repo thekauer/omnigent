@@ -1,7 +1,6 @@
-// Canonical status classification + dot palette shared by the Subagents
-// list (SubagentsPanel) and the graph/tree view (SubagentsGraphView), so
-// the two never drift. The list view is the source of truth; both views
-// classify an agent's activity and color its status dot from here.
+// Canonical status classification + dot palette of the Agents tab: the API
+// hands this status out with each session, and the host's session rows (the
+// list) and its graph color their status from here, so the two never drift.
 
 import type { ChildSessionInfo } from "@/hooks/useChildSessions";
 

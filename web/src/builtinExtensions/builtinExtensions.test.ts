@@ -127,6 +127,7 @@ describe("built-in extensions", () => {
       ...BUILT_IN_EXTENSIONS,
     ]);
     expect(descriptions.map((description) => description.id)).toEqual([
+      "omnigent.agents",
       "omnigent.changes",
       "omnigent.content-search",
     ]);
@@ -143,12 +144,14 @@ describe("built-in extensions", () => {
     });
     // No await yet: the first render already finds the built-in tabs' views.
     expect(registry.get("omnigent.changes.view")).toMatchObject({ builtInTab: "changes" });
+    expect(registry.get("omnigent.agents.view")).toMatchObject({ builtInTab: "subagents" });
     expect(registry.get("omnigent.content-search.view")).toMatchObject({
       builtInTab: "content-search",
     });
     await runtime.builtInsStarted;
     expect(runtime.host.isActive("omnigent.changes")).toBe(true);
     expect(registry.get("omnigent.changes.view")?.tree).toBeDefined();
+    expect(runtime.host.isActive("omnigent.agents")).toBe(true);
     expect(runtime.host.isActive("omnigent.content-search")).toBe(true);
     await runtime.dispose();
     expect(registry.get("omnigent.changes.view")).toBeUndefined();

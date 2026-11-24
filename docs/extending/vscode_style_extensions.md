@@ -17,9 +17,11 @@ entries, commands, progress notifications and the host reconnect provider seam,
 with the server wake moved onto it; and queue item 3 (Changes 2): extension views
 in the classic rail, host-rendered tree views, view/title actions with `when`
 clauses and context keys, built-in workspace commands, changed-files events and
-a per-chat-session `workspaceState`; and phase M1 of queue item 4: built-in
-extensions load in every build, and the Changes tab is the built-in
-`omnigent.changes` extension (Changes 2 retired into it). Item 2 is still open.
+a per-chat-session `workspaceState`; and phases M1 and M2 of queue item 4:
+built-in extensions load in every build, and the Changes, Content search and
+Agents tabs are the built-in `omnigent.changes`, `omnigent.content-search` and
+`omnigent.agents` extensions (Changes 2 retired into the first). Item 2 is
+still open.
 
 **Queue, in order.** Deployment-specific details (machine and host names, exact
 commands, the private Git host's URL shape) are kept in the personal extensions
@@ -75,35 +77,30 @@ repository's reference policy keeps them out of here.
      Tree / View as List" per chat session; FlatFileList, the FilesPanel
      changed-files branch and the `flat` scope are gone, and Changes 2 is
      retired from `thekauer.dev`.
-   - **Next, in order,** with what each needs from the API (from M1):
-     1. **Content search** (`content-search`): a view whose body is not a
-        tree: a query field with include/exclude globs and grouped results
-        with line previews. Needs a search provider API (a workspace text
-        search through the host, cancellable, streamed in pages) and a result
-        row kind (file plus matching lines, a match range to highlight);
-        `TreeView.filter` is close but runs per keystroke and is not async.
-        The ⌘⇧F shortcut and focusing the field need a `focus` command for
-        views (VS Code's `<view>.focus`) and keybinding contributions.
-     2. **Agents** (`subagents`): the session tree of sub-agents with live
-        status. Needs a sessions API beyond the active session (the session
-        tree, child status and busy state as events), item `contextValue`
-        menus (`view/item/context`) for its row actions, a row status tone
-        or spinner, and a command that opens a sub-agent as a rail tab. Its
-        badge (working/total) fits `TreeView.badge` with a tooltip; the
-        tone (success when working) would be a badge field.
-     3. **Tasks** (`tasks`): the session's todos and workflow runs. Needs a
+   - **Done, M2: Content search and Agents.** Scope items 23 to 26.
+     `omnigent.content-search` and `omnigent.agents` reproduce the classic
+     tabs on the API (a search input on views, `workspace.findTextInFiles`,
+     keybindings and `<view>.focus`, text-match and session rows, the session
+     tree in `omnigent.sessions`, a graph presentation); ContentSearchPanel,
+     SubagentsPanel, SubagentsGraphView and AgentCostTag are gone, and the
+     `subagents` and `content-search` scopes route to the extension views.
+   - **Next, in order,** with what each needs from the API (from M1 and M2):
+     1. **Tasks** (`tasks`): the session's todos and workflow runs. Needs a
         todos/journal source in the API, rows with check states, nested runs
         (children loaded lazily, which the tree has), and the `when` keys
         for its visibility (workflows enabled), which today is a core
         `shown` rule: a view `when` clause on the contribution, as in VS Code.
-     4. **Files** (`files`): the full tree with lazy directories, browse
+        From M2 it can reuse the session rows' status tile (`TreeItem.status`)
+        for workflow runs and `view.<id>.available` for its availability.
+     2. **Files** (`files`): the full tree with lazy directories, browse
         location bar, search with globs, copy/open-in menus and reveal from
         chat. Needs a directory listing API (`workspace.fs.readDirectory`
         through the host), `TreeView.reveal`, item context menus, the title
         bar's location breadcrumb as a contributed widget (or a `description`
         with command links), and the same `omnigent.files.*` settings the
-        Changes tab already uses.
-     5. **Pull Requests** (`github`): not a tree: PR details, checks, merge
+        Changes tab already uses. Its search can follow Content search's
+        `searchInput` (globs as fields) instead of the filter field.
+     3. **Pull Requests** (`github`): not a tree: PR details, checks, merge
         controls. Needs webview-like custom content or a richer host-drawn
         "details" view kind, the git-host provider seam (queue item 2), and
         write commands with confirmation, so it goes last.
@@ -540,6 +537,103 @@ error? }`, coalesced per microtask, also on session switches.
       cells all resolve `changes` that way), so the view's id can change
       without touching the shell.
 
+23. **API additions for M2** (`omnigent.d.ts`).
+    - `contributes.views[...].searchInput`: `{ placeholder, ariaLabel,
+submitTitle, options: [{ id, title }], fields: [{ id, label,
+placeholder }], fieldsToggle: { title, ariaLabel }, fieldsHint, hint }`.
+      The host draws the form in place of the view's title bar (as VS Code's
+      Search view keeps its title in the container) and keeps its value per
+      view and chat session. `TreeView.searchInput` (like a
+      `SourceControl.inputBox`): `value` (`{ query, options, fields }`),
+      `onDidChangeValue` (also on a workspace switch), `onDidAccept` (Enter or
+      the button, only while `enabled` and without a `validationMessage`),
+      `validationMessage` (drawn as an alert) and `enabled`.
+    - `workspace.findTextInFiles(query, { include, exclude }, token?)` with
+      VS Code's `TextSearchQuery` (`pattern`, `isRegExp`, `isCaseSensitive`,
+      `isWordMatch`): the workspace on screen at the call, through the
+      existing content-search route (the workspace API first). Resolves to
+      `{ matches: [{ path, line, column, preview: { text, matches } }],
+limitHit, message }`; a cancelled token aborts the request and rejects
+      with an error named "Canceled". `workspace.validateTextSearchQuery`
+      says why a query cannot run (`tooLong`, `unopenedGroup`, `verbose`),
+      the whole-word checks the classic form made before sending.
+      `CancellationTokenSource` is exported, as in VS Code.
+    - `contributes.keybindings`: `{ command, key, mac?, when? }` with keys like
+      `ctrl+shift+f` (letters, digits, F1 to F12), matched on the physical key
+      by one capture listener on the window, so they work from editors and
+      terminals; a match runs the command and stops the event.
+    - Every contributed view gets VS Code's `<view id>.focus` command. It asks
+      the workspace rail of the session on screen (`useWorkspaceRail`,
+      registered by WorkspacePanel) to select the view's tab, reveal the rail
+      and focus the view's input once it shows. The host sets
+      `view.<view id>.available` while that rail can show the view (its tab is
+      in the strip, the session is not pending, not on a phone).
+    - `window.withProgress({ title, location: { viewId } }, task)`: a spinner
+      and the title above the view's rows (marked busy), while the chat
+      session it started in is on screen; no toast.
+    - Tree items: `label` may be a `TreeItemLabel` with `highlights`; `line`
+      (a text match: the line number, then the label in monospace with its
+      highlights marked); `accessibilityInformation.label`; `resourceUri`
+      with `scheme: "session"` (a session row, a link to the session);
+      `iconPath` as `{ agent, harness }` (the agent's harness logo, as the
+      composer draws it); `status: { state, label, detail? }` (the agent
+      status tile; done and idle rows are dimmed unless on screen); and a
+      decoration part's `tooltip`. A collapsible `iconPath: "file"` resource
+      row is the results list's file heading.
+    - `TreeView.presentation = "graph"`: the host draws the tree as a graph of
+      cards (every node loaded), as the Agents graph did. `ViewBadge` gains
+      `label` (text instead of the value, such as "2/5") and `tone`
+      (`success` or `muted`). Title actions of a `toggled` command are the
+      compact pressed-or-not buttons of a segmented control.
+    - `omnigent.sessions`: `activeSessionTreeRoot` and
+      `onDidChangeActiveSessionTree` (the tree of the workspace on screen, as
+      AppShell or the grid cell resolves its root); `getChildSessions(id)`
+      returns `{ sessions, loading, error }` with each sub-agent's `label`,
+      `title`, `tool`, `agent`, `status`, `busy`, `preview`, `routedModel`
+      (`{ id, label }`) and `cost` (`{ usd, estimated }`, the active tree's,
+      while the server reports costs); `getSession(id)` the root's `label`,
+      `agent`, `kind`, `preview`, `status` and `cost`;
+      `onDidChangeChildSessions({ sessionIds })`, coalesced per microtask.
+      They read the cache entries the app's hooks use (`QueryObserver`s on the
+      workspace's query client, same keys and fetch options), so the SSE
+      watch-set keeps them live; at most 100 lists and 100 sessions are
+      observed, the least recently asked for released first.
+    - Commands: `omnigent.openSession(id)`, `omnigent.openSubagent(id)` (a
+      tab beside the chat with the user's setting, else navigation; the
+      workspace decides with `openSessionFromView`), and
+      `omnigent.openFile(path, { line, column })`.
+    - Context-key `${key}` references in menu tooltips (from the M1 review).
+24. **The built-in Content search tab** (`builtinExtensions/omnigent.content-search/`).
+    The form (query, Filter files with Include and Exclude, Search, Match
+    case, Whole word, Regular expression, the notes), its alerts for a query
+    that cannot match whole words, "Searching…", the error, "No matches" and
+    "N matching lines in M files", the truncation or searcher warning, the
+    results grouped by file with the match marked, and a match opening its
+    file at its line and column (on a phone, a match from the drawer returns
+    to it when the file closes). Each chat session keeps its form, its latest
+    results and a search still running when another session comes on screen.
+    ⌘⇧F / Ctrl+Shift+F is its `contributes.keybindings` on
+    `omnigent.content-search.view.focus`; the tab keeps its id, place, label,
+    ⌃N digit and the ⌘⇧F in its tooltip. The input cache no longer has a
+    `useQuery` without a `queryFn` (the "No queryFn" console errors are gone).
+25. **The built-in Agents tab** (`builtinExtensions/omnigent.agents/`). The
+    main row (harness avatar, agent or product name, cost, latest message),
+    sub-agents to three levels with the dashed root guide, circle-dot and
+    corner connectors, collapse toggles, status tiles, role or harness icons,
+    labels, routed model, cost and preview, the row on screen highlighted and
+    settled rows dimmed, Loading and "Failed to load agents.", List view /
+    Graph view, and the tab's badge (all agents, working/total in the success
+    tone). A row is a link (cmd/middle-click opens a tab, session-scoped
+    params dropped, global ones kept); a plain click runs
+    `omnigent.openSubagent`. Grid cells and the phone drawer draw the same
+    view for their own session.
+26. **Shell wiring.** `content-search` and `subagents` join `changes` as
+    built-in tabs whose page is the extension view (`resolveWorkspaceActiveView`),
+    still only where their old rule allowed (content search on, an agent tree);
+    WorkspacePanel, the v2 sidebar's Agents and Search pages and the phone
+    drawers draw `ExtensionRailView`; the workspace source publishes the tree
+    root, whether costs are reported, a session opener and its query client.
+
 ### Security and trust model
 
 A dev-path extension is trusted local code, like a folder passed to VS Code's
@@ -633,42 +727,49 @@ Plain ESM with `// @ts-check`; no build step.
 
 ## VS Code to Omnigent mapping
 
-| VS Code                                                              | Omnigent prototype                                           | Notes                                              |
-| -------------------------------------------------------------------- | ------------------------------------------------------------ | -------------------------------------------------- |
-| `import * as vscode from "vscode"`                                   | `import * as omnigent from "omnigent"`                       | Per-extension instance, resolved by the dev plugin |
-| `package.json` `publisher.name` id                                   | same                                                         |                                                    |
-| `engines.vscode`                                                     | `engines.omnigent`                                           | Validated as a range, not enforced yet             |
-| `main` / `browser`                                                   | same                                                         | ES modules; `main` runs in a dev server child      |
-| `activationEvents` `*`, `onStartupFinished`                          | same                                                         | Other events warn                                  |
-| `activate(context)` / `deactivate()`                                 | same                                                         | Async supported                                    |
-| `ExtensionContext.subscriptions`, `.extension.id`                    | same, plus `.extension.version`                              | No storage, URIs or secrets yet                    |
-| `Disposable`, `Disposable.from`                                      | same                                                         |                                                    |
-| `Event<T>`, `EventEmitter<T>`                                        | same                                                         | Errors reported against the extension              |
-| `window.createStatusBarItem(id?, alignment?, priority?)`             | `window.createSessionHeaderItem(id?, alignment?, priority?)` | Header slot left of the agent info button          |
-| `StatusBarAlignment`                                                 | `SessionHeaderItemAlignment`                                 | `Right` sits next to the anchor                    |
-| `StatusBarItem.text`, `.tooltip`, `.show()`, `.hide()`, `.dispose()` | same                                                         | Plain text; no `$(icon)`, no `command`, no colors  |
-| `window.activeTextEditor`, `onDidChangeActiveTextEditor`             | `sessions.activeSession`, `onDidChangeActiveSession`         |                                                    |
-| (none)                                                               | `sessions.onDidChangeUsage`, `sessions.activeSessionUsage`   | Plain-data usage of the active session             |
-| `commands.registerCommand`, `commands.executeCommand`                | same                                                         | JSON args and results; page or Node                |
-| `window.withProgress`                                                | same                                                         | Notification only; `{ title }`                     |
-| `window.showInformationMessage`, `showErrorMessage`                  | same                                                         | Toasts; no buttons                                 |
-| `window.createOutputChannel(name, { log: true })`                    | `window.createOutputChannel(name)` (Node only)               | Lines go to the dev server output                  |
-| `workspace.registerRemoteAuthorityResolver`                          | `hosts.registerReconnectProvider`                            | For "Reconnect host"; plain host data              |
-| `import * as vscode from "vscode"` in `main`                         | `import * as omnigent from "omnigent/node"`                  | A smaller API than the page's                      |
-| `contributes.views` (view containers)                                | `contributes.views["omnigent.rightPanel"]`                   | Tabs in the classic workspace rail                 |
-| `window.createTreeView(id, { treeDataProvider })`                    | same                                                         | Host-drawn rows; no selection, reveal or DnD       |
-| `TreeDataProvider`, `TreeItem`, `TreeItemCollapsibleState`           | same, plain data                                             | Plus `decoration` and `gitStatus` on items         |
-| `TreeView.title`, `.description`, `.message`, `.badge`               | same                                                         |                                                    |
-| `contributes.commands` (`title`, `icon`, `toggled`)                  | same                                                         | Lucide icon names from an allowlist                |
-| `contributes.menus["view/title"]`, group `navigation`                | same                                                         | Other groups (the "..." menu) not shown yet        |
-| `when` clauses, `setContext`                                         | same, a subset                                               | No `=~`, `in`, `<`/`>` or `not in` yet             |
-| `ExtensionContext.workspaceState` (`Memento`)                        | same                                                         | Per chat session, not per workspace                |
-| `vscode.open` and SCM resource states                                | `omnigent.openFile`, `workspace.getChangedFiles`             | Plain paths, the session's changed files           |
-| Built-in extensions (`extensions/` in the VS Code repo)              | `web/src/builtinExtensions/<publisher.name>/`                | Bundled, activated at startup in every build       |
-| `TreeView.visible`, `onDidChangeVisibility`                          | same                                                         | Visible while a drawn copy is on screen            |
-| `workspace.getConfiguration`, `onDidChangeConfiguration`             | same, for `omnigent.files.*`                                 | `config.*` context keys as in VS Code              |
-| `contributes.submenus` and submenu menus                             | same, in `view/title`                                        | Drawn as a dropdown naming the toggled entry       |
-| `TreeView.message` as a `MarkdownString` with command links          | `[text](command:id)` in a plain string                       | No other markdown                                  |
+| VS Code                                                              | Omnigent prototype                                            | Notes                                              |
+| -------------------------------------------------------------------- | ------------------------------------------------------------- | -------------------------------------------------- |
+| `import * as vscode from "vscode"`                                   | `import * as omnigent from "omnigent"`                        | Per-extension instance, resolved by the dev plugin |
+| `package.json` `publisher.name` id                                   | same                                                          |                                                    |
+| `engines.vscode`                                                     | `engines.omnigent`                                            | Validated as a range, not enforced yet             |
+| `main` / `browser`                                                   | same                                                          | ES modules; `main` runs in a dev server child      |
+| `activationEvents` `*`, `onStartupFinished`                          | same                                                          | Other events warn                                  |
+| `activate(context)` / `deactivate()`                                 | same                                                          | Async supported                                    |
+| `ExtensionContext.subscriptions`, `.extension.id`                    | same, plus `.extension.version`                               | No storage, URIs or secrets yet                    |
+| `Disposable`, `Disposable.from`                                      | same                                                          |                                                    |
+| `Event<T>`, `EventEmitter<T>`                                        | same                                                          | Errors reported against the extension              |
+| `window.createStatusBarItem(id?, alignment?, priority?)`             | `window.createSessionHeaderItem(id?, alignment?, priority?)`  | Header slot left of the agent info button          |
+| `StatusBarAlignment`                                                 | `SessionHeaderItemAlignment`                                  | `Right` sits next to the anchor                    |
+| `StatusBarItem.text`, `.tooltip`, `.show()`, `.hide()`, `.dispose()` | same                                                          | Plain text; no `$(icon)`, no `command`, no colors  |
+| `window.activeTextEditor`, `onDidChangeActiveTextEditor`             | `sessions.activeSession`, `onDidChangeActiveSession`          |                                                    |
+| (none)                                                               | `sessions.onDidChangeUsage`, `sessions.activeSessionUsage`    | Plain-data usage of the active session             |
+| `commands.registerCommand`, `commands.executeCommand`                | same                                                          | JSON args and results; page or Node                |
+| `window.withProgress`                                                | same                                                          | Notification only; `{ title }`                     |
+| `window.showInformationMessage`, `showErrorMessage`                  | same                                                          | Toasts; no buttons                                 |
+| `window.createOutputChannel(name, { log: true })`                    | `window.createOutputChannel(name)` (Node only)                | Lines go to the dev server output                  |
+| `workspace.registerRemoteAuthorityResolver`                          | `hosts.registerReconnectProvider`                             | For "Reconnect host"; plain host data              |
+| `import * as vscode from "vscode"` in `main`                         | `import * as omnigent from "omnigent/node"`                   | A smaller API than the page's                      |
+| `contributes.views` (view containers)                                | `contributes.views["omnigent.rightPanel"]`                    | Tabs in the classic workspace rail                 |
+| `window.createTreeView(id, { treeDataProvider })`                    | same                                                          | Host-drawn rows; no selection, reveal or DnD       |
+| `TreeDataProvider`, `TreeItem`, `TreeItemCollapsibleState`           | same, plain data                                              | Plus `decoration` and `gitStatus` on items         |
+| `TreeView.title`, `.description`, `.message`, `.badge`               | same                                                          |                                                    |
+| `contributes.commands` (`title`, `icon`, `toggled`)                  | same                                                          | Lucide icon names from an allowlist                |
+| `contributes.menus["view/title"]`, group `navigation`                | same                                                          | Other groups (the "..." menu) not shown yet        |
+| `when` clauses, `setContext`                                         | same, a subset                                                | No `=~`, `in`, `<`/`>` or `not in` yet             |
+| `ExtensionContext.workspaceState` (`Memento`)                        | same                                                          | Per chat session, not per workspace                |
+| `vscode.open` and SCM resource states                                | `omnigent.openFile`, `workspace.getChangedFiles`              | Plain paths, the session's changed files           |
+| Built-in extensions (`extensions/` in the VS Code repo)              | `web/src/builtinExtensions/<publisher.name>/`                 | Bundled, activated at startup in every build       |
+| `TreeView.visible`, `onDidChangeVisibility`                          | same                                                          | Visible while a drawn copy is on screen            |
+| `workspace.getConfiguration`, `onDidChangeConfiguration`             | same, for `omnigent.files.*`                                  | `config.*` context keys as in VS Code              |
+| `contributes.submenus` and submenu menus                             | same, in `view/title`                                         | Drawn as a dropdown naming the toggled entry       |
+| `TreeView.message` as a `MarkdownString` with command links          | `[text](command:id)` in a plain string                        | No other markdown                                  |
+| `SourceControl.inputBox`                                             | `TreeView.searchInput` with `contributes.views[].searchInput` | Query, toggles and fields; per chat session        |
+| `workspace.findTextInFiles`, `TextSearchQuery`                       | same, plus `validateTextSearchQuery`                          | One result list, not a match callback              |
+| `CancellationTokenSource`                                            | same                                                          |                                                    |
+| `contributes.keybindings`                                            | same, a subset                                                | One chord; letters, digits, F-keys                 |
+| `<view>.focus` and `view.<id>.visible` context keys                  | `<view>.focus` and `view.<id>.available`                      | Available: the tab is in the strip                 |
+| `withProgress({ location: { viewId } })`                             | same                                                          | Per chat session                                   |
+| `TreeItemLabel.highlights`, `AccessibilityInformation`               | same                                                          | Plus `TreeItem.line` for text matches              |
 
 Deviations and why:
 
@@ -720,6 +821,26 @@ Deviations and why:
 - The hidden-files toggle's warning tooltip no longer names the count ("3
   files in hidden directories"); command titles and tooltips are static, as
   in VS Code. The count is in the "N files hidden" line above the rows.
+- `searchInput`, `TreeItem.line`, session resources, agent icons and
+  statuses, `presentation: "graph"`, the badge's `label` and `tone`, and the
+  sessions tree API have no VS Code equivalent: VS Code's Search view and its
+  timeline-like views are built into the workbench, not drawn from an API.
+  `findTextInFiles` returns one list instead of calling back per match (the
+  route answers at once); `view.<id>.available` means the tab can be shown,
+  where VS Code's `view.<id>.visible` means it is on screen.
+- The built-in extension is `omnigent.content-search` (manifest names are
+  lowercase, as in VS Code), not `omnigent.contentSearch`.
+- The Agents graph's cards show the routed model next to the cost, as the
+  rows do; the classic graph showed only the cost. Its node labels are the
+  rows' labels (the classic graph skipped the task part of a `tool:task`
+  title). List or graph is kept for the window, where the classic panel
+  reset to the list each time it mounted; collapsed rows stay collapsed per
+  chat session for the page.
+- Content search's "No matches" line uses the results list's small print only
+  when there are rows; with none it is drawn at the message size. Its page is
+  drawn while its tab is selected (the classic panel stayed mounted, hidden);
+  the form's value and the results live in the host and the extension, so
+  nothing is lost.
 - The "Asleep" tag's tooltip is reworded ("Agent is asleep. Files are shown
   live from the host; send a message to wake it."), because the original
   used a dash this repository's text style avoids.
@@ -761,7 +882,9 @@ corepack pnpm exec vitest run src/vscodeExtensions src/shell/ChatHeader.test.tsx
   src/viteDevProxyToken.test.ts src/shell/railViews.test.ts \
   src/lib/sessionWorkspaceState.test.ts src/shell/WorkspacePanel.test.tsx \
   src/shell/FolderTree.test.tsx src/shell/FilesPanel.test.tsx src/builtinExtensions \
-  src/shell/useWorkspaceBridgeSource.test.tsx src/grid/GridSessionPane.test.tsx
+  src/shell/useWorkspaceBridgeSource.test.tsx src/grid/GridSessionPane.test.tsx \
+  src/shell/agentSessionGraph.test.ts src/shell/subagentPanelOpener.test.tsx \
+  src/shell/AppShell.subagent-nav.test.tsx src/shell/workspaceTabs/WorkspaceTabsPanel.test.tsx
 # Broader regression set
 corepack pnpm exec vitest run src/shell src/grid src/components/AgentInfo src/vscodeExtensions \
   src/builtinExtensions src/lib src/index.css.test.ts
@@ -777,7 +900,8 @@ corepack pnpm exec oxlint --deny-warnings --report-unused-disable-directives .
 corepack pnpm exec vite build --outDir /tmp/omnigent-build-check && \
   ! grep -rlE "x-omnigent-extension-token|__omnigent/extensions|omnigent/node|virtual:omnigent-dev-extensions|dev-path extension" /tmp/omnigent-build-check && \
   for s in "There is no data provider registered" "omnigent.refreshChangedFiles" \
-    "invalid when clause" "omnigent.changes.view"; do grep -rlqF "$s" /tmp/omnigent-build-check || exit 1; done
+    "invalid when clause" "omnigent.changes.view" "omnigent.content-search.view" \
+    "omnigent.agents.view" "omnigent.openSubagent"; do grep -rlqF "$s" /tmp/omnigent-build-check || exit 1; done
 corepack pnpm exec tsc -b   # app and node (vite config) projects
 ```
 
@@ -871,6 +995,34 @@ What the suites cover:
   files too), repository groups, search per session, sort, hidden files,
   list and tree per session, no stale rows from another session, scroll
   restore, and windowing with the real virtualizer.
+- `omnigent.content-search/contentSearchView.test.tsx` (the classic
+  ContentSearchPanel tests, ported) and `searchModel.test.ts`: submit only,
+  the filter fields, options sent as typed, highlights, opening a match at
+  its position, per-session forms and results, an in-flight search across
+  switches, errors hidden while retrying, runner warnings, invalid answers,
+  whole words, the length and boundary refusals, grouping by file; the
+  messages and items of the model.
+- `omnigent.agents/agentsView.test.tsx`, `agentsGraph.test.tsx` and
+  `agentsModel.test.ts` (the classic SubagentsPanel and SubagentsGraphView
+  tests, ported): costs, the main row's name, product name, preview and
+  kind, loading and failure, rows and links, opening through the workspace,
+  modified clicks, labels for every kind of sub-agent, harness and role
+  icons, no polling, highlights, every status tile, dimming, search params,
+  nesting, connectors, guides, collapsing, the depth cap, routed models, the
+  badge, live lists and the workspace on screen; List / Graph view, graph
+  cards and clicks; icons, cost formats equal to core's, items and badge.
+- `agentSessionGraph.test.ts`: the status and label a child session gets
+  through the API, the shared dot palette, the root status, and the graph
+  layout (`computeSubtreeWidths`, `layoutTree`, `treeFromRows`).
+- `keybindings.test.ts`, `searchViewsApi.test.ts`, `sessionTreeApi.test.ts`,
+  `treeItemKinds.test.ts`: chords and the keybinding service; search inputs
+  per session, accepting, validation, presentation, badges, view progress,
+  `findTextInFiles` (requests, whole words, refusals, cancellation),
+  `CancellationTokenSource`, `<view>.focus` and `view.<id>.available`, the
+  session commands; the session tree (root, lists, details, loading,
+  failures, costs, shared cache observers); the new tree item fields.
+- `subagentPanelOpener.test.tsx`: `openSessionFromView`, the decision the
+  classic rows made (setting, phone, opener refusal).
 - `useWorkspaceBridgeSource.test.tsx`: what a workspace surface publishes
   (loading before the environment, its failure, offline vs never started,
   sandbox states and a cached list, served from host, disabled), and actions
@@ -928,6 +1080,18 @@ OMNI_UI_REPO=<omnigent checkout> ./verify/verify.sh            # mocked + prod
     an SSE `session.changed_files.invalidated` adds a row; a click opens the
     file viewer; back to the list, and the Files tab works.
     `--only-changes` runs just these.
+  - The built-in Content search and Agents tabs, on mocked file contents, a
+    session tree (a working researcher, a finished explorer with a
+    grandchild waiting on the user) and agent costs: ⌘⇧F selects Content
+    search and focuses its field; a search shows the count, the files and
+    the marked matches; a match opens its file. Agents shows the badge
+    ("Agents 1/3"), the rows at their depths, the status tiles, costs and
+    previews, the graph with every agent, and a click opens a sub-agent.
+    With `--classic-repo <checkout before the migration>`, the same steps run
+    on that checkout's dev server (port + 2) against the same mock, every
+    reading must equal the classic tab's, and `--side-by-side-prefix` names
+    the side-by-side screenshots (`search-results`, `agents-list`,
+    `agents-graph`). `--only-tabs` runs just these.
 - `prod`: starts the dev server (port 5182) against the real backend with CLI
   profile auth, aborts every non-GET request from the page, and checks a real
   session shows a `$` value left of the info button (`prod.png`).

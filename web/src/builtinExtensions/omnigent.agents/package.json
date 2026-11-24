@@ -1,0 +1,55 @@
+{
+  "name": "agents",
+  "displayName": "Agents",
+  "description": "The session's tree of sub-agents with their status and cost, in the workspace rail's Agents tab.",
+  "publisher": "omnigent",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "omnigent": "*"
+  },
+  "activationEvents": [
+    "*"
+  ],
+  "browser": "./extension.ts",
+  "contributes": {
+    "views": {
+      "omnigent.rightPanel": [
+        {
+          "id": "omnigent.agents.view",
+          "name": "Agents",
+          "icon": "bot",
+          "builtInTab": "subagents"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "omnigent.agents.showList",
+        "title": "List view",
+        "icon": "list",
+        "toggled": "omnigent.agents.presentation != graph"
+      },
+      {
+        "command": "omnigent.agents.showGraph",
+        "title": "Graph view",
+        "icon": "network",
+        "toggled": "omnigent.agents.presentation == graph"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "omnigent.agents.showList",
+          "when": "view == omnigent.agents.view",
+          "group": "navigation"
+        },
+        {
+          "command": "omnigent.agents.showGraph",
+          "when": "view == omnigent.agents.view",
+          "group": "navigation"
+        }
+      ]
+    }
+  }
+}

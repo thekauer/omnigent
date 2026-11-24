@@ -47,7 +47,7 @@ describe("resolveWorkspaceActiveView", () => {
     ],
     ["Tasks", { rightRailTab: "tasks" }, {}, "tasks"],
     ["Tasks where they're hidden", { rightRailTab: "tasks" }, { showTasksTab: false }, "files"],
-    ["Agents", { rightRailTab: "subagents" }, {}, "subagents"],
+    ["Agents", { rightRailTab: "subagents" }, {}, "extension"],
     [
       "Agents without an agent tree",
       { rightRailTab: "subagents" },
@@ -82,16 +82,16 @@ describe("resolveWorkspaceActiveView", () => {
     expect(resolve(selection, availability).scope).toBe(scope);
   });
 
-  it("shows the content-search tab as its built-in extension view", () => {
+  it.each([
+    ["subagents", "omnigent.agents.view"],
+    ["content-search", "omnigent.content-search.view"],
+  ] as const)("shows the %s tab as its built-in extension view", (tab, viewId) => {
     expect(
       resolve(
-        { rightRailTab: "content-search" },
-        {
-          builtInTabViewId: (tab) =>
-            tab === "content-search" ? "omnigent.content-search.view" : undefined,
-        },
+        { rightRailTab: tab },
+        { builtInTabViewId: (asked) => (asked === tab ? viewId : undefined) },
       ),
-    ).toMatchObject({ scope: "extension", extensionViewId: "omnigent.content-search.view" });
+    ).toMatchObject({ scope: "extension", extensionViewId: viewId });
   });
 
   it("shows the Changes tab as its built-in extension view", () => {

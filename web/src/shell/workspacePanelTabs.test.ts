@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { ARIA_MOD_KEY, MOD_KEY, SHIFT_KEY } from "@/components/KeyboardShortcut";
-import { TAB_BADGE_BASE } from "./railTabs";
 import {
   WORKSPACE_PANEL_TABS,
   type WorkspacePanelTab,
@@ -14,8 +13,6 @@ const READY: WorkspacePanelTabContext = {
   showGithubTab: true,
   showTasksTab: true,
   showContentSearch: true,
-  agentCount: 0,
-  subagentsWorking: 0,
   digit: undefined,
   digitAriaShortcut: undefined,
 };
@@ -128,22 +125,11 @@ describe("workspacePanelTabPresentation", () => {
     });
   });
 
-  it("badges Agents with the total, or working/total in the success tone", () => {
-    expect(
-      workspacePanelTabPresentation(WORKSPACE_PANEL_TABS.subagents, { ...READY, agentCount: 2 }),
-    ).toMatchObject({
-      ariaLabel: "Agents 2",
-      badge: { text: 2, className: `${TAB_BADGE_BASE} sr-only text-muted-foreground` },
-    });
-    expect(
-      workspacePanelTabPresentation(WORKSPACE_PANEL_TABS.subagents, {
-        ...READY,
-        agentCount: 3,
-        subagentsWorking: 1,
-      }),
-    ).toMatchObject({
-      ariaLabel: "Agents 1/3",
-      badge: { text: "1/3", className: `${TAB_BADGE_BASE} sr-only text-success` },
+  it("draws Agents without a count until its built-in view gives one", () => {
+    // The count comes from the built-in Agents view's badge (railViews.test.ts).
+    expect(workspacePanelTabPresentation(WORKSPACE_PANEL_TABS.subagents, READY)).toMatchObject({
+      ariaLabel: "Agents",
+      badge: null,
     });
   });
 

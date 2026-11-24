@@ -717,8 +717,6 @@ describe("index.css native safe-area layout on the rendered WorkspacePanel", () 
           showFilesPanel: true,
           showGithubTab: false,
           showBrowserTab: false,
-          subagentsWorking: 0,
-          agentCount: 1,
           rootSessionId: null,
           selectedFilePath: null,
           openFiles: [],
