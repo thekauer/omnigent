@@ -17,11 +17,12 @@ entries, commands, progress notifications and the host reconnect provider seam,
 with the server wake moved onto it; and queue item 3 (Changes 2): extension views
 in the classic rail, host-rendered tree views, view/title actions with `when`
 clauses and context keys, built-in workspace commands, changed-files events and
-a per-chat-session `workspaceState`; and phases M1, M2 and M3 of queue item 4:
+a per-chat-session `workspaceState`; and phases M1 to M4 of queue item 4:
 built-in extensions load in every build, and the Changes, Content search,
-Agents and Tasks tabs are the built-in `omnigent.changes`,
-`omnigent.content-search`, `omnigent.agents` and `omnigent.tasks` extensions
-(Changes 2 retired into the first). Item 2 is still open.
+Agents, Tasks and Files tabs are the built-in `omnigent.changes`,
+`omnigent.content-search`, `omnigent.agents`, `omnigent.tasks` and
+`omnigent.files` extensions (Changes 2 retired into the first). Item 2 is
+still open; next is the Pull Requests tab.
 
 **Queue, in order.** Deployment-specific details (machine and host names, exact
 commands, the private Git host's URL shape) are kept in the personal extensions
@@ -91,16 +92,16 @@ repository's reference policy keeps them out of here.
      host's Run a workflow menu); TasksPanel is gone, its shared parts moved
      to `components/workflows/taskParts.tsx` (the workflow pages use them),
      and the `tasks` scope routes to the extension view.
-   - **Next, in order,** with what each needs from the API (from M1 to M3):
-     1. **Files** (`files`): the full tree with lazy directories, browse
-        location bar, search with globs, copy/open-in menus and reveal from
-        chat. Needs a directory listing API (`workspace.fs.readDirectory`
-        through the host), `TreeView.reveal`, item context menus, the title
-        bar's location breadcrumb as a contributed widget (or a `description`
-        with command links), and the same `omnigent.files.*` settings the
-        Changes tab already uses. Its search can follow Content search's
-        `searchInput` (globs as fields) instead of the filter field.
-     2. **Pull Requests** (`github`): not a tree: PR details, checks, merge
+   - **Done, M4: Files.** Scope items 30 to 32. `omnigent.files`
+     reproduces the classic tab on the API (lazy folders through
+     `workspace.fs.readDirectory`, `workspace.findFiles` with globs as filter
+     fields, the location bar, `TreeView.reveal`, selection and keyboard
+     navigation in the host's tree, the Open In menu as a host menu entry,
+     and `omnigent.revealInFiles` for the shell); FilesPanel and FolderTree
+     are gone, their rows moved to `shell/fileTreeRows.tsx` (the host's tree
+     view draws them), and `revealFolderInFilesPanel` became the command.
+   - **Next:**
+     1. **Pull Requests** (`github`): not a tree: PR details, checks, merge
         controls. Needs webview-like custom content or a richer host-drawn
         "details" view kind, the git-host provider seam (queue item 2), and
         write commands with confirmation, so it goes last.
@@ -704,6 +705,90 @@ description?, workflowId? })` and `.reload(sessionId)`; plus
     phone drawer draw `ExtensionRailView`; AppShell and each grid cell mount a
     `WorkspaceTasksPublisher` on their workspace source.
 
+30. **API additions for M4** (`omnigent.d.ts`).
+    - `workspace.rootPath` (the workspace root's absolute path, also on the
+      changed-files event), `workspace.fs.readDirectory(path)` and
+      `workspace.findFiles({ pattern, include, exclude, location }, token?)`,
+      for the workspace on screen at the call. A path is `""` for the root,
+      workspace-relative inside it, or absolute on the host outside it;
+      entries (`path`, `name`, `type`, `bytes`, `modifiedAt`) come back in
+      the same form. Listings go through the query cache the Files views
+      shared (`["workspace-all-files", session, location]`, 30 seconds
+      fresh), so the server's invalidation reaches them. A listing rejects
+      with an error named `FileSystemError` whose `code` is `Unavailable`,
+      `RunnerOffline`, `NoPermissions` (with `reachableRoots`) or `Unknown`;
+      a relative path with `..` is refused. A cancelled search settles at
+      once with "Canceled". `workspace.onDidChangeFiles` fires when the
+      session's listings were invalidated (a turn ended, a refresh, the
+      server said so), and `omnigent.refreshFiles` marks them stale and
+      reloads the changed files.
+    - `TreeDataProvider.getChildren` is called as a folder opens, so a lazy
+      folder answers from its cache or with a placeholder item and fires
+      `onDidChangeTreeData` when its listing lands; an item with neither a
+      command nor a `resourceUri` is drawn as a muted placeholder line.
+    - `TreeView.reveal(element, { select, focus, expand })` with
+      `getParent` (VS Code's): the host opens the ancestors (loading lazy
+      ones level by level), scrolls the row to the middle, flashes it and
+      selects or focuses it, once; a reveal for a view not drawn waits for
+      its session's next draw. `selection` and `onDidChangeSelection`; the
+      host tree moves between rows with the arrow keys, Home and End, and
+      Right and Left open, close or go to the parent.
+    - `TreeView.location` (`{ path, root, error }`, absolute) with a view
+      contribution's `location: true`: the host draws its location bar (the
+      folder's name, Back one folder, Back to working folder, the folder
+      picker where the session may browse its host, the error line) in
+      place of the title, the copy-folder-path button before the title
+      actions, and `onDidChangeLocation` fires with the picked folder.
+    - `filter.fields` on a view contribution (`{ id, label, placeholder }`),
+      `TreeView.filterFields` per chat session, and `TreeView.setFilter`
+      (the extension clears the search after revealing a result); two host
+      menu entries: `omnigent.toggleFilterFields` (the fields toggle, with
+      its dot while fields hold text) and the `omnigent.openIn` submenu (the
+      Open In menu for the view's location), placed by the manifest.
+    - A collapsible folder row runs its command on a double click; a
+      non-collapsible folder resource is the search results' folder row;
+      a file label with a `/` is drawn as a path, truncated at its start; a
+      file row shows its `size`. Folder rows animate their children in and
+      out (180 ms), as the classic tree did.
+    - Fixes from the M2 review: non-error view messages have
+      `role="status"`; text-match lines and path labels keep up to 2000
+      characters, so a match past column 200 keeps its mark.
+31. **The built-in Files tab** (`builtinExtensions/omnigent.files/`). The
+    location bar with copy, Refresh (spinning until the folder reloaded) and
+    Open In; the search field ("Find files by name"), Sort, the include and
+    exclude fields with their toggle, and the hidden-files toggle (on the
+    shared settings, its warning tone and count as in Changes); folders
+    first, then files in the shared order (equal to core's, tested);
+    folders listed lazily as they open, with "Loading…", "Failed to load
+    this folder." and the all-hidden line under them; the session's changed
+    files laid over the listing (created and deleted files the listing
+    lacks, the A/M/D letters, the folders' strongest-status dots and
+    colors), also after browsing into a subfolder; sizes and the download
+    and copy buttons; the search after a 300 ms pause, folders first, with
+    "Searching…", the failure, "No files match", the hidden-matches line
+    with its link and the stopped-early notes, a folder result revealing
+    the folder in the tree; browsing a double-clicked folder, the parent,
+    the working folder or a picked one, per chat session, with a refused
+    folder's reason in the bar; files outside the workspace opening by
+    their absolute path; the agent-asleep and sandbox states, the "Asleep"
+    tag; the open folders kept per view, chat session and browsed folder
+    (their ids name the location). `omnigent.revealInFiles(path, {
+sessionId, kind })` browses a folder (`kind: "folder"`, the default) or
+    shows a file in the tree, its folders opened and the row selected, live
+    or on the session's next draw.
+32. **Shell wiring.** The `files` scope draws the Files view (kept mounted,
+    hidden, behind an open file, as before); the phone drawer and grid
+    cells draw it for their session; a chat link to a folder and the file
+    viewer's new "Reveal in Files" (its View settings menu) run
+    `omnigent.revealInFiles` through the workspace bridge
+    (`shell/revealInFiles.ts`, `WorkspaceBridge.executeCommand`), which the
+    extension runtime connects to its command registry. The surface
+    publishes the root and a listings revision, and serves listings and
+    searches. The v2 sidebar's Files page (`FilesPageTree` with its own
+    vendored tree, selection and drag model) stays out of scope: it is not
+    a rail tab, its tree is a different component, and moving it needs
+    views in the v2 sidebar (on the "Later" list).
+
 ### Security and trust model
 
 A dev-path extension is trusted local code, like a folder passed to VS Code's
@@ -820,7 +905,7 @@ Plain ESM with `// @ts-check`; no build step.
 | `workspace.registerRemoteAuthorityResolver`                          | `hosts.registerReconnectProvider`                             | For "Reconnect host"; plain host data              |
 | `import * as vscode from "vscode"` in `main`                         | `import * as omnigent from "omnigent/node"`                   | A smaller API than the page's                      |
 | `contributes.views` (view containers)                                | `contributes.views["omnigent.rightPanel"]`                    | Tabs in the classic workspace rail                 |
-| `window.createTreeView(id, { treeDataProvider })`                    | same                                                          | Host-drawn rows; no selection, reveal or DnD       |
+| `window.createTreeView(id, { treeDataProvider })`                    | same                                                          | Host-drawn rows; no DnD or multi-select            |
 | `TreeDataProvider`, `TreeItem`, `TreeItemCollapsibleState`           | same, plain data                                              | Plus `decoration` and `gitStatus` on items         |
 | `TreeView.title`, `.description`, `.message`, `.badge`               | same                                                          |                                                    |
 | `contributes.commands` (`title`, `icon`, `toggled`)                  | same                                                          | Lucide icon names from an allowlist                |
@@ -842,6 +927,11 @@ Plain ESM with `// @ts-check`; no build step.
 | `TreeItemLabel.highlights`, `AccessibilityInformation`               | same                                                          | Plus `TreeItem.line` for text matches              |
 | `WebviewView` (closest), `MarkdownString`                            | `window.createPlanView`, Markdown goals drawn by the host     | Plain data, host-drawn; see deviations             |
 | (none)                                                               | `sessions.activeSessionTasks`, `watchActiveSessionTasks`      | The tasks of the workspace on screen               |
+| `workspace.fs.readDirectory`, `FileSystemError.code`                 | same, plain entries and a named error                         | Paths, not `Uri`s; cached by the host              |
+| `workspace.findFiles`                                                | same, with a name pattern, globs and a folder                 | One result list, at most 500                       |
+| `workspace.rootPath`, `FileSystemWatcher`                            | `rootPath`, `workspace.onDidChangeFiles`                      | One event for "listings may be stale"              |
+| `TreeView.reveal`, `selection`, `onDidChangeSelection`               | same                                                          | Needs `getParent` and item ids                     |
+| (none)                                                               | `TreeView.location`, `onDidChangeLocation`                    | The host's location bar                            |
 
 Deviations and why:
 
@@ -935,13 +1025,42 @@ Deviations and why:
   workflow starts (one `onLeave` for the surface), where the classic panel
   had one callback for each.
 
+- The Files tab's location bar, its filter fields and their toggle, and
+  the Open In menu are host-drawn (`location: true`, `filter.fields`,
+  `omnigent.toggleFilterFields`, `omnigent.openIn`): VS Code's Explorer
+  has no breadcrumb picker or name search over a remote host, and these
+  controls need host data (the session's host, the viewer's permission,
+  the session's reach, the local editors) an extension should not get.
+- `findFiles` takes a name pattern and a folder, where VS Code's takes an
+  include glob; `onDidChangeFiles` says only that listings may be stale,
+  instead of a watcher's per-file events (the server sends no more).
+  `readDirectory` returns entries with sizes and times instead of
+  `[name, FileType]` pairs, so a tree needs no `stat` per row.
+- Rows of the Files tab now name their workspace path (`src/app.ts` while
+  browsing `src`, `/etc/hosts` outside the workspace), so their copy and
+  download buttons act on the right file; the classic tree named them
+  relative to the browsed folder. The file opened is the same.
+- Expand state follows the host's per-view rule: a folder of changed
+  files that appears later starts open (the classic tree opened only those
+  present at the first load). A cleared search returns to the tree at
+  once, not after the 300 ms pause.
+- The search's "stopped early" note is drawn above the results (view
+  messages are), where the classic list put it below.
+- Messages that used a dash are reworded, as this repository's text style
+  avoids it: "All files are hidden. Click the eye icon to reveal them.",
+  "No files match "x". The search stopped early, so results may be
+  incomplete." and "Search stopped early, so results may be incomplete."
+- New: "Reveal in Files" in the file viewer's View settings menu, and the
+  host tree's keyboard navigation and selection (`aria-selected`).
+
 ## Later
 
 - `item.command` on header items.
 - Menus other than `view/title` (item context menus, the "..." overflow),
   `keybindings`, `configuration` and a settings UI.
-- The rest of the `when` grammar (`=~`, `in`, comparisons), tree selection and
-  `reveal`, and views in the v2 workspace sidebar.
+- The rest of the `when` grammar (`=~`, `in`, comparisons), multi-select and
+  drag and drop in trees, and views in the v2 workspace sidebar (then the v2
+  Files page could move onto the Files extension).
 - An isolated host: one Worker per extension inside a sandboxed iframe, with the
   API proxied over `postMessage`. The plain-data API is designed for this. This
   is the real security boundary: the dev plugin's path guards only stop
@@ -971,7 +1090,7 @@ corepack pnpm exec vitest run src/vscodeExtensions src/shell/ChatHeader.test.tsx
   src/hooks/useSessionReconnect.test.ts src/components/HostBadge.test.tsx \
   src/viteDevProxyToken.test.ts src/shell/railViews.test.ts \
   src/lib/sessionWorkspaceState.test.ts src/shell/WorkspacePanel.test.tsx \
-  src/shell/FolderTree.test.tsx src/shell/FilesPanel.test.tsx src/builtinExtensions \
+  src/shell/RevealInFileManager.test.tsx src/builtinExtensions \
   src/shell/useWorkspaceBridgeSource.test.tsx src/grid/GridSessionPane.test.tsx \
   src/shell/agentSessionGraph.test.ts src/shell/subagentPanelOpener.test.tsx \
   src/shell/AppShell.subagent-nav.test.tsx src/shell/workspaceTabs/WorkspaceTabsPanel.test.tsx
@@ -992,7 +1111,8 @@ corepack pnpm exec vite build --outDir /tmp/omnigent-build-check && \
   for s in "There is no data provider registered" "omnigent.refreshChangedFiles" \
     "invalid when clause" "omnigent.changes.view" "omnigent.content-search.view" \
     "omnigent.agents.view" "omnigent.openSubagent" "omnigent.tasks.view" \
-    "omnigent.tasks.runTaskAction" "picker:workflow"; do grep -rlqF "$s" /tmp/omnigent-build-check || exit 1; done
+    "omnigent.tasks.runTaskAction" "picker:workflow" "omnigent.files.view" \
+    "omnigent.revealInFiles" "omnigent.toggleFilterFields"; do grep -rlqF "$s" /tmp/omnigent-build-check || exit 1; done
 corepack pnpm exec tsc -b   # app and node (vite config) projects
 ```
 
@@ -1119,6 +1239,34 @@ What the suites cover:
   following the surface in front), watching, the task commands and their
   refusals, plan views (ownership, checked content, visibility, commands
   with arguments, teardown) and the content checks.
+- `omnigent.files/filesView.test.tsx` (the classic FilesPanel and FolderTree
+  tests, ported) and `filesModel.test.ts`: the header (folder name, copy,
+  Refresh, Close, the Asleep tag), the toolbar order and its toggles, sort,
+  the include and exclude fields, Refresh reloading open folders, loading,
+  environment failures, empty and all-hidden, runner offline (asleep or
+  not started), no files, other failures, sandbox states and a cached
+  listing, folder order by name, time, size and type, hidden files, lazy
+  folders with Loading, errors and all-hidden lines, a restored deep
+  expansion, sizes and download, the shared status column and trailing
+  slot, folder affordances, label tokens, the collapse animation,
+  indentation, opening files, expand state per session, scroll restore,
+  keyboard navigation, the change overlay (created, deleted, folder
+  colors, in a browsed subfolder, reload on a files change), search (the
+  pause, flat results, Searching, no stale results, no match, stopped
+  early, hidden matches, failures, clearing, globs, revealing a folder
+  result, per session), and browsing (plain label, unconfined picker,
+  collaborators, up and back, absolute files and copy, double-click,
+  search in the folder, per session across remounts, `revealInFiles` for
+  folders and files, a refused folder); the model's order (equal to
+  core's), locations, tree, overlay, statuses, results and items.
+  `filesApi.test.ts`: `rootPath`, listings and their path forms, refused
+  paths, error codes, `findFiles` and its cancellation, `onDidChangeFiles`,
+  `omnigent.refreshFiles`, the bridge's command runner, `reveal` (requests
+  per session, listeners, `getParent` and ids required), selection, the
+  location and its picks, filter fields per session, `setFilter`, the host
+  menu entries, malformed fields, and long labels.
+  `RevealInFileManager.test.tsx` checks the Files rows' "Show in Finder"
+  with workspace paths.
 - `keybindings.test.ts`, `searchViewsApi.test.ts`, `sessionTreeApi.test.ts`,
   `treeItemKinds.test.ts`: chords and the keybinding service; search inputs
   per session, accepting, validation, presentation, badges, view progress,
@@ -1203,6 +1351,17 @@ OMNI_UI_REPO=<omnigent checkout> ./verify/verify.sh            # mocked + prod
     marker; against the classic checkout every reading must be the same,
     and the side-by-side screenshots are `tasks`, `card`, `history` and
     `graph`. `prod` and `live` open the Tasks tab too. `--only-tabs` runs
+    just these.
+  - The built-in Files tab, on a mocked workspace (the changed files plus a
+    dotfile and a large file on disk, a file search route): the root with
+    the deleted file overlaid, two lazy folders opened, the rows' order,
+    letters, indentation, heights and colors, Sort by size, the hidden
+    toggle, a search, browsing into a folder and back, and opening a file;
+    with `--classic-repo` every reading must equal the classic tab's, and
+    the side-by-side screenshots are `root`, `tree`, `search` and
+    `browse`. The built-in also reveals a changed file opened from the
+    Changes tab through the viewer's "Reveal in Files". `prod` and `live`
+    open the Files tab and a folder in it (reads only). `--only-files` runs
     just these.
 - `prod`: starts the dev server (port 5182) against the real backend with CLI
   profile auth, aborts every non-GET request from the page, and checks a real
