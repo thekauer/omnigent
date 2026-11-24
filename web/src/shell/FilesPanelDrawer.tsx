@@ -130,7 +130,6 @@ export function FilesPanelDrawer({
       {open && !flatView && (
         <FilesPanel
           onFileSelect={onFileSelect}
-          flatView={false}
           showHidden={showHidden}
           onShowHiddenChange={onShowHiddenChange}
           sort={sort}

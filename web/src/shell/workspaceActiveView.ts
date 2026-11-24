@@ -54,8 +54,6 @@ export interface WorkspaceActiveView {
    * that view is not registered (yet).
    */
   extensionViewId: string | null;
-  /** The Files page lists only changes; never true now that Changes is a built-in view. */
-  flat: boolean;
   sideChatSelected: boolean;
   browserSelected: boolean;
 }
@@ -102,7 +100,6 @@ export function resolveWorkspaceActiveView(
     filePath: terminalKey === null ? selectedFilePath : null,
     scope,
     extensionViewId,
-    flat: false,
     sideChatSelected,
     browserSelected,
   };

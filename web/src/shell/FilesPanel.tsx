@@ -39,8 +39,9 @@ import {
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { type ChangedSort, FlatFileList } from "./FlatFileList";
+import type { ChangedSort } from "@/lib/changedSort";
 import { FolderTree } from "./FolderTree";
+import { fileListStatus } from "./fileListStatus";
 import { RunnerAsleepHint } from "./RunnerAsleepHint";
 import { useScrollRestore } from "./useScrollRestore";
 
@@ -48,21 +49,15 @@ interface FilesPanelProps {
   conversationId?: string;
   onFileSelect: (path: string) => void;
   /**
-   * Which scope this panel renders: false = full folder tree, true =
-   * changed-files-only flat list. Fixed by the caller (the Files vs Changes
-   * rail tab / mobile drawer) rather than switched inside the panel.
-   */
-  flatView: boolean;
-  /**
    * Whether hidden files (dot-prefixed paths) are visible. Lifted to
    * the parent so the state survives inline→drawer transitions.
    */
   showHidden: boolean;
   onShowHiddenChange: (showHidden: boolean) => void;
   /**
-   * Lifted changed-files sort order. Lifted to AppShell so it survives
-   * inline→drawer transitions and stays in sync with the FileViewer's
-   * prev/next navigation order.
+   * Lifted files sort order, shared with the Changes tab. Lifted to AppShell so
+   * it survives inline→drawer transitions and stays in sync with the
+   * FileViewer's prev/next navigation order.
    */
   sort: ChangedSort;
   onSortChange: (sort: ChangedSort) => void;
@@ -81,25 +76,7 @@ interface FilesPanelProps {
   frameless?: boolean;
 }
 
-interface QueryStatus {
-  data: unknown;
-  isLoading: boolean;
-  isError: boolean;
-  error: Error | null;
-}
-
-/**
- * A file list's query waits for the workspace environment, so until either has
- * data the list reports the environment's load or failure instead of empty.
- */
-export function fileListStatus(list: QueryStatus, environment: QueryStatus) {
-  const waiting = list.data === undefined && environment.data === undefined;
-  return {
-    isLoading: list.isLoading || (waiting && environment.isLoading),
-    isError: list.isError || (waiting && environment.isError),
-    error: list.error ?? (waiting ? environment.error : null),
-  };
-}
+export { fileListStatus };
 
 // ---------------------------------------------------------------------------
 // HiddenFilesToggle
@@ -246,10 +223,8 @@ export function revealFolderInFilesPanel(conversationId: string, absolutePath: s
 }
 
 /**
- * Right-side Files card. Always visible on desktop.
- *
- * - Flat view: changed files only (registry-backed, any depth).
- * - Tree view: all on-disk files in the workspace root, expandable folders.
+ * Right-side Files card: all on-disk files in the workspace root, expandable
+ * folders. (The Changes tab is the built-in `omnigent.changes` extension.)
  *
  * Uploaded/attached files are rendered inline in the message thread and are
  * intentionally not listed here.
@@ -257,7 +232,6 @@ export function revealFolderInFilesPanel(conversationId: string, absolutePath: s
 export function FilesPanel({
   conversationId: sessionId,
   onFileSelect,
-  flatView,
   showHidden,
   onShowHiddenChange,
   sort: changedSort,
@@ -289,7 +263,6 @@ export function FilesPanel({
   const runnerOnline = useSessionRunnerOnline(conversationId);
   const hostOnline = useSessionHostOnline(conversationId);
   const servedFromHost = runnerOnline === false && hostOnline === true;
-  const [changedSearch, setChangedSearch] = useState("");
   const [treeSearch, setTreeSearch] = useState("");
   const [debouncedTreeSearch, setDebouncedTreeSearch] = useState("");
   // "files to include" / "files to exclude" glob filters (VSCode-style),
@@ -379,7 +352,7 @@ export function FilesPanel({
     [onFileSelect, locationParam],
   );
 
-  const allFilesQuery = useWorkspaceAllFiles(conversationId, { enabled: !flatView }, locationParam);
+  const allFilesQuery = useWorkspaceAllFiles(conversationId, { enabled: true }, locationParam);
   // A refused location must say so on the bar. Rendering an empty tree instead
   // would read as "this directory is empty", which is a different fact.
   const unreachable =
@@ -395,18 +368,6 @@ export function FilesPanel({
   const hiddenFilesCount = changedFiles.filter((f) =>
     f.path.split("/").some((seg) => seg.startsWith(".")),
   ).length;
-
-  useEffect(() => {
-    if (!flatView) setChangedSearch("");
-    if (flatView) {
-      setTreeSearch("");
-      setDebouncedTreeSearch("");
-      setTreeInclude("");
-      setDebouncedTreeInclude("");
-      setTreeExclude("");
-      setDebouncedTreeExclude("");
-    }
-  }, [flatView]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -448,7 +409,7 @@ export function FilesPanel({
     debouncedTreeInclude,
     debouncedTreeExclude,
     {
-      enabled: !flatView && debouncedTreeSearch.trim().length > 0,
+      enabled: debouncedTreeSearch.trim().length > 0,
     },
     locationParam,
   );
@@ -458,38 +419,25 @@ export function FilesPanel({
   const refreshFiles = useCallback(async () => {
     if (refreshingFiles) return;
     setRefreshingFiles(true);
-    if (!flatView) setDirectoryRefreshToken((token) => token + 1);
+    setDirectoryRefreshToken((token) => token + 1);
     try {
-      const refreshes = flatView
-        ? [changedQuery.refetch()]
-        : [
-            allFilesQuery.refetch(),
-            changedQuery.refetch(),
-            ...(debouncedTreeSearch.trim() ? [treeSearchQuery.refetch()] : []),
-          ];
+      const refreshes = [
+        allFilesQuery.refetch(),
+        changedQuery.refetch(),
+        ...(debouncedTreeSearch.trim() ? [treeSearchQuery.refetch()] : []),
+      ];
       await Promise.all(refreshes);
     } finally {
       setRefreshingFiles(false);
     }
-  }, [
-    allFilesQuery,
-    changedQuery,
-    debouncedTreeSearch,
-    flatView,
-    refreshingFiles,
-    treeSearchQuery,
-  ]);
+  }, [allFilesQuery, changedQuery, debouncedTreeSearch, refreshingFiles, treeSearchQuery]);
 
-  // Persist/restore the list's scroll position across conversation and view
-  // switches. Keyed per conversation + view (Changed vs All) since the two
-  // lists have independent heights. Readiness is data presence rather than
-  // `isLoading` — the files queries are disabled (not loading) until the
-  // environment query resolves.
+  // Persist/restore the tree's scroll position across conversation switches.
+  // Readiness is data presence rather than `isLoading`: the files queries are
+  // disabled (not loading) until the environment query resolves.
   const scrollRef = useRef<HTMLElement>(null);
-  const scrollKey = conversationId
-    ? `files:${conversationId}:${flatView ? "changed" : "all"}`
-    : null;
-  const dataReady = flatView ? changedQuery.data !== undefined : allFilesQuery.data !== undefined;
+  const scrollKey = conversationId ? `files:${conversationId}:all` : null;
+  const dataReady = allFilesQuery.data !== undefined;
   const handleScroll = useScrollRestore(scrollRef, scrollKey, dataReady);
   // An idle-stopped managed sandbox is asleep, not failed: its status stays
   // idle, and with neither a runner nor a host to read the workspace from, the
@@ -507,8 +455,7 @@ export function FilesPanel({
     >
       {/* Header — single row: [workingDir] [copy] [refresh] [close?] [open in] */}
       <div className="flex h-11 shrink-0 items-center gap-[2px] px-2">
-        {flatView && <h2 className="shrink-0 pl-1 font-medium text-ui">Changes</h2>}
-        {!flatView && workingDir && workspaceRoot && (
+        {workingDir && workspaceRoot && (
           <BrowseLocationBar
             current={workingDir}
             workspace={workspaceRoot}
@@ -538,7 +485,7 @@ export function FilesPanel({
           </TooltipProvider>
         )}
         <div className="ml-auto flex items-center gap-[2px]">
-          {!flatView && workingDir && (
+          {workingDir && (
             // Its own provider: the header has no TooltipProvider ancestor
             // (each control here brings one), unlike the file rows.
             <TooltipProvider>
@@ -573,33 +520,58 @@ export function FilesPanel({
               <XIcon className="size-4" />
             </button>
           )}
-          {!flatView && workingDir && <OpenInMenu path={workingDir} directory />}
+          {workingDir && <OpenInMenu path={workingDir} directory />}
         </div>
       </div>
       {/* Content */}
       <div className="workspace-panel-header-divider shrink-0 border-t border-border" />
-      {/* Search toolbar — the Changed | All scope switch leads, then the
-              search field, then the per-view trailing control (Sort for the
-              changed list, glob filters for the tree). Lives outside the
-              scroll container so negative margins aren't clipped. */}
-      {flatView && (
-        <div
-          className="shrink-0 flex items-center gap-2 px-2 py-2 @max-[400px]/filespanel:flex-col @max-[400px]/filespanel:items-stretch"
-          onClick={(e) => e.stopPropagation()}
-        >
+      {/* Search toolbar: the search field, Sort, glob filters and the hidden
+          toggle. Lives outside the scroll container so negative margins aren't
+          clipped. */}
+      <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center gap-2 px-2 py-2 @max-[400px]/filespanel:flex-col @max-[400px]/filespanel:items-stretch">
           <div className="flex min-w-0 flex-1 items-center gap-[2px]">
             <div className="flex min-w-0 flex-1 items-center gap-[6px] rounded-lg border border-border px-[10px] py-[4px] transition-colors focus-within:border-border-strong">
               <SearchIcon className="size-4 shrink-0 text-muted-foreground" />
               <input
-                aria-label="Search changed files"
+                aria-label="Search all files"
                 className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-                onChange={(event) => setChangedSearch(event.target.value)}
-                placeholder="Find changed files by name"
+                onChange={(event) => setTreeSearch(event.target.value)}
+                placeholder="Find files by name"
                 type="search"
-                value={changedSearch}
+                value={treeSearch}
               />
             </div>
             <SortSelector sort={changedSort} onChange={onSortChange} />
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={showSearchFilters ? "Hide search filters" : "Show search filters"}
+                    aria-expanded={showSearchFilters}
+                    className={cn(
+                      "shrink-0",
+                      showSearchFilters || treeFiltersActive
+                        ? "text-foreground"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                    onClick={() => setShowSearchFilters((v) => !v)}
+                  >
+                    <FilterIcon />
+                    {treeFiltersActive && !showSearchFilters && (
+                      <span
+                        className="absolute top-0.5 right-0.5 size-1.5 rounded-full bg-primary"
+                        aria-hidden
+                      />
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">Files to include / exclude</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
             <HiddenFilesToggle
               showHidden={showHidden}
               onToggle={() => onShowHiddenChange(!showHidden)}
@@ -607,102 +579,30 @@ export function FilesPanel({
             />
           </div>
         </div>
-      )}
-      {!flatView && (
-        <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
-          <div className="flex items-center gap-2 px-2 py-2 @max-[400px]/filespanel:flex-col @max-[400px]/filespanel:items-stretch">
-            <div className="flex min-w-0 flex-1 items-center gap-[2px]">
-              <div className="flex min-w-0 flex-1 items-center gap-[6px] rounded-lg border border-border px-[10px] py-[4px] transition-colors focus-within:border-border-strong">
-                <SearchIcon className="size-4 shrink-0 text-muted-foreground" />
-                <input
-                  aria-label="Search all files"
-                  className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-                  onChange={(event) => setTreeSearch(event.target.value)}
-                  placeholder="Find files by name"
-                  type="search"
-                  value={treeSearch}
-                />
-              </div>
-              <SortSelector sort={changedSort} onChange={onSortChange} />
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={showSearchFilters ? "Hide search filters" : "Show search filters"}
-                      aria-expanded={showSearchFilters}
-                      className={cn(
-                        "shrink-0",
-                        showSearchFilters || treeFiltersActive
-                          ? "text-foreground"
-                          : "text-muted-foreground hover:text-foreground",
-                      )}
-                      onClick={() => setShowSearchFilters((v) => !v)}
-                    >
-                      <FilterIcon />
-                      {treeFiltersActive && !showSearchFilters && (
-                        <span
-                          className="absolute top-0.5 right-0.5 size-1.5 rounded-full bg-primary"
-                          aria-hidden
-                        />
-                      )}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent side="bottom">Files to include / exclude</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-              <HiddenFilesToggle
-                showHidden={showHidden}
-                onToggle={() => onShowHiddenChange(!showHidden)}
-                hiddenCount={hiddenFilesCount}
-              />
-            </div>
+        {showSearchFilters && (
+          <div className="flex flex-col gap-1.5 border-border border-t px-3 py-2">
+            <SearchFilterInput
+              label="files to include"
+              placeholder="e.g. *.ts, src/**"
+              value={treeInclude}
+              onChange={setTreeInclude}
+            />
+            <SearchFilterInput
+              label="files to exclude"
+              placeholder="e.g. **/node_modules, *.test.ts"
+              value={treeExclude}
+              onChange={setTreeExclude}
+            />
           </div>
-          {showSearchFilters && (
-            <div className="flex flex-col gap-1.5 border-border border-t px-3 py-2">
-              <SearchFilterInput
-                label="files to include"
-                placeholder="e.g. *.ts, src/**"
-                value={treeInclude}
-                onChange={setTreeInclude}
-              />
-              <SearchFilterInput
-                label="files to exclude"
-                placeholder="e.g. **/node_modules, *.test.ts"
-                value={treeExclude}
-                onChange={setTreeExclude}
-              />
-            </div>
-          )}
-        </div>
-      )}
+        )}
+      </div>
       <section
         ref={scrollRef}
-        className={cn(
-          "overflow-y-auto px-2 pb-2",
-          flatView ? "pt-1" : "pt-0",
-          fillHeight ? "min-h-0 flex-1" : "max-h-72",
-        )}
+        className={cn("overflow-y-auto px-2 pb-2 pt-0", fillHeight ? "min-h-0 flex-1" : "max-h-72")}
         onScroll={handleScroll}
       >
         {showAsleepHint && <RunnerAsleepHint sandboxOffline waking={sandboxWaking} />}
-        {!showAsleepHint && flatView && (
-          <FlatFileList
-            files={changedQuery.data?.data}
-            {...fileListStatus(changedQuery, envQuery)}
-            onFileSelect={onFileSelect}
-            showHidden={showHidden}
-            onShowHidden={() => onShowHiddenChange(true)}
-            searchQuery={changedSearch}
-            sort={changedSort}
-            conversationId={conversationId}
-            runnerWentOffline={runnerWentOffline}
-            scrollParentRef={scrollRef}
-          />
-        )}
-        {!showAsleepHint && !flatView && (
+        {!showAsleepHint && (
           <FolderTree
             files={allFilesQuery.data?.data}
             {...fileListStatus(allFilesQuery, envQuery)}

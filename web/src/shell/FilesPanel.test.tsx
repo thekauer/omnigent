@@ -1,4 +1,3 @@
-import { useVirtualizer } from "@tanstack/react-virtual";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { type ComponentProps, useState } from "react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
@@ -193,7 +192,6 @@ function searchResult(
 
 function renderPanel({
   conversationId,
-  flatView = false,
   showHidden = false,
   files,
   changedFiles = [],
@@ -209,7 +207,6 @@ function renderPanel({
   environment,
 }: {
   conversationId: string;
-  flatView?: boolean;
   showHidden?: boolean;
   files: WorkspaceFile[];
   changedFiles?: WorkspaceChangedFile[];
@@ -248,7 +245,7 @@ function renderPanel({
     searchResult(treeSearchResults, isSearching, isSearchPlaceholder, isSearchTruncated),
   );
 
-  return render(panelAt(conversationId, { flatView, onFileSelect, showHidden, onClose }));
+  return render(panelAt(conversationId, { onFileSelect, showHidden, onClose }));
 }
 
 /** A fresh routed FilesPanel element, so rerenders re-read the hook mocks. */
@@ -262,7 +259,6 @@ function panelAt(conversationId: string, props: Partial<ComponentProps<typeof Fi
             <FilesPanel
               sort="recent"
               onSortChange={vi.fn()}
-              flatView={false}
               onFileSelect={vi.fn()}
               showHidden={false}
               onShowHiddenChange={vi.fn()}
@@ -347,25 +343,6 @@ describe("FilesPanel header role", () => {
     expect(search.parentElement).not.toHaveClass("rounded-full");
   });
 
-  it("labels the changed-files scope with a Changes heading", () => {
-    renderPanel({
-      conversationId: "conv_header_changes",
-      files: [],
-      flatView: true,
-      workingDir: "/home/user/proj",
-    });
-    const changesHeading = screen.getByRole("heading", { name: "Changes" });
-    expect(changesHeading).toBeInTheDocument();
-    expect(changesHeading).toHaveClass("pl-1");
-    expect(changesHeading.parentElement).toHaveClass("h-11");
-    expect(screen.queryByRole("heading", { name: "Working folder" })).toBeNull();
-    expect(screen.queryByTestId("browse-location-path")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Go to parent folder" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Copy folder path: proj" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Refresh files" })).toBeInTheDocument();
-    expect(screen.getByRole("searchbox", { name: "Search changed files" })).toBeInTheDocument();
-  });
-
   it("uses the breadcrumb as the frameless inline-rail header", () => {
     useAllFilesMock.mockReturnValue(allFilesResult([]));
     useChangedFilesMock.mockReturnValue(changedFilesResult([]));
@@ -383,7 +360,6 @@ describe("FilesPanel header role", () => {
                 sort="recent"
                 onSortChange={vi.fn()}
                 frameless
-                flatView={false}
                 onFileSelect={vi.fn()}
                 showHidden={false}
                 onShowHiddenChange={vi.fn()}
@@ -431,27 +407,22 @@ describe("FilesPanel before the workspace environment answers", () => {
     error: state.error ?? null,
   });
 
-  it.each([false, true])(
-    "says it's loading, not that the list is empty (flatView=%s)",
-    (flatView) => {
-      renderPanel({
-        conversationId: "conv_env_pending",
-        flatView,
-        files: [],
-        listsLoaded: false,
-        environment: environment({ isLoading: true }),
-      });
+  it("says it's loading, not that the list is empty", () => {
+    renderPanel({
+      conversationId: "conv_env_pending",
+      files: [],
+      listsLoaded: false,
+      environment: environment({ isLoading: true }),
+    });
 
-      expect(screen.getByText("Loading…")).toBeInTheDocument();
-      expect(screen.queryByText("No files in workspace")).not.toBeInTheDocument();
-      expect(screen.queryByText("No workspace changes yet")).not.toBeInTheDocument();
-    },
-  );
+    expect(screen.getByText("Loading…")).toBeInTheDocument();
+    expect(screen.queryByText("No files in workspace")).not.toBeInTheDocument();
+    expect(screen.queryByText("No workspace changes yet")).not.toBeInTheDocument();
+  });
 
-  it.each([false, true])("shows why the environment failed (flatView=%s)", (flatView) => {
+  it("shows why the environment failed", () => {
     renderPanel({
       conversationId: "conv_env_failed",
-      flatView,
       files: [],
       listsLoaded: false,
       environment: environment({ error: new Error("environment unavailable") }),
@@ -481,17 +452,14 @@ describe("FilesPanel before the workspace environment answers", () => {
 });
 
 describe("FilesPanel on an asleep sandbox", () => {
-  it.each([true, false])(
-    "says the sandbox is offline instead of an empty workspace (flatView=%s)",
-    (flatView) => {
-      useAsleepMock.mockReturnValue(true);
-      renderPanel({ conversationId: "conv_asleep", flatView, files: [], listsLoaded: false });
+  it("says the sandbox is offline instead of an empty workspace", () => {
+    useAsleepMock.mockReturnValue(true);
+    renderPanel({ conversationId: "conv_asleep", files: [], listsLoaded: false });
 
-      expect(screen.getByText("Sandbox is offline")).toBeInTheDocument();
-      expect(screen.queryByText("No files in workspace")).not.toBeInTheDocument();
-      expect(screen.queryByText("No workspace changes yet")).not.toBeInTheDocument();
-    },
-  );
+    expect(screen.getByText("Sandbox is offline")).toBeInTheDocument();
+    expect(screen.queryByText("No files in workspace")).not.toBeInTheDocument();
+    expect(screen.queryByText("No workspace changes yet")).not.toBeInTheDocument();
+  });
 
   it("says the sandbox is starting while Reconnect host wakes it", () => {
     useAsleepMock.mockReturnValue(true);
@@ -514,33 +482,10 @@ describe("FilesPanel on an asleep sandbox", () => {
   });
 });
 
-describe("FilesPanel scope (fixed by the caller's Files/Changes tab)", () => {
-  it("does not enable the root filesystem listing while showing Changed files", () => {
-    renderPanel({
-      conversationId: "conv_changed_only",
-      flatView: true,
-      files: [file("src/App.tsx")],
-      changedFiles: [changedFile("src/App.tsx")],
-    });
-
-    expect(useChangedFilesMock).toHaveBeenCalledWith("conv_changed_only", {
-      enabled: true,
-    });
-    expect(useAllFilesMock).toHaveBeenCalledWith("conv_changed_only", { enabled: false }, "");
-    expect(useSearchMock).toHaveBeenCalledWith(
-      "conv_changed_only",
-      "",
-      "",
-      "",
-      { enabled: false },
-      "",
-    );
-  });
-
+describe("FilesPanel scope (the Files tab; Changes is a built-in extension)", () => {
   it("enables the root filesystem listing while showing All files", () => {
     renderPanel({
       conversationId: "conv_all_files",
-      flatView: false,
       files: [file("src/App.tsx")],
       changedFiles: [changedFile("src/App.tsx")],
     });
@@ -561,7 +506,6 @@ describe("FilesPanel scope (fixed by the caller's Files/Changes tab)", () => {
     // the panel itself no longer offers a scope toggle.
     renderPanel({
       conversationId: "conv_no_switch",
-      flatView: false,
       files: [file("src/App.tsx")],
     });
 
@@ -571,138 +515,7 @@ describe("FilesPanel scope (fixed by the caller's Files/Changes tab)", () => {
   });
 });
 
-describe("FilesPanel changed files search", () => {
-  it("shows the search field only for the Changed view", () => {
-    const files = [file("src/App.tsx")];
-
-    const { rerender } = renderPanel({ conversationId: "conv_search_visible", files });
-
-    expect(screen.queryByRole("searchbox", { name: "Search changed files" })).toBeNull();
-
-    rerender(
-      <MemoryRouter initialEntries={["/c/conv_search_visible"]}>
-        <Routes>
-          <Route
-            path="/c/:conversationId"
-            element={
-              <FilesPanel
-                sort="recent"
-                onSortChange={vi.fn()}
-                flatView={true}
-                onFileSelect={vi.fn()}
-                showHidden={false}
-                onShowHiddenChange={vi.fn()}
-              />
-            }
-          />
-        </Routes>
-      </MemoryRouter>,
-    );
-
-    expect(screen.getByRole("searchbox", { name: "Search changed files" })).toBeInTheDocument();
-  });
-
-  it("filters already-loaded changed files case-insensitively", () => {
-    renderPanel({
-      conversationId: "conv_search_filter",
-      flatView: true,
-      files: [file("src/components/Button.tsx"), file("docs/Guide.md")],
-      changedFiles: [changedFile("src/components/Button.tsx"), changedFile("docs/Guide.md")],
-    });
-
-    fireEvent.change(screen.getByRole("searchbox", { name: "Search changed files" }), {
-      target: { value: "BUTTON" },
-    });
-
-    expect(screen.getByText((text) => text.includes("Button.tsx"))).toBeInTheDocument();
-    expect(screen.queryByText("Guide.md")).toBeNull();
-
-    fireEvent.change(screen.getByRole("searchbox", { name: "Search changed files" }), {
-      target: { value: "" },
-    });
-
-    expect(screen.getByText((text) => text.includes("Button.tsx"))).toBeInTheDocument();
-    expect(screen.getByText("Guide.md")).toBeInTheDocument();
-  });
-
-  it("clears the search query when switching from Changed to Explore view", () => {
-    const { rerender } = renderPanel({
-      conversationId: "conv_search_clear",
-      flatView: true,
-      files: [file("src/App.tsx")],
-      changedFiles: [changedFile("src/App.tsx")],
-    });
-
-    fireEvent.change(screen.getByRole("searchbox", { name: "Search changed files" }), {
-      target: { value: "App" },
-    });
-    // Confirm the query is active before switching tabs
-    expect(screen.getByRole("searchbox", { name: "Search changed files" })).toHaveValue("App");
-
-    // Switch to Explore (tree) view
-    rerender(
-      <MemoryRouter initialEntries={["/c/conv_search_clear"]}>
-        <Routes>
-          <Route
-            path="/c/:conversationId"
-            element={
-              <FilesPanel
-                sort="recent"
-                onSortChange={vi.fn()}
-                flatView={false}
-                onFileSelect={vi.fn()}
-                showHidden={false}
-                onShowHiddenChange={vi.fn()}
-              />
-            }
-          />
-        </Routes>
-      </MemoryRouter>,
-    );
-
-    // Switch back to Changed view
-    rerender(
-      <MemoryRouter initialEntries={["/c/conv_search_clear"]}>
-        <Routes>
-          <Route
-            path="/c/:conversationId"
-            element={
-              <FilesPanel
-                sort="recent"
-                onSortChange={vi.fn()}
-                flatView={true}
-                onFileSelect={vi.fn()}
-                showHidden={false}
-                onShowHiddenChange={vi.fn()}
-              />
-            }
-          />
-        </Routes>
-      </MemoryRouter>,
-    );
-
-    // useEffect resets changedSearch when flatView becomes false, so the box should be empty on return
-    expect(screen.getByRole("searchbox", { name: "Search changed files" })).toHaveValue("");
-  });
-
-  it("matches changed files by full path, not just filename", () => {
-    renderPanel({
-      conversationId: "conv_search_path",
-      flatView: true,
-      files: [file("src/components/Button.tsx"), file("docs/Guide.md")],
-      changedFiles: [changedFile("src/components/Button.tsx"), changedFile("docs/Guide.md")],
-    });
-
-    fireEvent.change(screen.getByRole("searchbox", { name: "Search changed files" }), {
-      target: { value: "src/components" },
-    });
-
-    // Directory prefix "src/components" matches src/components/Button.tsx via f.path
-    expect(screen.getByText((text) => text.includes("Button.tsx"))).toBeInTheDocument();
-    // docs/Guide.md does not share the path prefix
-    expect(screen.queryByText("docs/Guide.md")).toBeNull();
-  });
-
+describe("FilesPanel drawer", () => {
   it("renders a Close button in full-screen drawer mode", () => {
     // Passing `onClose` switches the panel into its full-screen layout
     // — the drawer's chrome.
@@ -757,7 +570,6 @@ describe("FilesPanel changed files search", () => {
                       <FilesPanel
                         sort="recent"
                         onSortChange={vi.fn()}
-                        flatView={false}
                         onFileSelect={vi.fn()}
                         showHidden={showHidden}
                         onShowHiddenChange={setShowHidden}
@@ -831,7 +643,6 @@ describe("FilesPanel changed files search", () => {
                       <FilesPanel
                         sort="recent"
                         onSortChange={vi.fn()}
-                        flatView={false}
                         onFileSelect={vi.fn()}
                         showHidden={showHidden}
                         onShowHiddenChange={setShowHidden}
@@ -858,93 +669,11 @@ describe("FilesPanel changed files search", () => {
     // Drawer should reflect the same show-hidden state (toggle now reads "Hide hidden files")
     expect(screen.getByRole("button", { name: "Hide hidden files" })).toBeInTheDocument();
   });
-
-  it("keeps hidden search results hidden until the hidden-file toggle is enabled", () => {
-    useAllFilesMock.mockReturnValue(allFilesResult([file(".env"), file("src/App.tsx")]));
-    useChangedFilesMock.mockReturnValue(
-      changedFilesResult([changedFile(".env"), changedFile("src/App.tsx")]),
-    );
-    useDirectoryMock.mockReturnValue(directoryResult());
-    useEnvironmentMock.mockReturnValue(environmentResult());
-    useSearchMock.mockReturnValue(searchResult());
-
-    function Harness() {
-      const [showHidden, setShowHidden] = useState(false);
-      return (
-        <MemoryRouter initialEntries={["/c/conv_search_hidden"]}>
-          <Routes>
-            <Route
-              path="/c/:conversationId"
-              element={
-                <FilesPanel
-                  sort="recent"
-                  onSortChange={vi.fn()}
-                  flatView={true}
-                  onFileSelect={vi.fn()}
-                  showHidden={showHidden}
-                  onShowHiddenChange={setShowHidden}
-                />
-              }
-            />
-          </Routes>
-        </MemoryRouter>
-      );
-    }
-    render(<Harness />);
-
-    fireEvent.change(screen.getByRole("searchbox", { name: "Search changed files" }), {
-      target: { value: ".env" },
-    });
-
-    expect(screen.queryByText(".env")).toBeNull();
-    expect(screen.getByText('No changed files match ".env"')).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: "Show hidden files" }));
-
-    expect(screen.getByText(".env")).toBeInTheDocument();
-  });
 });
 
 describe("FilesPanel tree (Explore) search", () => {
   afterEach(() => {
     vi.useRealTimers();
-  });
-
-  it("shows the search box for the Explore view but not the Changed view", () => {
-    // Tree view (flatView=false) should have the tree search box
-    const { rerender } = renderPanel({
-      conversationId: "conv_tree_search_visible",
-      files: [file("src/App.tsx")],
-    });
-
-    expect(screen.getByRole("searchbox", { name: "Search all files" })).toBeInTheDocument();
-    // The changed-files search must not appear in tree mode
-    expect(screen.queryByRole("searchbox", { name: "Search changed files" })).toBeNull();
-
-    // Switch to Changed view
-    rerender(
-      <MemoryRouter initialEntries={["/c/conv_tree_search_visible"]}>
-        <Routes>
-          <Route
-            path="/c/:conversationId"
-            element={
-              <FilesPanel
-                sort="recent"
-                onSortChange={vi.fn()}
-                flatView={true}
-                onFileSelect={vi.fn()}
-                showHidden={false}
-                onShowHiddenChange={vi.fn()}
-              />
-            }
-          />
-        </Routes>
-      </MemoryRouter>,
-    );
-
-    // Changed view has its own search box; tree search must not be present
-    expect(screen.getByRole("searchbox", { name: "Search changed files" })).toBeInTheDocument();
-    expect(screen.queryByRole("searchbox", { name: "Search all files" })).toBeNull();
   });
 
   it("shows search results as a flat list after the debounce fires", () => {
@@ -1187,68 +916,6 @@ describe("FilesPanel tree (Explore) search", () => {
     expect(screen.getByText('No files match "zzznotfound"')).toBeInTheDocument();
   });
 
-  it("clears the tree search query when switching to the Changed tab", () => {
-    vi.useFakeTimers();
-
-    const { rerender } = renderPanel({
-      conversationId: "conv_tree_search_tab_clear",
-      files: [file("src/App.tsx")],
-      treeSearchResults: [file("abc/test.md")],
-    });
-
-    const searchBox = screen.getByRole("searchbox", { name: "Search all files" });
-    fireEvent.change(searchBox, { target: { value: "test" } });
-    expect(searchBox).toHaveValue("test");
-
-    // Switch to Changed (flat) view — this triggers the useEffect that calls
-    // setTreeSearch("") so returning to tree view starts with a blank query.
-    rerender(
-      <MemoryRouter initialEntries={["/c/conv_tree_search_tab_clear"]}>
-        <Routes>
-          <Route
-            path="/c/:conversationId"
-            element={
-              <FilesPanel
-                sort="recent"
-                onSortChange={vi.fn()}
-                flatView={true}
-                onFileSelect={vi.fn()}
-                showHidden={false}
-                onShowHiddenChange={vi.fn()}
-              />
-            }
-          />
-        </Routes>
-      </MemoryRouter>,
-    );
-
-    // Switch back to Explore view
-    rerender(
-      <MemoryRouter initialEntries={["/c/conv_tree_search_tab_clear"]}>
-        <Routes>
-          <Route
-            path="/c/:conversationId"
-            element={
-              <FilesPanel
-                sort="recent"
-                onSortChange={vi.fn()}
-                flatView={false}
-                onFileSelect={vi.fn()}
-                showHidden={false}
-                onShowHiddenChange={vi.fn()}
-              />
-            }
-          />
-        </Routes>
-      </MemoryRouter>,
-    );
-
-    // The search box must be empty — treeSearch was cleared by the useEffect
-    // when flatView became true.  Using rerender() (not render()) keeps the
-    // same component instance so state mutations are observable across renders.
-    expect(screen.getByRole("searchbox", { name: "Search all files" })).toHaveValue("");
-  });
-
   it("hides dotfile search results when showHidden is false", () => {
     vi.useFakeTimers();
 
@@ -1412,72 +1079,6 @@ describe("FilesPanel tree (Explore) search", () => {
       ),
     ).toBe(true);
   });
-
-  it("clears the include/exclude filters when switching to the Changed tab", () => {
-    const { rerender } = renderPanel({
-      conversationId: "conv_tree_filters_tab_clear",
-      files: [file("src/App.tsx")],
-      treeSearchResults: [],
-    });
-
-    fireEvent.click(screen.getByRole("button", { name: "Show search filters" }));
-    fireEvent.change(screen.getByRole("textbox", { name: "files to include" }), {
-      target: { value: "*.ts" },
-    });
-    fireEvent.change(screen.getByRole("textbox", { name: "files to exclude" }), {
-      target: { value: "**/node_modules" },
-    });
-    expect(screen.getByRole("textbox", { name: "files to include" })).toHaveValue("*.ts");
-    expect(screen.getByRole("textbox", { name: "files to exclude" })).toHaveValue(
-      "**/node_modules",
-    );
-
-    // Switch to Changed (flat) view — the useEffect resets the glob filters.
-    rerender(
-      <MemoryRouter initialEntries={["/c/conv_tree_filters_tab_clear"]}>
-        <Routes>
-          <Route
-            path="/c/:conversationId"
-            element={
-              <FilesPanel
-                sort="recent"
-                onSortChange={vi.fn()}
-                flatView={true}
-                onFileSelect={vi.fn()}
-                showHidden={false}
-                onShowHiddenChange={vi.fn()}
-              />
-            }
-          />
-        </Routes>
-      </MemoryRouter>,
-    );
-
-    // Switch back to Explore — the toggle stays open (UI preference persists)
-    // but both filter inputs must be empty again (the values were cleared).
-    rerender(
-      <MemoryRouter initialEntries={["/c/conv_tree_filters_tab_clear"]}>
-        <Routes>
-          <Route
-            path="/c/:conversationId"
-            element={
-              <FilesPanel
-                sort="recent"
-                onSortChange={vi.fn()}
-                flatView={false}
-                onFileSelect={vi.fn()}
-                showHidden={false}
-                onShowHiddenChange={vi.fn()}
-              />
-            }
-          />
-        </Routes>
-      </MemoryRouter>,
-    );
-
-    expect(screen.getByRole("textbox", { name: "files to include" })).toHaveValue("");
-    expect(screen.getByRole("textbox", { name: "files to exclude" })).toHaveValue("");
-  });
 });
 
 describe("FilesPanel sort control", () => {
@@ -1487,7 +1088,6 @@ describe("FilesPanel sort control", () => {
     renderPanel({
       conversationId: "conv_all_sort",
       files: [file("a.txt")],
-      flatView: false,
     });
     const sort = screen.getByRole("button", { name: /^Sort:/ });
     expect(sort).toBeInTheDocument();
@@ -1514,19 +1114,6 @@ describe("FilesPanel scroll position persistence", () => {
     if (!section) throw new Error("scroll section not found");
     return { result, section };
   }
-
-  it("windows the Changes list against the same scroll container", () => {
-    const { container } = renderPanel({
-      conversationId: "conv_scroll_changes",
-      flatView: true,
-      files: [],
-      changedFiles: [changedFile("src/app.ts")],
-    });
-
-    const section = container.querySelector("section");
-    expect(section).not.toBeNull();
-    expect(vi.mocked(useVirtualizer).mock.lastCall?.[0].getScrollElement()).toBe(section);
-  });
 
   it("restores the saved scroll position when returning to a conversation", () => {
     const files = Array.from({ length: 50 }, (_, i) => file(`file-${i}.ts`));
@@ -1907,7 +1494,6 @@ describe("FilesPanel browse location", () => {
               <FilesPanel
                 sort="recent"
                 onSortChange={vi.fn()}
-                flatView={false}
                 onFileSelect={vi.fn()}
                 showHidden={false}
                 onShowHiddenChange={vi.fn()}
@@ -2065,7 +1651,6 @@ describe("FilesPanel double-click navigation", () => {
     // collaborator browsing a folder they can already list.
     renderPanel({
       conversationId: "conv_dblclick",
-      flatView: false,
       files: [file("src/App.tsx")],
       workingDir: "/home/user/proj",
     });
@@ -2085,7 +1670,6 @@ describe("FilesPanel double-click navigation", () => {
     const onFileSelect = vi.fn();
     renderPanel({
       conversationId: "conv_open_after_nav",
-      flatView: false,
       files: [file("src/App.tsx")],
       workingDir: "/home/user/proj",
       onFileSelect,

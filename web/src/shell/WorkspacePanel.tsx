@@ -2119,7 +2119,6 @@ function WorkspacePanelImpl({
                     conversationId={contained ? conversationId : undefined}
                     frameless
                     onFileSelect={openFileViewer}
-                    flatView={activeView.flat}
                     showHidden={filesPanelShowHidden}
                     onShowHiddenChange={onShowHiddenChange}
                     sort={filesPanelSort}

@@ -1,6 +1,8 @@
 # VS Code-style web extensions (prototype)
 
-Status: prototype, dev server only. It lives next to the existing extension system
+Status: prototype. The host and its API ship in every build, where they run the
+built-in extensions (the Changes tab is one); dev-path extensions load on the dev
+server only. It lives next to the existing extension system
 (`web/src/extensions/`, `omnigent/extensions/`, `sdks/web-extension`), which it does
 not change.
 
@@ -15,7 +17,9 @@ entries, commands, progress notifications and the host reconnect provider seam,
 with the server wake moved onto it; and queue item 3 (Changes 2): extension views
 in the classic rail, host-rendered tree views, view/title actions with `when`
 clauses and context keys, built-in workspace commands, changed-files events and
-a per-chat-session `workspaceState`. Item 2 is still open.
+a per-chat-session `workspaceState`; and phase M1 of queue item 4: built-in
+extensions load in every build, and the Changes tab is the built-in
+`omnigent.changes` extension (Changes 2 retired into it). Item 2 is still open.
 
 **Queue, in order.** Deployment-specific details (machine and host names, exact
 commands, the private Git host's URL shape) are kept in the personal extensions
@@ -62,13 +66,47 @@ repository's reference policy keeps them out of here.
    - Classic rail only; the v2 sidebar and the existing tabs are unchanged.
    - Built-in tabs and extension views now resolve through one descriptor path
      (`railTabDescriptor`), a step toward item 4.
-4. **Tab migration** once Changes 2 is proven.
-   - Move the right-panel tabs onto built-in extensions, which needs production
-     loading. Delete each core version once its replacement passes the same tests.
-   - Order: Changes, Content search, Agents, Tasks, then Files, then Pull Requests.
-   - Terminals, browser, side chat and the file viewer stay in core.
-   - This satisfies the AGENTS.md "move a built-in onto each seam" rule, which is
-     waived until then.
+4. **Tab migration.** Each right-panel tab becomes a built-in extension, and its
+   core code is deleted once the extension passes the same tests.
+   Terminals, browser, side chat and the file viewer stay in core. This
+   satisfies the AGENTS.md "move a built-in onto each seam" rule.
+   - **Done, M1: built-ins in production and Changes.** Scope items 18 to 22.
+     `omnigent.changes` reproduces the classic tab on the API, plus "View as
+     Tree / View as List" per chat session; FlatFileList, the FilesPanel
+     changed-files branch and the `flat` scope are gone, and Changes 2 is
+     retired from `thekauer.dev`.
+   - **Next, in order,** with what each needs from the API (from M1):
+     1. **Content search** (`content-search`): a view whose body is not a
+        tree: a query field with include/exclude globs and grouped results
+        with line previews. Needs a search provider API (a workspace text
+        search through the host, cancellable, streamed in pages) and a result
+        row kind (file plus matching lines, a match range to highlight);
+        `TreeView.filter` is close but runs per keystroke and is not async.
+        The ⌘⇧F shortcut and focusing the field need a `focus` command for
+        views (VS Code's `<view>.focus`) and keybinding contributions.
+     2. **Agents** (`subagents`): the session tree of sub-agents with live
+        status. Needs a sessions API beyond the active session (the session
+        tree, child status and busy state as events), item `contextValue`
+        menus (`view/item/context`) for its row actions, a row status tone
+        or spinner, and a command that opens a sub-agent as a rail tab. Its
+        badge (working/total) fits `TreeView.badge` with a tooltip; the
+        tone (success when working) would be a badge field.
+     3. **Tasks** (`tasks`): the session's todos and workflow runs. Needs a
+        todos/journal source in the API, rows with check states, nested runs
+        (children loaded lazily, which the tree has), and the `when` keys
+        for its visibility (workflows enabled), which today is a core
+        `shown` rule: a view `when` clause on the contribution, as in VS Code.
+     4. **Files** (`files`): the full tree with lazy directories, browse
+        location bar, search with globs, copy/open-in menus and reveal from
+        chat. Needs a directory listing API (`workspace.fs.readDirectory`
+        through the host), `TreeView.reveal`, item context menus, the title
+        bar's location breadcrumb as a contributed widget (or a `description`
+        with command links), and the same `omnigent.files.*` settings the
+        Changes tab already uses.
+     5. **Pull Requests** (`github`): not a tree: PR details, checks, merge
+        controls. Needs webview-like custom content or a richer host-drawn
+        "details" view kind, the git-host provider seam (queue item 2), and
+        write commands with confirmation, so it goes last.
 
 Stop after item 4. The rest of the "Later" list waits for the user.
 
@@ -123,11 +161,11 @@ Stop after item 4. The rest of the "Later" list waits for the user.
    - When declared folders are nested, a file belongs to the deepest one.
    - The dev server prints `[omnigent-extensions] loaded <id> <version> from <dir>`
      for each extension, plus warnings and errors.
-2. **In-page host** (`web/src/vscodeExtensions/host.ts`, booted from `main.tsx` via
-   `devLoader.ts`; no host code loads when no extension is configured). The
-   loader is imported dynamically under `import.meta.env.DEV`, so production
-   builds contain no loader, host or API code; only the small header-item
-   registry and slot ship.
+2. **In-page host** (`web/src/vscodeExtensions/host.ts`, created by
+   `extensionHost.ts` from `main.tsx` in every build to run the built-ins, see
+   item 18; `devLoader.ts` adds the dev-path extensions). The dev loader is
+   imported dynamically under `import.meta.env.DEV`, so production builds
+   contain no loader, endpoint, token or Node host code.
    - Each entry is loaded with dynamic `import()`. Its `activate(context)` is
      awaited; `deactivate()` is called on teardown when present.
    - `import * as omnigent from "omnigent"` inside an extension folder resolves to
@@ -382,6 +420,104 @@ error? }`, coalesced per microtask, also on session switches.
     JSON per extension. `update` rejects without a session or over a cap;
     stored buckets that break a cap are dropped on read.
 
+18. **Built-in extensions** (`web/src/builtinExtensions/`,
+    `vscodeExtensions/extensionHost.ts`, `builtinApi.ts`, `manifest.ts`).
+    - Each built-in is a folder `<publisher>.<name>/` (publisher `omnigent`)
+      with a `package.json` manifest of the same shape as a dev extension's
+      and an entry module. `index.ts` imports them statically and checks
+      their manifests with the validator the dev plugin uses
+      (`manifest.ts`, pure, also run in a unit test); a manifest that fails
+      is logged and left out.
+    - Built-in code uses the same typed API through a static binding,
+      `bindExtensionApi(id)` (getters onto the instance the host registers
+      before activation). A unit test keeps the boundary: built-in sources
+      import only relative files, `omnigent` types and that binding; no
+      React, store or other app code.
+    - `startExtensionHost()` in `main.tsx` creates the window's one host and
+      its services and starts the built-ins before the first render, in
+      every build. Contributions register synchronously, and a statically
+      imported entry activates within microtasks, so a built-in view is
+      there for the first paint. The dev loader adds dev-path extensions
+      to the same host and sets the Node command route
+      (`CommandRegistry.setNodeRoute`), still only under
+      `import.meta.env.DEV`.
+    - Built-ins have no load timeout (the module is in the bundle) and 60
+      seconds to activate. When one fails, its views show an error state
+      ("<name> could not be loaded") and the failure is logged; a built-in
+      tab whose view never registered shows the same error, never a blank
+      panel.
+19. **Built-in tabs backed by extension views.** A built-in extension's
+    view may name `builtInTab` (refused with a warning for other
+    extensions). It then stands in for that tab: the tab keeps its id
+    (`changes`, so a saved `rightRailTab: "changes"` still works), its place,
+    its ⌃N digit and its visibility rule, and takes its label, icon and
+    badge from the view. `resolveWorkspaceActiveView` routes such a tab to
+    the `extension` scope with the view's id; the extension strip leaves
+    the view out.
+20. **Workspaces on screen** (`shell/workspaceBridge.ts`,
+    `useWorkspaceBridgeSource.ts`). Each workspace surface registers a
+    source: AppShell for the session in the route, and each grid cell; the
+    most recently activated active source is the one on screen (AppShell
+    while not in the grid, the selected cell in it). A source publishes the
+    session's changed files, why they cannot load (`availability`:
+    agent asleep, sandbox offline or starting; or an error string), whether
+    the host serves an asleep agent's files, and its file settings (sort
+    order, hidden files), and handles `openFile`, the refresh and settings
+    changes. `workspace.activeSessionId` and `workspaceState` follow it, so
+    a grid cell's Changes tab shows that cell's files and opens them in that
+    cell. A view drawn for a session other than the one whose data the
+    provider has waits ("Loading…") instead of showing another session's
+    rows. A grid cell also drops a saved `ext:` tab whose view is gone, as
+    AppShell does.
+21. **API additions for workspace views.**
+    - `workspace.availability`, `servedFromHost`, `activeSessionId`; the
+      change event carries the first two.
+    - `workspace.getConfiguration(section)` / `onDidChangeConfiguration`,
+      as in VS Code, for `omnigent.files.sortOrder` and
+      `omnigent.files.showHidden` (shared with the Files tab and the file
+      viewer's prev/next order); each is also the context key
+      `config.<name>`, so `when` and `toggled` can read it.
+    - `TreeView.visible` / `onDidChangeVisibility` (VS Code), fired as a
+      drawn copy mounts, unmounts, or its rail is hidden. The Changes
+      extension refetches a list that failed when it comes on screen (the
+      502 on a first fetch), and the host does the same for any view
+      (`onViewShown`), as the classic tab's own query did on mount.
+    - `TreeView.filter` / `onDidChangeFilter` with the view contribution's
+      `filter: { placeholder, ariaLabel }`: a host-drawn filter field above
+      the rows, its text kept per view and chat session; the extension
+      filters its own data.
+    - `TreeView.message` takes `[text](command:id)` links (drawn as buttons,
+      as a trusted `MarkdownString`), `messageSeverity: "error"`, `notice`
+      (host-drawn states: agent asleep, sandbox offline or starting), and
+      `tag` (a pill after the title, such as "Asleep").
+    - `TreeItem.size` (bytes, drawn like the list's file size).
+    - Menus: group `filter` of `view/title` draws next to the filter field;
+      `contributes.submenus` with their own menus, drawn as a dropdown whose
+      button names the toggled entry (a sort order); menu entries may set
+      `tooltip` and `tone: "warning"`. While a title action's command runs,
+      its button is disabled and its icon spins.
+    - More allowlisted icons (sort, eye-off, moon and others).
+22. **The built-in Changes tab** (`builtinExtensions/omnigent.changes/`).
+    The flat list with folder subtitles, A/M/D and `+N −M`, repository
+    groups, the search field ("Find changed files by name"), the Sort menu
+    and hidden-files toggle (on the shared settings), Refresh, copy, download
+    and reveal on rows (host row actions of resource rows), the changed-file
+    badge, scroll restore (host-side for every view, per view and session),
+    the agent-asleep and sandbox states, the "Asleep" tag, and the
+    "N files hidden. Click to show" and "No changed files match" lines.
+    Plus "View as Tree" / "View as List" (`omnigent.changes.viewMode`
+    context key), kept per chat session in `workspaceState`. The mobile
+    drawer draws the same view with a close button; grid cells draw it for
+    their own session.
+    - Hardening from the review of the previous step: all sessions'
+      mementos share a 256 KiB cap (oldest dropped first) and a full
+      storage quota evicts the oldest mementos and retries; a `__proto__`
+      key is stored like any other; the store's parse is cached by its raw
+      text; `when` clauses are capped at 1024 characters and 32 levels of
+      nesting; tree handles are kept for the current and the previous root
+      load only; tree reloads are coalesced per animation frame, no-op view
+      updates are skipped, and AppShell subscribes to view ids only.
+
 ### Security and trust model
 
 A dev-path extension is trusted local code, like a folder passed to VS Code's
@@ -463,11 +599,11 @@ dev/
   src/features/index.js   list of features
   src/features/sessionCost.js
   src/features/<reconnect>.js  the dev machine reconnect provider
-  src/features/changes2.js  Changes 2: tree view, view/title toggle, per-session mode
   src/node/extension.js   Node entry: registers the Node commands
-  test/fake-<cli>/        a fake machine CLI the tests put first on PATH
+  testing/                test helpers: a fake omnigent API, and a fake machine CLI
+                          (testing/fake-<cli>/) the tests put first on PATH
   types/omnigent.d.ts     vendored copy of the API typings
-  test/*.test.js          node:test unit tests against a fake omnigent API
+  test/*.test.js          node:test unit tests (`node --test` runs them all)
   verify/verify.sh        browser verify loop (see below)
 ```
 
@@ -506,6 +642,11 @@ Plain ESM with `// @ts-check`; no build step.
 | `when` clauses, `setContext`                                         | same, a subset                                               | No `=~`, `in`, `<`/`>` or `not in` yet             |
 | `ExtensionContext.workspaceState` (`Memento`)                        | same                                                         | Per chat session, not per workspace                |
 | `vscode.open` and SCM resource states                                | `omnigent.openFile`, `workspace.getChangedFiles`             | Plain paths, the session's changed files           |
+| Built-in extensions (`extensions/` in the VS Code repo)              | `web/src/builtinExtensions/<publisher.name>/`                | Bundled, activated at startup in every build       |
+| `TreeView.visible`, `onDidChangeVisibility`                          | same                                                         | Visible while a drawn copy is on screen            |
+| `workspace.getConfiguration`, `onDidChangeConfiguration`             | same, for `omnigent.files.*`                                 | `config.*` context keys as in VS Code              |
+| `contributes.submenus` and submenu menus                             | same, in `view/title`                                        | Drawn as a dropdown naming the toggled entry       |
+| `TreeView.message` as a `MarkdownString` with command links          | `[text](command:id)` in a plain string                       | No other markdown                                  |
 
 Deviations and why:
 
@@ -540,6 +681,26 @@ Deviations and why:
 - `workspaceState` follows the chat session on screen, because the UI has no
   workspace folder; it lives in the browser's storage, not on the server.
 - Context keys live in the page only; the Node side cannot set or read them.
+- A built-in extension's view can stand in for a built-in tab (`builtInTab`);
+  VS Code has no such thing, but it keeps saved tab ids, digits and positions.
+- `TreeView.filter`, `notice`, `tag`, `messageSeverity`, `TreeItem.size` and
+  the `filter` menu group, menu `tooltip` and `tone` have no VS Code
+  equivalent: the classic Changes tab had a search field in its toolbar, a
+  sort menu and hidden toggle beside it, a red error line, the asleep hints
+  and the Asleep pill, which VS Code's tree view cannot express. VS Code's own
+  tree filter is host-side; here the extension filters, so it can say "No
+  changed files match".
+- A submenu's button shows the toggled entry's title ("Sort: Filename"),
+  where VS Code shows only an icon.
+- `workspace.activeSessionId` and `workspaceState` follow the workspace on
+  screen (a selected grid cell), which can differ from
+  `sessions.activeSession`; VS Code has one workspace per window.
+- The hidden-files toggle's warning tooltip no longer names the count ("3
+  files in hidden directories"); command titles and tooltips are static, as
+  in VS Code. The count is in the "N files hidden" line above the rows.
+- The "Asleep" tag's tooltip is reworded ("Agent is asleep. Files are shown
+  live from the host; send a message to wake it."), because the original
+  used a dash this repository's text style avoids.
 
 ## Later
 
@@ -554,8 +715,8 @@ Deviations and why:
   accidents, so untrusted extensions must wait for it (see
   [Security and trust model](#security-and-trust-model)).
 - Host-enforced permissions per API namespace.
-- Loading server-installed extensions (not only dev paths), including production
-  builds.
+- Loading server-installed extensions in production builds (built-ins load
+  there now; dev paths still do not).
 - `engines.omnigent` enforcement against the running version.
 - More activation events (`onView`, `onCommand`, `onSession...`).
 - A cancellation token for Node commands, and crash-loop detection that
@@ -577,9 +738,11 @@ corepack pnpm exec vitest run src/vscodeExtensions src/shell/ChatHeader.test.tsx
   src/hooks/useSessionReconnect.test.ts src/components/HostBadge.test.tsx \
   src/viteDevProxyToken.test.ts src/shell/railViews.test.ts \
   src/lib/sessionWorkspaceState.test.ts src/shell/WorkspacePanel.test.tsx \
-  src/shell/FolderTree.test.tsx src/shell/FilesPanel.test.tsx src/shell/FlatFileList.test.tsx
+  src/shell/FolderTree.test.tsx src/shell/FilesPanel.test.tsx src/builtinExtensions \
+  src/shell/useWorkspaceBridgeSource.test.tsx src/grid/GridSessionPane.test.tsx
 # Broader regression set
-corepack pnpm exec vitest run src/shell src/components/AgentInfo src/vscodeExtensions
+corepack pnpm exec vitest run src/shell src/grid src/components/AgentInfo src/vscodeExtensions \
+  src/builtinExtensions src/lib src/index.css.test.ts
 # Static checks
 corepack pnpm exec prettier --check vite.config.ts vite.omnigentExtensions.ts \
   vite.omnigentNodeExtensions.ts vite.omnigentNodeHost.mjs vite.devProxyToken.ts \
@@ -587,11 +750,12 @@ corepack pnpm exec prettier --check vite.config.ts vite.omnigentExtensions.ts \
   src/components/HostBadge.tsx src/pages/ChatPage.tsx src/shell/ChatHeader.tsx src/main.tsx \
   src/store/chatStore.ts src/store/conversationState.ts
 corepack pnpm exec oxlint --deny-warnings --report-unused-disable-directives .
-# A production build carries no Node host, endpoint or token code, and none of the
-# extension API (built-in commands, manifest checks); the rail's view code ships
+# A production build carries the host, the API and the built-ins, and no dev
+# loader, Node host, endpoint or token code
 corepack pnpm exec vite build --outDir /tmp/omnigent-build-check && \
-  ! grep -rlE "x-omnigent-extension-token|__omnigent/extensions|omnigent/node|omnigent\.refreshChangedFiles|invalid when clause" /tmp/omnigent-build-check && \
-  grep -rlq "There is no data provider registered" /tmp/omnigent-build-check
+  ! grep -rlE "x-omnigent-extension-token|__omnigent/extensions|omnigent/node|virtual:omnigent-dev-extensions|dev-path extension" /tmp/omnigent-build-check && \
+  for s in "There is no data provider registered" "omnigent.refreshChangedFiles" \
+    "invalid when clause" "omnigent.changes.view"; do grep -rlqF "$s" /tmp/omnigent-build-check || exit 1; done
 corepack pnpm exec tsc -b   # app and node (vite config) projects
 ```
 
@@ -669,6 +833,28 @@ What the suites cover:
   passed to `activate`; changed-files snapshots and events, through the API
   and after deactivation; the built-in commands; contributed views registered
   before activation and the tree view through the host.
+- `builtinExtensions.test.ts`: one registry entry per folder, valid manifests
+  and contributions without warnings, the API boundary of built-in sources, a
+  bad manifest left out and logged, views registered synchronously before
+  activation settles, a failed built-in's error state and log.
+- `omnigent.changes/changesModel.test.ts`: the pure logic: sort orders equal
+  to core's (`changedFilesOrder.ts`, used by the file viewer's prev/next),
+  repository groups, the folder tree, filtering, hidden files, diffstats,
+  tree items and every message of the classic list.
+- `omnigent.changes/changesView.test.tsx` and `changesView.virtual.test.tsx`:
+  the tab through the real host and rail view: chrome, close button, badge,
+  Refresh (spinning while it runs), loading, agent asleep, never started,
+  errors, sandbox states, the Asleep tag, the retry when a failed list comes
+  on screen, size, status and actions, diffstats, copy, open (deleted
+  files too), repository groups, search per session, sort, hidden files,
+  list and tree per session, no stale rows from another session, scroll
+  restore, and windowing with the real virtualizer.
+- `useWorkspaceBridgeSource.test.tsx`: what a workspace surface publishes
+  (loading before the environment, its failure, offline vs never started,
+  sandbox states and a cached list, served from host, disabled), and actions
+  going to the surface in front.
+- `GridSessionPane.test.tsx`: the selected cell's workspace in front, and a
+  saved `ext:` tab without its view falling back.
 - `ChatHeader.test.tsx`: items render immediately left of `agent-info-trigger` in
   order, update live, show the tooltip, stay out without a session or while
   pending, and leave the DOM unchanged when no item is visible.
@@ -708,23 +894,26 @@ OMNI_UI_REPO=<omnigent checkout> ./verify/verify.sh            # mocked + prod
     SSH, with the exact argv. A host that is not one of the machines opens the
     existing reconnect dialog, and a resumable managed host still sends the
     server wake (`retry_session`, captured by the mock).
-  - Changes 2, on mocked changed files, directory listings and file contents:
-    the tab opens with the flat list; the title bar has "View as Tree" next to
-    Refresh; list rows match the classic Changes rows (names, subtitles,
-    `+N −M`, A/M/D, row height, icon and label position, color, font, spacing);
-    "View as Tree" shows folders, whose rows match the classic Files tree's
-    (indent, icon and label position, height, color, font, status); folders
-    collapse and expand; each session keeps its own mode; tab and mode survive
-    a reload; an SSE `session.changed_files.invalidated` adds a row; a click
-    opens the file viewer; the classic tabs still work. Screenshots:
-    `list-side-by-side.png`, `tree-side-by-side.png` and their halves.
-    `--only-changes2` runs just these.
+  - The built-in Changes tab, on mocked changed files, directory listings and
+    file contents: the tab opens with the flat list and its badge; title bar,
+    search field, Sort and hidden toggle; rows read as the classic list did
+    (names, subtitles, `+N −M`, A/M/D, order, even rows; with
+    `OMNI_VERIFY_CLASSIC_LIST_PNG` set to a screenshot of the classic list,
+    `list-side-by-side.png`); search; "View as Tree" shows folders, whose rows
+    match the classic Files tree's (indent, icon and label position, height,
+    color, font, status; `tree-side-by-side.png`); folders collapse and
+    expand; each session keeps its own mode; tab and mode survive a reload;
+    an SSE `session.changed_files.invalidated` adds a row; a click opens the
+    file viewer; back to the list, and the Files tab works.
+    `--only-changes` runs just these.
 - `prod`: starts the dev server (port 5182) against the real backend with CLI
   profile auth, aborts every non-GET request from the page, and checks a real
   session shows a `$` value left of the info button (`prod.png`).
 - `live`: the same smoke check against an already running UI (`live.png`), by
   default the omni-ui server on `127.0.0.1:$OMNI_UI_PORT` (30000 when unset;
-  `--live-url` overrides it).
+  `--live-url` overrides it). `prod` and `live` also open the built-in Changes
+  tab as list and tree (reads only).
+- Screenshots go to `$OMNI_EXT_VERIFY_DIR` (default `/tmp/omni-ext-verify/`).
 - Every run also checks that the extension's vendored `omnigent.d.ts` matches this
   checkout's copy, and that the ports it used are free afterwards.
 
