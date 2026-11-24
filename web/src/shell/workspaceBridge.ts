@@ -5,6 +5,7 @@
 // screen. Plain module state, so the extension host never reaches into React or
 // the query cache.
 
+import type { QueryClient } from "@tanstack/react-query";
 import type { WorkspaceChangedFile } from "@/hooks/useWorkspaceChangedFiles";
 import type { ChangedSort } from "@/lib/changedSort";
 
@@ -28,12 +29,42 @@ export interface WorkspaceBridgeState {
   /** The agent is asleep but its host serves the workspace. */
   readonly servedFromHost: boolean;
   readonly settings: WorkspaceFileSettings;
+  /** The top-level session of the session's tree; null until known. */
+  readonly rootSessionId?: string | null;
+  /** Whether the server reports per-agent costs (the session overview feature). */
+  readonly agentCostsEnabled?: boolean;
+}
+
+/** Where a file opens: a 1-based line and column. */
+export interface WorkspaceFilePosition {
+  readonly line?: number;
+  readonly column?: number;
 }
 
 export interface WorkspaceActions {
-  openFile: (path: string) => void;
+  openFile: (path: string, position?: WorkspaceFilePosition) => void;
   refreshChangedFiles: () => Promise<void>;
   updateSettings: (patch: Partial<WorkspaceFileSettings>) => void;
+  /** Shows a session; `asSubagent` opens it beside the chat when the user's setting asks for it. */
+  openSession?: (sessionId: string, options: { asSubagent: boolean }) => void;
+  /** The query cache the surface's session data lives in. */
+  readonly queryClient?: QueryClient;
+}
+
+/**
+ * The workspace rail of a session on screen: which extension views it can show
+ * now (their tabs are in its strip), and how to bring one to the front.
+ */
+export interface WorkspaceRail {
+  readonly sessionId: string;
+  readonly views: readonly string[];
+  /** Selects the view's tab, reveals the rail and focuses the view's input; false when it cannot. */
+  reveal: (viewId: string) => boolean;
+}
+
+export interface WorkspaceRailRegistration {
+  update: (rail: WorkspaceRail | null) => void;
+  dispose: () => void;
 }
 
 export const DEFAULT_WORKSPACE_FILE_SETTINGS: WorkspaceFileSettings = Object.freeze({
@@ -75,7 +106,9 @@ function sameState(left: WorkspaceBridgeState, right: WorkspaceBridgeState): boo
     left.availability === right.availability &&
     left.servedFromHost === right.servedFromHost &&
     left.settings.sortOrder === right.settings.sortOrder &&
-    left.settings.showHidden === right.settings.showHidden
+    left.settings.showHidden === right.settings.showHidden &&
+    (left.rootSessionId ?? null) === (right.rootSessionId ?? null) &&
+    (left.agentCostsEnabled ?? false) === (right.agentCostsEnabled ?? false)
   );
 }
 
@@ -85,6 +118,8 @@ export class WorkspaceBridge {
   private nextOrder = 0;
   private front: SourceEntry | null = null;
   private state: WorkspaceBridgeState = EMPTY_WORKSPACE_STATE;
+  private readonly rails = new Map<object, { rail: WorkspaceRail; order: number }>();
+  private readonly railListeners = new Set<() => void>();
 
   /** The workspace on screen; empty without an active source. */
   getState = (): WorkspaceBridgeState => this.state;
@@ -146,9 +181,64 @@ export class WorkspaceBridge {
     return actions;
   }
 
-  openFile(path: string): void {
-    this.actions().openFile(path);
+  openFile(path: string, position?: WorkspaceFilePosition): void {
+    if (position) this.actions().openFile(path, position);
+    else this.actions().openFile(path);
   }
+
+  openSession(sessionId: string, options: { asSubagent: boolean }): void {
+    const openSession = this.actions().openSession;
+    if (!openSession) throw new Error("this workspace cannot open sessions");
+    openSession(sessionId, options);
+  }
+
+  /** The query cache of the workspace on screen, if it shares one. */
+  queryClient(): QueryClient | undefined {
+    return this.front?.actions?.queryClient;
+  }
+
+  /** Registers a workspace rail; the latest one for the session on screen is used. */
+  createRail(): WorkspaceRailRegistration {
+    const key = {};
+    let disposed = false;
+    const notify = () => {
+      for (const listener of [...this.railListeners]) listener();
+    };
+    return {
+      update: (rail) => {
+        if (disposed) return;
+        if (rail === null) this.rails.delete(key);
+        else this.rails.set(key, { rail, order: this.rails.get(key)?.order ?? ++this.nextOrder });
+        notify();
+      },
+      dispose: () => {
+        if (disposed) return;
+        disposed = true;
+        if (this.rails.delete(key)) notify();
+      },
+    };
+  }
+
+  /** The rail of the session on screen, if one is registered. */
+  rail(): WorkspaceRail | undefined {
+    const sessionId = this.state.sessionId;
+    if (sessionId === null) return undefined;
+    let best: { rail: WorkspaceRail; order: number } | undefined;
+    for (const entry of this.rails.values()) {
+      if (entry.rail.sessionId === sessionId && (!best || entry.order > best.order)) best = entry;
+    }
+    return best?.rail;
+  }
+
+  /** Fires when a rail changes, as well as when the workspace on screen does. */
+  subscribeRails = (listener: () => void): (() => void) => {
+    this.railListeners.add(listener);
+    const unsubscribe = this.subscribe(listener);
+    return () => {
+      this.railListeners.delete(listener);
+      unsubscribe();
+    };
+  };
 
   async refreshChangedFiles(): Promise<void> {
     await this.actions().refreshChangedFiles();

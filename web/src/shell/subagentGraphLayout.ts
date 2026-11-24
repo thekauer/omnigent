@@ -2,6 +2,7 @@ import type { AgentCost } from "@/hooks/useAgentCosts";
 import type { ChildSessionInfo } from "@/hooks/useChildSessions";
 import { MAX_TREE_DEPTH } from "@/hooks/useChildSessions";
 import { nativeCodingAgentForSubagentWrapper, WRAPPER_LABEL_KEY } from "@/lib/nativeCodingAgents";
+import type { RailTreeNode } from "./railViews";
 import { childStatus, type AgentActivity } from "./subagentStatus";
 
 export type { AgentActivity };
@@ -15,6 +16,8 @@ export interface AgentNodeData {
   preview: string | null;
   /** Display cost, when the session overview feature has loaded one. */
   cost?: AgentCost;
+  /** The row the node stands for: its decorations (cost) and command. */
+  node?: RailTreeNode;
   [key: string]: unknown;
 }
 
@@ -24,6 +27,7 @@ export interface TreeNode {
   activity: AgentActivity;
   statusLabel: string;
   preview: string | null;
+  node?: RailTreeNode;
   children: TreeNode[];
 }
 
@@ -95,6 +99,7 @@ export function layoutTree(
         sessionId: node.id,
         isActive: node.id === activeId,
         preview: node.preview,
+        ...(node.node === undefined ? {} : { node: node.node }),
       },
     });
 
@@ -208,4 +213,37 @@ export function buildGraphLayout(
     0,
   );
   return layoutTree(tree, activeId);
+}
+
+/**
+ * The graph's tree from loaded tree rows: `children` maps a parent handle (""
+ * for the roots) to its rows. The first root is the graph's root; a row seen
+ * twice is drawn once.
+ */
+export function treeFromRows(
+  children: ReadonlyMap<string, readonly RailTreeNode[]>,
+  maxDepth: number,
+): TreeNode | null {
+  const root = children.get("")?.[0];
+  if (!root) return null;
+  const visited = new Set<string>();
+  const build = (row: RailTreeNode, depth: number): TreeNode => {
+    visited.add(row.handle);
+    return {
+      id: row.sessionId ?? row.handle,
+      label: row.label,
+      activity: row.agentStatus?.state ?? "idle",
+      statusLabel: row.agentStatus?.label ?? "Idle",
+      // The root's card names it; its preview stays in the list.
+      preview: depth === 0 ? null : (row.description ?? null),
+      node: row,
+      children:
+        depth >= maxDepth
+          ? []
+          : (children.get(row.handle) ?? [])
+              .filter((child) => !visited.has(child.handle))
+              .map((child) => build(child, depth + 1)),
+    };
+  };
+  return build(root, 0);
 }

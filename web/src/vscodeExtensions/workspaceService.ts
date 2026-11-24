@@ -4,12 +4,67 @@
 import type * as omnigent from "omnigent";
 import type { WorkspaceChangedFile } from "@/hooks/useWorkspaceChangedFiles";
 import { isValidSort } from "@/lib/changedSort";
+import {
+  type ContentSearchResult,
+  contentSearchPattern,
+  fetchContentSearch,
+  fitsContentSearchLimit,
+  wholeWordRegexProblem,
+} from "@/lib/contentSearch";
 import type {
   WorkspaceBridge,
   WorkspaceBridgeState,
   WorkspaceFileSettings,
 } from "@/shell/workspaceBridge";
 import { EventEmitter } from "./base";
+
+const MAX_GLOBS_LENGTH = 4096;
+
+/** Why a text search cannot be sent, as the Content search tab checked it. */
+export function textSearchQueryProblem(
+  query: omnigent.TextSearchQuery,
+): omnigent.TextSearchQueryProblem | undefined {
+  const pattern = String(query?.pattern ?? "");
+  const regex = query?.isRegExp === true;
+  const wholeWord = query?.isWordMatch === true;
+  // Whole word is sent as a regular expression, which can outgrow the server's query limit.
+  if (!fitsContentSearchLimit(contentSearchPattern({ query: pattern, regex, wholeWord }).pattern)) {
+    return "tooLong";
+  }
+  // Such an expression could escape the whole-word wrapper and lose its boundaries.
+  const problem = wholeWord && regex ? wholeWordRegexProblem(pattern) : null;
+  if (problem === "unopened-group") return "unopenedGroup";
+  if (problem === "verbose") return "verbose";
+  return undefined;
+}
+
+function toSearchComplete(result: ContentSearchResult): omnigent.TextSearchComplete {
+  return Object.freeze({
+    matches: Object.freeze(
+      result.matches.map((match) =>
+        Object.freeze({
+          path: match.path,
+          line: match.line,
+          column: match.column,
+          preview: Object.freeze({
+            text: match.text,
+            matches: Object.freeze([
+              Object.freeze([match.match_start, match.match_end]) as [number, number],
+            ]),
+          }),
+        }),
+      ),
+    ),
+    limitHit: result.truncated === true,
+    message: result.warning || undefined,
+  });
+}
+
+function canceledError(): Error {
+  const error = new Error("Canceled");
+  error.name = "Canceled";
+  return error;
+}
 
 /** The workspace settings by full name, with the bridge field each one is. */
 const SETTINGS: Readonly<
@@ -93,6 +148,51 @@ export class WorkspaceService {
 
   get servedFromHost(): boolean {
     return this.source.servedFromHost;
+  }
+
+  /** `workspace.findTextInFiles`: the workspace on screen at the call, cancellable. */
+  async findTextInFiles(
+    query: omnigent.TextSearchQuery,
+    options: omnigent.FindTextInFilesOptions | undefined,
+    token: omnigent.CancellationToken | undefined,
+  ): Promise<omnigent.TextSearchComplete> {
+    const sessionId = this.bridge.getState().sessionId;
+    if (sessionId === null) throw new Error("no workspace is open");
+    if (typeof query?.pattern !== "string" || query.pattern === "") {
+      throw new TypeError("findTextInFiles needs a pattern");
+    }
+    const problem = textSearchQueryProblem(query);
+    if (problem !== undefined) throw new Error(`the query cannot be searched (${problem})`);
+    if (token?.isCancellationRequested) throw canceledError();
+    const sent = contentSearchPattern({
+      query: query.pattern,
+      regex: query.isRegExp === true,
+      wholeWord: query.isWordMatch === true,
+    });
+    const globs = (value: unknown) =>
+      typeof value === "string" ? value.slice(0, MAX_GLOBS_LENGTH) : "";
+    const controller = new AbortController();
+    const subscription = token?.onCancellationRequested(() => controller.abort());
+    try {
+      const result = await fetchContentSearch(
+        sessionId,
+        sent.pattern,
+        {
+          caseSensitive: query.isCaseSensitive === true,
+          regex: sent.regex,
+          include: globs(options?.include),
+          exclude: globs(options?.exclude),
+        },
+        controller.signal,
+      );
+      if (token?.isCancellationRequested) throw canceledError();
+      return toSearchComplete(result);
+    } catch (error) {
+      if (controller.signal.aborted || token?.isCancellationRequested) throw canceledError();
+      throw error instanceof Error ? error : new Error(String(error));
+    } finally {
+      subscription?.dispose();
+    }
   }
 
   /** Every setting's current value by full name, for the `config.*` context keys. */

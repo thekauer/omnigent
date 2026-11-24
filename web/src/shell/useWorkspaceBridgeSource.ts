@@ -12,6 +12,8 @@ import {
   useWorkspaceChangedFiles,
   useWorkspaceEnvironment,
 } from "@/hooks/useWorkspaceChangedFiles";
+import { useServerInfo } from "@/lib/CapabilitiesContext";
+import { isFeatureEnabled } from "@/lib/capabilities";
 import type { ChangedSort } from "@/lib/changedSort";
 import { useChatStore } from "@/store/chatStore";
 import { fileListStatus } from "./fileListStatus";
@@ -19,6 +21,7 @@ import {
   type WorkspaceAvailability,
   type WorkspaceBridge,
   type WorkspaceBridgeState,
+  type WorkspaceFilePosition,
   type WorkspaceFileSettings,
   type WorkspaceSource,
   workspaceBridge,
@@ -32,7 +35,11 @@ export interface WorkspaceBridgeSourceOptions {
   enabled: boolean;
   /** Whether this surface is on screen; the latest activated one is in front. */
   active: boolean;
-  openFile: (path: string) => void;
+  openFile: (path: string, position?: WorkspaceFilePosition) => void;
+  /** The top-level session of the session's tree, for the Agents view; null until known. */
+  rootSessionId?: string | null;
+  /** Shows a session; `asSubagent` opens a sub-agent beside the chat when the setting asks for it. */
+  openSession?: (sessionId: string, options: { asSubagent: boolean }) => void;
   sortOrder: ChangedSort;
   onSortOrderChange: (sort: ChangedSort) => void;
   showHidden: boolean;
@@ -49,9 +56,12 @@ export function useWorkspaceBridgeSource({
   onSortOrderChange,
   showHidden,
   onShowHiddenChange,
+  rootSessionId = null,
+  openSession,
   bridge = workspaceBridge,
 }: WorkspaceBridgeSourceOptions): void {
   const queryClient = useQueryClient();
+  const agentCostsEnabled = isFeatureEnabled(useServerInfo(), "session_overview");
   const changedQuery = useWorkspaceChangedFiles(sessionId, { enabled });
   const environmentQuery = useWorkspaceEnvironment(sessionId, { enabled });
   // The runner went offline after it was up (the session failed): a message reconnects it.
@@ -90,13 +100,26 @@ export function useWorkspaceBridgeSource({
     () => ({ sortOrder, showHidden }),
     [sortOrder, showHidden],
   );
-  const latest = useRef({ openFile, onSortOrderChange, onShowHiddenChange, sessionId });
-  latest.current = { openFile, onSortOrderChange, onShowHiddenChange, sessionId };
+  const latest = useRef({
+    openFile,
+    onSortOrderChange,
+    onShowHiddenChange,
+    sessionId,
+    openSession,
+  });
+  latest.current = { openFile, onSortOrderChange, onShowHiddenChange, sessionId, openSession };
   const sourceRef = useRef<WorkspaceSource | null>(null);
   useEffect(() => {
     const source = bridge.createSource();
     source.setActions({
-      openFile: (path) => latest.current.openFile(path),
+      openFile: (path, position) =>
+        position ? latest.current.openFile(path, position) : latest.current.openFile(path),
+      openSession: (id, options) => {
+        const open = latest.current.openSession;
+        if (!open) throw new Error("this workspace cannot open sessions");
+        open(id, options);
+      },
+      queryClient,
       refreshChangedFiles: () => {
         const id = latest.current.sessionId;
         return id
@@ -125,6 +148,8 @@ export function useWorkspaceBridgeSource({
       availability,
       servedFromHost,
       settings,
+      rootSessionId,
+      agentCostsEnabled,
     });
     source.setActive(active);
   });

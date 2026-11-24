@@ -48,6 +48,7 @@ export const OMNIGENT_API_EXPORTS = [
   "hosts",
   "workspace",
   "TreeItemCollapsibleState",
+  "CancellationTokenSource",
 ] as const;
 
 /** Files an extension may import; everything else in its folder is not served. */

@@ -16,6 +16,44 @@ export interface ViewContribution {
   readonly builtInTab?: string;
   /** A filter field drawn above the rows. */
   readonly filter?: { readonly placeholder: string; readonly ariaLabel: string };
+  /** A query form drawn in place of the title bar. */
+  readonly searchInput?: SearchInputContribution;
+}
+
+export interface SearchInputOptionContribution {
+  readonly id: string;
+  readonly title: string;
+}
+
+export interface SearchInputFieldContribution {
+  readonly id: string;
+  readonly label: string;
+  readonly placeholder: string | undefined;
+}
+
+/** `searchInput` of a view: the query box, its option toggles and the extra fields. */
+export interface SearchInputContribution {
+  readonly placeholder: string;
+  readonly ariaLabel: string;
+  /** The submit button's label. */
+  readonly submitTitle: string;
+  readonly options: readonly SearchInputOptionContribution[];
+  readonly fields: readonly SearchInputFieldContribution[];
+  /** The button that shows the fields: its tooltip and accessible label. */
+  readonly fieldsToggle: { readonly title: string; readonly ariaLabel: string } | undefined;
+  /** A note under the fields. */
+  readonly fieldsHint: string | undefined;
+  /** A note at the bottom of the form. */
+  readonly hint: string | undefined;
+}
+
+export interface KeybindingContribution {
+  readonly command: string;
+  /** The parsed key: lower-case modifiers and the key, such as `ctrl+shift+f`. */
+  readonly key: string;
+  /** Used on macOS when set. */
+  readonly mac: string | undefined;
+  readonly when: WhenClause | undefined;
 }
 
 export interface CommandContribution {
@@ -52,6 +90,7 @@ export interface ExtensionContributions {
   readonly commands: readonly CommandContribution[];
   readonly viewTitleMenu: readonly MenuItemContribution[];
   readonly submenus: readonly SubmenuContribution[];
+  readonly keybindings: readonly KeybindingContribution[];
 }
 
 export interface ParseContributionsOptions {
@@ -71,7 +110,103 @@ export const EMPTY_CONTRIBUTIONS: ExtensionContributions = Object.freeze({
   commands: [],
   viewTitleMenu: [],
   submenus: [],
+  keybindings: [],
 });
+
+const MAX_HINT_LENGTH = 300;
+const MAX_INPUT_ENTRIES = 8;
+const INPUT_ENTRY_ID = /^[A-Za-z][A-Za-z0-9_-]{0,31}$/;
+const KEY_MODIFIERS = new Set(["ctrl", "shift", "alt", "cmd", "meta"]);
+/** A key chord such as `ctrl+shift+f`: modifiers, then one letter, digit or F-key. */
+const KEY_CHORD = /^(?:(?:ctrl|shift|alt|cmd|meta)\+)*(?:[a-z0-9]|f[1-9]|f1[0-2])$/;
+
+/** A keybinding's key, normalized (lower case, `meta` as `cmd`), or undefined when malformed. */
+export function normalizeKeyChord(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const chord = value
+    .trim()
+    .toLowerCase()
+    .replace(/\bmeta\+/g, "cmd+");
+  if (!KEY_CHORD.test(chord)) return undefined;
+  const parts = chord.split("+");
+  const modifiers = parts.slice(0, -1);
+  if (new Set(modifiers).size !== modifiers.length) return undefined;
+  if (!modifiers.every((modifier) => KEY_MODIFIERS.has(modifier))) return undefined;
+  return chord;
+}
+
+function searchInputOf(
+  value: unknown,
+  where: string,
+  warnings: string[],
+): SearchInputContribution | undefined {
+  if (!isRecord(value)) {
+    warnings.push(`${where}: "searchInput" must be an object`);
+    return undefined;
+  }
+  const placeholder = textOf(value.placeholder, MAX_TITLE_LENGTH);
+  if (placeholder === undefined) {
+    warnings.push(`${where}: "searchInput.placeholder" must be a non-empty string`);
+    return undefined;
+  }
+  const entries = <T>(
+    raw: unknown,
+    name: string,
+    read: (entry: Record<string, unknown>, id: string) => T | undefined,
+  ): T[] => {
+    if (raw === undefined) return [];
+    if (!Array.isArray(raw)) {
+      warnings.push(`${where}: "searchInput.${name}" must be an array`);
+      return [];
+    }
+    const seen = new Set<string>();
+    return raw.slice(0, MAX_INPUT_ENTRIES).flatMap((entry: unknown, index) => {
+      const id = isRecord(entry) ? entry.id : undefined;
+      if (!isRecord(entry) || typeof id !== "string" || !INPUT_ENTRY_ID.test(id) || seen.has(id)) {
+        warnings.push(`${where}: "searchInput.${name}[${index}]" needs a unique "id"`);
+        return [];
+      }
+      seen.add(id);
+      const parsed = read(entry, id);
+      if (parsed === undefined) {
+        warnings.push(`${where}: "searchInput.${name}[${index}]" needs a title`);
+        return [];
+      }
+      return [parsed];
+    });
+  };
+  const options = entries(value.options, "options", (entry, id) => {
+    const title = textOf(entry.title, MAX_TITLE_LENGTH);
+    return title === undefined ? undefined : { id, title };
+  });
+  const fields = entries(value.fields, "fields", (entry, id) => {
+    const label = textOf(entry.label, MAX_TITLE_LENGTH);
+    return label === undefined
+      ? undefined
+      : { id, label, placeholder: textOf(entry.placeholder, MAX_TITLE_LENGTH) };
+  });
+  const toggle = isRecord(value.fieldsToggle) ? value.fieldsToggle : undefined;
+  const toggleTitle = toggle ? textOf(toggle.title, MAX_TITLE_LENGTH) : undefined;
+  return {
+    placeholder,
+    ariaLabel: textOf(value.ariaLabel, MAX_TITLE_LENGTH) ?? placeholder,
+    submitTitle: textOf(value.submitTitle, MAX_NAME_LENGTH) ?? "Search",
+    options: Object.freeze(options),
+    fields: Object.freeze(fields),
+    fieldsToggle:
+      fields.length > 0
+        ? {
+            title: toggleTitle ?? "Show fields",
+            ariaLabel:
+              (toggle && textOf(toggle.ariaLabel, MAX_TITLE_LENGTH)) ??
+              toggleTitle ??
+              "Show fields",
+          }
+        : undefined,
+    fieldsHint: textOf(value.fieldsHint, MAX_HINT_LENGTH),
+    hint: textOf(value.hint, MAX_HINT_LENGTH),
+  };
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -213,6 +348,10 @@ export function parseContributions(
               };
             }
           }
+          const searchInput =
+            entry.searchInput === undefined
+              ? undefined
+              : searchInputOf(entry.searchInput, where, warnings);
           views.push({
             id,
             name: name.trim().slice(0, MAX_NAME_LENGTH),
@@ -220,6 +359,7 @@ export function parseContributions(
             order: views.length,
             ...(builtInTab === undefined ? {} : { builtInTab }),
             ...(filter === undefined ? {} : { filter }),
+            ...(searchInput === undefined ? {} : { searchInput }),
           });
         });
       }
@@ -316,8 +456,39 @@ export function parseContributions(
       }
     }
   }
+  const keybindings: KeybindingContribution[] = [];
+  if (raw.keybindings !== undefined) {
+    if (!Array.isArray(raw.keybindings)) {
+      warnings.push('"contributes.keybindings" must be an array');
+    } else {
+      raw.keybindings.slice(0, MAX_ENTRIES).forEach((entry: unknown, index) => {
+        const where = `contributes.keybindings[${index}]`;
+        if (!isRecord(entry) || typeof entry.command !== "string" || entry.command === "") {
+          warnings.push(`${where}: "command" must be a non-empty string`);
+          return;
+        }
+        const key = normalizeKeyChord(entry.key);
+        if (key === undefined) {
+          warnings.push(`${where}: invalid key ${JSON.stringify(entry.key)}`);
+          return;
+        }
+        const mac = entry.mac === undefined ? undefined : normalizeKeyChord(entry.mac);
+        if (entry.mac !== undefined && mac === undefined) {
+          warnings.push(`${where}: invalid mac key ${JSON.stringify(entry.mac)}`);
+          return;
+        }
+        keybindings.push({
+          command: entry.command,
+          key,
+          mac,
+          when: whenOf(entry.when, where, warnings),
+        });
+      });
+    }
+  }
   return {
     contributions: Object.freeze({
+      keybindings: Object.freeze(keybindings),
       views: Object.freeze(views),
       commands: Object.freeze(commands),
       viewTitleMenu: Object.freeze(viewTitleMenu),

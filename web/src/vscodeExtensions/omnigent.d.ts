@@ -65,6 +65,22 @@ declare module "omnigent" {
     dispose(): void;
   }
 
+  /** Tells a running operation to stop, as `vscode.CancellationToken`. */
+  export interface CancellationToken {
+    /** True once cancellation was requested. */
+    readonly isCancellationRequested: boolean;
+    /** Fires once, when cancellation is requested. */
+    readonly onCancellationRequested: Event<unknown>;
+  }
+
+  /** Creates and cancels a {@link CancellationToken}, as `vscode.CancellationTokenSource`. */
+  export class CancellationTokenSource {
+    readonly token: CancellationToken;
+    /** Request cancellation; calling it again is a no-op. */
+    cancel(): void;
+    dispose(): void;
+  }
+
   /** Something an extension can clean up, as accepted by `ExtensionContext.subscriptions`. */
   export interface DisposableLike {
     dispose: () => unknown;
@@ -150,9 +166,40 @@ declare module "omnigent" {
     Expanded = 2,
   }
 
-  /** The file or folder a tree item stands for: a workspace path, as plain data. */
+  /**
+   * What a tree item stands for, as plain data: a workspace file or folder
+   * (`scheme` "file", the default) or a chat session (`scheme` "session", with
+   * the session id as `path`).
+   */
   export interface ResourceUri {
+    readonly scheme?: "file" | "session";
     readonly path: string;
+  }
+
+  /** A label with highlighted ranges, as `vscode.TreeItemLabel`. */
+  export interface TreeItemLabel {
+    label: string;
+    /** `[start, end)` offsets into `label`, at most 32. */
+    highlights?: [number, number][];
+  }
+
+  /** The agent whose icon a row shows: an agent name and the harness it runs on. */
+  export interface AgentIcon {
+    readonly agent: string;
+    readonly harness?: string | null;
+  }
+
+  /** How busy or settled an agent is, as the Agents tab draws it. */
+  export type AgentState =
+    "launching" | "working" | "awaiting" | "done" | "failed" | "disconnected" | "idle" | "other";
+
+  /** The status of an agent session; drawn as a status tile or dot. */
+  export interface AgentStatus {
+    readonly state: AgentState;
+    /** Short human label, such as "Working" or "Needs response". */
+    readonly label: string;
+    /** More detail, such as the first line of an error. */
+    readonly detail?: string;
   }
 
   /** A command a tree item runs when clicked, as `vscode.Command`. */
@@ -167,6 +214,8 @@ declare module "omnigent" {
   export interface TreeItemDecorationPart {
     text: string;
     tone?: "added" | "removed" | "muted";
+    /** Shown on hover. */
+    tooltip?: string;
   }
 
   /**
@@ -189,13 +238,16 @@ declare module "omnigent" {
     /** Names the item across refreshes; expand state is kept by it. */
     id?: string;
     /** Defaults to the last segment of `resourceUri`. */
-    label?: string;
+    label?: string | TreeItemLabel;
     /** Muted text after the label; `true` uses the folder of `resourceUri`. */
     description?: string | boolean;
     tooltip?: string;
     resourceUri?: ResourceUri;
-    /** "file" or "folder" for the file icon of `resourceUri`, or an icon name from the allowlist. */
-    iconPath?: string;
+    /**
+     * "file" or "folder" for the file icon of `resourceUri`, an icon name from
+     * the allowlist, or an agent's icon (its harness logo when it has one).
+     */
+    iconPath?: string | AgentIcon;
     decoration?: TreeItemDecoration;
     /** Drawn as the A/M/D letter of a file, or the dot of a folder. */
     gitStatus?: "added" | "modified" | "deleted";
@@ -204,6 +256,20 @@ declare module "omnigent" {
     contextValue?: string;
     /** Size of the resource in bytes, drawn like the Changes list's file size. */
     size?: number;
+    /**
+     * The line of `resourceUri` the row stands for (1-based). The row is drawn
+     * as a text match: the line number, then the label in monospace with its
+     * highlights marked.
+     */
+    line?: number;
+    /** The row's accessible name, as `vscode.AccessibilityInformation`. */
+    accessibilityInformation?: { label: string };
+    /**
+     * An agent's status, for a row whose `resourceUri` is a session: drawn as
+     * a status tile in the list and a dot in the graph; settled states (done,
+     * idle) are dimmed.
+     */
+    status?: AgentStatus;
   }
 
   /** Provides a tree view's data, as `vscode.TreeDataProvider`. */
@@ -223,6 +289,38 @@ declare module "omnigent" {
   export interface ViewBadge {
     readonly value: number;
     readonly tooltip: string;
+    /** Text drawn instead of `value`, such as "2/5". */
+    readonly label?: string;
+    /** "success" or "muted" draws the badge in that color. */
+    readonly tone?: "success" | "muted";
+  }
+
+  /**
+   * The text of a view's search input (a view that contributes `searchInput`):
+   * the query, its option toggles and its extra fields, by the ids the
+   * contribution names.
+   */
+  export interface SearchInputValue {
+    readonly query: string;
+    readonly options: Readonly<Record<string, boolean>>;
+    readonly fields: Readonly<Record<string, string>>;
+  }
+
+  /**
+   * A host-drawn query form at the top of a view, like the input box of a
+   * `vscode.SourceControl`. Its value is kept per chat session.
+   */
+  export interface ViewSearchInput {
+    /** The value for the workspace on screen. */
+    readonly value: SearchInputValue;
+    /** Fires on every edit, and when another workspace comes on screen. */
+    readonly onDidChangeValue: Event<SearchInputValue>;
+    /** Fires when the user submits (Enter, or the submit button) while it is enabled. */
+    readonly onDidAccept: Event<SearchInputValue>;
+    /** Shown below the input as an alert; while set, submitting does nothing. */
+    validationMessage: string | undefined;
+    /** Whether submitting is possible; the submit button is disabled while false. */
+    enabled: boolean;
   }
 
   /** As `vscode.TreeViewVisibilityChangeEvent`. */
@@ -275,6 +373,13 @@ declare module "omnigent" {
     readonly filter: string;
     /** Fires when the filter text changes, also when another workspace comes on screen. */
     readonly onDidChangeFilter: Event<string>;
+    /** The view's search input, when its contribution has `searchInput`. */
+    readonly searchInput: ViewSearchInput | undefined;
+    /**
+     * How the host draws the rows: as a tree (the default), or as a graph of
+     * cards, every node expanded, for trees of sessions.
+     */
+    presentation: "tree" | "graph";
     /** Removes the data provider; the view stays, without data. */
     dispose: () => void;
   }
@@ -283,6 +388,12 @@ declare module "omnigent" {
   export interface ProgressOptions {
     /** Shown for the whole task, with the latest reported message below it. */
     title: string;
+    /**
+     * Show the progress in a view the extension contributes instead, as
+     * `vscode.ProgressLocation` with a view id: a spinner and the title above
+     * its rows, which are marked busy. A failure is not shown there.
+     */
+    location?: { readonly viewId: string };
   }
 
   /** A progress report; only `message` is shown so far. */
@@ -348,11 +459,20 @@ declare module "omnigent" {
    *
    * Built-in commands:
    * - `setContext(key, value)` sets a context key for `when` clauses.
-   * - `omnigent.openFile(path)` opens a workspace file in the file viewer.
+   * - `omnigent.openFile(path, { line?, column? })` opens a workspace file in the
+   *   file viewer, at a position when given.
    * - `omnigent.refreshChangedFiles()` refetches the active session's changed files.
+   * - `omnigent.openSession(sessionId)` shows a chat session in the window.
+   * - `omnigent.openSubagent(sessionId)` opens a sub-agent of the session on
+   *   screen: as a tab beside the chat when the user's setting asks for it and
+   *   the workspace can, otherwise like `omnigent.openSession`.
+   * - `<view id>.focus` for every contributed view: shows its tab in the
+   *   workspace on screen and focuses its search input, as VS Code's
+   *   `<view>.focus`; resolves to whether it could.
    *
    * Context keys the host sets: `config.<setting>` for each workspace setting
-   * (see {@link workspace.getConfiguration}).
+   * (see {@link workspace.getConfiguration}), and `view.<view id>.available`
+   * while the workspace on screen can show that view's tab.
    */
   export namespace commands {
     /**
@@ -486,7 +606,64 @@ declare module "omnigent" {
     affectsConfiguration: (section: string) => boolean;
   }
 
+  /** A text search, as `vscode.TextSearchQuery`. */
+  export interface TextSearchQuery {
+    readonly pattern: string;
+    readonly isRegExp?: boolean;
+    readonly isCaseSensitive?: boolean;
+    /** Whole words only; the host turns the pattern into a bounded expression. */
+    readonly isWordMatch?: boolean;
+  }
+
+  /** Why a {@link TextSearchQuery} cannot run: too long, or a whole-word regular expression that could escape its boundaries. */
+  export type TextSearchQueryProblem = "tooLong" | "unopenedGroup" | "verbose";
+
+  /** Which files {@link workspace.findTextInFiles} searches. */
+  export interface FindTextInFilesOptions {
+    /** Comma-separated globs of files to search, such as `src/**, *.{ts,tsx}`. */
+    readonly include?: string;
+    /** Comma-separated globs of files to skip; wins over `include`. */
+    readonly exclude?: string;
+  }
+
+  /** One matching line, as `vscode.TextSearchMatch`, in plain data. */
+  export interface TextSearchMatch {
+    /** Workspace-relative path. */
+    readonly path: string;
+    /** 1-based line number. */
+    readonly line: number;
+    /** 1-based column of the first match. */
+    readonly column: number;
+    /** The line's text and the `[start, end)` offsets of its first match in it. */
+    readonly preview: { readonly text: string; readonly matches: readonly [number, number][] };
+  }
+
+  /** The result of {@link workspace.findTextInFiles}. */
+  export interface TextSearchComplete {
+    readonly matches: readonly TextSearchMatch[];
+    /** True when there were more matches than the search returns. */
+    readonly limitHit: boolean;
+    /** A message from the searcher, such as a skipped part of the workspace. */
+    readonly message: string | undefined;
+  }
+
   export namespace workspace {
+    /**
+     * Search the contents of the workspace on screen (at the call), as
+     * `vscode.workspace.findTextInFiles`. Respects readable ignore files unless
+     * explicitly included; skips binary files and `.git`. Rejects with the
+     * searcher's message when it cannot run, and with an error named
+     * "Canceled" when `token` is cancelled first.
+     */
+    export function findTextInFiles(
+      query: TextSearchQuery,
+      options?: FindTextInFilesOptions,
+      token?: CancellationToken,
+    ): Promise<TextSearchComplete>;
+    /** Why `query` cannot be searched, if it cannot; checked before sending it. */
+    export function validateTextSearchQuery(
+      query: TextSearchQuery,
+    ): TextSearchQueryProblem | undefined;
     /**
      * The chat session whose workspace is on screen: the session open in the
      * window, or the selected grid cell. `workspaceState` follows it.
@@ -510,7 +687,89 @@ declare module "omnigent" {
     export const onDidChangeConfiguration: Event<ConfigurationChangeEvent>;
   }
 
+  /** An agent's USD cost: its total including sub-agents, or a parent's estimate. */
+  export interface AgentCost {
+    readonly usd: number | null;
+    /** A parent-reported estimate that the parent's total already includes. */
+    readonly estimated: boolean;
+  }
+
+  /** A model an intelligent router picked for a sub-agent. */
+  export interface RoutedModel {
+    readonly id: string;
+    /** Its short display name. */
+    readonly label: string;
+  }
+
+  /** A sub-agent session under another session. Plain data. */
+  export interface ChildSession {
+    readonly id: string;
+    /** The name the Agents tab shows: its task, instance name or native nickname. */
+    readonly label: string;
+    /** `"{tool}:{name}"` as spawned, or `null`. */
+    readonly title: string | null;
+    /** The sub-agent type, such as "researcher" or "Explore". */
+    readonly tool: string | null;
+    /** The harness and agent it runs as, when it is a native coding agent. */
+    readonly agent: AgentIcon | undefined;
+    readonly status: AgentStatus;
+    /** Its latest task is queued or running. */
+    readonly busy: boolean;
+    /** One line of its latest message. */
+    readonly preview: string | undefined;
+    readonly routedModel: RoutedModel | undefined;
+    /** `undefined` while unknown, or when the server reports no costs. */
+    readonly cost: AgentCost | undefined;
+  }
+
+  /** A session's sub-agents, as {@link sessions.getChildSessions} returns them. */
+  export interface ChildSessionList {
+    /** Empty while loading or when loading failed. */
+    readonly sessions: readonly ChildSession[];
+    readonly loading: boolean;
+    /** Why they could not be loaded. */
+    readonly error: string | undefined;
+  }
+
+  /** A session's own details, as the Agents tab names its root. Plain data. */
+  export interface SessionDetails {
+    readonly id: string;
+    /** Its agent's display name: the product name of a native coding agent, else the agent name. */
+    readonly label: string | undefined;
+    readonly agent: AgentIcon;
+    /**
+     * What runs it: `<harness>-native` (such as "claude-native") for a native
+     * coding agent, "nessie", or "agent".
+     */
+    readonly kind: string;
+    /** One line of its latest message. */
+    readonly preview: string | undefined;
+    readonly status: AgentStatus;
+    readonly cost: AgentCost | undefined;
+  }
+
+  export interface ChildSessionsChangeEvent {
+    /** The sessions whose sub-agent lists or details changed. */
+    readonly sessionIds: readonly string[];
+  }
+
   export namespace sessions {
+    /**
+     * The top-level session of the session tree of the workspace on screen (the
+     * session itself, or the root above a sub-agent); `undefined` until known.
+     */
+    export const activeSessionTreeRoot: string | undefined;
+    /** Fires when {@link activeSessionTreeRoot} changes. */
+    export const onDidChangeActiveSessionTree: Event<string | undefined>;
+    /**
+     * The sub-agents of `sessionId`, loaded on first ask and kept live (new
+     * sub-agents, status, cost); costs are those of the active session tree.
+     */
+    export function getChildSessions(sessionId: string): ChildSessionList;
+    /** `sessionId`'s details, loaded on first ask; `undefined` while loading. */
+    export function getSession(sessionId: string): SessionDetails | undefined;
+    /** Fires when lists or details asked for change, coalesced per microtask. */
+    export const onDidChangeChildSessions: Event<ChildSessionsChangeEvent>;
     /** The session on screen, or `undefined` on pages without one. */
     export const activeSession: Session | undefined;
     /** Current usage of {@link activeSession}, so late activators need not wait for an event. */

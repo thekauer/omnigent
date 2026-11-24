@@ -4,8 +4,19 @@
 // windowed like them.
 
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { SearchIcon, XIcon } from "lucide-react";
-import { Fragment, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FileIcon, SearchIcon, XIcon } from "lucide-react";
+import {
+  Fragment,
+  lazy,
+  type ReactNode,
+  type RefObject,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -43,12 +54,20 @@ import {
   visibleTreeRows,
   writeExpandState,
 } from "./treeRows";
+import { SessionTreeRow } from "./SessionTreeRow";
+import { ViewSearchForm } from "./ViewSearchForm";
+
+const ViewGraph = lazy(() =>
+  import("./ViewGraph").then((module) => ({ default: module.ViewGraph })),
+);
 
 const NO_PROVIDER_MESSAGE = "There is no data provider registered that can provide view data.";
 // Deeper trees still load, as their nodes are expanded.
 const MAX_TREE_DEPTH = 32;
 // The Changes list spaces its rows by 2px; the Files tree does not.
 const LIST_ROW_GAP_PX = 2;
+// The Agents list spaces its rows by 1px.
+const SESSION_ROW_GAP_PX = 1;
 
 const TONE_CLASS: Record<RailTreeDecorationTone, string> = {
   added: "text-green-600 dark:text-green-400",
@@ -86,19 +105,91 @@ function Decoration({
   );
 }
 
+/** `text` with `highlights` marked. */
+function HighlightedText({
+  text,
+  highlights,
+}: {
+  text: string;
+  highlights: RailTreeNode["highlights"];
+}) {
+  const parts: ReactNode[] = [];
+  let last = 0;
+  for (const [start, end] of highlights ?? []) {
+    if (start < last) continue;
+    if (start > last) parts.push(text.slice(last, start));
+    parts.push(<mark key={start}>{text.slice(start, end)}</mark>);
+    last = end;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return parts;
+}
+
+/** A row's place in a session tree: whether the root's guide runs past it. */
+export interface RowContext {
+  rootGuideContinues: boolean;
+  hasChildren: boolean;
+  first: boolean;
+}
+
 function TreeRow({
   row,
+  context,
   conversationId,
   onToggle,
   onRun,
 }: {
   row: VisibleTreeRow;
+  context: RowContext;
   conversationId: string | undefined;
   onToggle: (node: RailTreeNode) => void;
   onRun: (node: RailTreeNode) => void;
 }) {
   const { node, depth, open } = row;
   const status = changedStatusOf(node.status);
+  if (node.sessionId !== undefined) {
+    return (
+      <SessionTreeRow
+        node={node}
+        depth={depth}
+        rootGuideContinues={context.rootGuideContinues}
+        open={open}
+        hasChildren={context.hasChildren}
+        conversationId={conversationId}
+        onToggle={onToggle}
+        onRun={onRun}
+      />
+    );
+  }
+  if (node.line !== undefined) {
+    // A text match: its line number, then the line with the match marked.
+    return (
+      <button
+        type="button"
+        aria-label={node.accessibleLabel}
+        title={node.tooltip}
+        onClick={() => onRun(node)}
+        className="flex w-full cursor-pointer gap-2 rounded px-2 py-1 pl-6 text-left font-mono text-xs hover:bg-muted focus-visible:outline focus-visible:outline-ring"
+        style={depth > 1 ? { paddingLeft: `${depth * 16 + 8}px` } : undefined}
+      >
+        <span className="shrink-0 text-muted-foreground">{node.line}</span>
+        <span className="min-w-0 truncate whitespace-pre">
+          <HighlightedText text={node.label} highlights={node.highlights} />
+        </span>
+      </button>
+    );
+  }
+  if (node.collapsible !== "none" && node.icon === "file" && node.resourcePath !== undefined) {
+    // The file of text matches: always open, as the search results list it.
+    return (
+      <span className={cn("ml-1.5 flex items-center gap-1 pb-2", !context.first && "pt-2")}>
+        <FileIcon className="size-4 shrink-0" />
+        <h3 className="break-all text-xs leading-normal font-semibold" title={node.tooltip}>
+          {node.label}
+        </h3>
+      </span>
+    );
+  }
   if (node.collapsible !== "none") {
     if (node.icon === "folder") {
       return (
@@ -270,9 +361,34 @@ function useTreeChildren(
 
 const MESSAGE_LINK = /\[([^\]]+)\]\(command:([A-Za-z0-9._-]+)\)/g;
 
-/** A view message: plain text, with `[text](command:id)` links drawn as buttons. */
-function ViewMessage({ view }: { view: RailView }) {
-  const message = view.message ?? "";
+/** A view message: plain text, one paragraph per line, with `[text](command:id)` links drawn as buttons. */
+function ViewMessage({
+  view,
+  spacious = false,
+  small = false,
+}: {
+  view: RailView;
+  spacious?: boolean;
+  small?: boolean;
+}) {
+  // Each line once: a repeated line would say nothing new.
+  const lines = [...new Set((view.message ?? "").split("\n").filter((line) => line !== ""))];
+  return lines.map((line) => (
+    <ViewMessageLine key={line} view={view} message={line} spacious={spacious} small={small} />
+  ));
+}
+
+function ViewMessageLine({
+  view,
+  message,
+  spacious,
+  small,
+}: {
+  view: RailView;
+  message: string;
+  spacious: boolean;
+  small: boolean;
+}) {
   const parts: ReactNode[] = [];
   let last = 0;
   for (const match of message.matchAll(MESSAGE_LINK)) {
@@ -292,15 +408,29 @@ function ViewMessage({ view }: { view: RailView }) {
     last = index + match[0].length;
   }
   if (last < message.length) parts.push(message.slice(last));
+  const error = view.messageSeverity === "error";
   return (
     <p
+      role={error ? "alert" : undefined}
       className={cn(
-        "px-2 py-1 text-sm",
-        view.messageSeverity === "error" ? "text-destructive" : "text-muted-foreground",
+        "break-words",
+        spacious ? "p-2" : "px-2 py-1",
+        // Above search results, the summary lines are the results list's small print.
+        small ? "text-xs" : "text-sm",
+        error ? "text-destructive" : "text-muted-foreground",
       )}
     >
       {parts}
     </p>
+  );
+}
+
+/** A task the view shows progress for (`withProgress` with the view's location). */
+function ViewProgress({ title }: { title: string }) {
+  return (
+    <div role="status" className="flex items-center gap-2 p-2 text-sm">
+      <Spinner /> {title}
+    </div>
   );
 }
 
@@ -327,6 +457,29 @@ function useRunningAction(action: { run: () => Promise<void> }) {
 function ActionButton({ action }: { action: RailViewTitleAction }) {
   const { running, run } = useRunningAction(action);
   const Icon = railViewIcon(action.icon);
+  // Toggles (a command with `toggled`, such as List / Graph view) are the compact
+  // pressed-or-not pair of a segmented control.
+  if (action.toggled !== undefined) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant={action.toggled ? "secondary" : "ghost"}
+            size="icon-xs"
+            aria-label={action.title}
+            aria-pressed={action.toggled}
+            data-view-action={action.id}
+            disabled={running}
+            onClick={run}
+          >
+            {Icon ? <Icon className="size-3.5" /> : <span className="text-xs">{action.title}</span>}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">{action.tooltip ?? action.title}</TooltipContent>
+      </Tooltip>
+    );
+  }
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -472,9 +625,11 @@ function ViewTitle({
 function ViewFilter({
   view,
   conversationId,
+  inputRef,
 }: {
   view: RailView;
   conversationId: string | undefined;
+  inputRef?: RefObject<HTMLInputElement | null>;
 }) {
   const filter = view.filter;
   const host = view.host;
@@ -489,6 +644,7 @@ function ViewFilter({
         <div className="flex min-w-0 flex-1 items-center gap-[6px] rounded-lg border border-border px-[10px] py-[4px] transition-colors focus-within:border-border-strong">
           <SearchIcon className="size-4 shrink-0 text-muted-foreground" />
           <input
+            ref={inputRef}
             aria-label={filter.ariaLabel}
             className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
             onChange={(event) => {
@@ -525,13 +681,17 @@ function ViewTree({
   const { children, loaded } = useTreeChildren(tree, expanded);
   const rows = useMemo(() => visibleTreeRows(children, expanded), [children, expanded]);
   const listLayout = isListLayout(rows);
+  const sessionLayout = rows.some((row) => row.node.sessionId !== undefined);
+  // Text matches under their files read as the search results list: no row gap, padded.
+  const matchLayout = rows.some((row) => row.node.line !== undefined);
+  const contexts = useMemo(() => rowContexts(rows, children), [rows, children]);
   const scrollRef = useRef<HTMLElement>(null);
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => 25,
     overscan: 12,
-    gap: listLayout ? LIST_ROW_GAP_PX : 0,
+    gap: sessionLayout ? SESSION_ROW_GAP_PX : matchLayout ? 0 : listLayout ? LIST_ROW_GAP_PX : 0,
     getItemKey: (index) => rows[index]?.node.handle ?? index,
   });
   const toggle = useCallback(
@@ -582,23 +742,57 @@ function ViewTree({
               className="absolute top-0 left-0 w-full"
               style={{ transform: `translateY(${item.start}px)` }}
             >
-              <TreeRow row={row} conversationId={conversationId} onToggle={toggle} onRun={run} />
+              <TreeRow
+                row={row}
+                context={contexts[item.index]}
+                conversationId={conversationId}
+                onToggle={toggle}
+                onRun={run}
+              />
             </div>
           );
         })}
       </div>
     );
   }
+  const progress = view.progress.findLast((entry) => entry.sessionId === conversationId);
   return (
     <section
       ref={scrollRef}
-      className={cn("min-h-0 flex-1 overflow-y-auto px-2 pb-2", listLayout ? "pt-1" : "pt-0")}
+      aria-busy={progress !== undefined}
+      className={cn(
+        "min-h-0 flex-1 overflow-y-auto px-2 pb-2",
+        sessionLayout || matchLayout || view.searchInput ? "pt-2" : listLayout ? "pt-1" : "pt-0",
+      )}
       onScroll={handleScroll}
     >
-      {ready && !view.notice && view.message && <ViewMessage view={view} />}
+      {progress && <ViewProgress title={progress.title} />}
+      {ready && !view.notice && view.message && (
+        <ViewMessage view={view} spacious={view.searchInput !== undefined} small={matchLayout} />
+      )}
       <TooltipProvider>{body}</TooltipProvider>
     </section>
   );
+}
+
+/** Per row: whether the root's guide runs past it, whether it has sub-rows, whether it is first. */
+function rowContexts(
+  rows: readonly VisibleTreeRow[],
+  children: ReadonlyMap<string, readonly RailTreeNode[]>,
+): RowContext[] {
+  // The root guide runs down to the last first-level row.
+  let lastFirstLevel = -1;
+  rows.forEach((row, index) => {
+    if (row.depth === 1) lastFirstLevel = index;
+  });
+  return rows.map((row, index) => ({
+    rootGuideContinues: index < lastFirstLevel,
+    hasChildren:
+      row.node.collapsible !== "none" &&
+      (children.get(row.node.handle) === undefined ||
+        (children.get(row.node.handle)?.length ?? 0) > 0),
+    first: index === 0,
+  }));
 }
 
 /** An extension view's page in the rail, looked up by id in the view registry. */
@@ -610,6 +804,8 @@ export function ExtensionRailView({
   visible = true,
   onClose,
   closeLabel = "Close",
+  focusToken = 0,
+  onFocused,
 }: {
   viewId: string;
   /** Whether extensions have finished loading, so a missing view is really gone. */
@@ -621,11 +817,25 @@ export function ExtensionRailView({
   /** Draws a close button after the title actions, as in a drawer. */
   onClose?: () => void;
   closeLabel?: string;
+  /** Each new non-zero value focuses the view's input (search input or filter). */
+  focusToken?: number;
+  /** Called once a focus request was carried out. */
+  onFocused?: () => void;
 }) {
   const { views } = useRailViews(registry);
   const view = views.find((candidate) => candidate.id === viewId);
   const host = view?.host;
+  const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => (visible && host ? host.reportVisible() : undefined), [visible, host]);
+  const onFocusedRef = useRef(onFocused);
+  onFocusedRef.current = onFocused;
+  const viewPresent = view !== undefined;
+  // Only a new token asks again; a view that registers later takes a pending one.
+  useEffect(() => {
+    if (focusToken === 0 || !inputRef.current) return;
+    inputRef.current.focus();
+    onFocusedRef.current?.();
+  }, [focusToken, viewPresent]);
   if (!view) {
     return settled ? null : (
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 text-muted-foreground">
@@ -638,10 +848,41 @@ export function ExtensionRailView({
       data-testid={`extension-view-${view.id}`}
       className="@container/filespanel flex min-h-0 flex-1 flex-col overflow-hidden bg-card"
     >
-      <ViewTitle view={view} onClose={onClose} closeLabel={closeLabel} />
-      <div className="workspace-panel-header-divider shrink-0 border-t border-border" />
-      <ViewFilter key={`filter:${conversationId}`} view={view} conversationId={conversationId} />
-      {view.tree ? (
+      {view.searchInput ? (
+        // A search view's form stands in for its title bar, as VS Code's Search view.
+        <ViewSearchForm
+          key={`search:${conversationId}`}
+          view={view}
+          conversationId={conversationId}
+          inputRef={inputRef}
+        />
+      ) : (
+        <>
+          <ViewTitle view={view} onClose={onClose} closeLabel={closeLabel} />
+          <div className="workspace-panel-header-divider shrink-0 border-t border-border" />
+        </>
+      )}
+      <ViewFilter
+        key={`filter:${conversationId}`}
+        view={view}
+        conversationId={conversationId}
+        inputRef={view.searchInput ? undefined : inputRef}
+      />
+      {view.tree && view.presentation === "graph" ? (
+        <Suspense
+          fallback={
+            <div className="flex h-full flex-1 items-center justify-center text-sm text-muted-foreground">
+              Loading graph…
+            </div>
+          }
+        >
+          <ViewGraph
+            key={`graph:${conversationId}`}
+            tree={view.tree}
+            conversationId={conversationId}
+          />
+        </Suspense>
+      ) : view.tree ? (
         <ViewTree
           key={`tree:${conversationId}`}
           view={view}

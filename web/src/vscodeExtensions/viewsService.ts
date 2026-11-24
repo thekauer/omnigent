@@ -8,28 +8,71 @@ import type {
   RailViewHost,
   RailViewMenuItem,
   RailViewNotice,
+  RailSearchInputValue,
+  RailViewProgress,
   RailViewRegistry,
   RailViewTag,
   RailViewTitleAction,
 } from "@/shell/railViews";
 import { isRailViewIconName } from "@/shell/railViewIcons";
-import { EventEmitter } from "./base";
+import { type Disposable, EventEmitter } from "./base";
 import { errorText } from "./progress";
 import type { ContextKeyService } from "./contextKeys";
 import type {
   CommandContribution,
   ExtensionContributions,
+  ViewContribution,
   MenuItemContribution,
   SubmenuContribution,
 } from "./contributions";
 import { createTreeViewModel } from "./treeView";
 
 const MAX_VIEW_TEXT = 200;
-const MAX_MESSAGE = 500;
+// Room for a status line that quotes a long search query.
+const MAX_MESSAGE = 10_000;
 const MAX_FILTER = 500;
 /** Filter texts kept per view, most recently used last. */
 const MAX_FILTER_SESSIONS = 100;
 const NOTICES = new Set<RailViewNotice>(["agentAsleep", "sandboxOffline", "sandboxStarting"]);
+const MAX_INPUT_TEXT = 4096;
+const MAX_VALIDATION = 300;
+
+/** A search input value with only the contributed options and fields, capped. */
+function inputValueOf(
+  value: unknown,
+  contribution: ViewContribution["searchInput"],
+): RailSearchInputValue {
+  const record = (typeof value === "object" && value !== null ? value : {}) as {
+    query?: unknown;
+    options?: Record<string, unknown>;
+    fields?: Record<string, unknown>;
+  };
+  const options = (record.options ?? {}) as Record<string, unknown>;
+  const fields = (record.fields ?? {}) as Record<string, unknown>;
+  return Object.freeze({
+    query: typeof record.query === "string" ? record.query.slice(0, MAX_INPUT_TEXT) : "",
+    options: Object.freeze(
+      Object.fromEntries(
+        (contribution?.options ?? []).map(({ id }) => [
+          id,
+          Object.hasOwn(options, id) && options[id] === true,
+        ]),
+      ),
+    ),
+    fields: Object.freeze(
+      Object.fromEntries(
+        (contribution?.fields ?? []).map(({ id }) => {
+          const text = Object.hasOwn(fields, id) ? fields[id] : undefined;
+          return [id, typeof text === "string" ? text.slice(0, MAX_INPUT_TEXT) : ""];
+        }),
+      ),
+    ),
+  });
+}
+
+function sameInput(left: RailSearchInputValue, right: RailSearchInputValue): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
 
 /** The part of the workspace service views follow: the session on screen. */
 export interface ViewsWorkspace {
@@ -48,6 +91,11 @@ export interface ViewsServiceOptions {
   workspace?: ViewsWorkspace;
   /** Called whenever a view comes on screen, for host-side refreshes. */
   onViewShown?: (viewId: string) => void;
+  /**
+   * Registers each view's `<view id>.focus` command (VS Code's); it resolves to
+   * whether the workspace on screen could reveal the view.
+   */
+  registerFocusCommand?: (extensionId: string, command: string, viewId: string) => Disposable;
 }
 
 interface TreeViewEntry {
@@ -56,6 +104,12 @@ interface TreeViewEntry {
   readonly filterChanged: EventEmitter<string>;
   /** The filter text last delivered, to fire only on a real change. */
   lastFilter: string;
+  readonly inputChanged: EventEmitter<RailSearchInputValue>;
+  readonly inputAccepted: EventEmitter<RailSearchInputValue>;
+  /** The search input value last delivered. */
+  lastInput: RailSearchInputValue | undefined;
+  /** Whether the input can be submitted now (enabled and valid). */
+  canAccept: () => boolean;
   /** Tells the drawn tree to reload, as when the workspace on screen changed. */
   readonly refresh: () => void;
 }
@@ -70,15 +124,37 @@ interface ViewEntry {
   shown: number;
   /** Filter text per chat session ("" key without one). */
   readonly filters: Map<string, string>;
+  readonly searchInput: ViewContribution["searchInput"];
+  /** Search input values per chat session. */
+  readonly inputs: Map<string, RailSearchInputValue>;
+  /** Running view progress, latest last, with the chat session each started in. */
+  readonly progress: RailViewProgress[];
+}
+
+/** Keeps at most {@link MAX_FILTER_SESSIONS} entries, dropping the least recently set. */
+function trimSessions(map: Map<string, unknown>): void {
+  while (map.size > MAX_FILTER_SESSIONS) {
+    const oldest = map.keys().next().value;
+    if (oldest === undefined) break;
+    map.delete(oldest);
+  }
 }
 
 function badgeOf(value: unknown): RailViewBadge | undefined {
   if (typeof value !== "object" || value === null) return undefined;
-  const { value: count, tooltip } = value as { value?: unknown; tooltip?: unknown };
+  const {
+    value: count,
+    tooltip,
+    label,
+    tone,
+  } = value as { value?: unknown; tooltip?: unknown; label?: unknown; tone?: unknown };
   if (typeof count !== "number" || !Number.isFinite(count)) return undefined;
+  const text = typeof label === "string" && label !== "" ? label.slice(0, 12) : undefined;
   return Object.freeze({
     value: Math.max(0, Math.floor(count)),
     tooltip: typeof tooltip === "string" ? tooltip.slice(0, MAX_VIEW_TEXT) : "",
+    ...(text === undefined ? {} : { label: text }),
+    ...(tone === "success" || tone === "muted" ? { tone: tone as "success" | "muted" } : {}),
   });
 }
 
@@ -155,8 +231,19 @@ export class ViewsService {
         tree.lastFilter = filter;
         tree.filterChanged.fire(filter);
       }
+      if (entry.searchInput) {
+        const input = this.inputFor(entry, session);
+        if (!tree.lastInput || !sameInput(input, tree.lastInput)) {
+          tree.lastInput = input;
+          tree.inputChanged.fire(input);
+        }
+      }
       tree.refresh();
     }
+  }
+
+  private inputFor(entry: ViewEntry, sessionId: string | undefined): RailSearchInputValue {
+    return entry.inputs.get(sessionKey(sessionId)) ?? inputValueOf(undefined, entry.searchInput);
   }
 
   private viewHost(viewId: string, entry: () => ViewEntry | undefined): RailViewHost {
@@ -170,11 +257,7 @@ export class ViewsService {
         const value = String(text).slice(0, MAX_FILTER);
         view.filters.delete(key);
         if (value !== "") view.filters.set(key, value);
-        while (view.filters.size > MAX_FILTER_SESSIONS) {
-          const oldest = view.filters.keys().next().value;
-          if (oldest === undefined) break;
-          view.filters.delete(oldest);
-        }
+        trimSessions(view.filters);
         const tree = view.tree;
         if (tree && key === sessionKey(this.currentSession()) && tree.lastFilter !== value) {
           tree.lastFilter = value;
@@ -200,12 +283,48 @@ export class ViewsService {
           this.options.showError(`${command}: ${errorText(error)}`);
         });
       },
+      getSearchInput: (sessionId: string | undefined) => {
+        const view = entry();
+        return view ? this.inputFor(view, sessionId) : inputValueOf(undefined, undefined);
+      },
+      setSearchInput: (sessionId: string | undefined, value: RailSearchInputValue) => {
+        const view = entry();
+        if (!view?.searchInput) return;
+        const key = sessionKey(sessionId);
+        const input = inputValueOf(value, view.searchInput);
+        view.inputs.delete(key);
+        view.inputs.set(key, input);
+        trimSessions(view.inputs);
+        const tree = view.tree;
+        if (
+          tree &&
+          key === sessionKey(this.currentSession()) &&
+          (!tree.lastInput || !sameInput(tree.lastInput, input))
+        ) {
+          tree.lastInput = input;
+          tree.inputChanged.fire(input);
+        }
+      },
+      acceptSearchInput: (sessionId: string | undefined) => {
+        const view = entry();
+        const tree = view?.tree;
+        if (
+          !view?.searchInput ||
+          !tree ||
+          sessionKey(sessionId) !== sessionKey(this.currentSession())
+        ) {
+          return;
+        }
+        if (!tree.canAccept()) return;
+        tree.inputAccepted.fire(this.inputFor(view, sessionId));
+      },
     });
   }
 
   /** Registers an extension's views, commands and menus; returns their removal. */
   addExtension(extensionId: string, contributions: ExtensionContributions): () => void {
     const added: string[] = [];
+    const focusCommands: Disposable[] = [];
     for (const command of contributions.commands) {
       if (!this.commandInfo.has(command.command)) this.commandInfo.set(command.command, command);
     }
@@ -226,6 +345,7 @@ export class ViewsService {
           icon: view.icon,
           ...(view.builtInTab === undefined ? {} : { builtInTab: view.builtInTab }),
           ...(view.filter === undefined ? {} : { filter: view.filter }),
+          ...(view.searchInput === undefined ? {} : { searchInput: view.searchInput }),
         },
         view.order,
       );
@@ -236,15 +356,21 @@ export class ViewsService {
         tree: undefined,
         shown: 0,
         filters: new Map(),
+        searchInput: view.searchInput,
+        inputs: new Map(),
+        progress: [],
       };
       this.views.set(view.id, entry);
       handle.update({
         host: this.viewHost(view.id, () => (this.views.get(view.id) === entry ? entry : undefined)),
       });
       added.push(view.id);
+      const focus = this.options.registerFocusCommand?.(extensionId, `${view.id}.focus`, view.id);
+      if (focus) focusCommands.push(focus);
     }
     this.refreshActions();
     return () => {
+      for (const focus of focusCommands) focus.dispose();
       for (const viewId of added) {
         this.views.get(viewId)?.handle.dispose();
         this.views.delete(viewId);
@@ -274,6 +400,31 @@ export class ViewsService {
         entry.handle.update({ loading: false, ...(error === undefined ? {} : { error }) });
       }
     }
+  }
+
+  /**
+   * Shows `title` as progress in `viewId` (a view of `extensionId`) until the
+   * returned function is called; throws for a view it did not contribute.
+   */
+  beginProgress(extensionId: string, viewId: string, title: string): () => void {
+    const entry = this.views.get(viewId);
+    if (!entry || entry.extensionId !== extensionId) {
+      throw new Error(`no view with id '${viewId}' is contributed by ${extensionId}`);
+    }
+    const progress: RailViewProgress = Object.freeze({
+      title: title.slice(0, MAX_VIEW_TEXT),
+      sessionId: this.currentSession(),
+    });
+    entry.progress.push(progress);
+    entry.handle.update({ progress: Object.freeze([...entry.progress]) });
+    let done = false;
+    return () => {
+      if (done) return;
+      done = true;
+      const index = entry.progress.indexOf(progress);
+      if (index >= 0) entry.progress.splice(index, 1);
+      entry.handle.update({ progress: Object.freeze([...entry.progress]) });
+    };
   }
 
   private runner(command: string, title: string): () => Promise<void> {
@@ -405,8 +556,47 @@ export class ViewsService {
         logError("onDidChangeFilter listener threw", error),
       ),
       lastFilter: entry.filters.get(sessionKey(this.currentSession())) ?? "",
+      inputChanged: new EventEmitter((error) => logError("onDidChangeValue listener threw", error)),
+      inputAccepted: new EventEmitter((error) => logError("onDidAccept listener threw", error)),
+      lastInput: entry.searchInput ? this.inputFor(entry, this.currentSession()) : undefined,
+      canAccept: () => inputState.enabled && inputState.validationMessage === undefined,
       refresh: tree.refresh,
     };
+    const inputState: { validationMessage: string | undefined; enabled: boolean } = {
+      validationMessage: undefined,
+      enabled: true,
+    };
+    const updateInput = () => {
+      if (disposed) return;
+      entry.handle.update({
+        searchValidation: inputState.validationMessage,
+        searchEnabled: inputState.enabled,
+      });
+    };
+    const searchInput: omnigent.ViewSearchInput | undefined = entry.searchInput
+      ? {
+          get value() {
+            return disposed ? inputValueOf(undefined, entry.searchInput) : currentInput();
+          },
+          onDidChangeValue: treeEntry.inputChanged.event,
+          onDidAccept: treeEntry.inputAccepted.event,
+          get validationMessage() {
+            return inputState.validationMessage;
+          },
+          set validationMessage(value) {
+            inputState.validationMessage = textOf(value, MAX_VALIDATION) || undefined;
+            updateInput();
+          },
+          get enabled() {
+            return inputState.enabled;
+          },
+          set enabled(value) {
+            inputState.enabled = value !== false;
+            updateInput();
+          },
+        }
+      : undefined;
+    let presentation: "tree" | "graph" = "tree";
     entry.tree = treeEntry;
     const state: {
       title: string | undefined;
@@ -427,6 +617,7 @@ export class ViewsService {
     };
     let disposed = false;
     const currentSession = () => this.currentSession();
+    const currentInput = () => this.inputFor(entry, currentSession());
     entry.handle.update({ tree: tree.model });
     const update = () => {
       if (disposed) return;
@@ -489,7 +680,13 @@ export class ViewsService {
       set badge(value) {
         const badge = badgeOf(value);
         // Only a changed badge re-renders the tab strip.
-        if (badge?.value === state.badge?.value && badge?.tooltip === state.badge?.tooltip) {
+        const previous = badgeOf(state.badge);
+        if (
+          badge?.value === previous?.value &&
+          badge?.tooltip === previous?.tooltip &&
+          badge?.label === previous?.label &&
+          badge?.tone === previous?.tone
+        ) {
           return;
         }
         state.badge = badge;
@@ -503,12 +700,22 @@ export class ViewsService {
         return disposed ? "" : (entry.filters.get(sessionKey(currentSession())) ?? "");
       },
       onDidChangeFilter: treeEntry.filterChanged.event,
+      searchInput,
+      get presentation() {
+        return presentation;
+      },
+      set presentation(value) {
+        presentation = value === "graph" ? "graph" : "tree";
+        if (!disposed) entry.handle.update({ presentation });
+      },
       dispose: () => {
         if (disposed) return;
         disposed = true;
         tree.dispose();
         treeEntry.visibility.dispose();
         treeEntry.filterChanged.dispose();
+        treeEntry.inputChanged.dispose();
+        treeEntry.inputAccepted.dispose();
         if (entry.tree === treeEntry) {
           entry.tree = undefined;
           // Back to VS Code's "no data provider" state; the view stays contributed.
@@ -521,6 +728,9 @@ export class ViewsService {
             notice: undefined,
             tag: undefined,
             badge: undefined,
+            searchValidation: undefined,
+            searchEnabled: true,
+            presentation: "tree",
           });
         }
       },

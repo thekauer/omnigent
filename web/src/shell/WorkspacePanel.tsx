@@ -102,7 +102,8 @@ import { PullRequestPanel } from "./PullRequestPanel";
 import type { ChangedSort } from "@/lib/changedSort";
 import { SubagentsPanel } from "./SubagentsPanel";
 import { useTerminalStatuses } from "./useTerminalStatuses";
-import { extensionRailTab, type RightRailTab } from "./railTabs";
+import { extensionRailTab, extensionRailTabViewId, type RightRailTab } from "./railTabs";
+import { useWorkspaceRail } from "./useWorkspaceRail";
 import { builtInTabView, useRailViews } from "./railViews";
 import { ExtensionRailView, MissingBuiltInView } from "./extensionViews/ExtensionRailView";
 import {
@@ -943,6 +944,12 @@ function WorkspacePanelImpl({
 }: WorkspacePanelProps) {
   const contentSearchInputRef = useRef<HTMLInputElement>(null);
   const [contentSearchFocusSession, setContentSearchFocusSession] = useState<string | null>(null);
+  // A view's input to focus once its tab shows, through `<view>.focus`.
+  const [viewFocusRequest, setViewFocusRequest] = useState<{
+    session: string;
+    tab: RightRailTab;
+    token: number;
+  } | null>(null);
   const railRef = useRef<HTMLElement | null>(null);
   const railContentRef = useRef<HTMLDivElement | null>(null);
   const browsers = useBrowserTabs(conversationId);
@@ -1366,6 +1373,39 @@ function WorkspacePanelImpl({
   ];
   const unpinnedTabs = availablePanels.filter((tab) => !pinnedTabs.includes(tab));
   const visibleOpenPanels = openPanels.filter((tab) => unpinnedTabs.includes(tab));
+  // The views whose tabs this rail shows, so their `<view>.focus` (and keybindings) reach it.
+  const revealableTabs = new Map<string, RightRailTab>();
+  for (const tab of [...visiblePermanentTabs, ...visibleOpenPanels]) {
+    const viewId = extensionRailTabViewId(tab) ?? builtInTabView(extensionViews, tab)?.id;
+    if (viewId !== undefined) revealableTabs.set(viewId, tab);
+  }
+  useWorkspaceRail({
+    sessionId: conversationId && !pending && !isMobile ? conversationId : null,
+    views: [...revealableTabs.keys()],
+    reveal: (viewId) => {
+      const tab = revealableTabs.get(viewId);
+      if (tab === undefined || !conversationId) return false;
+      onRightRailTabChange(tab);
+      onReveal?.();
+      setViewFocusRequest((previous) => ({
+        session: conversationId,
+        tab,
+        token: (previous?.token ?? 0) + 1,
+      }));
+      return true;
+    },
+  });
+  // The request holds until its tab shows for its session in front, then focuses once.
+  const viewFocusTarget =
+    viewFocusRequest !== null &&
+    viewFocusRequest.session === conversationId &&
+    viewFocusRequest.tab === rightRailTab &&
+    selectedFilePath === null &&
+    !terminalShown;
+  useEffect(() => {
+    if (viewFocusRequest !== null && !viewFocusTarget) setViewFocusRequest(null);
+  }, [viewFocusRequest, viewFocusTarget]);
+  const viewFocusToken = viewFocusTarget && open && !inert ? viewFocusRequest.token : 0;
   const activePanelRef = useRef<HTMLButtonElement | null>(null);
   useEffect(() => {
     scrollTabIntoView(activePanelRef.current);
@@ -2212,6 +2252,8 @@ function WorkspacePanelImpl({
                   settled={extensionViewsSettled}
                   conversationId={conversationId}
                   visible={open && !inert}
+                  focusToken={viewFocusToken}
+                  onFocused={() => setViewFocusRequest(null)}
                 />
               </RenderErrorBoundary>
             ) : scopeView === "extension" ? (

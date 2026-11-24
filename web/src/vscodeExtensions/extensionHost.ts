@@ -9,11 +9,14 @@ import { type RailViewRegistry, railViews } from "@/shell/railViews";
 import { type WorkspaceBridge, workspaceBridge } from "@/shell/workspaceBridge";
 import { registerBuiltInCommands } from "./builtinCommands";
 import { CommandRegistry } from "./commands";
+import { Disposable } from "./base";
 import { ContextKeyService } from "./contextKeys";
+import { KeybindingService } from "./keybindings";
 import { type ExtensionDescription, ExtensionHost, type ExtensionHostOptions } from "./host";
 import { toastNotifications } from "./progress";
 import { sessionHeaderItems } from "./sessionHeaderItems";
 import { chatStoreSessionSource, SessionsService } from "./sessionsService";
+import { SessionTreeService } from "./sessionTreeService";
 import { ViewsService } from "./viewsService";
 import { WorkspaceService } from "./workspaceService";
 
@@ -56,7 +59,28 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
     executeCommand: (command, args) => commands.execute(command, args, () => {}),
     showError: (message) => toastNotifications.error(message),
     workspace,
+    // VS Code's `<view>.focus`: the workspace on screen shows the view's tab and focuses it.
+    registerFocusCommand: (extensionId, command, viewId) =>
+      commands.register(extensionId, command, () => bridge.rail()?.reveal(viewId) ?? false),
   });
+  // `view.<id>.available` while the workspace on screen can show that view's tab.
+  let availableViews = new Set<string>();
+  const syncAvailableViews = () => {
+    const next = new Set(bridge.rail()?.views ?? []);
+    for (const viewId of availableViews) {
+      if (!next.has(viewId)) contextKeys.set(`view.${viewId}.available`, undefined);
+    }
+    for (const viewId of next) contextKeys.set(`view.${viewId}.available`, true);
+    availableViews = next;
+  };
+  syncAvailableViews();
+  const railSubscription = new Disposable(bridge.subscribeRails(syncAvailableViews));
+  const keybindings = new KeybindingService({
+    contextKeys,
+    executeCommand: (command) => commands.execute(command, [], () => {}),
+    logError: (message, error) => console.error(`[omnigent-extensions] ${message}`, error),
+  });
+  const sessionTree = new SessionTreeService(bridge);
   const host = new ExtensionHost({
     services: {
       headerItems: sessionHeaderItems,
@@ -66,6 +90,8 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
       hostReconnect: { registry: hostReconnectProviders, onReconnected: refreshRunnerHealth },
       views,
       workspace,
+      sessionTree,
+      keybindings,
     },
     ...options.hostOptions,
   });
@@ -80,8 +106,11 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
       await host.dispose();
       builtInCommands.dispose();
       settingsSubscription.dispose();
+      railSubscription.dispose();
+      keybindings.dispose();
       views.dispose();
       workspace.dispose();
+      sessionTree.dispose();
     },
   };
 }

@@ -125,7 +125,19 @@ export function extensionViewTabDescriptor(view: RailView): WorkspacePanelTabDes
         ? `${view.name} ${view.badge.tooltip || view.badge.value}`
         : view.name,
     badge: () =>
-      view.badge && view.badge.value > 0 ? { text: view.badge.value, className: "sr-only" } : null,
+      view.badge && view.badge.value > 0
+        ? {
+            text: view.badge.label ?? view.badge.value,
+            className:
+              view.badge.tone === undefined
+                ? "sr-only"
+                : cn(
+                    TAB_BADGE_BASE,
+                    "sr-only",
+                    view.badge.tone === "success" ? "text-success" : "text-muted-foreground",
+                  ),
+          }
+        : null,
   };
 }
 
@@ -149,6 +161,9 @@ export function railTabDescriptor(
       ...viewDescriptor,
       icon: railViewIcon(view.icon) ?? builtIn.icon,
       shown: builtIn.shown,
+      // The tab's own shortcut (⌘⇧F for Content search) stays in its tooltip.
+      ...(builtIn.tooltipShortcut ? { tooltipShortcut: builtIn.tooltipShortcut } : {}),
+      ...(builtIn.ariaKeyShortcuts ? { ariaKeyShortcuts: builtIn.ariaKeyShortcuts } : {}),
     };
   }
   const view = views.find((candidate) => candidate.id === viewId);

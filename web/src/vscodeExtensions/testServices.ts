@@ -5,6 +5,7 @@ import { CommandRegistry } from "./commands";
 import type { Notifications } from "./progress";
 import { SessionHeaderItemRegistry } from "./sessionHeaderItems";
 import { SessionsService } from "./sessionsService";
+import { SessionTreeService } from "./sessionTreeService";
 import { RailViewRegistry } from "@/shell/railViews";
 import { WorkspaceBridge } from "@/shell/workspaceBridge";
 import { ContextKeyService } from "./contextKeys";
@@ -85,5 +86,6 @@ export function hostServices(overrides: Partial<HostServices> = {}): HostService
     hostReconnect: overrides.hostReconnect ?? { registry: new HostReconnectProviderRegistry() },
     views: overrides.views ?? testViewsService(commands),
     workspace: overrides.workspace ?? new WorkspaceService(new WorkspaceBridge()),
+    sessionTree: overrides.sessionTree ?? new SessionTreeService(new WorkspaceBridge()),
   };
 }

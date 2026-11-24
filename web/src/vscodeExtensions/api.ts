@@ -3,7 +3,13 @@
 import type * as omnigent from "omnigent";
 import type { HostReconnectProviderRegistry, ReconnectHost } from "@/lib/hostReconnectProviders";
 import { isThenable } from "@/lib/thenable";
-import { Disposable, EventEmitter, disposeAll, type DisposableLike } from "./base";
+import {
+  CancellationTokenSource,
+  Disposable,
+  EventEmitter,
+  disposeAll,
+  type DisposableLike,
+} from "./base";
 import type { CommandHandler, CommandRegistry } from "./commands";
 import type { NodeProgressEvent } from "./nodeCommands";
 import {
@@ -15,8 +21,10 @@ import {
 } from "./progress";
 import { SessionHeaderItemAlignment, type SessionHeaderItemRegistry } from "./sessionHeaderItems";
 import type { SessionsService } from "./sessionsService";
+import type { SessionTreeService } from "./sessionTreeService";
+import type { KeybindingService } from "./keybindings";
 import type { ViewsService } from "./viewsService";
-import type { WorkspaceService } from "./workspaceService";
+import { textSearchQueryProblem, type WorkspaceService } from "./workspaceService";
 
 export const OMNIGENT_API_VERSION = "0.1.0";
 
@@ -38,6 +46,7 @@ export const OMNIGENT_API_EXPORT_NAMES = [
   "hosts",
   "workspace",
   "TreeItemCollapsibleState",
+  "CancellationTokenSource",
 ] as const;
 
 /** As `vscode.TreeItemCollapsibleState`. */
@@ -55,6 +64,9 @@ export interface HostServices {
   };
   views: ViewsService;
   workspace: WorkspaceService;
+  sessionTree: SessionTreeService;
+  /** Contributed keybindings; without it, `contributes.keybindings` is ignored. */
+  keybindings?: KeybindingService;
 }
 
 export type ExtensionLogger = (message: string, error?: unknown) => void;
@@ -171,6 +183,14 @@ export function createExtensionApi(
     services.workspace.onDidChangeConfiguration,
     "onDidChangeConfiguration",
   );
+  const onDidChangeActiveSessionTree = guard(
+    services.sessionTree.onDidChangeActiveSessionTree,
+    "onDidChangeActiveSessionTree",
+  );
+  const onDidChangeChildSessions = guard(
+    services.sessionTree.onDidChangeChildSessions,
+    "onDidChangeChildSessions",
+  );
 
   function createTreeView<T>(
     viewId: string,
@@ -190,6 +210,8 @@ export function createExtensionApi(
         onDidChangeVisibility: () => new Disposable(() => {}),
         filter: "",
         onDidChangeFilter: () => new Disposable(() => {}),
+        searchInput: undefined,
+        presentation: "tree",
         dispose: () => {},
       };
     }
@@ -222,6 +244,24 @@ export function createExtensionApi(
       return Promise.reject(new Error("the extension was deactivated"));
     }
     const title = typeof options?.title === "string" && options.title ? options.title : extensionId;
+    const viewId = options?.location?.viewId;
+    if (typeof viewId === "string") {
+      let end: () => void;
+      try {
+        end = services.views.beginProgress(extensionId, viewId, title);
+      } catch (error) {
+        return Promise.reject(error);
+      }
+      const report: omnigent.Progress<omnigent.ProgressReport> = { report: () => {} };
+      let result: R | Promise<R>;
+      try {
+        result = task(report);
+      } catch (error) {
+        end();
+        return Promise.reject(error);
+      }
+      return Promise.resolve(result).finally(end);
+    }
     return runWithProgress(services.notifications, title, task, trackProgress);
   }
 
@@ -384,6 +424,18 @@ export function createExtensionApi(
       onDidChangeChangedFiles,
       getConfiguration: (section?: string) => services.workspace.getConfiguration(section),
       onDidChangeConfiguration,
+      findTextInFiles: (
+        query: omnigent.TextSearchQuery,
+        options?: omnigent.FindTextInFilesOptions,
+        token?: omnigent.CancellationToken,
+      ) => {
+        if (disposed) {
+          refuse("findTextInFiles");
+          return Promise.reject(new Error("the extension was deactivated"));
+        }
+        return services.workspace.findTextInFiles(query, options, token);
+      },
+      validateTextSearchQuery: (query: omnigent.TextSearchQuery) => textSearchQueryProblem(query),
     }),
     sessions: Object.freeze({
       get activeSession() {
@@ -394,7 +446,15 @@ export function createExtensionApi(
       },
       onDidChangeActiveSession,
       onDidChangeUsage,
+      get activeSessionTreeRoot() {
+        return services.sessionTree.activeSessionTreeRoot;
+      },
+      onDidChangeActiveSessionTree,
+      getChildSessions: (sessionId: string) => services.sessionTree.getChildSessions(sessionId),
+      getSession: (sessionId: string) => services.sessionTree.getSession(sessionId),
+      onDidChangeChildSessions,
     }),
+    CancellationTokenSource,
   };
 
   return {

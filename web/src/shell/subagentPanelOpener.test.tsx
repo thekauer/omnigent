@@ -2,7 +2,11 @@ import { renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { writeOpenSubagentsInPanel } from "@/lib/subagentPanelPreferences";
-import { SubagentPanelOpenerContext, useOpenSubagentInPanel } from "./subagentPanelOpener";
+import {
+  openSessionFromView,
+  SubagentPanelOpenerContext,
+  useOpenSubagentInPanel,
+} from "./subagentPanelOpener";
 
 const isMobileMock = vi.fn(() => false);
 vi.mock("@/hooks/useIsMobileViewport", () => ({
@@ -93,5 +97,58 @@ describe("useOpenSubagentInPanel", () => {
     const openInPanel = renderWithOpener(null);
 
     expect(openInPanel("conv_child", plainClick())).toBe(false);
+  });
+});
+
+// What the Agents view's rows (and graph nodes) do through the workspace: the same
+// decision the classic panel's links made with the opener above.
+describe("openSessionFromView", () => {
+  const open = (
+    options: Partial<Parameters<typeof openSessionFromView>[1]> & { refuse?: boolean } = {},
+  ) => {
+    const opener = vi.fn(() => !options.refuse);
+    const navigate = vi.fn();
+    openSessionFromView("conv_child", {
+      asSubagent: true,
+      mobile: false,
+      opener,
+      navigate,
+      ...options,
+    });
+    return { opener, navigate };
+  };
+
+  it("opens a sub-agent as a tab beside the chat when the setting is on", () => {
+    writeOpenSubagentsInPanel(true);
+    const { opener, navigate } = open();
+    expect(opener).toHaveBeenCalledWith("conv_child");
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it("navigates when the opener refuses, as it does for an ancestor", () => {
+    writeOpenSubagentsInPanel(true);
+    const { opener, navigate } = open({ refuse: true });
+    expect(opener).toHaveBeenCalledWith("conv_child");
+    expect(navigate).toHaveBeenCalledWith("conv_child");
+  });
+
+  it.each([
+    ["the setting is off", false, {}],
+    ["on a phone", true, { mobile: true }],
+    ["without an opener", true, { opener: null }],
+    ["for a plain session", true, { asSubagent: false }],
+  ] as const)("navigates %s", (_name, setting, options) => {
+    writeOpenSubagentsInPanel(setting);
+    const navigate = vi.fn();
+    const opener = vi.fn(() => true);
+    openSessionFromView("conv_child", {
+      asSubagent: true,
+      mobile: false,
+      opener,
+      navigate,
+      ...options,
+    });
+    expect(navigate).toHaveBeenCalledWith("conv_child");
+    expect(opener).not.toHaveBeenCalled();
   });
 });

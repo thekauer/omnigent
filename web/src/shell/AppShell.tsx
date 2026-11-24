@@ -161,7 +161,7 @@ import type { FilePosition, OpenFileOptions, FileNavigationGuard } from "./FileV
 import { revealFolderInFilesPanel } from "./FilesPanel";
 import { selectPullRequestInPanel } from "./PullRequestPanel";
 import type { ChangedSort } from "@/lib/changedSort";
-import { SubagentPanelOpenerContext } from "./subagentPanelOpener";
+import { openSessionFromView, SubagentPanelOpenerContext } from "./subagentPanelOpener";
 import { isMobileViewport, Sidebar } from "./Sidebar";
 import { MobilePanelDrawer } from "./MobilePanelDrawer";
 import { ResponsiveViewerSlot } from "./ResponsiveViewerSlot";
@@ -198,6 +198,7 @@ import {
 import { extensionRailTabViewId, type RightRailTab } from "./railTabs";
 import { useRailViewIds } from "./railViews";
 import { useWorkspaceBridgeSource } from "./useWorkspaceBridgeSource";
+import { sessionNavigationSearch } from "@/lib/sessionNavigation";
 
 /**
  * Top-level layout. The sidebar and right panels are responsive:
@@ -1917,6 +1918,8 @@ function AppShellImpl() {
 
   useUiOpenFile(serverConversationId, showFilesPanel, openFileViewer);
 
+  // Defined further down; the bridge's session opener calls the latest one.
+  const openSubagentInPanelRef = useRef<(childSessionId: string) => boolean>(() => false);
   // Extension views (the built-in Changes tab among them) read this session's
   // workspace through the bridge, unless a grid cell's workspace is in front.
   useWorkspaceBridgeSource({
@@ -1929,6 +1932,17 @@ function AppShellImpl() {
     onSortOrderChange: handleFilesSortChange,
     showHidden: filesPanelShowHidden,
     onShowHiddenChange: setFilesPanelShowHidden,
+    rootSessionId,
+    // With the panel setting on, a sub-agent opens as a rail tab beside this chat.
+    openSession: (sessionId, { asSubagent }) =>
+      openSessionFromView(sessionId, {
+        asSubagent,
+        mobile: mobileViewport,
+        opener: (id) => openSubagentInPanelRef.current(id),
+        // Session-scoped params (file, diff, ...) stay with their session; global ones carry.
+        navigate: (id) =>
+          navigateTo({ pathname: `/c/${id}`, search: sessionNavigationSearch(location.search) }),
+      }),
   });
 
   // Strip the file-viewer URL params (file/diff/comment). Memoized on
@@ -2571,6 +2585,7 @@ function AppShellImpl() {
       revealRightPanel,
     ],
   );
+  openSubagentInPanelRef.current = openSubagentInPanel;
   // Side-chat and sub-agent tabs opened elsewhere must stay reachable from a
   // phone's drawer even where this viewer or harness can't start side chats.
   const [hasSideChatTabs, setHasSideChatTabs] = useState(false);

@@ -1,5 +1,6 @@
 // Runs the real extension host with the built-in extensions (the Changes tab) for
 // renderer tests, against a workspace source the test publishes to.
+import type { QueryClient } from "@tanstack/react-query";
 import { type Mock, vi } from "vitest";
 import type { WorkspaceChangedFile } from "@/hooks/useWorkspaceChangedFiles";
 import { type RailViewRegistry, railViews } from "@/shell/railViews";
@@ -36,6 +37,7 @@ export interface BuiltInHarness {
   readonly openFile: Mock<(path: string) => void>;
   readonly refreshChangedFiles: Mock<() => Promise<void>>;
   readonly updateSettings: Mock<(patch: Partial<WorkspaceFileSettings>) => void>;
+  readonly openSession: Mock<(sessionId: string, options: { asSubagent: boolean }) => void>;
   dispose: () => Promise<void>;
 }
 
@@ -59,6 +61,10 @@ export async function startBuiltIns(
     files?: readonly WorkspaceChangedFile[];
     /** False when the code under test registers its own workspace source (AppShell). */
     withSource?: boolean;
+    /** The query cache the workspace's session data (the Agents view's) comes from. */
+    queryClient?: QueryClient;
+    rootSessionId?: string | null;
+    agentCostsEnabled?: boolean;
   } = {},
 ): Promise<BuiltInHarness> {
   const registry = options.registry ?? railViews;
@@ -70,6 +76,8 @@ export async function startBuiltIns(
     availability: "available",
     servedFromHost: false,
     settings: DEFAULT_WORKSPACE_FILE_SETTINGS,
+    rootSessionId: options.rootSessionId ?? null,
+    agentCostsEnabled: options.agentCostsEnabled ?? false,
   };
   const openFile = vi.fn<(path: string) => void>();
   const refreshChangedFiles = vi.fn<() => Promise<void>>(() => Promise.resolve());
@@ -77,7 +85,14 @@ export async function startBuiltIns(
     state = { ...state, settings: { ...state.settings, ...patch } };
     source.update(state);
   });
-  const actions: WorkspaceActions = { openFile, refreshChangedFiles, updateSettings };
+  const openSession = vi.fn<(sessionId: string, options: { asSubagent: boolean }) => void>();
+  const actions: WorkspaceActions = {
+    openFile,
+    refreshChangedFiles,
+    updateSettings,
+    openSession,
+    ...(options.queryClient ? { queryClient: options.queryClient } : {}),
+  };
   source.update(state);
   source.setActions(actions);
   source.setActive(options.withSource !== false);
@@ -101,6 +116,7 @@ export async function startBuiltIns(
     openFile,
     refreshChangedFiles,
     updateSettings,
+    openSession,
     dispose: async () => {
       await runtime.dispose();
       source.dispose();

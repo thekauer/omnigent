@@ -126,10 +126,15 @@ export class ExtensionHost {
     for (const warning of warnings) {
       this.log.warn(`[omnigent-extensions] ${extension.id}: ${warning}`);
     }
-    this.contributed.set(
+    const removeViews = this.services.views.addExtension(extension.id, contributions);
+    const removeKeybindings = this.services.keybindings?.add(
       extension.id,
-      this.services.views.addExtension(extension.id, contributions),
+      contributions.keybindings,
     );
+    this.contributed.set(extension.id, () => {
+      removeKeybindings?.();
+      removeViews();
+    });
   }
 
   isActive(extensionId: string): boolean {

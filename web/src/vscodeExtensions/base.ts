@@ -93,3 +93,38 @@ export class EventEmitter<T> implements omnigent.EventEmitter<T> {
     this.listeners = undefined;
   }
 }
+
+/** As `vscode.CancellationTokenSource`: `cancel()` fires the token's event once. */
+export class CancellationTokenSource implements omnigent.CancellationTokenSource {
+  private cancelled = false;
+  private readonly emitter = new EventEmitter<unknown>();
+  readonly token: omnigent.CancellationToken;
+
+  constructor() {
+    const isCancelled = () => this.cancelled;
+    const onCancellationRequested: omnigent.Event<unknown> = (listener, thisArgs, disposables) => {
+      // Like VS Code, a listener added after cancellation runs at once.
+      if (isCancelled()) {
+        queueMicrotask(() => listener.call(thisArgs, undefined));
+        return new Disposable(() => {});
+      }
+      return this.emitter.event(listener, thisArgs, disposables);
+    };
+    this.token = Object.freeze({
+      get isCancellationRequested() {
+        return isCancelled();
+      },
+      onCancellationRequested,
+    });
+  }
+
+  cancel(): void {
+    if (this.cancelled) return;
+    this.cancelled = true;
+    this.emitter.fire(undefined);
+  }
+
+  dispose(): void {
+    this.emitter.dispose();
+  }
+}

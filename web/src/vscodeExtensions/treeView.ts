@@ -4,6 +4,8 @@
 import type * as omnigent from "omnigent";
 import { isThenable } from "@/lib/thenable";
 import type {
+  RailAgentState,
+  RailAgentStatus,
   RailTreeDecorationTone,
   RailTreeItemCollapsible,
   RailTreeItemStatus,
@@ -29,6 +31,18 @@ const COLLAPSIBLE: Record<number, RailTreeItemCollapsible> = {
 };
 const STATUSES = new Set<RailTreeItemStatus>(["added", "modified", "deleted"]);
 const TONES = new Set<RailTreeDecorationTone>(["added", "removed", "muted"]);
+const AGENT_STATES = new Set<RailAgentState>([
+  "launching",
+  "working",
+  "awaiting",
+  "done",
+  "failed",
+  "disconnected",
+  "idle",
+  "other",
+]);
+const MAX_HIGHLIGHTS = 32;
+const MAX_AGENT_NAME = 100;
 
 export interface TreeViewModelOptions {
   /** Runs a row's command; arguments are copied as JSON by the command registry. */
@@ -52,12 +66,62 @@ function dirname(path: string): string {
   return slash > 0 ? path.slice(0, slash) : "";
 }
 
+function isSessionResource(value: unknown): boolean {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    (value as { scheme?: unknown }).scheme === "session"
+  );
+}
+
 function resourcePathOf(value: unknown): string | undefined {
   if (typeof value === "string") return value.slice(0, MAX_PATH);
-  if (typeof value === "object" && value !== null) {
+  if (typeof value === "object" && value !== null && !isSessionResource(value)) {
     return text((value as { path?: unknown }).path, MAX_PATH);
   }
   return undefined;
+}
+
+function sessionIdOf(value: unknown): string | undefined {
+  if (!isSessionResource(value)) return undefined;
+  const path = text((value as { path?: unknown }).path, MAX_ID);
+  return path ? path : undefined;
+}
+
+function highlightsOf(value: unknown, label: string): RailTreeNode["highlights"] {
+  if (typeof value !== "object" || value === null) return undefined;
+  const raw = (value as { highlights?: unknown }).highlights;
+  if (!Array.isArray(raw)) return undefined;
+  const ranges = raw.slice(0, MAX_HIGHLIGHTS).flatMap((range: unknown) => {
+    if (!Array.isArray(range) || range.length !== 2) return [];
+    const [start, end] = range as unknown[];
+    if (!Number.isInteger(start) || !Number.isInteger(end)) return [];
+    const from = Math.max(0, Math.min(label.length, start as number));
+    const to = Math.max(from, Math.min(label.length, end as number));
+    return to > from ? [Object.freeze([from, to] as const)] : [];
+  });
+  return ranges.length > 0 ? Object.freeze(ranges) : undefined;
+}
+
+function agentIconOf(value: unknown): RailTreeNode["agentIcon"] {
+  if (typeof value !== "object" || value === null) return undefined;
+  const { agent, harness } = value as { agent?: unknown; harness?: unknown };
+  if (typeof agent !== "string") return undefined;
+  return Object.freeze({
+    agent: agent.slice(0, MAX_AGENT_NAME),
+    harness: typeof harness === "string" ? harness.slice(0, MAX_AGENT_NAME) : null,
+  });
+}
+
+function agentStatusOf(value: unknown): RailAgentStatus | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const { state, label, detail } = value as { state?: unknown; label?: unknown; detail?: unknown };
+  if (!AGENT_STATES.has(state as RailAgentState)) return undefined;
+  return Object.freeze({
+    state: state as RailAgentState,
+    label: text(label, MAX_LABEL) ?? String(state),
+    detail: text(detail, MAX_TOOLTIP),
+  });
 }
 
 function decorationOf(value: unknown): RailTreeNode["decoration"] {
@@ -66,14 +130,20 @@ function decorationOf(value: unknown): RailTreeNode["decoration"] {
   const parts = Array.isArray(record.parts)
     ? record.parts.slice(0, MAX_DECORATION_PARTS).flatMap((part: unknown) => {
         if (typeof part !== "object" || part === null) return [];
-        const { text: partText, tone } = part as { text?: unknown; tone?: unknown };
+        const {
+          text: partText,
+          tone,
+          tooltip,
+        } = part as { text?: unknown; tone?: unknown; tooltip?: unknown };
         if (typeof partText !== "string") return [];
+        const partTooltip = text(tooltip, MAX_TOOLTIP);
         return [
           Object.freeze({
             text: partText.slice(0, MAX_DECORATION_TEXT),
             ...(TONES.has(tone as RailTreeDecorationTone)
               ? { tone: tone as RailTreeDecorationTone }
               : {}),
+            ...(partTooltip === undefined ? {} : { tooltip: partTooltip }),
           }),
         ];
       })
@@ -112,8 +182,11 @@ export function sanitizeTreeItem(
       : text(item.description, MAX_DESCRIPTION);
   const icon =
     item.iconPath === "file" || item.iconPath === "folder" || isRailViewIconName(item.iconPath)
-      ? item.iconPath
+      ? (item.iconPath as string)
       : undefined;
+  const accessible = (item as { accessibilityInformation?: { label?: unknown } })
+    .accessibilityInformation;
+  const line = (item as { line?: unknown }).line;
   const status = STATUSES.has(item.gitStatus as RailTreeItemStatus)
     ? (item.gitStatus as RailTreeItemStatus)
     : undefined;
@@ -141,6 +214,12 @@ export function sanitizeTreeItem(
       typeof item.size === "number" && Number.isFinite(item.size) && item.size >= 0
         ? Math.floor(item.size)
         : undefined,
+    highlights: highlightsOf(item.label, label),
+    line: Number.isInteger(line) && (line as number) > 0 ? (line as number) : undefined,
+    accessibleLabel: text(accessible?.label, MAX_TOOLTIP),
+    sessionId: sessionIdOf(item.resourceUri),
+    agentIcon: agentIconOf(item.iconPath),
+    agentStatus: agentStatusOf((item as { status?: unknown }).status),
   });
   return { node, command };
 }

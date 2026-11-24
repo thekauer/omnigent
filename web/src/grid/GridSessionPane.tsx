@@ -49,7 +49,8 @@ import { readTranscriptViewDefault } from "@/lib/transcriptViewPreferences";
 import { MainTerminalView } from "@/shell/MainTerminalView";
 import { TerminalFirstContextProvider, type TerminalFirstView } from "@/shell/TerminalFirstContext";
 import { ViewModeToggle } from "@/shell/ViewModeToggle";
-import { Link } from "@/lib/routing";
+import { Link, useLocation, useNavigate } from "@/lib/routing";
+import { sessionNavigationSearch } from "@/lib/sessionNavigation";
 import {
   readSessionWorkspaceState,
   writeSessionWorkspaceState,
@@ -155,6 +156,8 @@ export function GridSessionPane({
   const wrapper = session?.labels?.["omnigent.wrapper"];
   const terminalFirst = session?.labels?.["omnigent.ui"] === "terminal";
   const rootSessionId = useRootSessionId(sessionId, session?.parentSessionId);
+  const navigateTo = useNavigate();
+  const location = useLocation();
   const { children: childSessions } = useChildSessions(rootSessionId);
   const {
     canBrowseWorkspace: canBrowse,
@@ -433,6 +436,10 @@ export function GridSessionPane({
     onSortOrderChange: setSort,
     showHidden,
     onShowHiddenChange: setShowHidden,
+    rootSessionId,
+    // A cell's Agents tab opens a session in the window, as its links do.
+    openSession: (id) =>
+      navigateTo({ pathname: `/c/${id}`, search: sessionNavigationSearch(location.search) }),
   });
   // A saved extension tab waits while extensions load, then needs its view, as in AppShell.
   const savedViewId = extensionRailTabViewId(workspace.rightRailTab ?? null);

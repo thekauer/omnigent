@@ -43,3 +43,28 @@ export function useOpenSubagentInPanel(): (
     [opener, isMobile],
   );
 }
+
+/**
+ * Opens a session a workspace view asked for (the Agents tab's rows): a
+ * sub-agent beside the chat when the setting is on, on desktop, and the opener
+ * takes it; otherwise the window navigates to it.
+ */
+export function openSessionFromView(
+  sessionId: string,
+  {
+    asSubagent,
+    mobile,
+    opener,
+    navigate,
+  }: {
+    asSubagent: boolean;
+    mobile: boolean;
+    opener: SubagentPanelOpener | null;
+    navigate: (sessionId: string) => void;
+  },
+): void {
+  if (asSubagent && opener !== null && !mobile && readOpenSubagentsInPanel() && opener(sessionId)) {
+    return;
+  }
+  navigate(sessionId);
+}

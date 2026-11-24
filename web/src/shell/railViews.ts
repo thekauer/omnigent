@@ -9,6 +9,9 @@ import type { WorkspaceChangedFile } from "@/hooks/useWorkspaceChangedFiles";
 export interface RailViewBadge {
   readonly value: number;
   readonly tooltip: string;
+  /** Drawn instead of `value`. */
+  readonly label?: string;
+  readonly tone?: "success" | "muted";
 }
 
 /** One entry of a title action's submenu. */
@@ -45,6 +48,14 @@ export interface RailViewTitleAction {
 }
 
 export type RailTreeItemStatus = "added" | "modified" | "deleted";
+export type RailAgentState =
+  "launching" | "working" | "awaiting" | "done" | "failed" | "disconnected" | "idle" | "other";
+
+export interface RailAgentStatus {
+  readonly state: RailAgentState;
+  readonly label: string;
+  readonly detail: string | undefined;
+}
 export type RailTreeItemCollapsible = "none" | "collapsed" | "expanded";
 export type RailTreeDecorationTone = "added" | "removed" | "muted";
 
@@ -65,6 +76,7 @@ export interface RailTreeNode {
         readonly parts: readonly {
           readonly text: string;
           readonly tone?: RailTreeDecorationTone;
+          readonly tooltip?: string;
         }[];
         readonly title: string | undefined;
       }
@@ -75,6 +87,18 @@ export interface RailTreeNode {
   readonly contextValue: string | undefined;
   /** Bytes of the resource, drawn like the Changes list's file size. */
   readonly size: number | undefined;
+  /** `[start, end)` ranges of `label` to mark. */
+  readonly highlights: readonly (readonly [number, number])[] | undefined;
+  /** The line of the resource a text-match row stands for. */
+  readonly line: number | undefined;
+  /** The row's accessible name. */
+  readonly accessibleLabel: string | undefined;
+  /** The chat session a session row stands for. */
+  readonly sessionId: string | undefined;
+  /** An agent's icon: its name and harness. */
+  readonly agentIcon: { readonly agent: string; readonly harness: string | null } | undefined;
+  /** An agent's status, for a session row. */
+  readonly agentStatus: RailAgentStatus | undefined;
 }
 
 /** What the rail needs from a tree view; implemented by the extension host. */
@@ -109,6 +133,33 @@ export interface RailViewHost {
   reportVisible: () => () => void;
   /** Runs a command a message link names. */
   runCommand: (command: string) => void;
+  /** The search input's value kept for `sessionId`. */
+  getSearchInput: (sessionId: string | undefined) => RailSearchInputValue;
+  setSearchInput: (sessionId: string | undefined, value: RailSearchInputValue) => void;
+  /** The user submitted the search input. */
+  acceptSearchInput: (sessionId: string | undefined) => void;
+}
+
+export interface RailSearchInputValue {
+  readonly query: string;
+  readonly options: Readonly<Record<string, boolean>>;
+  readonly fields: Readonly<Record<string, string>>;
+}
+
+/** A view's query form, as its contribution describes it. */
+export interface RailSearchInput {
+  readonly placeholder: string;
+  readonly ariaLabel: string;
+  readonly submitTitle: string;
+  readonly options: readonly { readonly id: string; readonly title: string }[];
+  readonly fields: readonly {
+    readonly id: string;
+    readonly label: string;
+    readonly placeholder: string | undefined;
+  }[];
+  readonly fieldsToggle: { readonly title: string; readonly ariaLabel: string } | undefined;
+  readonly fieldsHint: string | undefined;
+  readonly hint: string | undefined;
 }
 
 export interface RailViewFilter {
@@ -131,6 +182,19 @@ export interface RailViewState {
   readonly notice: RailViewNotice | undefined;
   readonly tag: RailViewTag | undefined;
   readonly host: RailViewHost | undefined;
+  /** Shown under the search input as an alert; submitting does nothing while set. */
+  readonly searchValidation: string | undefined;
+  /** Whether the search input can be submitted. */
+  readonly searchEnabled: boolean;
+  readonly presentation: "tree" | "graph";
+  /** Running tasks the view shows progress for, latest last. */
+  readonly progress: readonly RailViewProgress[];
+}
+
+/** A task shown as progress in a view, while the chat session it started in is on screen. */
+export interface RailViewProgress {
+  readonly title: string;
+  readonly sessionId: string | undefined;
 }
 
 export interface RailViewContribution {
@@ -144,6 +208,8 @@ export interface RailViewContribution {
   readonly builtInTab?: string;
   /** A filter field above the rows. */
   readonly filter?: RailViewFilter;
+  /** A query form in place of the title bar. */
+  readonly searchInput?: RailSearchInput;
 }
 
 export interface RailView extends RailViewContribution, RailViewState {}
@@ -173,6 +239,10 @@ const INITIAL_STATE: RailViewState = {
   notice: undefined,
   tag: undefined,
   host: undefined,
+  searchValidation: undefined,
+  searchEnabled: true,
+  presentation: "tree",
+  progress: [],
 };
 
 interface Entry {
