@@ -8,6 +8,7 @@ import { OmnigentApp } from "./embed";
 import { useRailViews } from "./shell/railViews";
 import { ExtensionRailView } from "./shell/extensionViews/ExtensionRailView";
 import { flushMicrotasks } from "./test/builtInExtensions";
+import { useChatStore } from "./store/chatStore";
 import { currentExtensionHost } from "./vscodeExtensions/extensionHost";
 
 const BUILT_IN_TABS = ["Agents", "Changes", "Content search", "Files", "Pull Requests", "Tasks"];
@@ -66,6 +67,7 @@ async function settleDisposal(): Promise<void> {
 }
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   cleanup();
   await settleDisposal();
   localStorage.clear();
@@ -156,5 +158,68 @@ describe("embedded extension host", () => {
     expect(restarted).toBeDefined();
     expect(restarted).not.toBe(runtime);
     expect(tabNames()).toEqual(BUILT_IN_TABS);
+  });
+
+  it("leaves no chat store subscription or window listener behind over mount cycles", async () => {
+    // Count the subscriptions taken through the chat store and the window's listeners.
+    const subscribe = useChatStore.subscribe;
+    let subscriptions = 0;
+    vi.spyOn(useChatStore, "subscribe").mockImplementation((listener) => {
+      subscriptions += 1;
+      const unsubscribe = subscribe(listener);
+      let done = false;
+      return () => {
+        if (!done) subscriptions -= 1;
+        done = true;
+        unsubscribe();
+      };
+    });
+    const listeners = new Set<string>();
+    const ids = new WeakMap<object, number>();
+    let nextId = 0;
+    const keyOf = (
+      type: string,
+      listener: EventListenerOrEventListenerObject | null,
+      options?: boolean | EventListenerOptions,
+    ) => {
+      if (!listener) return undefined;
+      if (!ids.has(listener)) ids.set(listener, (nextId += 1));
+      const capture = typeof options === "boolean" ? options : Boolean(options?.capture);
+      return `${type}:${String(ids.get(listener) ?? 0)}:${String(capture)}`;
+    };
+    const add = window.addEventListener.bind(window);
+    const remove = window.removeEventListener.bind(window);
+    vi.spyOn(window, "addEventListener").mockImplementation((type, listener, options) => {
+      const key = keyOf(type, listener, options);
+      if (key && !(typeof options === "object" && options?.once)) listeners.add(key);
+      add(type, listener, options);
+    });
+    vi.spyOn(window, "removeEventListener").mockImplementation((type, listener, options) => {
+      const key = keyOf(type, listener, options);
+      if (key) listeners.delete(key);
+      remove(type, listener, options);
+    });
+
+    const cycle = async () => {
+      const { unmount } = render(app());
+      const runtime = currentExtensionHost();
+      await act(async () => {
+        await runtime?.builtInsStarted;
+      });
+      // The built-in keybindings listen on the window while the host runs.
+      expect(listeners.size).toBeGreaterThan(0);
+      unmount();
+      await settleDisposal();
+      expect(currentExtensionHost()).toBeUndefined();
+    };
+    // Lazy one-time setup on the first mount is not a leak; measure after it.
+    await cycle();
+    const baseline = { subscriptions, listeners: listeners.size };
+    for (let i = 0; i < 5; i += 1) {
+      // oxlint-disable-next-line no-await-in-loop -- the cycles run one after another
+      await cycle();
+    }
+    expect({ subscriptions, listeners: listeners.size }).toEqual(baseline);
+    expect(subscriptions).toBe(0);
   });
 });

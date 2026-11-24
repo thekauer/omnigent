@@ -91,10 +91,11 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
   const sessionTree = new SessionTreeService(bridge);
   const tasks = new TasksService(bridge);
   const pullRequests = new PullRequestsService(bridge);
+  const sessions = new SessionsService(chatStoreSessionSource());
   const host = new ExtensionHost({
     services: {
       headerItems: sessionHeaderItems,
-      sessions: new SessionsService(chatStoreSessionSource()),
+      sessions,
       commands,
       notifications: toastNotifications,
       hostReconnect: { registry: hostReconnectProviders, onReconnected: refreshRunnerHealth },
@@ -131,6 +132,7 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
       sessionTree.dispose();
       tasks.dispose();
       pullRequests.dispose();
+      sessions.dispose();
     },
   };
 }
