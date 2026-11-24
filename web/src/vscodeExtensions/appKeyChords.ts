@@ -1,8 +1,8 @@
 // The key chords the app already owns, in contributed-keybinding terms
 // (`ctrl+shift+f`), so an extension can't bind one and swallow the app's
 // shortcut. Read from the app's shortcut registries (the global one and the
-// workspace sidebar's), plus the chords the app shows but matches elsewhere and
-// the text-editing chords every page keeps.
+// workspace sidebar's), plus the chords the app shows but matches elsewhere, the
+// browser's own page chords, and the text-editing chords every page keeps.
 import type { Chord } from "@/lib/shortcuts/chord";
 import { SHORTCUT_BINDINGS, type ShortcutEnvironment } from "@/lib/shortcuts/registry";
 import { WORKSPACE_SIDEBAR_BINDINGS } from "@/shell/workspaceTabs/workspaceSidebarShortcuts";
@@ -26,6 +26,29 @@ interface OwnedChord {
 }
 
 const mod = (key: string, extra: Partial<Chord> = {}): Chord => ({ mod: true, key, ...extra });
+const bare = (key: string, extra: Partial<Chord> = {}): Chord => ({ key, ...extra });
+
+/**
+ * Cocoa's Control-letter text editing on macOS (⌃A line start, ⌃E line end, ⌃K kill,
+ * ⌃Y yank, ⌃D/⌃H delete, ⌃F/⌃B/⌃N/⌃P move, ⌃T transpose, ⌃O open line, ⌃V page
+ * down, ⌃L center). Every text field takes them, so no extension may.
+ */
+export const MAC_CONTROL_EDITING_KEYS: readonly string[] = Object.freeze([
+  "a",
+  "e",
+  "k",
+  "d",
+  "h",
+  "f",
+  "b",
+  "n",
+  "p",
+  "t",
+  "o",
+  "y",
+  "v",
+  "l",
+]);
 
 /**
  * Chords the app owns outside the registries: session actions its menus show
@@ -51,6 +74,21 @@ const OTHER_OWNED: readonly OwnedChord[] = [
     ],
   },
   {
+    id: "browser",
+    label: "Browser page keys",
+    // Save, print, open, page info; reload and hard reload; full screen; developer tools.
+    chords: () => [
+      mod("s"),
+      mod("p"),
+      mod("o"),
+      mod("i"),
+      bare("f5"),
+      bare("f5", { shift: true }),
+      bare("f11"),
+      bare("f12"),
+    ],
+  },
+  {
     id: "edit",
     label: "Text editing",
     chords: () => [
@@ -62,6 +100,12 @@ const OTHER_OWNED: readonly OwnedChord[] = [
       mod("z", { shift: true }),
       mod("y"),
     ],
+  },
+  {
+    id: "edit.macControl",
+    label: "macOS Control-key text editing",
+    chords: (environment) =>
+      environment.mac ? MAC_CONTROL_EDITING_KEYS.map((key) => bare(key, { ctrl: true })) : [],
   },
 ];
 
@@ -90,20 +134,26 @@ function toKeyChord(chord: Chord, mac: boolean): string | undefined {
   return [...modifiers, key].join("+");
 }
 
-const ownedByPlatform = new Map<boolean, Map<string, OwnedChord>>();
+const ownedByPlatform = new Map<boolean, Map<string, readonly OwnedChord[]>>();
 
-/** Every chord the app owns on a platform, in any shell (browser, desktop, with or without menus). */
-function ownedChords(mac: boolean): Map<string, OwnedChord> {
+/**
+ * Every chord the app owns on a platform, in any shell (browser, desktop, with or
+ * without menus), with all of its owners in registry order.
+ */
+function ownedChords(mac: boolean): Map<string, readonly OwnedChord[]> {
   const cached = ownedByPlatform.get(mac);
   if (cached) return cached;
-  const owned = new Map<string, OwnedChord>();
+  const owned = new Map<string, OwnedChord[]>();
   for (const native of [false, true]) {
     for (const desktopMenu of [false, true]) {
       const environment: ShortcutEnvironment = { mac, native, desktopMenu };
       for (const binding of OWNED) {
         for (const chord of binding.chords(environment)) {
           const keyChord = toKeyChord(chord, mac);
-          if (keyChord !== undefined && !owned.has(keyChord)) owned.set(keyChord, binding);
+          if (keyChord === undefined) continue;
+          const owners = owned.get(keyChord);
+          if (!owners) owned.set(keyChord, [binding]);
+          else if (!owners.includes(binding)) owners.push(binding);
         }
       }
     }
@@ -112,13 +162,17 @@ function ownedChords(mac: boolean): Map<string, OwnedChord> {
   return owned;
 }
 
-/** The app shortcut a contributed chord would take on a platform, if any. */
-export function appShortcutOwning(
-  chord: string,
-  mac: boolean,
-): { readonly id: string; readonly label: string } | undefined {
-  const owner = ownedChords(mac).get(canonicalKeyChord(chord));
-  return owner && { id: owner.id, label: owner.label };
+export interface AppShortcutOwner {
+  readonly id: string;
+  readonly label: string;
+}
+
+/** Every app shortcut a contributed chord would take on a platform; empty when it is free. */
+export function appShortcutsOwning(chord: string, mac: boolean): readonly AppShortcutOwner[] {
+  return (ownedChords(mac).get(canonicalKeyChord(chord)) ?? []).map((owner) => ({
+    id: owner.id,
+    label: owner.label,
+  }));
 }
 
 /**

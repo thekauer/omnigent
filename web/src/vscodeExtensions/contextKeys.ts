@@ -1,5 +1,8 @@
 // The window's context keys, as VS Code's context key service: set through the
-// `setContext` command and read by `when` clauses. One store per window.
+// `setContext` command and read by `when` clauses. One store per window. Keys the
+// host keeps (`inputFocus`, `config.*`, `view.*.available`) are written with
+// `setHost` and don't count toward the extensions' cap, so a full store never
+// stops the host from writing them.
 import { EventEmitter } from "./base";
 
 export type ContextKeyValue = string | number | boolean | null | readonly (string | number)[];
@@ -25,6 +28,8 @@ function isContextKeyValue(value: unknown): value is ContextKeyValue {
 
 export class ContextKeyService {
   private readonly values = new Map<string, ContextKeyValue>();
+  /** Keys the host wrote; they don't count toward `MAX_KEYS`. */
+  private readonly hostKeys = new Set<string>();
   private readonly changeEmitter = new EventEmitter<readonly string[]>();
   /** Fires with the keys that changed. */
   readonly onDidChange = this.changeEmitter.event;
@@ -33,19 +38,34 @@ export class ContextKeyService {
     return this.values.get(key);
   }
 
-  /** Sets `key`; `undefined` removes it. Invalid keys or values throw a TypeError. */
+  /**
+   * Sets `key` for an extension (`setContext`); `undefined` removes it. Invalid keys or
+   * values throw a TypeError, and a new key past the extensions' cap throws.
+   */
   set(key: unknown, value: unknown): void {
+    this.write(key, value, false);
+  }
+
+  /** Sets a key the host owns, outside the extensions' cap; `undefined` removes it. */
+  setHost(key: string, value: ContextKeyValue | undefined): void {
+    this.write(key, value, true);
+  }
+
+  private write(key: unknown, value: unknown, host: boolean): void {
     if (typeof key !== "string" || !KEY_PATTERN.test(key)) {
       throw new TypeError(`invalid context key ${JSON.stringify(key)}`);
     }
     if (value === undefined) {
+      this.hostKeys.delete(key);
       if (this.values.delete(key)) this.changeEmitter.fire([key]);
       return;
     }
     if (!isContextKeyValue(value)) {
       throw new TypeError(`context key ${key} needs a string, number, boolean or null value`);
     }
-    if (!this.values.has(key) && this.values.size >= MAX_KEYS) {
+    if (host) {
+      this.hostKeys.add(key);
+    } else if (!this.values.has(key) && this.values.size - this.hostKeys.size >= MAX_KEYS) {
       throw new Error(`too many context keys (at most ${MAX_KEYS})`);
     }
     const frozen = Array.isArray(value) ? Object.freeze([...value]) : value;

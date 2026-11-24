@@ -49,7 +49,7 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
   // `config.<setting>` context keys, as in VS Code, so `when` and `toggled` can read settings.
   const syncSettings = () => {
     for (const [name, value] of Object.entries(workspace.settingValues())) {
-      contextKeys.set(`config.${name}`, value);
+      contextKeys.setHost(`config.${name}`, value);
     }
   };
   syncSettings();
@@ -69,9 +69,9 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
   const syncAvailableViews = () => {
     const next = new Set(bridge.rail()?.views ?? []);
     for (const viewId of availableViews) {
-      if (!next.has(viewId)) contextKeys.set(`view.${viewId}.available`, undefined);
+      if (!next.has(viewId)) contextKeys.setHost(`view.${viewId}.available`, undefined);
     }
-    for (const viewId of next) contextKeys.set(`view.${viewId}.available`, true);
+    for (const viewId of next) contextKeys.setHost(`view.${viewId}.available`, true);
     availableViews = next;
   };
   syncAvailableViews();

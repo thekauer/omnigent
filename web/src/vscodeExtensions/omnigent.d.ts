@@ -633,6 +633,11 @@ declare module "omnigent" {
         /** Offers the plan on a graph of its tasks. */
         readonly graph?: boolean;
         readonly menu?: readonly PlanMenuItem[];
+        /**
+         * The first 1,000 are drawn. A task's goal keeps 200,000 characters (a
+         * plan's goals together 4,000,000) and its name 2,000; longer text is cut
+         * at a Markdown block boundary, or a word for a name, and ends "(truncated)".
+         */
         readonly tasks: readonly PlanViewTask[];
         /** The tasks say what they wait on (a plan's steps), so hovering one links them. */
         readonly dependencies: boolean;

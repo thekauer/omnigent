@@ -1,7 +1,19 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import {
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  realpathSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import ts from "typescript";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, onTestFinished, vi } from "vitest";
 import { BUILT_IN_RAIL_TABS } from "@/shell/railTabs";
 import { RailViewRegistry } from "@/shell/railViews";
 import { WorkspaceBridge } from "@/shell/workspaceBridge";
@@ -15,14 +27,29 @@ const ROOT = path.dirname(new URL(import.meta.url).pathname);
 const folders = readdirSync(ROOT).filter((entry) => statSync(path.join(ROOT, entry)).isDirectory());
 
 const TEST_FILE = /\.test\.[^/]+$/;
-const SOURCE_FILE = /\.tsx?$/;
+/**
+ * A built-in's sources are `.ts`, without JSX: JSX compiles to an import of
+ * `react/jsx-runtime` that the bundler injects and the import check never sees,
+ * and built-ins draw through the API rather than React. Their tests may be `.tsx`.
+ */
+const SOURCE_FILE = /\.ts$/;
+const JSX_FILE = /\.tsx$/;
 const MANIFEST = "package.json";
 
-/** Every file under `directory`. */
+const isSymlink = (file: string) => {
+  try {
+    return lstatSync(file).isSymbolicLink();
+  } catch {
+    return false;
+  }
+};
+
+/** Every file under `directory`, symlinks included as entries; links are not followed. */
 function allFiles(directory: string): string[] {
   return readdirSync(directory).flatMap((entry) => {
     const full = path.join(directory, entry);
-    return statSync(full).isDirectory() ? allFiles(full) : [full];
+    const stat = lstatSync(full);
+    return stat.isDirectory() && !stat.isSymbolicLink() ? allFiles(full) : [full];
   });
 }
 
@@ -33,12 +60,30 @@ function isSource(file: string): boolean {
 
 /**
  * What the bundle may load from an extension folder: its TypeScript sources and
- * manifest. Tests run only under vitest; any other file is a way around the check.
+ * manifest. Tests run only under vitest; any other file, or a symlink that could
+ * point anywhere, is a way around the check.
  */
-function fileViolation(folder: string, file: string): string | undefined {
+function fileViolation(
+  folder: string,
+  file: string,
+  isLink: (file: string) => boolean = isSymlink,
+): string | undefined {
+  if (isLink(file)) return "a symlink, which can point outside the extension folder";
   if (isSource(file) || TEST_FILE.test(file)) return undefined;
   if (path.relative(folder, file) === MANIFEST) return undefined;
-  return "a file the boundary check can't read; only .ts/.tsx sources, tests and package.json";
+  if (JSX_FILE.test(file)) {
+    return "a .tsx source; JSX compiles to an unchecked react/jsx-runtime import";
+  }
+  return "a file the boundary check can't read; only .ts sources, tests and package.json";
+}
+
+/** `file` with symlinks resolved, when it exists on disk; as given otherwise. */
+function realOrSelf(file: string): string {
+  try {
+    return realpathSync(file);
+  } catch {
+    return file;
+  }
 }
 
 /** Every module a source names: static, side-effect, type-only and dynamic imports, and re-exports. */
@@ -121,10 +166,12 @@ function boundaryViolation(
 ): string | undefined {
   if (specifier === "omnigent" || specifier === "@/vscodeExtensions/builtinApi") return undefined;
   if (!specifier.startsWith("./") && !specifier.startsWith("../")) return "app or package import";
-  const target = resolveImport(path.resolve(path.dirname(file), specifier), exists);
-  const inside = path.relative(folder, target);
+  // Real paths, so a symlinked file or folder can't pass as inside.
+  const target = realOrSelf(resolveImport(path.resolve(path.dirname(file), specifier), exists));
+  const inside = path.relative(realOrSelf(folder), target);
   if (inside.startsWith("..") || path.isAbsolute(inside)) return "leaves the extension folder";
   if (TEST_FILE.test(target)) return "loads a test file, which the check doesn't scan";
+  if (JSX_FILE.test(target)) return "loads a .tsx file; built-in sources are .ts, without JSX";
   if (inside !== MANIFEST && !SOURCE_FILE.test(target)) {
     return "loads a file that isn't TypeScript, which the check doesn't scan";
   }
@@ -196,7 +243,6 @@ describe("built-in import boundary check", () => {
         import { bindExtensionApi } from "@/vscodeExtensions/builtinApi";
         import manifest from "./package.json";
         import { model } from "./lib/../model";
-        import { View } from "./view";
         import { lib } from "./lib";
         const later = () => import("./model");
       `,
@@ -209,6 +255,7 @@ describe("built-in import boundary check", () => {
     ["a test file", `import { fixture } from "./model.test";`, /loads a test file/],
     ["a test file by extension", `import "./model.test.ts";`, /loads a test file/],
     ["a JavaScript file", `import { helper } from "./helper.js";`, /isn't TypeScript/],
+    ["a .tsx file", `import { View } from "./view";`, /\.tsx file/],
     ["a JSON file other than the manifest", `import data from "./data.json";`, /isn't TypeScript/],
     ["import.meta.glob", `const all = import.meta.glob("../../store/*.ts");`, /import\.meta\.glob/],
     ["import.meta.globEager", `const all = import.meta.globEager("../*.ts");`, /globEager/],
@@ -232,9 +279,37 @@ describe("built-in import boundary check", () => {
     expect(fileViolation(folder, path.join(folder, "model.ts"))).toBeUndefined();
     expect(fileViolation(folder, path.join(folder, "view.test.tsx"))).toBeUndefined();
     expect(fileViolation(folder, path.join(folder, "package.json"))).toBeUndefined();
-    for (const name of ["helper.js", "helper.mjs", "data.json", "lib/package.json", "style.css"]) {
+    for (const name of [
+      "helper.js",
+      "helper.mjs",
+      "data.json",
+      "lib/package.json",
+      "style.css",
+      "view.tsx",
+    ]) {
       expect(fileViolation(folder, path.join(folder, name)), name).toBeDefined();
     }
+    expect(fileViolation(folder, path.join(folder, "view.tsx"))).toMatch(/jsx-runtime/);
+  });
+
+  it("rejects symlinked files and imports through symlinks out of the folder", () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "builtin-links-"));
+    onTestFinished(() => rmSync(root, { recursive: true, force: true }));
+    const extension = path.join(root, "web/src/builtinExtensions/omnigent.example");
+    const lib = path.join(root, "web/src/lib");
+    mkdirSync(extension, { recursive: true });
+    mkdirSync(lib, { recursive: true });
+    writeFileSync(path.join(lib, "x.ts"), "export const x = 1;\n");
+    writeFileSync(path.join(extension, "extension.ts"), 'import { x } from "./linked";\n');
+    symlinkSync("../../lib/x.ts", path.join(extension, "linked.ts"));
+    symlinkSync("../../lib", path.join(extension, "libdir"));
+    const files = allFiles(extension).map((entry) => path.relative(extension, entry));
+    expect(files.sort()).toEqual(["extension.ts", "libdir", "linked.ts"]);
+    expect(fileViolation(extension, path.join(extension, "linked.ts"))).toMatch(/symlink/);
+    expect(fileViolation(extension, path.join(extension, "libdir"))).toMatch(/symlink/);
+    const source = path.join(extension, "extension.ts");
+    expect(boundaryViolation(extension, source, "./linked")).toBe("leaves the extension folder");
+    expect(boundaryViolation(extension, source, "./libdir/x")).toBe("leaves the extension folder");
   });
 });
 

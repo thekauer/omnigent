@@ -2,7 +2,7 @@
 // into checked plain data. Problems are warnings: the rest still loads.
 import { isExtensionViewId } from "@/shell/railTabs";
 import { isRailViewIconName } from "@/shell/railViewIcons";
-import { appShortcutOwning, BUILT_IN_CHORD_OVERRIDES } from "./appKeyChords";
+import { appShortcutsOwning, BUILT_IN_CHORD_OVERRIDES } from "./appKeyChords";
 import { parseWhen, type WhenClause } from "./when";
 
 /** The view container of the classic workspace rail. */
@@ -166,11 +166,13 @@ function keyChordProblem(
   if (!isCommandChord(chord)) {
     return `needs Ctrl, Cmd or Alt, or an F-key, so it doesn't swallow typing`;
   }
-  const owner = appShortcutOwning(chord, mac);
-  if (owner && !allowed.includes(owner.id)) {
-    return `is the app's "${owner.label}" shortcut (${owner.id})`;
-  }
-  return undefined;
+  const owners = appShortcutsOwning(chord, mac);
+  // An override lifts only the owners it names; every other owner is named in the warning.
+  if (owners.length === 0 || owners.every((owner) => allowed.includes(owner.id))) return undefined;
+  const names = owners.map((owner) => `"${owner.label}" (${owner.id})`);
+  return owners.length === 1
+    ? `is the app's ${names[0]} shortcut`
+    : `is the app's ${names.slice(0, -1).join(", ")} and ${names.at(-1)} shortcuts`;
 }
 
 function searchInputOf(

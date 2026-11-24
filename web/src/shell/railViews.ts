@@ -233,6 +233,11 @@ export interface RailViewState {
   readonly presentation: "tree" | "graph";
   /** A plan view's content (`window.createPlanView`), checked plain data the host draws. */
   readonly plan: omnigent.PlanViewContent | undefined;
+  /**
+   * The last plan content published for each session, latest last, so a pane whose
+   * session is not the one on screen (a grid cell not in front) draws its own.
+   */
+  readonly planBySession: ReadonlyMap<string, omnigent.PlanViewContent>;
   /** Running tasks the view shows progress for, latest last. */
   readonly progress: readonly RailViewProgress[];
   /** The folder the view browses, drawn as its location bar. */
@@ -295,6 +300,7 @@ const INITIAL_STATE: RailViewState = {
   searchEnabled: true,
   presentation: "tree",
   plan: undefined,
+  planBySession: new Map(),
   progress: [],
   location: undefined,
   filterRevision: 0,

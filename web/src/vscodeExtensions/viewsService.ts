@@ -38,6 +38,8 @@ const MAX_MESSAGE = 10_000;
 const MAX_FILTER = 500;
 /** Filter texts kept per view, most recently used last. */
 const MAX_FILTER_SESSIONS = 100;
+/** Sessions a plan view keeps its last content for, oldest dropped first. */
+const MAX_PLAN_SNAPSHOTS = 32;
 const NOTICES = new Set<RailViewNotice>(["agentAsleep", "sandboxOffline", "sandboxStarting"]);
 const MAX_INPUT_TEXT = 4096;
 const MAX_VALIDATION = 300;
@@ -935,15 +937,28 @@ export class ViewsService {
     entry.plan = planEntry;
     let content = planContentOf(undefined);
     let disposed = false;
-    entry.handle.update({ plan: content });
+    // Each session's last content, so every grid cell draws its own session's plan.
+    let bySession: ReadonlyMap<string, omnigent.PlanViewContent> = new Map();
+    entry.handle.update({ plan: content, planBySession: bySession });
     return {
       get content() {
         return content;
       },
       set content(value) {
         if (disposed) return;
-        content = planContentOf(value);
-        entry.handle.update({ plan: content });
+        content = planContentOf(value, logError);
+        const sessionId = content.kind === "loading" ? undefined : content.sessionId;
+        if (sessionId !== undefined) {
+          const next = new Map(bySession);
+          next.delete(sessionId);
+          next.set(sessionId, content);
+          for (const oldest of next.keys()) {
+            if (next.size <= MAX_PLAN_SNAPSHOTS) break;
+            next.delete(oldest);
+          }
+          bySession = next;
+        }
+        entry.handle.update({ plan: content, planBySession: bySession });
       },
       get visible() {
         return !disposed && entry.shown > 0;
@@ -955,7 +970,7 @@ export class ViewsService {
         planEntry.visibility.dispose();
         if (entry.plan === planEntry) {
           entry.plan = undefined;
-          entry.handle.update({ plan: undefined });
+          entry.handle.update({ plan: undefined, planBySession: new Map() });
         }
       },
     };

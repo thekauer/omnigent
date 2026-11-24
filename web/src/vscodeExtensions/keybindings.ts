@@ -2,7 +2,8 @@
 // on the window runs the command of the first binding whose key and `when`
 // clause match, so a binding also works from editors and terminals. While focus
 // is in a text field (`inputFocus`), only Ctrl or Cmd chords run, so typing,
-// including Option and AltGr characters, reaches the field.
+// including Option and AltGr characters, reaches the field. On macOS only Cmd
+// chords run there: Control-letter keys are Cocoa's text editing (⌃A, ⌃E, ⌃K...).
 import { isMacPlatform, isTextEntry } from "@/lib/hotkeys";
 import { canonicalKeyChord } from "./appKeyChords";
 import type { ContextKeyService } from "./contextKeys";
@@ -46,9 +47,12 @@ export function chordOfEvent(event: KeyEventLike, mac = false): string | undefin
   return [...modifiers, key].join("+");
 }
 
-/** Whether a chord holds Ctrl or Cmd, which typing never does. */
-function holdsCommandModifier(chord: string): boolean {
-  return chord.startsWith("ctrl+") || chord.includes("cmd+");
+/**
+ * Whether a chord may run while a text field has focus: it holds Cmd, or off macOS
+ * Ctrl, which typing never does. On macOS Control-letter keys edit text.
+ */
+function passesTextField(chord: string, mac: boolean): boolean {
+  return chord.includes("cmd+") || (!mac && chord.startsWith("ctrl+"));
 }
 
 function takesText(element: unknown): boolean {
@@ -86,11 +90,24 @@ export class KeybindingService {
     this.setInputFocus(takesText(event.relatedTarget));
   };
 
+  /** A host key, outside the extensions' cap; an error is logged, never thrown into the page. */
   private setInputFocus(focused: boolean): void {
-    this.options.contextKeys.set(INPUT_FOCUS_CONTEXT_KEY, focused ? true : undefined);
+    try {
+      this.options.contextKeys.setHost(INPUT_FOCUS_CONTEXT_KEY, focused ? true : undefined);
+    } catch (error) {
+      this.options.logError(`could not set ${INPUT_FOCUS_CONTEXT_KEY}`, error);
+    }
   }
 
   private readonly onKeyDown = (event: KeyboardEvent): void => {
+    try {
+      this.handleKeyDown(event);
+    } catch (error) {
+      this.options.logError("keybinding dispatch failed", error);
+    }
+  };
+
+  private handleKeyDown(event: KeyboardEvent): void {
     if (event.repeat || event.isComposing) return;
     const mac = this.options.isMac ?? isMacPlatform();
     const chord = chordOfEvent(event, mac);
@@ -98,7 +115,7 @@ export class KeybindingService {
     // The event's own target decides, so a stale or extension-set key can't let typing through.
     const inputFocus = takesText(event.target);
     this.setInputFocus(inputFocus);
-    if (inputFocus && !holdsCommandModifier(chord)) return;
+    if (inputFocus && !passesTextField(chord, mac)) return;
     const lookup = this.options.contextKeys.lookup();
     const binding = this.bindings.find(
       (candidate) =>
@@ -108,10 +125,16 @@ export class KeybindingService {
     if (!binding) return;
     event.preventDefault();
     event.stopPropagation();
-    this.options.executeCommand(binding.command).catch((error: unknown) => {
+    let running: Promise<unknown>;
+    try {
+      running = this.options.executeCommand(binding.command);
+    } catch (error) {
+      running = Promise.reject(error);
+    }
+    running.catch((error: unknown) => {
       this.options.logError(`${binding.extensionId}: keybinding ${binding.command} failed`, error);
     });
-  };
+  }
 
   /** Adds an extension's keybindings; returns their removal. */
   add(extensionId: string, contributions: readonly KeybindingContribution[]): () => void {

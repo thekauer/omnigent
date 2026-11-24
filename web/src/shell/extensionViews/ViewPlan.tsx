@@ -686,10 +686,26 @@ function LoadingTasks({ label }: { label: string }) {
   );
 }
 
+/**
+ * `published`, unless it is for another session and `sessionId` has content of its
+ * own. Loading, and content without a session, are for the session on screen.
+ */
+export function planForSession(
+  view: Pick<RailView, "planBySession">,
+  published: omnigent.PlanViewContent,
+  sessionId: string | undefined,
+): omnigent.PlanViewContent {
+  const publishedFor = published.kind === "loading" ? undefined : published.sessionId;
+  if (sessionId === undefined || publishedFor === undefined || publishedFor === sessionId) {
+    return published;
+  }
+  return view.planBySession.get(sessionId) ?? published;
+}
+
 /** A plan view's page, for `conversationId`'s workspace. */
 export function ViewPlan({
   view,
-  content,
+  content: published,
   conversationId,
   visible,
 }: {
@@ -700,6 +716,9 @@ export function ViewPlan({
   visible: boolean;
 }) {
   const host = view.host;
+  // The content follows the session on screen; a pane for another session (a grid
+  // cell not in front) draws the last content published for its own session.
+  const content = planForSession(view, published, conversationId);
   const contentSession = content.kind === "loading" ? undefined : content.sessionId;
   // Content for another session's workspace (it is still coming on screen) is not shown.
   const stale =

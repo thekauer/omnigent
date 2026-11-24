@@ -14,7 +14,14 @@ import { registerBuiltInCommands } from "./builtinCommands";
 import { CommandRegistry } from "./commands";
 import { ContextKeyService } from "./contextKeys";
 import { parseContributions } from "./contributions";
-import { planContentOf } from "./planContent";
+import {
+  MAX_GOAL,
+  MAX_NAME,
+  MAX_TASKS,
+  planContentOf,
+  TRUNCATED_MARKER,
+  truncateMarkdown,
+} from "./planContent";
 import { TasksService } from "./tasksService";
 import { hostServices, testViewsService } from "./testServices";
 
@@ -247,9 +254,55 @@ describe("plan views", () => {
     expect(warnings).toEqual([]);
     views.addExtension("pub.tasks", contributions);
     views.extensionSettled("pub.tasks");
-    const api = createExtensionApi("pub.tasks", hostServices({ commands, views }), vi.fn());
-    return { registry, commands, api: api.api, deactivate: api.dispose };
+    const logError = vi.fn();
+    const api = createExtensionApi("pub.tasks", hostServices({ commands, views }), logError);
+    return { registry, commands, api: api.api, deactivate: api.dispose, logError };
   }
+
+  it("keep each session's last content, so a pane not in front draws its own", () => {
+    const { registry, api } = viewsSetup();
+    const view = api.window.createPlanView("pub.tasks.view");
+    const planFor = (sessionId: string) => ({
+      kind: "plan" as const,
+      sessionId,
+      summary: sessionId,
+      tasks: [],
+      dependencies: false,
+    });
+    view.content = planFor("a");
+    view.content = planFor("b");
+    view.content = { kind: "loading", label: "Loading" };
+    const drawn = registry.get("pub.tasks.view")!;
+    expect(drawn.plan).toEqual({ kind: "loading", label: "Loading" });
+    expect([...drawn.planBySession.keys()]).toEqual(["a", "b"]);
+    expect(drawn.planBySession.get("a")).toMatchObject({ summary: "a" });
+    // A session published again moves to the end, and only the latest 32 are kept.
+    view.content = planFor("a");
+    expect([...registry.get("pub.tasks.view")!.planBySession.keys()]).toEqual(["b", "a"]);
+    for (let index = 0; index < 40; index++) view.content = planFor(`s${index}`);
+    const kept = [...registry.get("pub.tasks.view")!.planBySession.keys()];
+    expect(kept).toHaveLength(32);
+    expect(kept.at(-1)).toBe("s39");
+    view.dispose();
+    expect(registry.get("pub.tasks.view")!.planBySession.size).toBe(0);
+  });
+
+  it("show content that throws while read as loading, and log it against the extension", () => {
+    const { registry, api, logError } = viewsSetup();
+    const view = api.window.createPlanView("pub.tasks.view");
+    expect(() => {
+      view.content = new Proxy({} as omnigent.PlanViewContent, {
+        get() {
+          throw new Error("trap");
+        },
+      });
+    }).not.toThrow();
+    expect(registry.get("pub.tasks.view")?.plan).toEqual({ kind: "loading", label: "Loading" });
+    expect(logError).toHaveBeenCalledWith(
+      expect.stringMatching(/plan view content/),
+      expect.any(Error),
+    );
+  });
 
   it("give the host checked plain content, and only for the extension's own views", () => {
     const { registry, api } = viewsSetup();
@@ -391,5 +444,97 @@ describe("planContentOf", () => {
     expect(content.tasks[0]).not.toHaveProperty("action");
     // A function is not JSON: it becomes null, as a command argument would.
     expect(content.tasks[0].command).toEqual({ command: "omnigent.showInChat", arguments: [null] });
+  });
+});
+
+describe("plan content caps", () => {
+  const plan = (tasks: unknown[], extra: Record<string, unknown> = {}) =>
+    planContentOf({ kind: "plan", sessionId: "conv", summary: "", tasks, ...extra });
+  const drawnTasks = (content: ReturnType<typeof planContentOf>) =>
+    content.kind === "plan" ? content.tasks : [];
+
+  it("keeps a 15k goal whole, mermaid blocks and all", () => {
+    const mermaid = "```mermaid\ngraph TD\n  A --> B\n```";
+    const goal = `${"Intro paragraph. ".repeat(900)}\n\n${mermaid}\n\nMore.\n\n${mermaid}`;
+    expect(goal.length).toBeGreaterThan(15_000);
+    expect(drawnTasks(plan([{ task: { ...TASK, goal } }]))[0].task.goal).toBe(goal);
+  });
+
+  it("cuts a long goal at a block boundary, never inside a fence, with a marker", () => {
+    const block = "```mermaid\ngraph TD\n" + "  A --> B\n".repeat(2000) + "```";
+    const goal = `${"word ".repeat(30_000)}\n\n${block}\n\n${"tail ".repeat(30_000)}\n\n${block}`;
+    expect(goal.length).toBeGreaterThan(MAX_GOAL);
+    const cut = drawnTasks(plan([{ task: { ...TASK, goal } }]))[0].task.goal!;
+    expect(cut.length).toBeLessThanOrEqual(MAX_GOAL);
+    expect(cut.endsWith(`\n\n${TRUNCATED_MARKER}`)).toBe(true);
+    const body = cut.slice(0, -TRUNCATED_MARKER.length);
+    // Every fence it keeps is closed.
+    expect((body.match(/^```/gm) ?? []).length % 2).toBe(0);
+    expect(body).toContain(block);
+  });
+
+  it("closes no fence open at the cut and falls back to line and word cuts", () => {
+    const open = "intro\n\n```mermaid\n" + "  A --> B\n".repeat(100);
+    expect(truncateMarkdown(open, 200)).toBe(`intro\n\n${TRUNCATED_MARKER}`);
+    expect(truncateMarkdown("line one\nline two\nline three", 24)).toBe(
+      `line one\n\n${TRUNCATED_MARKER}`,
+    );
+    expect(truncateMarkdown("alpha beta gamma delta epsilon", 27)).toBe(
+      `alpha beta\n\n${TRUNCATED_MARKER}`,
+    );
+    expect(truncateMarkdown("short", 100)).toBe("short");
+  });
+
+  it("caps task names and tasks", () => {
+    const name = "name ".repeat(1000);
+    const kept = drawnTasks(plan([{ task: { ...TASK, name } }]))[0].task.name;
+    expect(kept.length).toBeLessThanOrEqual(MAX_NAME);
+    expect(kept.endsWith(`… ${TRUNCATED_MARKER}`)).toBe(true);
+    const many = Array.from({ length: MAX_TASKS + 10 }, (_, index) => ({
+      task: { ...TASK, id: `t${index}` },
+    }));
+    expect(drawnTasks(plan(many))).toHaveLength(MAX_TASKS);
+  });
+
+  it("keeps one count per known state", () => {
+    const content = plan([], {
+      counts: [
+        { state: "running", count: 1 },
+        { state: "running", count: 9 },
+        { state: "done", count: 2 },
+        ...Array.from({ length: 10_000 }, () => ({ state: "done", count: 3 })),
+      ],
+    });
+    expect(content.kind === "plan" && content.counts).toEqual([
+      { state: "running", count: 1 },
+      { state: "done", count: 2 },
+    ]);
+  });
+
+  it("is a loading state, logged, when reading the content throws", () => {
+    const onError = vi.fn();
+    const hostile = new Proxy(
+      {},
+      {
+        get() {
+          throw new Error("trap");
+        },
+      },
+    );
+    expect(planContentOf(hostile, onError)).toEqual({ kind: "loading", label: "Loading" });
+    const getter = {
+      kind: "plan",
+      sessionId: "conv",
+      get tasks(): never {
+        throw new Error("getter");
+      },
+    };
+    expect(planContentOf(getter, onError)).toEqual({ kind: "loading", label: "Loading" });
+    expect(onError).toHaveBeenCalledTimes(2);
+    expect(() =>
+      planContentOf(hostile, () => {
+        throw new Error("reporter");
+      }),
+    ).not.toThrow();
   });
 });
