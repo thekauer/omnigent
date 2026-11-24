@@ -240,7 +240,7 @@ export function McpConnectionPicker({ selected, onToggle }: McpConnectionPickerP
                           </span>
                         ) : failed ? (
                           <span className="truncate text-xs text-red-600 dark:text-red-400">
-                            Sign-in failed — try again
+                            Sign-in failed. Try again.
                           </span>
                         ) : adminProvided ? (
                           <span
@@ -378,7 +378,7 @@ function McpServiceBrowser({
     if (failed(name)) {
       return (
         <span className="truncate text-xs text-red-600 dark:text-red-400">
-          Sign-in failed — try again
+          Sign-in failed. Try again.
         </span>
       );
     }

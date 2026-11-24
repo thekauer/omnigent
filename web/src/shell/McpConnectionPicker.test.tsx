@@ -220,7 +220,7 @@ describe("McpConnectionPicker", () => {
       await openBrowse();
       const box = await browseBox(LINEAR);
       fireEvent.click(box);
-      expect(await screen.findByText("Sign-in failed — try again")).toBeInTheDocument();
+      expect(await screen.findByText("Sign-in failed. Try again.")).toBeInTheDocument();
       expect(box).not.toBeChecked();
     });
 
