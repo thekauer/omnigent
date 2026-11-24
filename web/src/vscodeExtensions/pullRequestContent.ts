@@ -146,7 +146,8 @@ function emptyStateOf(value: unknown): DetailsBody["emptyState"] {
     const message = text(value.text);
     return message ? Object.freeze({ kind: "message", text: message }) : undefined;
   }
-  if (value.kind === "open" && typeof value.url === "string") {
+  // Rendered as a link, so only https, as with a row's `openUrl`.
+  if (value.kind === "open" && typeof value.url === "string" && /^https:\/\//.test(value.url)) {
     return Object.freeze({
       kind: "open",
       url: value.url.slice(0, MAX_TEXT),

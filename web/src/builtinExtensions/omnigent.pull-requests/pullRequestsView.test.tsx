@@ -534,7 +534,7 @@ describe("PullRequestPanel", () => {
       const { client, rerender } = await renderPanel(mobile);
       if (multiple) {
         await user.click(
-          await screen.findByRole("button", { name: "acme/app #6000 — chore: dummy PR" }),
+          await screen.findByRole("button", { name: "acme/app #6000 · chore: dummy PR" }),
         );
       }
       await waitFor(() => {
@@ -770,7 +770,7 @@ describe("PullRequestPanel", () => {
       expect(screen.getByRole("textbox", { name: "Pull request URL" })).toBeVisible();
       await user.click(screen.getByRole("button", { name: "Cancel" }));
       if (count > 1) {
-        await user.click(screen.getByRole("button", { name: "acme/app #6000 — chore: dummy PR" }));
+        await user.click(screen.getByRole("button", { name: "acme/app #6000 · chore: dummy PR" }));
       }
       expect(within(header).getByRole("button", { name: "Unlink PR" })).toBeEnabled();
       expect(screen.getByRole("tab", { name: "Summary" })).toBeVisible();
@@ -851,7 +851,7 @@ describe("PullRequestPanel", () => {
       queryKey: ["github-info", "conv_1"],
       stale: true,
     });
-    await user.click(screen.getByRole("button", { name: "acme/app #6000 — chore: dummy PR" }));
+    await user.click(screen.getByRole("button", { name: "acme/app #6000 · chore: dummy PR" }));
     expect(usePullRequestInfo).toHaveBeenLastCalledWith("conv_1", {
       poll: true,
       prUrl: url,
@@ -881,7 +881,7 @@ describe("PullRequestPanel", () => {
       prUrl: url,
     });
     expect(usePullRequestReadPriority).toHaveBeenLastCalledWith("conv_1", undefined);
-    await user.click(screen.getByRole("button", { name: "acme/app #6000 — chore: dummy PR" }));
+    await user.click(screen.getByRole("button", { name: "acme/app #6000 · chore: dummy PR" }));
     expect(screen.getByRole("tab", { name: "Summary" })).toHaveAttribute("aria-selected", "true");
     expect(usePullRequestInfo).toHaveBeenLastCalledWith("conv_1", {
       poll: true,
@@ -3169,7 +3169,7 @@ describe("session PR selection", () => {
     });
 
     expect(screen.queryByRole("tab", { name: "Summary" })).toBeNull();
-    await user.click(screen.getByRole("button", { name: "example/two #42 — Second repository" }));
+    await user.click(screen.getByRole("button", { name: "example/two #42 · Second repository" }));
     expect(usePullRequestInfo).toHaveBeenLastCalledWith("conv_1", {
       poll: true,
       prUrl: two,
@@ -3191,7 +3191,7 @@ describe("session PR selection", () => {
     );
     await user.click(screen.getByRole("button", { name: "All pull requests (2)" }));
     expect(screen.getByRole("list", { name: "Pull requests" })).toBeVisible();
-    await user.click(screen.getByRole("button", { name: "example/one #42 — First repository" }));
+    await user.click(screen.getByRole("button", { name: "example/one #42 · First repository" }));
     expect(usePullRequestInfo).toHaveBeenLastCalledWith("conv_1", {
       poll: true,
       prUrl: one,
@@ -3239,7 +3239,7 @@ describe("session PR selection", () => {
     expect(screen.getByRole("menuitem", { name: "Open in GitHub" })).toHaveAttribute("href", one);
     await user.click(screen.getByRole("menuitem", { name: "Copy PR link" }));
     expect(await navigator.clipboard.readText()).toBe(one);
-    await user.click(screen.getByRole("button", { name: "example/one #42 — Ship it" }));
+    await user.click(screen.getByRole("button", { name: "example/one #42 · Ship it" }));
     const stored = screen.getByTestId("github-stored-pr");
     expect(within(stored).getByRole("link", { name: /Ship it/ })).toHaveAttribute("href", one);
     expect(within(stored).getByLabelText("Pull request status: Merged")).toBeInTheDocument();
@@ -3343,7 +3343,7 @@ describe("session PR selection", () => {
         expect(await screen.findByRole("tooltip")).toHaveTextContent("Last sync time:");
         await user.unhover(status);
         await user.click(
-          screen.getByRole("button", { name: "acme/app #6000 — Attached while online" }),
+          screen.getByRole("button", { name: "acme/app #6000 · Attached while online" }),
         );
       } else {
         expect(screen.getByRole("heading", { name: "Pull Requests" })).toBeVisible();
@@ -3661,8 +3661,8 @@ describe("session PR selection", () => {
     });
     await renderPanel();
     const picker = screen.getByRole("list", { name: "Pull requests" });
-    const label = "github.example.com/example/one #42 (from branch) — Fix session selection";
-    expect(picker).toHaveTextContent(label.replace(" — ", " · "));
+    const label = "github.example.com/example/one #42 (from branch) · Fix session selection";
+    expect(picker).toHaveTextContent(label);
     expect(picker).not.toHaveAttribute("title");
     expect(screen.getByRole("button", { name: label })).toBeVisible();
   });

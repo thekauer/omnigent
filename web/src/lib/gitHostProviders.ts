@@ -24,6 +24,8 @@ export interface PullRequestMatch extends PullRequestLocation {
 export const GITHUB_HOST_PROVIDER_ID = "github";
 
 export const GITHUB_DOT_COM = "github.com";
+/** Hosts only a built-in provider may claim: an extension can't pass its links off as GitHub's. */
+const RESERVED_HOSTS: ReadonlySet<string> = new Set([GITHUB_DOT_COM, "www.github.com"]);
 /** A pull request's path on GitHub and GitHub Enterprise, with any sub-page after it. */
 const GITHUB_PULL_PATH = /^\/([^/]+)\/([^/]+)\/pull\/(\d+)(\/.*)?$/;
 
@@ -88,11 +90,13 @@ function isLocation(value: unknown): value is PullRequestLocation {
 
 export class GitHostProviderRegistry {
   private readonly providers: GitHostProvider[] = [];
+  private readonly builtIns: ReadonlySet<GitHostProvider>;
   private readonly listeners = new Set<() => void>();
   private revision = 0;
 
   constructor(builtIns: readonly GitHostProvider[] = [GITHUB_HOST_PROVIDER]) {
     this.providers.push(...builtIns);
+    this.builtIns = new Set(builtIns);
   }
 
   /** Adds a provider after the ones before it; the function removes it. */
@@ -110,8 +114,18 @@ export class GitHostProviderRegistry {
     };
   }
 
-  /** The first provider's match; a throwing or malformed provider is skipped and logged. */
+  /**
+   * The first provider's match; a throwing or malformed provider is skipped and
+   * logged, as is one naming a host other than the link's own, or an extension
+   * claiming github.com.
+   */
   match(url: string): PullRequestMatch | undefined {
+    let urlHost: string;
+    try {
+      urlHost = new URL(url).hostname.toLowerCase();
+    } catch {
+      return undefined;
+    }
     for (const provider of this.providers) {
       let location: unknown;
       try {
@@ -127,9 +141,22 @@ export class GitHostProviderRegistry {
         );
         continue;
       }
+      const host = location.host.toLowerCase();
+      if (host !== urlHost) {
+        console.error(
+          `[omnigent-extensions] git host provider ${provider.id} named host ${host} for a link on ${urlHost}`,
+        );
+        continue;
+      }
+      if (RESERVED_HOSTS.has(host) && !this.builtIns.has(provider)) {
+        console.error(
+          `[omnigent-extensions] git host provider ${provider.id} may not claim ${host} links`,
+        );
+        continue;
+      }
       return {
         providerId: provider.id,
-        host: location.host.toLowerCase(),
+        host,
         owner: location.owner,
         repo: location.repo,
         number: location.number,

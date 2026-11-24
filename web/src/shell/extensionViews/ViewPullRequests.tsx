@@ -193,8 +193,8 @@ function PullRequestListRow({
   const summary = details
     ? { state: details.state, isDraft: details.isDraft }
     : { state: pullRequest.state, isDraft: pullRequest.isDraft };
-  // The classic row's label, its separator an em dash (written as an escape).
-  const label = row.title ? `${row.identity} \u2014 ${row.title}` : row.identity;
+  // The accessible name reads as the row shows it: identity, a middle dot, the title.
+  const label = row.title ? `${row.identity} · ${row.title}` : row.identity;
   const status = row.status;
   const checks = details?.checks;
   const checkStatus = status.kind === "checks" && (

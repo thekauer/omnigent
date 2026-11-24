@@ -409,6 +409,36 @@ describe("parsePullRequestReference: links", () => {
     });
   });
 
+  it("doesn't take a provider's owner or repository that the link doesn't name", () => {
+    const unregister = gitHostProviders.register({
+      id: "test.mislabel",
+      matchUrl: (url) =>
+        url.startsWith("https://mislabel.example.com/")
+          ? { host: "mislabel.example.com", owner: "trusted", repo: "core", number: 9 }
+          : undefined,
+    });
+    onTestFinished(unregister);
+    expect(
+      parsePullRequestReference("https://mislabel.example.com/other/tool/pull/9", github),
+    ).toEqual({
+      kind: "link",
+      url: "https://mislabel.example.com/other/tool/pull/9",
+      repository: "other/tool",
+      number: 9,
+    });
+    expect(
+      parsePullRequestReference("https://mislabel.example.com/core/trusted/changes/9", github),
+    ).toEqual({
+      kind: "link",
+      url: "https://mislabel.example.com/core/trusted/changes/9",
+      repository: null,
+      number: null,
+    });
+    expect(
+      parsePullRequestReference("https://mislabel.example.com/Trusted/x/Core/review/9", github),
+    ).toMatchObject({ repository: "trusted/core", number: 9 });
+  });
+
   it("reads a pasted link by its own provider, not the session's", () => {
     expect(
       parsePullRequestReference("https://gitlab.com/acme/app/-/merge_requests/42", github),

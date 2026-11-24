@@ -445,6 +445,27 @@ describe("pull request views", () => {
       },
     });
   });
+
+  it("open only https links from an empty state", () => {
+    const emptyStateFor = (url: string) => {
+      const content = pullRequestContentOf({
+        kind: "pullRequests",
+        sessionId: "conv",
+        body: { kind: "details", emptyState: { kind: "open", url, label: "Open" } },
+      });
+      return content.kind === "pullRequests" && content.body.kind === "details"
+        ? content.body.emptyState
+        : null;
+    };
+    expect(emptyStateFor("https://github.com/acme/app/pull/1")).toEqual({
+      kind: "open",
+      url: "https://github.com/acme/app/pull/1",
+      label: "Open",
+    });
+    for (const url of ["javascript:alert(1)", "http://github.com/acme/app/pull/1", "data:,x"]) {
+      expect(emptyStateFor(url)).toBeUndefined();
+    }
+  });
 });
 
 describe("git API", () => {

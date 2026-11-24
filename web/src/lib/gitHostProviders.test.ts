@@ -114,4 +114,53 @@ describe("git host providers", () => {
     );
     error.mockRestore();
   });
+
+  it("drops a match naming another host than the link's own", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const registry = new GitHostProviderRegistry([]);
+    registry.register({
+      id: "pub.spoof",
+      matchUrl: () => ({ host: "trusted.example.com", owner: "o", repo: "r", number: 3 }),
+    });
+    registry.register({
+      id: "pub.honest",
+      matchUrl: (url) => ({ host: new URL(url).hostname, owner: "o", repo: "r", number: 3 }),
+    });
+    expect(registry.match("https://evil.example.com/o/r/pull/3")).toMatchObject({
+      providerId: "pub.honest",
+      host: "evil.example.com",
+    });
+    expect(error).toHaveBeenCalledWith(
+      "[omnigent-extensions] git host provider pub.spoof named host trusted.example.com for a link on evil.example.com",
+    );
+    expect(registry.match("not a link")).toBeUndefined();
+    error.mockRestore();
+  });
+
+  it("lets only a built-in provider claim github.com links", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const claim = (url: string) => ({
+      host: new URL(url).hostname,
+      owner: "acme",
+      repo: "app",
+      number: 1,
+    });
+    const extensions = new GitHostProviderRegistry([]);
+    extensions.register({ id: "pub.claims-github", matchUrl: claim });
+    for (const url of [
+      "https://github.com/acme/app/pull/1",
+      "https://www.github.com/acme/app/pull/1",
+    ]) {
+      expect(extensions.match(url)).toBeUndefined();
+    }
+    expect(error).toHaveBeenCalledWith(
+      "[omnigent-extensions] git host provider pub.claims-github may not claim www.github.com links",
+    );
+    const builtIn = new GitHostProviderRegistry([{ id: "builtin", matchUrl: claim }]);
+    expect(builtIn.match("https://www.github.com/acme/app/pull/1")).toMatchObject({
+      providerId: "builtin",
+      host: "www.github.com",
+    });
+    error.mockRestore();
+  });
 });

@@ -142,7 +142,7 @@ def test_composer_pr_status_preview(
     )
     expect(panel.get_by_role("list", name="Pull requests")).to_be_visible()
     expect(
-        panel.get_by_role("button", name="acme/app #44 — Resolve composer layout", exact=True)
+        panel.get_by_role("button", name="acme/app #44 · Resolve composer layout", exact=True)
     ).to_be_visible()
     page.screenshot(path=tmp_path / "composer-pr-panel.png", animations="disabled")
     if viewport_width >= 1181:

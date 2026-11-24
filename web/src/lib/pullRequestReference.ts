@@ -111,6 +111,41 @@ function githubHosts(context: PullRequestReferenceContext): Set<string> {
   ]);
 }
 
+/**
+ * Whether the link's path names the match's owner, repository and number, in
+ * that order (each a run of whole path segments, ignoring case), so a provider
+ * can't label a link as another repository's pull request.
+ */
+function pathNamesMatch(
+  pathname: string,
+  match: { owner: string; repo: string; number: number },
+): boolean {
+  let segments: string[];
+  try {
+    segments = pathname
+      .split("/")
+      .filter(Boolean)
+      .map((segment) => lower(decodeURIComponent(segment)));
+  } catch {
+    return false;
+  }
+  let from = 0;
+  for (const part of [match.owner, match.repo, String(match.number)]) {
+    const wanted = lower(part).split("/").filter(Boolean);
+    if (wanted.length === 0) return false;
+    let found = -1;
+    for (let start = from; start + wanted.length <= segments.length; start += 1) {
+      if (wanted.every((segment, offset) => segments[start + offset] === segment)) {
+        found = start;
+        break;
+      }
+    }
+    if (found < 0) return false;
+    from = found + wanted.length;
+  }
+  return true;
+}
+
 // A pasted link is read on its own terms: a session can link PRs from any
 // provider, and the host validates shapes the client doesn't recognize.
 function parseLink(input: string, context: PullRequestReferenceContext): PullRequestReference {
@@ -126,7 +161,7 @@ function parseLink(input: string, context: PullRequestReferenceContext): PullReq
   const host = parsed.host.toLowerCase();
   // A host provider's own link (an extension's private host) reads as its pull request.
   const recognized = matchPullRequestUrl(input);
-  if (recognized && recognized.host === host) {
+  if (recognized && recognized.host === host && pathNamesMatch(parsed.pathname, recognized)) {
     const { owner, repo, number } = recognized;
     return {
       kind: "link",
