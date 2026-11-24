@@ -1382,6 +1382,81 @@ describe("NewChatLandingScreen create flow", () => {
       expect(readLastMcpServices()).toEqual(["tracker"]);
     });
 
+    it("sends the kept registry pick again after switching back to a host", async () => {
+      renderLanding([], providerInfo);
+      await waitForWorkspaceSeed();
+      expect(await screen.findByRole("button", { name: "MCP services: 1 selected" })).toBeVisible();
+      fireEvent.pointerDown(screen.getByTestId("new-chat-landing-host-chip"), { button: 0 });
+      fireEvent.click(screen.getByTestId("new-chat-landing-sandbox-option"));
+      expect(screen.queryByTestId("new-chat-landing-mcp-registry-chip")).toBeNull();
+      fireEvent.pointerDown(screen.getByTestId("new-chat-landing-host-chip"), { button: 0 });
+      fireEvent.click(screen.getByTestId("new-chat-landing-host-host_1"));
+      expect(await screen.findByRole("button", { name: "MCP services: 1 selected" })).toBeVisible();
+      expect(screen.queryByTestId("new-chat-landing-mcps-chip")).toBeNull();
+      typeMessage("use my tools");
+      await waitFor(() => expect(screen.getByTestId("new-chat-landing-submit")).toBeEnabled());
+      fireEvent.click(screen.getByTestId("new-chat-landing-submit"));
+      await waitFor(() => expect(authenticatedFetch).toHaveBeenCalledOnce());
+      const body = JSON.parse(vi.mocked(authenticatedFetch).mock.calls[0][1]!.body as string);
+      expect(body).toMatchObject({ host_id: "host_1", mcp_registry_services: ["tracker"] });
+      expect(body).not.toHaveProperty("mcp_services");
+    });
+
+    it("keeps a restored draft's registry pick out of the create on the provider", async () => {
+      // The draft picks a second registry service on the host, then moves to the provider.
+      vi.mocked(registryRequest).mockResolvedValue({
+        data: [
+          { id: "tracker", title: "Tracker", auth: "none", connected: true },
+          { id: "notes", title: "Notes", auth: "none", connected: true },
+        ],
+      });
+      renderLanding([], providerInfo);
+      await waitForWorkspaceSeed();
+      fireEvent.click(await screen.findByRole("button", { name: "MCP services: 1 selected" }));
+      fireEvent.click(await screen.findByRole("switch", { name: "Notes" }));
+      fireEvent.keyDown(document, { key: "Escape" });
+      fireEvent.pointerDown(screen.getByTestId("new-chat-landing-host-chip"), { button: 0 });
+      fireEvent.click(screen.getByTestId("new-chat-landing-sandbox-option"));
+      typeMessage("draft for the provider");
+      cleanup();
+      renderLanding([], providerInfo);
+      expect(await screen.findByTestId("new-chat-landing-input")).toHaveValue(
+        "draft for the provider",
+      );
+      await waitFor(() => expect(screen.getByTestId("new-chat-landing-mcps-chip")).toBeVisible());
+      expect(screen.queryByTestId("new-chat-landing-mcp-registry-chip")).toBeNull();
+      await waitFor(() => expect(screen.getByTestId("new-chat-landing-submit")).toBeEnabled());
+      fireEvent.click(screen.getByTestId("new-chat-landing-submit"));
+      await waitFor(() => expect(authenticatedFetch).toHaveBeenCalledOnce());
+      const body = JSON.parse(vi.mocked(authenticatedFetch).mock.calls[0][1]!.body as string);
+      expect(body).toMatchObject({ sandbox_provider: "box", mcp_services: ["tools.github"] });
+      expect(body).not.toHaveProperty("mcp_registry_services");
+      // The draft's picks stay saved for a host.
+      expect(readLastMcpServices()).toEqual(expect.arrayContaining(["tracker", "notes"]));
+    });
+
+    it("stops waiting for a registry sign-in when the provider hides its picker", async () => {
+      const service = { id: "tracker", title: "Tracker", auth: "oauth", connected: false };
+      vi.mocked(registryRequest).mockResolvedValue({ data: [service] });
+      vi.mocked(authorizeRegistryService).mockReturnValue(new Promise<void>(() => {}));
+      writeLastMcpServices([]);
+      renderLanding([], providerInfo);
+      await waitForWorkspaceSeed();
+      typeMessage("use my tools");
+      fireEvent.click(screen.getByRole("button", { name: "MCP services: 0 selected" }));
+      fireEvent.click(await screen.findByRole("switch", { name: "Tracker" }));
+      expect(screen.getByTestId("new-chat-landing-submit")).toBeDisabled();
+      fireEvent.keyDown(document, { key: "Escape" });
+      fireEvent.pointerDown(screen.getByTestId("new-chat-landing-host-chip"), { button: 0 });
+      fireEvent.click(screen.getByTestId("new-chat-landing-sandbox-option"));
+      expect(screen.queryByTestId("new-chat-landing-mcp-registry-chip")).toBeNull();
+      await waitFor(() => expect(screen.getByTestId("new-chat-landing-submit")).toBeEnabled());
+      fireEvent.click(screen.getByTestId("new-chat-landing-submit"));
+      await waitFor(() => expect(authenticatedFetch).toHaveBeenCalledOnce());
+      const body = JSON.parse(vi.mocked(authenticatedFetch).mock.calls[0][1]!.body as string);
+      expect(body).toMatchObject({ sandbox_provider: "box", mcp_services: ["tools.github"] });
+    });
+
     it("keeps the registry picker and sends registry services on a provider without its own selection", async () => {
       renderLanding([], providerInfo);
       const body = await submitOn("new-chat-landing-sandbox-option-plain");

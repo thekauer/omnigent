@@ -2306,7 +2306,7 @@ function NewChatWorkspaceControls({ children }: { children: ReactNode }) {
   const isMobile = useIsMobileViewport();
   if (!isMobile) return children;
   return (
-    <fieldset className="new-chat-workspace-controls relative isolate z-30 min-w-0 max-w-full self-center rounded-[20px] [--omni-glass-drop-shadow:0_0_#0000]">
+    <fieldset className="new-chat-workspace-controls relative isolate z-30 min-w-0 max-w-full self-center rounded-[var(--ui-radius-20)] [--omni-glass-drop-shadow:0_0_#0000]">
       <OmniGlassSurface borderRadius={20} className="-z-10" />
       {children}
     </fieldset>
@@ -2999,6 +2999,11 @@ function NewChatLandingContent({
     selectionError: mcpSelectionError,
     servicesForLaunch: mcpServicesForLaunch,
   } = useMcpRegistrySelection(restoredDraft?.mcpRegistryServices, mcpRegistryEnabled);
+  // Hiding the registry picker mid sign-in unmounts it before it can report the end,
+  // so its pending sign-in no longer blocks the create.
+  useEffect(() => {
+    if (!mcpRegistryEnabled) setMcpAuthorizing(false);
+  }, [mcpRegistryEnabled]);
   const { data: listedMcpConnections, statusesPending: mcpConnectionStatusesPending } =
     useMcpConnections(selectedMcpConnections);
   // Sends only the picks the host still offers once it answered; until then, or
@@ -7301,7 +7306,7 @@ function NewChatLandingContent({
               side={isMobileViewport ? "top" : "bottom"}
               sideOffset={4}
               collisionPadding={isMobileViewport ? 16 : undefined}
-              className="w-[31rem] max-w-[calc(100vw-2rem)] gap-1 p-1.5 max-md:w-[calc(100vw-2rem)] max-md:rounded-[16px]"
+              className="w-[31rem] max-w-[calc(100vw-2rem)] gap-1 p-1.5 max-md:w-[calc(100vw-2rem)] max-md:rounded-[var(--ui-radius-16)]"
             >
               {recent.length > 0 && (
                 <>
