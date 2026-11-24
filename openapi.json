@@ -2547,6 +2547,9 @@
           },
           "mcp_services": {
             "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[^\\s\\x00-\\x1f\\x7f]+$",
               "type": "string"
             },
             "maxItems": 40,
@@ -6706,6 +6709,9 @@
           },
           "mcp_services": {
             "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[^\\s\\x00-\\x1f\\x7f]+$",
               "type": "string"
             },
             "maxItems": 40,
@@ -9250,6 +9256,9 @@
           },
           "mcp_services": {
             "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[^\\s\\x00-\\x1f\\x7f]+$",
               "type": "string"
             },
             "maxItems": 40,
@@ -9534,6 +9543,9 @@
           },
           "mcp_services": {
             "items": {
+              "maxLength": 128,
+              "minLength": 1,
+              "pattern": "^[^\\s\\x00-\\x1f\\x7f]+$",
               "type": "string"
             },
             "maxItems": 40,
@@ -15873,6 +15885,9 @@
             "anyOf": [
               {
                 "items": {
+                  "maxLength": 128,
+                  "minLength": 1,
+                  "pattern": "^[^\\s\\x00-\\x1f\\x7f]+$",
                   "type": "string"
                 },
                 "maxItems": 40,

@@ -693,7 +693,9 @@ already uploaded or registered an agent. The response is the full
     managed create or on a provider without its own selection; the
     provider's own error (e.g. 403 for a service the user hasn't signed
     in to) otherwise, before any session is created. The multipart
-    bundle create takes it in `metadata` the same way.
+    bundle create takes it in `metadata` the same way. Each name is 1 to
+    128 characters with no whitespace or control characters (422 on the
+    JSON create, 400 on the multipart one).
 
   host_id (string or null)
     Host to launch the runner on. When set, `workspace` is required

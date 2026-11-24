@@ -378,6 +378,20 @@ async def test_provider_mcp_services_label_the_session_before_launch(
             {"host_type": "managed", "sandbox_provider": "box", "mcp_services": ["tools.revoked"]},
             403,
         ),
+        # Names are bounded: non-empty, at most 128 characters, no whitespace.
+        ({"host_type": "managed", "sandbox_provider": "box", "mcp_services": [""]}, 422),
+        (
+            {"host_type": "managed", "sandbox_provider": "box", "mcp_services": ["t" * 129]},
+            422,
+        ),
+        (
+            {"host_type": "managed", "sandbox_provider": "box", "mcp_services": ["tools github"]},
+            422,
+        ),
+        (
+            {"host_type": "managed", "sandbox_provider": "box", "mcp_services": ["tools\ngithub"]},
+            422,
+        ),
     ],
 )
 async def test_unusable_provider_mcp_services_create_no_session(
@@ -405,7 +419,9 @@ async def test_unusable_provider_mcp_services_create_no_session(
         response = await client.post(
             "/v1/sessions", json={"agent_id": source["agent_id"], **metadata}
         )
-    assert response.status_code == status, response.text
+    # The multipart path reports its metadata's schema errors as 400.
+    expected = 400 if upload and status == 422 else status
+    assert response.status_code == expected, response.text
     create.assert_not_called()
     launch.assert_not_awaited()
 

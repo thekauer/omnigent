@@ -51,6 +51,16 @@ MCP_REGISTRY_SERVICE_ID_PATTERN = r"^[a-z][a-z0-9_-]{0,39}$"
 # Most registry services one session (or automation) can select.
 MAX_MCP_REGISTRY_SERVICES = 40
 McpRegistryServiceId = Annotated[str, Field(pattern=MCP_REGISTRY_SERVICE_ID_PATTERN)]
+# A sandbox provider's own MCP service name (``mcp_services``). The provider
+# validates it; the server only bounds it: non-empty, at most this long, with
+# no whitespace or control characters (qualified names such as
+# ``catalog.schema.connection`` pass).
+MCP_SERVICE_NAME_MAX_CHARS = 128
+MCP_SERVICE_NAME_PATTERN = r"^[^\s\x00-\x1f\x7f]+$"
+McpServiceName = Annotated[
+    str,
+    Field(min_length=1, max_length=MCP_SERVICE_NAME_MAX_CHARS, pattern=MCP_SERVICE_NAME_PATTERN),
+]
 
 
 class PaginatedList(BaseModel):
@@ -1788,7 +1798,9 @@ class _SessionCreateRequestBase(_SandboxProfileSelection):
     )
     # MCP services of a managed sandbox provider with its own selection,
     # e.g. per-user OAuth-backed connections; the provider validates them.
-    mcp_services: list[str] = Field(default_factory=list, max_length=MAX_MCP_REGISTRY_SERVICES)
+    mcp_services: list[McpServiceName] = Field(
+        default_factory=list, max_length=MAX_MCP_REGISTRY_SERVICES
+    )
     title: str | None = Field(default=None, max_length=USER_SESSION_TITLE_MAX_CHARS)
     labels: dict[str, str] = Field(default_factory=dict)
     sibling_source_id: str | None = None
@@ -2044,7 +2056,9 @@ class SessionCreateMetadata(_SandboxProfileSelection):
     )
     # MCP services of a managed sandbox provider with its own selection,
     # e.g. per-user OAuth-backed connections; the provider validates them.
-    mcp_services: list[str] = Field(default_factory=list, max_length=MAX_MCP_REGISTRY_SERVICES)
+    mcp_services: list[McpServiceName] = Field(
+        default_factory=list, max_length=MAX_MCP_REGISTRY_SERVICES
+    )
 
     title: str | None = Field(default=None, max_length=USER_SESSION_TITLE_MAX_CHARS)
     project_id: str | None = None

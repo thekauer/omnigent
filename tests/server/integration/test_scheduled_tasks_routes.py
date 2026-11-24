@@ -1215,6 +1215,27 @@ async def test_mcp_services_the_owner_cannot_use_are_rejected(
     assert kept.json()["mcp_services"] == ["github"]
 
 
+@pytest.mark.parametrize("service", ["", "x" * 129, "two words", "line\nbreak"])
+async def test_mcp_service_names_out_of_bounds_are_refused_by_schema(
+    auth_app: FastAPI, auth_client: httpx.AsyncClient, service: str
+) -> None:
+    _mcp_registry(auth_app)
+    created = await auth_client.post(
+        "/v1/scheduled-tasks", json=_create_body(mcp_services=[service]), headers=_headers()
+    )
+    assert created.status_code == 422, created.text
+    saved = await auth_client.post(
+        "/v1/scheduled-tasks", json=_create_body(mcp_services=["github"]), headers=_headers()
+    )
+    task_url = f"/v1/scheduled-tasks/{saved.json()['id']}"
+    patched = await auth_client.patch(
+        task_url, json={"mcp_services": [service]}, headers=_headers()
+    )
+    assert patched.status_code == 422, patched.text
+    kept = await auth_client.get(task_url, headers=_headers())
+    assert kept.json()["mcp_services"] == ["github"]
+
+
 class _ProviderSelection:
     """A sandbox provider that records its own system.ai.* services, accepting any."""
 

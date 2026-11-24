@@ -452,3 +452,28 @@ def test_a_managed_create_reports_a_service_its_provider_rejects() -> None:
             spec=None,
             user_id="alice",
         )
+
+
+def _create_bodies(name: str) -> list[tuple[type, dict]]:
+    """The JSON create body and the multipart create's metadata, naming *name*."""
+    from omnigent.server.schemas import SessionCreateMetadata, SessionCreateRequest
+
+    return [
+        (SessionCreateRequest, {"agent_id": "ag_1", "mcp_services": [name]}),
+        (SessionCreateMetadata, {"mcp_services": [name]}),
+    ]
+
+
+@pytest.mark.parametrize("name", ["tools.github", "system.ai.github", "a", "x" * 128, "café"])
+def test_provider_mcp_service_names_within_bounds_validate(name) -> None:
+    for model, body in _create_bodies(name):
+        assert model.model_validate(body).mcp_services == [name]
+
+
+@pytest.mark.parametrize("name", ["", "x" * 129, "tools github", "tools\tgithub", "a\x00b"])
+def test_provider_mcp_service_names_out_of_bounds_are_refused(name) -> None:
+    from pydantic import ValidationError
+
+    for model, body in _create_bodies(name):
+        with pytest.raises(ValidationError):
+            model.model_validate(body)

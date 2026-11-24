@@ -93,6 +93,7 @@ from omnigent.server.scheduled.schedule import (
 )
 from omnigent.server.scheduled.telemetry import log_task_created
 from omnigent.server.scheduled.workflow_automations import workflow_session_reuse_error
+from omnigent.server.schemas import McpServiceName
 from omnigent.server.session_mcp_selection import (
     MAX_SESSION_MCP_SERVICES,
     SessionMcpSelection,
@@ -168,7 +169,9 @@ class CreateScheduledTaskRequest(BaseModel):
     permission_mode: str | None = None
     # MCP services every session the task creates starts with, as the
     # deployment's service names; validated against the owner's connections.
-    mcp_services: list[str] = Field(default_factory=list, max_length=MAX_SESSION_MCP_SERVICES)
+    mcp_services: list[McpServiceName] = Field(
+        default_factory=list, max_length=MAX_SESSION_MCP_SERVICES
+    )
     max_cost_usd: float | None = Field(default=None, gt=0)
     # "continue" sends every run's prompt into one session: ``session_id`` when
     # given, else the session the first run creates. A prompt that runs a saved
@@ -241,7 +244,9 @@ class UpdateScheduledTaskRequest(BaseModel):
     reasoning_effort: str | None = None
     permission_mode: str | None = None
     # Replaces the task's MCP services; [] clears them.
-    mcp_services: list[str] | None = Field(default=None, max_length=MAX_SESSION_MCP_SERVICES)
+    mcp_services: list[McpServiceName] | None = Field(
+        default=None, max_length=MAX_SESSION_MCP_SERVICES
+    )
     max_cost_usd: float | None = Field(default=None, gt=0)  # null clears the cap
     session_mode: Literal["new", "continue"] | None = None
     # Null makes a continue-mode task's next run start a new session.
