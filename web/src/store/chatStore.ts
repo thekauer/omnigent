@@ -190,7 +190,7 @@ import {
   resolveSessionHost,
   subscribeIdentity,
 } from "@/lib/identity";
-import { isDatabricksWorkspace, isHostRoutingEnabled } from "@/lib/host";
+import { isDatabricksWorkspace, isHostRoutingEnabled, withHostBackgroundTask } from "@/lib/host";
 // Routing-free emit primitive (not "@/lib/analytics", which pulls in useLocation
 // and would form a routing↔store import cycle).
 import { emitInteractionPhase, startTimedInteraction } from "@/lib/analyticsEmit";
@@ -5516,9 +5516,9 @@ async function bindStream(
   // snapshot so any no-longer-pending card flips to resolved. Removed when
   // the stream unbinds (abort), so it never leaks across conversations.
   if (typeof document !== "undefined") {
-    const onVisible = (): void => {
+    const onVisible = withHostBackgroundTask("focus_refresh", (): void => {
       if (document.visibilityState === "visible") void reconcilePendingElicitations(id);
-    };
+    });
     document.addEventListener("visibilitychange", onVisible);
     controller.signal.addEventListener("abort", () => {
       document.removeEventListener("visibilitychange", onVisible);
@@ -7023,7 +7023,10 @@ export async function startStreamPump(
   const statusReconcileTimer =
     typeof window === "undefined"
       ? null
-      : window.setInterval(runGuardedStatusReconcile, ACTIVE_SESSION_STATUS_RECONCILE_INTERVAL_MS);
+      : window.setInterval(
+          withHostBackgroundTask("poll", runGuardedStatusReconcile),
+          ACTIVE_SESSION_STATUS_RECONCILE_INTERVAL_MS,
+        );
   // Pending post-reconnect catch-up timers. Tracked so each reconnect cancels
   // the previous burst before scheduling a new one — otherwise recurring
   // reconnects (the ~5-min ingress recycle) would accumulate timers on the

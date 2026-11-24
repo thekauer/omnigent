@@ -98,6 +98,55 @@ export type OmnigentAnalyticsEvent =
     };
 
 /**
+ * An MCP connection the user can authorize before starting a session: a
+ * host-managed MCP service that needs a per-user OAuth grant. The host owns
+ * discovery, status and the OAuth flow; the app renders the picker and calls
+ * `authorize`.
+ */
+export interface McpConnectionStatus {
+  /** Qualified connection name, e.g. `tools.github`. */
+  name: string;
+  /** Human-readable label, e.g. `GitHub`. */
+  displayName: string;
+  /** True when the current user already holds an active credential for it. */
+  authorized: boolean;
+  /** Optional icon URL or data URI for the provider. */
+  iconUrl?: string;
+  /**
+   * True when the server's admin configuration already adds this service to
+   * every session, so it is on whether or not it is selected.
+   */
+  providedByAdmin?: boolean;
+}
+
+/** An MCP service the user can add to a session from the picker's browse view. */
+export interface McpServiceSummary {
+  /** Qualified service name. */
+  name: string;
+  /** Human-readable label. */
+  displayName: string;
+}
+
+/** One page of `mcpConnections.browse`. */
+export interface McpServicesPage {
+  services: McpServiceSummary[];
+  /** Present when more services remain. */
+  nextPageToken?: string;
+}
+
+/**
+ * What started a unit of work the app runs on its own rather than in response
+ * to a user action (see {@link OmnigentHostConfig.runBackgroundTask}):
+ *   - `session_update`: a frame pushed on the session-updates stream.
+ *   - `poll`: a timer-driven refresh (a react-query `refetchInterval` tick or
+ *     one of the app's own refresh intervals).
+ *   - `focus_refresh`: the window regaining focus or the tab becoming visible.
+ *   - `reconnect_refresh`: the browser coming back online.
+ */
+export type OmnigentBackgroundTaskKind =
+  "session_update" | "poll" | "focus_refresh" | "reconnect_refresh";
+
+/**
  * Trusted host renderer for untrusted HTML. Before executing any supplied HTML,
  * enforce sandboxing and an opaque or separate, unprivileged origin that prevents
  * access to the host app. Expose the content iframe before forwarding every load.
@@ -175,6 +224,50 @@ export interface OmnigentHostConfig {
    * non-origin part.
    */
   cliServerUrlSuffix?: string;
+  /**
+   * Optional replacement for the whole "connect a host" command shown in the
+   * UI (e.g. `"acme-cli host --background"`), for a host that hands users a
+   * wrapper CLI which already targets this server and signs in on first use.
+   * The UI appends `--server <url>` where the command needs it. When omitted,
+   * the UI builds `omni host --server <url>` from {@link getCliServerUrl}.
+   */
+  connectHostCommand?: string;
+  /**
+   * Optional MCP-connection capability. When supplied, the new-session and
+   * new-automation screens show a picker of the host's authorizable MCP
+   * connections and let the user complete each one's per-user OAuth grant
+   * before starting. When omitted, the picker is hidden and the feature is
+   * inert; the host owns all listing, status and OAuth-popup logic.
+   */
+  mcpConnections?: {
+    /** Lists the authorizable MCP connections and each one's status. */
+    list: (options?: { signal?: AbortSignal }) => Promise<McpConnectionStatus[]>;
+    /**
+     * Runs the OAuth popup for one connection (by qualified name) and resolves
+     * once the per-user grant is saved; rejects if the user cancels or it fails.
+     */
+    authorize: (name: string) => Promise<void>;
+    /**
+     * Optional: the status of one service `list` doesn't return (one picked
+     * from `browse`), or null if the user can't use it.
+     */
+    status?: (name: string) => Promise<McpConnectionStatus | null>;
+    /**
+     * Optional: pages through the other MCP services the user can add. When
+     * omitted, the picker offers only what `list` returns.
+     */
+    browse?: (options?: { pageToken?: string; signal?: AbortSignal }) => Promise<McpServicesPage>;
+  };
+  /**
+   * Runs `task` synchronously as one unit of background work, which the app
+   * starts on its own when a session-updates frame arrives, a refresh timer
+   * ticks, or the tab regains focus or connectivity. A host that traces
+   * requests can attribute everything the task does, notably the requests it
+   * sends through `fetcher`, to that cause, rather than to no caller or to a
+   * stale one inherited from whatever armed the timer. When omitted, the task
+   * runs directly.
+   */
+  runBackgroundTask?: (kind: OmnigentBackgroundTaskKind, task: () => void) => void;
   /**
    * Optional URL to the host's appearance settings, linked beside the browser
    * embed's automatic theme option. Omitted standalone and hidden in Electron.
@@ -274,6 +367,44 @@ export function getOmnigentAnalytics(): OmnigentHostConfig["analytics"] {
  */
 export function getOmnigentTransformShareLink(): OmnigentHostConfig["transformShareLink"] {
   return hostConfig.transformShareLink;
+}
+
+/**
+ * The host-provided MCP-connections capability, or `undefined` when none is
+ * configured. Consumers use the absence to hide the connections picker.
+ */
+export function getOmnigentMcpConnections(): OmnigentHostConfig["mcpConnections"] {
+  return hostConfig.mcpConnections;
+}
+
+/**
+ * The host-provided connect-a-host command, or `undefined` when none is
+ * configured. Absence means the UI builds `omni host --server <url>` itself.
+ */
+export function getOmnigentConnectHostCommand(): OmnigentHostConfig["connectHostCommand"] {
+  return hostConfig.connectHostCommand;
+}
+
+/**
+ * Runs `task` through the host's {@link OmnigentHostConfig.runBackgroundTask},
+ * or directly when none is configured. The config is read on every call, so
+ * dispatchers armed before the host installed its config still reach it.
+ */
+export function runHostBackgroundTask(kind: OmnigentBackgroundTaskKind, task: () => void): void {
+  const runBackgroundTask = hostConfig.runBackgroundTask;
+  if (runBackgroundTask) runBackgroundTask(kind, task);
+  else task();
+}
+
+/**
+ * Wraps an event or timer handler so each call runs as a host background task
+ * of `kind`. Keep the returned function to pass to `removeEventListener`.
+ */
+export function withHostBackgroundTask<TArgs extends unknown[]>(
+  kind: OmnigentBackgroundTaskKind,
+  handler: (...args: TArgs) => void,
+): (...args: TArgs) => void {
+  return (...args) => runHostBackgroundTask(kind, () => handler(...args));
 }
 
 /**

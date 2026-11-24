@@ -15,7 +15,7 @@ import {
   type ConversationsPage,
 } from "@/hooks/useConversations";
 import { isAdminViewEnabled } from "@/lib/adminView";
-import { getOmnigentServerIdentity } from "@/lib/host";
+import { getOmnigentServerIdentity, withHostBackgroundTask } from "@/lib/host";
 import { authenticatedFetch, getCurrentUserId, resolveIdentity } from "@/lib/identity";
 import { sessionUpdatesSocket } from "@/lib/sessionUpdatesSocket";
 import { sessionVisibility } from "@/lib/sessionVisibility";
@@ -508,17 +508,21 @@ export function useCanvasSessions(): CanvasSessions {
       CONNECTED_STREAM_REFETCH_INTERVAL_MS / SESSION_POLL_INTERVAL_MS,
     );
     let tick = 0;
-    const timer = setInterval(() => {
-      tick += 1;
-      if (sessionUpdatesSocket.isConnected() && tick % connectedTickStride !== 0) return;
-      refreshIfVisible();
-    }, SESSION_POLL_INTERVAL_MS);
-    window.addEventListener("focus", refreshOnReturn);
-    document.addEventListener("visibilitychange", refreshOnReturn);
+    const timer = setInterval(
+      withHostBackgroundTask("poll", () => {
+        tick += 1;
+        if (sessionUpdatesSocket.isConnected() && tick % connectedTickStride !== 0) return;
+        refreshIfVisible();
+      }),
+      SESSION_POLL_INTERVAL_MS,
+    );
+    const refreshOnFocus = withHostBackgroundTask("focus_refresh", refreshOnReturn);
+    window.addEventListener("focus", refreshOnFocus);
+    document.addEventListener("visibilitychange", refreshOnFocus);
     return () => {
       clearInterval(timer);
-      window.removeEventListener("focus", refreshOnReturn);
-      document.removeEventListener("visibilitychange", refreshOnReturn);
+      window.removeEventListener("focus", refreshOnFocus);
+      document.removeEventListener("visibilitychange", refreshOnFocus);
     };
   }, [awaitingStoredIdentity, refresh]);
 

@@ -26,6 +26,7 @@ import { IdentityAwareSidebarDataProvider } from "./hooks/useSidebarData";
 
 import { QueryClient, QueryClientProvider, useQueryClient } from "@tanstack/react-query";
 import { APP_QUERY_DEFAULTS } from "./lib/queryRetry";
+import { routeQueryBackgroundWorkThroughHost } from "./lib/queryBackgroundTasks";
 import { ThemeProvider } from "./components/theme/ThemeProvider";
 import { useResolvedThemeMode } from "./components/theme/useResolvedThemeMode";
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
@@ -82,6 +83,9 @@ export { setOmnigentHostConfig } from "./lib/host";
 // host). One client at module scope, shared across the whole embed — mirrors
 // `main.tsx`'s standalone client (chat-tuned: 30s stale, no window-focus
 // refetch, which is noisy for chat).
+// Before any query is created: react-query's timers and focus/online listeners
+// then run each refetch the app starts on its own as a host background task.
+routeQueryBackgroundWorkThroughHost();
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: APP_QUERY_DEFAULTS,

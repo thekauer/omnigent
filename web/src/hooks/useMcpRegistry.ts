@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { withHostBackgroundTask } from "@/lib/host";
 import { authorizeRegistryService, registryRequest, type RegistryService } from "@/lib/mcpRegistry";
 import { readLastMcpServices, writeLastMcpServices } from "@/lib/mcpPreferences";
 
@@ -44,7 +45,7 @@ export function useMcpRegistryCatalog(enabled = true) {
   useEffect(() => {
     if (!enabled) return;
     void refresh();
-    const onFocus = () => void refresh();
+    const onFocus = withHostBackgroundTask("focus_refresh", () => void refresh());
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);
   }, [enabled, refresh]);

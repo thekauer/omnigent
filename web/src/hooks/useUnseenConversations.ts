@@ -20,6 +20,7 @@
 
 import { useEffect, useRef, useSyncExternalStore } from "react";
 
+import { withHostBackgroundTask } from "@/lib/host";
 import { authenticatedFetch } from "@/lib/identity";
 
 // Bumped whenever the local mirror is written, so in-tab subscribers (the
@@ -476,9 +477,10 @@ export function useMarkConversationSeen(
       if (windowHasFocus()) markConversationSeen(conversationId, Math.max(nowSeconds(), updatedAt));
     };
     markIfFocused();
-    window.addEventListener("focus", markIfFocused);
+    const markOnFocus = withHostBackgroundTask("focus_refresh", markIfFocused);
+    window.addEventListener("focus", markOnFocus);
     return () => {
-      window.removeEventListener("focus", markIfFocused);
+      window.removeEventListener("focus", markOnFocus);
       // Navigation away normally happens via user interaction (focused);
       // an unmount in a blurred window (e.g. the session deleted from
       // another client) must not silently mark the thread read.

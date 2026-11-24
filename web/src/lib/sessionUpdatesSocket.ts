@@ -16,7 +16,7 @@
 // id list is NEVER trusted from the client for authorization — the server
 // access-checks every watched id against the connection's user.
 
-import { isHostRoutingEnabled, resolveWebSocketUrl } from "@/lib/host";
+import { isHostRoutingEnabled, resolveWebSocketUrl, runHostBackgroundTask } from "@/lib/host";
 import { isPageHidden, nextReconnectDelay } from "@/lib/reconnectBackoff";
 import { updatesRoutingKey } from "@/lib/sessionHost";
 import type { SessionListWireItem } from "@/lib/sessionListCache";
@@ -318,7 +318,13 @@ class SessionUpdatesSocket {
     } catch {
       return;
     }
-    for (const listener of this.listeners) listener(frame);
+    const dispatch = () => {
+      for (const listener of this.listeners) listener(frame);
+    };
+    // A heartbeat only proves liveness. Any other frame can make listeners
+    // refetch, so it runs as its own host task.
+    if (frame.type === "heartbeat") dispatch();
+    else runHostBackgroundTask("session_update", dispatch);
   }
 }
 

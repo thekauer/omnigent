@@ -26,7 +26,8 @@ vi.mock("@/lib/identity", () => ({
   resolveIdentity: vi.fn(async () => null),
 }));
 
-vi.mock("@/lib/host", () => ({
+vi.mock("@/lib/host", async (importOriginal) => ({
+  ...(await importOriginal<typeof host>()),
   getOmnigentServerIdentity: vi.fn(() => "server-a"),
 }));
 
