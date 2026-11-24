@@ -61,6 +61,7 @@ import { useAvailableAgents } from "@/hooks/useAvailableAgents";
 import { NewChatLandingScreen, resetLandingDraft, sanitizeInitialPrompt } from "./NewChatDialog";
 import { writeDefaultBaseBranch } from "@/lib/baseBranchPreferences";
 import { writeLastHostChoice } from "@/lib/hostPreferences";
+import { setOmnigentHostConfig } from "@/lib/host";
 import { CapabilitiesProvider } from "@/lib/CapabilitiesContext";
 import type { ServerInfo } from "@/lib/capabilities";
 import { ARIA_MOD_KEY, ENTER_KEY, MOD_KEY } from "@/components/KeyboardShortcut";
@@ -1320,6 +1321,78 @@ describe("NewChatLandingScreen create flow", () => {
     expect(JSON.parse(init!.body as string)).toMatchObject({
       host_type: "managed",
       mcp_registry_services: ["tracker"],
+    });
+  });
+
+  describe("registry services next to a provider's own MCP selection", () => {
+    // "box" selects its own MCP services; "plain" takes the registry's.
+    const providerInfo: Partial<ServerInfo> = {
+      managed_sandboxes_enabled: true,
+      enabled_connections: ["mcp"],
+      sandbox_provider: "box",
+      sandbox_providers: ["box", "plain"],
+      sandbox_provider_capabilities: { box: { mcp_selection: true }, plain: {} },
+    };
+
+    beforeEach(() => {
+      setOmnigentHostConfig({
+        mcpConnections: {
+          list: async () => [{ name: "tools.github", displayName: "GitHub", authorized: true }],
+          authorize: async () => undefined,
+        },
+      });
+      onTestFinished(() => setOmnigentHostConfig({}));
+      localStorage.setItem("omnigent:last-mcp-connections", JSON.stringify(["tools.github"]));
+      writeLastMcpServices(["tracker"]);
+      writeLastHostChoice("host_1");
+      vi.mocked(registryRequest).mockResolvedValue({
+        data: [{ id: "tracker", title: "Tracker", auth: "none", connected: true }],
+      });
+      vi.mocked(authenticatedFetch).mockResolvedValue({
+        ok: true,
+        json: async () => ({ id: "conv_managed" }),
+      } as Response);
+    });
+
+    async function submitOn(option: string): Promise<Record<string, unknown>> {
+      // On a host first, the remembered registry pick is live.
+      await waitForWorkspaceSeed();
+      expect(await screen.findByRole("button", { name: "MCP services: 1 selected" })).toBeVisible();
+      fireEvent.pointerDown(screen.getByTestId("new-chat-landing-host-chip"), { button: 0 });
+      fireEvent.click(screen.getByTestId(option));
+      typeMessage("use my tools");
+      await waitFor(() => expect(screen.getByTestId("new-chat-landing-submit")).toBeEnabled());
+      fireEvent.click(screen.getByTestId("new-chat-landing-submit"));
+      await waitFor(() => expect(authenticatedFetch).toHaveBeenCalledOnce());
+      return JSON.parse(vi.mocked(authenticatedFetch).mock.calls[0][1]!.body as string);
+    }
+
+    it("shows only the connection picker and sends only mcp_services, even with a stored registry pick", async () => {
+      renderLanding([], providerInfo);
+      const body = await submitOn("new-chat-landing-sandbox-option");
+      expect(screen.getByTestId("new-chat-landing-mcps-chip")).toBeInTheDocument();
+      expect(screen.queryByTestId("new-chat-landing-mcp-registry-chip")).toBeNull();
+      expect(body).toMatchObject({
+        host_type: "managed",
+        sandbox_provider: "box",
+        mcp_services: ["tools.github"],
+      });
+      expect(body).not.toHaveProperty("mcp_registry_services");
+      // The registry pick is kept for a host or another provider.
+      expect(readLastMcpServices()).toEqual(["tracker"]);
+    });
+
+    it("keeps the registry picker and sends registry services on a provider without its own selection", async () => {
+      renderLanding([], providerInfo);
+      const body = await submitOn("new-chat-landing-sandbox-option-plain");
+      expect(screen.getByTestId("new-chat-landing-mcp-registry-chip")).toBeInTheDocument();
+      expect(screen.queryByTestId("new-chat-landing-mcps-chip")).toBeNull();
+      expect(body).toMatchObject({
+        host_type: "managed",
+        sandbox_provider: "plain",
+        mcp_registry_services: ["tracker"],
+      });
+      expect(body).not.toHaveProperty("mcp_services");
     });
   });
 

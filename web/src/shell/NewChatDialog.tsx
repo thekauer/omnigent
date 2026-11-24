@@ -2805,14 +2805,6 @@ function NewChatLandingContent({
     info !== "loading" &&
     info.managed_sandboxes_enabled &&
     (!siblingSourceId || siblingDestinationPolicy !== "current_host");
-  const mcpRegistryEnabled = info !== "loading" && !!info.enabled_connections?.includes("mcp");
-  const {
-    selected: mcpRegistryServices,
-    toggle: toggleMcpRegistryService,
-    catalog: mcpRegistryCatalog,
-    selectionError: mcpSelectionError,
-    servicesForLaunch: mcpServicesForLaunch,
-  } = useMcpRegistrySelection(restoredDraft?.mcpRegistryServices, mcpRegistryEnabled);
   const smartRoutingEnabled = info !== "loading" && info.smart_routing_enabled;
   // Which router can answer a pick. The external AI-Gateway router only covers
   // a family the host runs through the gateway; the built-in judge covers any
@@ -2993,6 +2985,20 @@ function NewChatLandingContent({
     effectiveSandboxProvider !== null &&
     info.sandbox_provider_capabilities?.[effectiveSandboxProvider]?.mcp_selection === true &&
     getOmnigentMcpConnections() != null;
+  // A provider with its own MCP selection picks the session's services itself,
+  // and the server refuses registry services next to its mcp_services, so the
+  // registry picker is hidden there and no registry pick (saved, restored from
+  // a draft or remembered) is sent or blocks the create. The picks themselves
+  // are kept for when a host or another provider is chosen again.
+  const mcpRegistryEnabled =
+    info !== "loading" && !!info.enabled_connections?.includes("mcp") && !mcpConnectionsEnabled;
+  const {
+    selected: mcpRegistryServices,
+    toggle: toggleMcpRegistryService,
+    catalog: mcpRegistryCatalog,
+    selectionError: mcpSelectionError,
+    servicesForLaunch: mcpServicesForLaunch,
+  } = useMcpRegistrySelection(restoredDraft?.mcpRegistryServices, mcpRegistryEnabled);
   const { data: listedMcpConnections, statusesPending: mcpConnectionStatusesPending } =
     useMcpConnections(selectedMcpConnections);
   // Sends only the picks the host still offers once it answered; until then, or
@@ -6124,9 +6130,10 @@ function NewChatLandingContent({
   }
 
   // Connect THIS desktop machine as a host for the current server, then select
-  // it — so the user doesn't have to run `omni host` in a terminal first. The
-  // bridge's controlHost resolves once the host is connected; we then read its
-  // id, refresh the host list, and pick it.
+  // it, so the user doesn't have to run the connect-host command (`omnigent
+  // host --server <url>`, or the server's configured wrapper) in a terminal
+  // first. The bridge's controlHost resolves once the host is connected; we
+  // then read its id, refresh the host list, and pick it.
   async function connectThisMachine() {
     if (connectingThisMachine) return;
     setConnectingThisMachine(true);
