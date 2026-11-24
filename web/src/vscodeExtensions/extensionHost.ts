@@ -98,6 +98,8 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
     },
     ...options.hostOptions,
   });
+  // The shell runs extension commands (such as `omnigent.revealInFiles`) through its bridge.
+  bridge.setCommandRunner((command, args) => commands.execute(command, args, () => {}));
   const builtInsStarted = host.start(options.builtIns ?? builtInExtensions());
   return {
     host,
@@ -106,6 +108,7 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
     workspace,
     builtInsStarted,
     dispose: async () => {
+      bridge.setCommandRunner(null);
       await host.dispose();
       builtInCommands.dispose();
       settingsSubscription.dispose();

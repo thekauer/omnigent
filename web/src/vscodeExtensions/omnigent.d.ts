@@ -237,7 +237,10 @@ declare module "omnigent" {
   export interface TreeItem {
     /** Names the item across refreshes; expand state is kept by it. */
     id?: string;
-    /** Defaults to the last segment of `resourceUri`. */
+    /**
+     * Defaults to the last segment of `resourceUri`. A file row whose label
+     * holds a `/` is drawn as a path, truncated at its start.
+     */
     label?: string | TreeItemLabel;
     /** Muted text after the label; `true` uses the folder of `resourceUri`. */
     description?: string | boolean;
@@ -252,6 +255,12 @@ declare module "omnigent" {
     /** Drawn as the A/M/D letter of a file, or the dot of a folder. */
     gitStatus?: "added" | "modified" | "deleted";
     collapsibleState?: TreeItemCollapsibleState;
+    /**
+     * Runs when the row is clicked. A collapsible folder row expands on a
+     * click and runs its command on a double click. An item with neither a
+     * command nor a `resourceUri` is drawn as a muted placeholder line (such as
+     * "Loading…" under a folder).
+     */
     command?: Command;
     contextValue?: string;
     /** Size of the resource in bytes, drawn like the Changes list's file size. */
@@ -277,8 +286,14 @@ declare module "omnigent" {
     /** Fire it when the data changes; the view reloads what it shows. */
     onDidChangeTreeData?: Event<T | T[] | undefined | null | void>;
     getTreeItem: (element: T) => TreeItem | Promise<TreeItem>;
-    /** The roots when `element` is undefined. */
+    /**
+     * The roots when `element` is undefined. Called when a node is expanded, so
+     * a folder can load its children then (lazily) and fire
+     * `onDidChangeTreeData` once they arrived.
+     */
     getChildren: (element?: T) => T[] | null | undefined | Promise<T[] | null | undefined>;
+    /** The parent of `element`, or undefined for a root; needed by {@link TreeView.reveal}. */
+    getParent?: (element: T) => T | null | undefined | Promise<T | null | undefined>;
   }
 
   export interface TreeViewOptions<T> {
@@ -343,7 +358,36 @@ declare module "omnigent" {
     readonly icon?: string;
   }
 
-  /** A tree view, as `vscode.TreeView`; plain text everywhere. No selection or reveal yet. */
+  /** As `vscode.TreeViewSelectionChangeEvent`. */
+  export interface TreeViewSelectionChangeEvent<T> {
+    readonly selection: readonly T[];
+  }
+
+  /** Options of {@link TreeView.reveal}, as in VS Code. */
+  export interface TreeViewRevealOptions {
+    /** Select the element (the default). */
+    readonly select?: boolean;
+    /** Move keyboard focus to its row. */
+    readonly focus?: boolean;
+    /** Expand the element too; a number expands that many levels below it (at most 3). */
+    readonly expand?: boolean | number;
+  }
+
+  /**
+   * The folder a view browses, drawn by the host as its location bar in place
+   * of the title (a view that contributes `location: true`): the folder's name
+   * or path, Back one folder, Back to working folder, and, where the session
+   * may browse its host, a folder picker. Both paths are absolute.
+   */
+  export interface ViewLocation {
+    readonly path: string;
+    /** The workspace root, for Back to working folder. */
+    readonly root: string;
+    /** Shown under the path, as when the folder cannot be read. */
+    readonly error?: string;
+  }
+
+  /** A tree view, as `vscode.TreeView`; plain text everywhere. */
   export interface TreeView<T> {
     /** Shown in the view's title bar; defaults to the contributed name. */
     title: string | undefined;
@@ -371,8 +415,30 @@ declare module "omnigent" {
      * own data with it.
      */
     readonly filter: string;
-    /** Fires when the filter text changes, also when another workspace comes on screen. */
+    /** Fires when the filter text or a filter field changes, also when another workspace comes on screen. */
     readonly onDidChangeFilter: Event<string>;
+    /**
+     * Sets the filter text for the workspace on screen, as when a result is
+     * revealed and the view leaves its search; `onDidChangeFilter` fires.
+     */
+    setFilter: (text: string) => void;
+    /** The values of the filter's extra fields (`filter.fields`), by id, for the workspace on screen. */
+    readonly filterFields: Readonly<Record<string, string>>;
+    /** The selected elements, as `vscode.TreeView.selection`: a click, the keyboard or `reveal` set it. */
+    readonly selection: readonly T[];
+    readonly onDidChangeSelection: Event<TreeViewSelectionChangeEvent<T>>;
+    /**
+     * As `vscode.TreeView.reveal`: expands the element's ancestors, scrolls its
+     * row into view with a brief highlight, and selects or focuses it. The
+     * provider must implement `getParent`, and the element and its ancestors
+     * need a `TreeItem.id`. In the chat session on screen at the call; when the
+     * view is not drawn, it is revealed as soon as it is.
+     */
+    reveal: (element: T, options?: TreeViewRevealOptions) => Promise<void>;
+    /** The folder the view browses; see {@link ViewLocation}. */
+    location: ViewLocation | undefined;
+    /** Fires with the absolute path the user picked in the location bar. */
+    readonly onDidChangeLocation: Event<string>;
     /** The view's search input, when its contribution has `searchInput`. */
     readonly searchInput: ViewSearchInput | undefined;
     /**
@@ -774,6 +840,72 @@ declare module "omnigent" {
   export type WorkspaceAvailability =
     "available" | "agentAsleep" | "sandboxOffline" | "sandboxStarting";
 
+  /** As `vscode.FileType`, by name. */
+  export type FileType = "file" | "directory";
+
+  /** One entry of a folder listing or a file search, in plain data. */
+  export interface FileEntry {
+    /**
+     * In the form the folder was asked for: workspace-relative inside the
+     * workspace (`src/app.ts`), absolute outside it (`/tmp/notes.md`).
+     */
+    readonly path: string;
+    readonly name: string;
+    readonly type: FileType;
+    readonly bytes: number | null;
+    /** Seconds since the epoch, when known. */
+    readonly modifiedAt: number | null;
+  }
+
+  /**
+   * Why a folder could not be read, as `vscode.FileSystemError.code`:
+   * `Unavailable` (the session has no files), `RunnerOffline` (its runner is
+   * not connected), `NoPermissions` (the folder is outside what the session
+   * may browse; `reachableRoots` names what it may), or `Unknown`.
+   */
+  export type FileSystemErrorCode = "Unavailable" | "RunnerOffline" | "NoPermissions" | "Unknown";
+
+  /** The error {@link FileSystem.readDirectory} rejects with: named "FileSystemError". */
+  export interface FileSystemError extends Error {
+    readonly code: FileSystemErrorCode;
+    readonly reachableRoots: readonly string[];
+  }
+
+  /** The workspace's files, as `vscode.workspace.fs`. */
+  export interface FileSystem {
+    /**
+     * The entries of a folder of the workspace on screen: `""` for the
+     * workspace root, a workspace-relative folder, or an absolute path on the
+     * session's host (owners of sessions that may browse it). Listings are
+     * cached by the host and reloaded once stale.
+     */
+    readDirectory: (path: string) => Promise<readonly FileEntry[]>;
+  }
+
+  /** A search for files by name ({@link workspace.findFiles}). */
+  export interface FileSearchQuery {
+    /** Matched against names and paths, case-insensitively. */
+    readonly pattern: string;
+    /** Comma-separated globs of files to search, such as `*.ts, src/**`. */
+    readonly include?: string;
+    /** Comma-separated globs of files to skip. */
+    readonly exclude?: string;
+    /** The folder to search in, as for `readDirectory`; the root by default. */
+    readonly location?: string;
+  }
+
+  export interface FileSearchComplete {
+    /** Matching files and folders, paths as for `readDirectory`. */
+    readonly files: readonly FileEntry[];
+    /** True when the search stopped before it covered the folder, so a miss proves nothing. */
+    readonly limitHit: boolean;
+  }
+
+  /** The workspace's files may have changed on disk (a turn ended, a refresh, the server said so). */
+  export interface FilesChangeEvent {
+    readonly sessionId: string | undefined;
+  }
+
   export interface ChangedFilesChangeEvent {
     readonly sessionId: string | undefined;
     /** `undefined` while the list loads, or when it could not be loaded. */
@@ -782,6 +914,8 @@ declare module "omnigent" {
     readonly error?: string;
     readonly availability: WorkspaceAvailability;
     readonly servedFromHost: boolean;
+    /** As {@link workspace.rootPath}. */
+    readonly rootPath: string | undefined;
   }
 
   /**
@@ -888,8 +1022,26 @@ declare module "omnigent" {
     export const availability: WorkspaceAvailability;
     /** The agent is asleep but its host serves the workspace. */
     export const servedFromHost: boolean;
-    /** Fires when that list, its availability or the session on screen changes. */
+    /** Fires when that list, its availability, the root or the session on screen changes. */
     export const onDidChangeChangedFiles: Event<ChangedFilesChangeEvent>;
+    /**
+     * The absolute path of the workspace root on screen, as the deprecated
+     * `vscode.workspace.rootPath`; undefined while unknown or without files.
+     */
+    export const rootPath: string | undefined;
+    /** The files of the workspace on screen. */
+    export const fs: FileSystem;
+    /**
+     * Searches the workspace on screen for files and folders by name, as
+     * `vscode.workspace.findFiles` (with a name pattern); at most 500 results.
+     * Rejects with an error named "Canceled" when `token` is cancelled.
+     */
+    export function findFiles(
+      query: FileSearchQuery,
+      token?: CancellationToken,
+    ): Promise<FileSearchComplete>;
+    /** Fires when the files of the workspace on screen may have changed on disk. */
+    export const onDidChangeFiles: Event<FilesChangeEvent>;
     /** The settings under `section` (for example `omnigent.files`), or all of them. */
     export function getConfiguration(section?: string): WorkspaceConfiguration;
     export const onDidChangeConfiguration: Event<ConfigurationChangeEvent>;

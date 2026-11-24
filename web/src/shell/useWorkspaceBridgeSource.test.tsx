@@ -5,6 +5,8 @@ import { cleanup, render } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  fetchWorkspaceAllFiles,
+  fetchWorkspaceFileSearch,
   RunnerOfflineError,
   useWorkspaceAsleep,
   useWorkspaceChangedFiles,
@@ -17,10 +19,12 @@ import {
   useWorkspaceBridgeSource,
   type WorkspaceBridgeSourceOptions,
 } from "./useWorkspaceBridgeSource";
-import { WorkspaceBridge } from "./workspaceBridge";
+import { WorkspaceBridge, WorkspaceUnavailableError } from "./workspaceBridge";
 
 vi.mock("@/hooks/useWorkspaceChangedFiles", async (importOriginal) => ({
   ...(await importOriginal<typeof WorkspaceChangedFilesModule>()),
+  fetchWorkspaceAllFiles: vi.fn(),
+  fetchWorkspaceFileSearch: vi.fn(),
   useWorkspaceAsleep: vi.fn(() => false),
   useWorkspaceChangedFiles: vi.fn(),
   useWorkspaceEnvironment: vi.fn(),
@@ -191,5 +195,76 @@ describe("useWorkspaceBridgeSource", () => {
     cleanup();
     expect(bridge.getState().sessionId).toBeNull();
     expect(() => bridge.openFile("z.ts")).toThrow("no workspace is open");
+  });
+});
+
+describe("useWorkspaceBridgeSource files", () => {
+  const allFilesMock = vi.mocked(fetchWorkspaceAllFiles);
+  const searchMock = vi.mocked(fetchWorkspaceFileSearch);
+  const withClient = (client: QueryClient, node: ReactNode) => (
+    <QueryClientProvider client={client}>{node}</QueryClientProvider>
+  );
+
+  it("publishes the root once the environment answers, and none without files", () => {
+    const bridge = new WorkspaceBridge();
+    environmentMock.mockReturnValue(query({ isLoading: true }));
+    const { rerender } = render(wrap(<Surface bridge={bridge} />));
+    expect(bridge.getState().rootPath).toBeUndefined();
+    environmentMock.mockReturnValue(loadedEnvironment);
+    rerender(wrap(<Surface bridge={bridge} />));
+    expect(bridge.getState().rootPath).toBe("/w");
+    environmentMock.mockReturnValue(query({ data: { available: false, root: null } }));
+    rerender(wrap(<Surface bridge={bridge} />));
+    expect(bridge.getState().rootPath).toBeNull();
+  });
+
+  it("lists folders through the shared cache, and says when a session has no files", async () => {
+    const bridge = new WorkspaceBridge();
+    const client = new QueryClient();
+    allFilesMock.mockResolvedValue({ available: true, data: [] });
+    render(withClient(client, <Surface bridge={bridge} />));
+    await bridge.readDirectory("src");
+    await bridge.readDirectory("src");
+    expect(allFilesMock).toHaveBeenCalledOnce();
+    expect(allFilesMock).toHaveBeenCalledWith("conv_a", "src");
+    expect(client.getQueryData(["workspace-all-files", "conv_a", "src"])).toEqual({
+      available: true,
+      data: [],
+    });
+    allFilesMock.mockResolvedValue({ available: false, data: [] });
+    await expect(bridge.readDirectory("other")).rejects.toBeInstanceOf(WorkspaceUnavailableError);
+  });
+
+  it("searches files with trimmed globs in the asked folder", async () => {
+    const bridge = new WorkspaceBridge();
+    const result = { files: [], truncated: false, hasMore: false, unavailable: false };
+    searchMock.mockResolvedValue(result);
+    render(wrap(<Surface bridge={bridge} />));
+    const signal = new AbortController().signal;
+    await expect(
+      bridge.findFiles(
+        { pattern: " a ", include: " *.ts ", exclude: "", location: "/etc" },
+        signal,
+      ),
+    ).resolves.toBe(result);
+    expect(searchMock).toHaveBeenCalledWith("conv_a", "a", "*.ts", "", "/etc", signal);
+  });
+
+  it("bumps the files revision when the listings are invalidated, as a refresh does", async () => {
+    const bridge = new WorkspaceBridge();
+    const client = new QueryClient();
+    allFilesMock.mockResolvedValue({ available: true, data: [] });
+    const { rerender } = render(withClient(client, <Surface bridge={bridge} />));
+    await bridge.readDirectory("");
+    const before = bridge.getState().filesRevision ?? 0;
+    await bridge.refreshFiles();
+    rerender(withClient(client, <Surface bridge={bridge} />));
+    expect(bridge.getState().filesRevision).toBeGreaterThan(before);
+    // Invalidating another session's listings changes nothing here.
+    const after = bridge.getState().filesRevision;
+    client.setQueryData(["workspace-all-files", "conv_b", ""], { available: true, data: [] });
+    await client.invalidateQueries({ queryKey: ["workspace-all-files", "conv_b"] });
+    rerender(withClient(client, <Surface bridge={bridge} />));
+    expect(bridge.getState().filesRevision).toBe(after);
   });
 });

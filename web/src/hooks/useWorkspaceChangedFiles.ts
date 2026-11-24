@@ -426,7 +426,7 @@ async function listViaWorkspaceApi(
   return listed && { object: "list", data: listed.data, has_more: listed.hasMore };
 }
 
-async function fetchWorkspaceAllFiles(
+export async function fetchWorkspaceAllFiles(
   conversationId: string,
   location = "",
 ): Promise<WorkspaceAllFilesResult> {
@@ -609,7 +609,7 @@ export interface WorkspaceFileSearchResult {
 // One cap for both routes, so the API and REST return the same matches.
 const FILE_SEARCH_LIMIT = 500;
 
-async function fetchWorkspaceFileSearch(
+export async function fetchWorkspaceFileSearch(
   conversationId: string,
   query: string,
   include: string,

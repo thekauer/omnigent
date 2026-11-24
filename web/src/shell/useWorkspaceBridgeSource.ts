@@ -2,15 +2,18 @@
 // workspace bridge, so extension views read what that surface would show: its
 // changed files, why they cannot load, and its file settings.
 
-import { useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSessionHostOnline, useSessionRunnerOnline } from "@/hooks/RunnerHealthProvider";
 import { useSandboxStarting } from "@/hooks/useSessionReconnect";
 import {
+  fetchWorkspaceAllFiles,
+  fetchWorkspaceFileSearch,
   RunnerOfflineError,
   useWorkspaceAsleep,
   useWorkspaceChangedFiles,
   useWorkspaceEnvironment,
+  type WorkspaceFile,
 } from "@/hooks/useWorkspaceChangedFiles";
 import { useServerInfo } from "@/lib/CapabilitiesContext";
 import { isFeatureEnabled } from "@/lib/capabilities";
@@ -24,10 +27,33 @@ import {
   type WorkspaceFilePosition,
   type WorkspaceFileSettings,
   type WorkspaceSource,
+  WorkspaceUnavailableError,
   workspaceBridge,
 } from "./workspaceBridge";
 
 const NO_FILES: readonly never[] = Object.freeze([]);
+/** The listing caches a refresh or the server's invalidation marks stale. */
+const LISTING_KEYS = ["workspace-all-files", "workspace-dir"];
+// As the classic Files tree: the root and the browsed folder warm for 30 seconds.
+const LISTING_STALE_MS = 30_000;
+
+/** A folder of `sessionId`'s workspace, through the query cache the Files views shared. */
+export function readWorkspaceDirectory(
+  queryClient: QueryClient,
+  sessionId: string,
+  location: string,
+): Promise<readonly WorkspaceFile[]> {
+  return queryClient
+    .fetchQuery({
+      queryKey: ["workspace-all-files", sessionId, location],
+      queryFn: () => fetchWorkspaceAllFiles(sessionId, location),
+      staleTime: LISTING_STALE_MS,
+    })
+    .then((result) => {
+      if (!result.available) throw new WorkspaceUnavailableError();
+      return result.data;
+    });
+}
 
 export interface WorkspaceBridgeSourceOptions {
   sessionId: string | undefined;
@@ -95,6 +121,26 @@ export function useWorkspaceBridgeSource({
     changedFiles = loaded ?? NO_FILES;
   }
   const servedFromHost = runnerOnline === false && hostOnline === true;
+  const rootPath =
+    !enabled || sessionId === undefined
+      ? null
+      : environmentQuery.data === undefined
+        ? undefined
+        : environmentQuery.data.available
+          ? environmentQuery.data.root
+          : null;
+  // Listings are read on demand through the cache; say when it marked them stale.
+  const [filesRevision, setFilesRevision] = useState(0);
+  useEffect(() => {
+    if (!sessionId) return;
+    return queryClient.getQueryCache().subscribe((event) => {
+      if (event.type !== "updated" || event.action.type !== "invalidate") return;
+      const [kind, id] = event.query.queryKey as unknown[];
+      if (id === sessionId && LISTING_KEYS.includes(kind as string)) {
+        setFilesRevision((value) => value + 1);
+      }
+    });
+  }, [queryClient, sessionId]);
 
   const settings = useMemo<WorkspaceFileSettings>(
     () => ({ sortOrder, showHidden }),
@@ -128,6 +174,34 @@ export function useWorkspaceBridgeSource({
           ? queryClient.invalidateQueries({ queryKey: ["workspace-changed-files", id] })
           : Promise.resolve();
       },
+      readDirectory: (location) => {
+        const id = latest.current.sessionId;
+        if (!id) return Promise.reject(new Error("no workspace is open"));
+        return readWorkspaceDirectory(queryClient, id, location);
+      },
+      findFiles: (query, signal) => {
+        const id = latest.current.sessionId;
+        if (!id) return Promise.reject(new Error("no workspace is open"));
+        return fetchWorkspaceFileSearch(
+          id,
+          query.pattern.trim(),
+          query.include.trim(),
+          query.exclude.trim(),
+          query.location,
+          signal,
+        );
+      },
+      refreshFiles: async () => {
+        const id = latest.current.sessionId;
+        if (!id) return;
+        // The listings reload when the Files view reads them again (on the revision bump).
+        await Promise.all([
+          ...LISTING_KEYS.map((kind) =>
+            queryClient.invalidateQueries({ queryKey: [kind, id], refetchType: "none" }),
+          ),
+          queryClient.invalidateQueries({ queryKey: ["workspace-changed-files", id] }),
+        ]);
+      },
       updateSettings: (patch) => {
         if (patch.sortOrder !== undefined) latest.current.onSortOrderChange(patch.sortOrder);
         if (patch.showHidden !== undefined) latest.current.onShowHiddenChange(patch.showHidden);
@@ -154,6 +228,8 @@ export function useWorkspaceBridgeSource({
       settings,
       rootSessionId,
       agentCostsEnabled,
+      rootPath,
+      filesRevision,
     });
     source.setActive(active);
   });

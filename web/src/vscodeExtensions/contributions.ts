@@ -15,11 +15,21 @@ export interface ViewContribution {
   readonly order: number;
   /** Built-in extensions only: the built-in tab id the view stands in for. */
   readonly builtInTab?: string;
-  /** A filter field drawn above the rows. */
-  readonly filter?: { readonly placeholder: string; readonly ariaLabel: string };
+  /** A filter field drawn above the rows, with optional extra fields (such as globs). */
+  readonly filter?: {
+    readonly placeholder: string;
+    readonly ariaLabel: string;
+    readonly fields?: readonly SearchInputFieldContribution[];
+  };
   /** A query form drawn in place of the title bar. */
   readonly searchInput?: SearchInputContribution;
+  /** The view's title bar is the host's location bar for `TreeView.location`. */
+  readonly location?: boolean;
 }
+
+/** Menu entries the host draws itself: the filter's fields toggle and the Open In menu. */
+export const TOGGLE_FILTER_FIELDS_COMMAND = "omnigent.toggleFilterFields";
+export const OPEN_IN_SUBMENU = "omnigent.openIn";
 
 export interface SearchInputOptionContribution {
   readonly id: string;
@@ -267,6 +277,35 @@ function textOf(value: unknown, max: number): string | undefined {
   return typeof value === "string" && value.trim() !== "" ? value.trim().slice(0, max) : undefined;
 }
 
+/** `filter.fields`: up to four `{ id, label, placeholder? }` text fields under the filter. */
+function filterFieldsOf(
+  raw: unknown,
+  where: string,
+  warnings: string[],
+): SearchInputFieldContribution[] {
+  if (raw === undefined) return [];
+  if (!Array.isArray(raw)) {
+    warnings.push(`${where}: "filter.fields" must be an array`);
+    return [];
+  }
+  const fields: SearchInputFieldContribution[] = [];
+  raw.slice(0, 4).forEach((field: unknown, index) => {
+    const record = isRecord(field) ? field : {};
+    const id = textOf(record.id, MAX_TITLE_LENGTH);
+    const label = textOf(record.label, MAX_TITLE_LENGTH);
+    if (!id || fields.some((existing) => existing.id === id)) {
+      warnings.push(`${where}: "filter.fields[${index}]" needs a unique "id"`);
+      return;
+    }
+    if (!label) {
+      warnings.push(`${where}: "filter.fields[${index}]" needs a label`);
+      return;
+    }
+    fields.push({ id, label, placeholder: textOf(record.placeholder, MAX_TITLE_LENGTH) });
+  });
+  return fields;
+}
+
 /** One menu entry (`{ command | submenu, when?, group?, tooltip?, tone? }`), or undefined. */
 function menuItemOf(
   entry: unknown,
@@ -370,9 +409,11 @@ export function parseContributions(
               warnings.push(`${where}: "filter.placeholder" must be a non-empty string`);
             } else {
               const record = entry.filter as Record<string, unknown>;
+              const fields = filterFieldsOf(record.fields, where, warnings);
               filter = {
                 placeholder,
                 ariaLabel: textOf(record.ariaLabel, MAX_TITLE_LENGTH) ?? placeholder,
+                ...(fields.length === 0 ? {} : { fields }),
               };
             }
           }
@@ -388,6 +429,7 @@ export function parseContributions(
             ...(builtInTab === undefined ? {} : { builtInTab }),
             ...(filter === undefined ? {} : { filter }),
             ...(searchInput === undefined ? {} : { searchInput }),
+            ...(entry.location === true ? { location: true } : {}),
           });
         });
       }
@@ -471,7 +513,11 @@ export function parseContributions(
             );
             return;
           }
-          if (item.submenu !== undefined && !submenus.some((sub) => sub.id === item.submenu)) {
+          if (
+            item.submenu !== undefined &&
+            item.submenu !== OPEN_IN_SUBMENU &&
+            !submenus.some((sub) => sub.id === item.submenu)
+          ) {
             warnings.push(
               `contributes.menus["${menu}"][${index}]: unknown submenu ${JSON.stringify(item.submenu)}`,
             );

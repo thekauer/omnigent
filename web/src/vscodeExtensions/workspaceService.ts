@@ -2,7 +2,12 @@
 // changed files, availability and settings) as frozen plain data, from the
 // workspace bridge the shell's workspace surfaces publish to.
 import type * as omnigent from "omnigent";
-import type { WorkspaceChangedFile } from "@/hooks/useWorkspaceChangedFiles";
+import {
+  PathUnreachableError,
+  RunnerOfflineError,
+  type WorkspaceChangedFile,
+  type WorkspaceFile,
+} from "@/hooks/useWorkspaceChangedFiles";
 import { isValidSort } from "@/lib/changedSort";
 import {
   type ContentSearchResult,
@@ -11,10 +16,11 @@ import {
   fitsContentSearchLimit,
   wholeWordRegexProblem,
 } from "@/lib/contentSearch";
-import type {
-  WorkspaceBridge,
-  WorkspaceBridgeState,
-  WorkspaceFileSettings,
+import {
+  type WorkspaceBridge,
+  type WorkspaceBridgeState,
+  type WorkspaceFileSettings,
+  WorkspaceUnavailableError,
 } from "@/shell/workspaceBridge";
 import { EventEmitter } from "./base";
 
@@ -110,6 +116,62 @@ function toChangedFile(file: WorkspaceChangedFile): omnigent.ChangedFile {
   });
 }
 
+const MAX_LOCATION_LENGTH = 4096;
+const MAX_PATTERN_LENGTH = 1000;
+
+/** A folder path as the API takes it: "" (the root), workspace-relative, or absolute. */
+function locationOf(value: unknown, what: string): string {
+  if (value === undefined) return "";
+  if (typeof value !== "string" || value.length > MAX_LOCATION_LENGTH) {
+    throw new TypeError(`${what} needs a folder path`);
+  }
+  const trimmed = value === "/" ? value : value.replace(/\/+$/, "");
+  // A relative path must not climb out of the workspace.
+  if (!trimmed.startsWith("/") && trimmed.split("/").some((part) => part === "..")) {
+    throw new TypeError(`${what}: a workspace path cannot contain ".."`);
+  }
+  return trimmed;
+}
+
+/** Joins a folder ("" the root) and a path relative to it. */
+function joinLocation(location: string, relative: string): string {
+  if (!relative) return location;
+  if (!location) return relative;
+  return location === "/" ? `/${relative}` : `${location}/${relative}`;
+}
+
+function toFileEntry(file: WorkspaceFile, location: string): omnigent.FileEntry {
+  return Object.freeze({
+    path: joinLocation(location, file.path),
+    name: file.name,
+    type: file.type === "directory" ? "directory" : "file",
+    bytes: file.bytes,
+    modifiedAt: file.modified_at,
+  });
+}
+
+function fileSystemError(error: unknown): omnigent.FileSystemError {
+  const code: omnigent.FileSystemErrorCode =
+    error instanceof WorkspaceUnavailableError
+      ? "Unavailable"
+      : error instanceof RunnerOfflineError
+        ? "RunnerOffline"
+        : error instanceof PathUnreachableError
+          ? "NoPermissions"
+          : "Unknown";
+  const message = error instanceof Error ? error.message : String(error);
+  const result = new Error(message) as Error & {
+    code: omnigent.FileSystemErrorCode;
+    reachableRoots: readonly string[];
+  };
+  result.name = "FileSystemError";
+  result.code = code;
+  result.reachableRoots = Object.freeze(
+    error instanceof PathUnreachableError ? [...error.reachableRoots] : [],
+  );
+  return result;
+}
+
 function affects(changed: readonly string[], section: string): boolean {
   return changed.some((name) => name === section || name.startsWith(`${section}.`));
 }
@@ -118,6 +180,7 @@ export class WorkspaceService {
   private readonly filesEmitter = new EventEmitter<omnigent.ChangedFilesChangeEvent>();
   private readonly configurationEmitter = new EventEmitter<omnigent.ConfigurationChangeEvent>();
   private readonly sessionEmitter = new EventEmitter<string | undefined>();
+  private readonly fileSystemEmitter = new EventEmitter<omnigent.FilesChangeEvent>();
   private readonly unsubscribe: () => void;
   private readonly bridge: WorkspaceBridge;
   private source: WorkspaceBridgeState;
@@ -131,6 +194,8 @@ export class WorkspaceService {
   readonly onDidChangeConfiguration = this.configurationEmitter.event;
   /** Fires with the new {@link activeSessionId} when another workspace comes on screen. */
   readonly onDidChangeActiveSessionId = this.sessionEmitter.event;
+  /** Fires when the files of the workspace on screen may have changed on disk. */
+  readonly onDidChangeFiles = this.fileSystemEmitter.event;
 
   constructor(bridge: WorkspaceBridge) {
     this.bridge = bridge;
@@ -166,6 +231,69 @@ export class WorkspaceService {
 
   get servedFromHost(): boolean {
     return this.source.servedFromHost;
+  }
+
+  /** The workspace root on screen; undefined while unknown or without files. */
+  get rootPath(): string | undefined {
+    return this.source.sessionId === null ? undefined : (this.source.rootPath ?? undefined);
+  }
+
+  /** `workspace.fs.readDirectory`: a folder of the workspace on screen at the call. */
+  async readDirectory(path: unknown): Promise<readonly omnigent.FileEntry[]> {
+    const location = locationOf(path, "readDirectory");
+    if (this.bridge.getState().sessionId === null) throw fileSystemError("no workspace is open");
+    try {
+      const files = await this.bridge.readDirectory(location);
+      return Object.freeze(files.map((file) => toFileEntry(file, location)));
+    } catch (error) {
+      throw fileSystemError(error);
+    }
+  }
+
+  /** `workspace.findFiles`: files of the workspace on screen by name, cancellable. */
+  async findFiles(
+    query: omnigent.FileSearchQuery,
+    token?: omnigent.CancellationToken,
+  ): Promise<omnigent.FileSearchComplete> {
+    if (this.bridge.getState().sessionId === null) throw new Error("no workspace is open");
+    const pattern = typeof query?.pattern === "string" ? query.pattern.trim() : "";
+    if (pattern === "" || pattern.length > MAX_PATTERN_LENGTH) {
+      throw new TypeError("findFiles needs a pattern");
+    }
+    const globs = (value: unknown) =>
+      typeof value === "string" ? value.slice(0, MAX_GLOBS_LENGTH) : "";
+    const location = locationOf(query.location, "findFiles");
+    if (token?.isCancellationRequested) throw canceledError();
+    const controller = new AbortController();
+    // A cancelled search settles at once, whether or not its request heeds the abort.
+    let cancel: (() => void) | undefined;
+    const cancelled = new Promise<never>((_, reject) => {
+      cancel = () => reject(canceledError());
+    });
+    cancelled.catch(() => {});
+    const subscription = token?.onCancellationRequested(() => {
+      controller.abort();
+      cancel?.();
+    });
+    try {
+      const result = await Promise.race([
+        this.bridge.findFiles(
+          { pattern, include: globs(query.include), exclude: globs(query.exclude), location },
+          controller.signal,
+        ),
+        cancelled,
+      ]);
+      if (token?.isCancellationRequested) throw canceledError();
+      return Object.freeze({
+        files: Object.freeze(result.files.map((file) => toFileEntry(file, location))),
+        limitHit: result.truncated,
+      });
+    } catch (error) {
+      if (controller.signal.aborted || token?.isCancellationRequested) throw canceledError();
+      throw error instanceof Error ? error : new Error(String(error));
+    } finally {
+      subscription?.dispose();
+    }
   }
 
   /** `workspace.findTextInFiles`: the workspace on screen at the call, cancellable. */
@@ -263,7 +391,8 @@ export class WorkspaceService {
         next.changedFiles !== previous.changedFiles ||
         next.error !== previous.error ||
         next.availability !== previous.availability ||
-        next.servedFromHost !== previous.servedFromHost;
+        next.servedFromHost !== previous.servedFromHost ||
+        next.rootPath !== previous.rootPath;
       if (next.changedFiles !== previous.changedFiles) this.snapshot = this.copy(next);
       const sessionChanged = next.sessionId !== previous.sessionId;
       const changedSettings = Object.entries(SETTINGS)
@@ -277,6 +406,12 @@ export class WorkspaceService {
         );
       }
       if (sessionChanged) this.sessionEmitter.fire(next.sessionId ?? undefined);
+      if (
+        !sessionChanged &&
+        (next.filesRevision ?? 0) !== (previous.filesRevision ?? 0)
+      ) {
+        this.fileSystemEmitter.fire(Object.freeze({ sessionId: next.sessionId ?? undefined }));
+      }
       if (!filesChanged) return;
       this.filesEmitter.fire(
         Object.freeze({
@@ -285,6 +420,7 @@ export class WorkspaceService {
           ...(this.changedFilesError === undefined ? {} : { error: this.changedFilesError }),
           availability: next.availability,
           servedFromHost: next.servedFromHost,
+          rootPath: this.rootPath,
         }),
       );
     });
@@ -296,5 +432,6 @@ export class WorkspaceService {
     this.filesEmitter.dispose();
     this.configurationEmitter.dispose();
     this.sessionEmitter.dispose();
+    this.fileSystemEmitter.dispose();
   }
 }

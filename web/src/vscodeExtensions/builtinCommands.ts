@@ -10,6 +10,8 @@ export const BUILT_IN_COMMAND_OWNER = "omnigent";
 export const SET_CONTEXT_COMMAND = "setContext";
 export const OPEN_FILE_COMMAND = "omnigent.openFile";
 export const REFRESH_CHANGED_FILES_COMMAND = "omnigent.refreshChangedFiles";
+/** Reloads the listings, searches and changed files of the workspace on screen. */
+export const REFRESH_FILES_COMMAND = "omnigent.refreshFiles";
 export const OPEN_SESSION_COMMAND = "omnigent.openSession";
 export const OPEN_SUBAGENT_COMMAND = "omnigent.openSubagent";
 export const SHOW_IN_CHAT_COMMAND = "omnigent.showInChat";
@@ -84,6 +86,9 @@ export function registerBuiltInCommands(
     }),
     commands.register(BUILT_IN_COMMAND_OWNER, REFRESH_CHANGED_FILES_COMMAND, () =>
       services.workspace.refreshChangedFiles(),
+    ),
+    commands.register(BUILT_IN_COMMAND_OWNER, REFRESH_FILES_COMMAND, () =>
+      services.workspace.refreshFiles(),
     ),
     commands.register(BUILT_IN_COMMAND_OWNER, SHOW_IN_CHAT_COMMAND, (sessionId, markerId) => {
       const id = sessionIdOf(SHOW_IN_CHAT_COMMAND, sessionId);

@@ -6,10 +6,15 @@ import type { RailTreeNode } from "../railViews";
 /** The cache key of the roots' children. */
 export const ROOT_KEY = "";
 
+/** A folder's rows animating in (it was expanded) or out (it is collapsing). */
+export type TreeRowMotion = "enter" | "exit";
+
 export interface VisibleTreeRow {
   node: RailTreeNode;
   depth: number;
   open: boolean;
+  /** Set on the rows below a folder that is expanding or collapsing. */
+  motion?: TreeRowMotion;
 }
 
 /** Whether `node` shows its children: the user's choice, else its own collapsible state. */
@@ -22,20 +27,28 @@ export function isNodeOpen(node: RailTreeNode, expanded: ReadonlyMap<string, boo
 export function visibleTreeRows(
   children: ReadonlyMap<string, readonly RailTreeNode[]>,
   expanded: ReadonlyMap<string, boolean>,
+  motions: ReadonlyMap<string, TreeRowMotion> = new Map(),
 ): VisibleTreeRow[] {
   const rows: VisibleTreeRow[] = [];
   const seen = new Set<string>();
-  const walk = (parent: string, depth: number) => {
+  const walk = (parent: string, depth: number, inherited: TreeRowMotion | undefined) => {
     for (const node of children.get(parent) ?? []) {
       // A provider that hands out one element twice must not loop forever.
       if (seen.has(node.handle)) continue;
       seen.add(node.handle);
       const open = isNodeOpen(node, expanded);
-      rows.push({ node, depth, open });
-      if (open) walk(node.handle, depth + 1);
+      const own = motions.get(node.handle);
+      // A collapsing folder already reads as closed; its rows animate out below it.
+      rows.push({
+        node,
+        depth,
+        open: open && own !== "exit",
+        ...(inherited ? { motion: inherited } : {}),
+      });
+      if (open) walk(node.handle, depth + 1, own ?? inherited);
     }
   };
-  walk(ROOT_KEY, 0);
+  walk(ROOT_KEY, 0, undefined);
   return rows;
 }
 
@@ -47,6 +60,33 @@ export function missingChildren(
   return rows
     .filter((row) => row.open && !children.has(row.node.handle))
     .map((row) => row.node.handle);
+}
+
+/** The row to move to from `index` for a navigation key, or undefined to do nothing. */
+export function keyboardTarget(
+  rows: readonly VisibleTreeRow[],
+  index: number,
+  key: string,
+): { index: number } | { toggle: number } | undefined {
+  const row = rows[index];
+  if (!row) return rows.length > 0 && key === "ArrowDown" ? { index: 0 } : undefined;
+  if (key === "ArrowDown") return index + 1 < rows.length ? { index: index + 1 } : undefined;
+  if (key === "ArrowUp") return index > 0 ? { index: index - 1 } : undefined;
+  if (key === "Home") return rows.length > 0 ? { index: 0 } : undefined;
+  if (key === "End") return rows.length > 0 ? { index: rows.length - 1 } : undefined;
+  const collapsible = row.node.collapsible !== "none";
+  if (key === "ArrowRight") {
+    if (collapsible && !row.open) return { toggle: index };
+    if (collapsible && rows[index + 1]?.depth === row.depth + 1) return { index: index + 1 };
+    return undefined;
+  }
+  if (key === "ArrowLeft") {
+    if (collapsible && row.open) return { toggle: index };
+    for (let parent = index - 1; parent >= 0; parent -= 1) {
+      if (rows[parent].depth < row.depth) return { index: parent };
+    }
+  }
+  return undefined;
 }
 
 /** Whether the rows read as a list (no folders), which spaces them like the Changes list. */

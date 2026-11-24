@@ -189,6 +189,7 @@ export function createExtensionApi(
     services.workspace.onDidChangeConfiguration,
     "onDidChangeConfiguration",
   );
+  const onDidChangeFiles = guard(services.workspace.onDidChangeFiles, "onDidChangeFiles");
   const onDidChangeActiveSessionTree = guard(
     services.sessionTree.onDidChangeActiveSessionTree,
     "onDidChangeActiveSessionTree",
@@ -254,6 +255,13 @@ export function createExtensionApi(
         onDidChangeVisibility: () => new Disposable(() => {}),
         filter: "",
         onDidChangeFilter: () => new Disposable(() => {}),
+        setFilter: () => {},
+        filterFields: Object.freeze({}),
+        selection: Object.freeze([]),
+        onDidChangeSelection: () => new Disposable(() => {}),
+        reveal: () => Promise.reject(new Error("the extension was deactivated")),
+        location: undefined,
+        onDidChangeLocation: () => new Disposable(() => {}),
         searchInput: undefined,
         presentation: "tree",
         dispose: () => {},
@@ -482,6 +490,26 @@ export function createExtensionApi(
         return services.workspace.findTextInFiles(query, options, token);
       },
       validateTextSearchQuery: (query: omnigent.TextSearchQuery) => textSearchQueryProblem(query),
+      get rootPath() {
+        return services.workspace.rootPath;
+      },
+      fs: Object.freeze({
+        readDirectory: (path: string) => {
+          if (disposed) {
+            refuse("readDirectory");
+            return Promise.reject(new Error("the extension was deactivated"));
+          }
+          return services.workspace.readDirectory(path);
+        },
+      }),
+      findFiles: (query: omnigent.FileSearchQuery, token?: omnigent.CancellationToken) => {
+        if (disposed) {
+          refuse("findFiles");
+          return Promise.reject(new Error("the extension was deactivated"));
+        }
+        return services.workspace.findFiles(query, token);
+      },
+      onDidChangeFiles,
     }),
     sessions: Object.freeze({
       get activeSession() {

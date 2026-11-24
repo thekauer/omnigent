@@ -4,10 +4,11 @@
 // windowed like them.
 
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { FileIcon, SearchIcon, XIcon } from "lucide-react";
+import { FileIcon, FilterIcon, SearchIcon, XIcon } from "lucide-react";
 import {
   Fragment,
   lazy,
+  type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
   type RefObject,
   Suspense,
@@ -31,12 +32,19 @@ import { cn } from "@/lib/utils";
 import { RunnerAsleepHint } from "../RunnerAsleepHint";
 import { useScrollRestore } from "../useScrollRestore";
 import { ChangedFileRow, FileGroupHeader } from "../ChangedFileRow";
-import { FileRowItem, FolderRowItem } from "../FolderTree";
+import { BrowseLocationBar } from "../BrowseLocationBar";
+import { CopyPathButton } from "../CopyPathButton";
+import { FileRowItem, FolderRowItem, SearchDirRow, TreePlaceholderRow } from "../fileTreeRows";
+import { OpenInMenu } from "../OpenInMenu";
+import { useSession } from "@/hooks/useSession";
+import { useWorkspaceEnvironment } from "@/hooks/useWorkspaceChangedFiles";
+import { isOwnerLevel } from "@/lib/permissionsApi";
 import { railViewIcon } from "../railViewIcons";
 import {
   changedStatusOf,
   type RailTreeDecorationTone,
   type RailTreeModel,
+  type RailRevealRequest,
   type RailTreeNode,
   type RailView,
   type RailViewRegistry,
@@ -47,9 +55,11 @@ import {
 import {
   isListLayout,
   isNodeOpen,
+  keyboardTarget,
   missingChildren,
   readExpandState,
   ROOT_KEY,
+  type TreeRowMotion,
   type VisibleTreeRow,
   visibleTreeRows,
   writeExpandState,
@@ -69,6 +79,10 @@ const MAX_TREE_DEPTH = 32;
 const LIST_ROW_GAP_PX = 2;
 // The Agents list spaces its rows by 1px.
 const SESSION_ROW_GAP_PX = 1;
+// A folder's rows slide in or out for this long, as the classic Files tree's did.
+const TREE_MOTION_MS = 180;
+// A revealed row flashes for as long as the shared flash animation plays.
+const REVEAL_FLASH_MS = 800;
 
 const TONE_CLASS: Record<RailTreeDecorationTone, string> = {
   added: "text-green-600 dark:text-green-400",
@@ -139,12 +153,15 @@ function TreeRow({
   conversationId,
   onToggle,
   onRun,
+  highlighted = false,
 }: {
   row: VisibleTreeRow;
   context: RowContext;
   conversationId: string | undefined;
   onToggle: (node: RailTreeNode) => void;
   onRun: (node: RailTreeNode) => void;
+  /** Briefly flashed, as a row `TreeView.reveal` brought into view. */
+  highlighted?: boolean;
 }) {
   const { node, depth, open } = row;
   const status = changedStatusOf(node.status);
@@ -201,6 +218,9 @@ function TreeRow({
           open={open}
           status={status}
           onToggle={() => onToggle(node)}
+          // A folder's command (such as browsing into it) runs on a double click.
+          onNavigate={node.hasCommand ? () => onRun(node) : undefined}
+          highlighted={highlighted}
         />
       );
     }
@@ -231,20 +251,33 @@ function TreeRow({
       />
     );
   }
+  if (node.resourcePath !== undefined && node.icon === "folder") {
+    // A folder that is not a tree node (a search result): its path, going to it on a click.
+    return (
+      <SearchDirRow path={node.resourcePath} label={node.label} onRevealDir={() => onRun(node)} />
+    );
+  }
   if (node.resourcePath !== undefined) {
     return (
       <FileRowItem
         path={node.resourcePath}
         displayLabel={node.label}
+        // A label with a slash is a path (a search result): truncated at its start.
+        labelIsPath={node.label.includes("/")}
         depth={depth}
         fileStatus={status}
-        bytes={null}
+        bytes={node.size ?? null}
+        highlighted={highlighted}
         // The diffstat before the status letter, as in the list.
         diffstat={node.decoration ? <Decoration decoration={node.decoration} /> : undefined}
         onFileSelect={() => onRun(node)}
         conversationId={conversationId}
       />
     );
+  }
+  if (!node.hasCommand && node.icon === undefined) {
+    // Neither a resource nor a command: a muted line, such as "Loading…" under a folder.
+    return <TreePlaceholderRow depth={depth} text={node.label} />;
   }
   const Icon = railViewIcon(node.icon);
   return (
@@ -412,7 +445,7 @@ function ViewMessageLine({
   const error = view.messageSeverity === "error";
   return (
     <p
-      role={error ? "alert" : undefined}
+      role={error ? "alert" : "status"}
       className={cn(
         "break-words",
         spacious ? "p-2" : "px-2 py-1",
@@ -557,11 +590,20 @@ function SubmenuButton({ action }: { action: RailViewTitleAction }) {
   );
 }
 
-function ActionList({ actions }: { actions: readonly RailViewTitleAction[] }) {
+function ActionList({
+  actions,
+  renderHostAction,
+}: {
+  actions: readonly RailViewTitleAction[];
+  /** Draws an entry of a host-drawn kind (`kind`), such as the filter's fields toggle. */
+  renderHostAction?: (action: RailViewTitleAction) => ReactNode;
+}) {
   return (
     <TooltipProvider>
       {actions.map((action) =>
-        action.items ? (
+        action.kind ? (
+          <Fragment key={action.id}>{renderHostAction?.(action) ?? null}</Fragment>
+        ) : action.items ? (
           <SubmenuButton key={action.id} action={action} />
         ) : (
           <ActionButton key={action.id} action={action} />
@@ -571,19 +613,53 @@ function ActionList({ actions }: { actions: readonly RailViewTitleAction[] }) {
   );
 }
 
+/** A view's location bar (`TreeView.location`): what the session may browse comes from the host. */
+function ViewLocationBar({
+  view,
+  conversationId,
+}: {
+  view: RailView;
+  conversationId: string | undefined;
+}) {
+  const { session } = useSession(conversationId);
+  const environment = useWorkspaceEnvironment(conversationId, { enabled: true });
+  const location = view.location;
+  if (!location) return null;
+  return (
+    <BrowseLocationBar
+      current={location.path}
+      workspace={location.root}
+      hostId={session?.hostId ?? null}
+      canBrowseOutside={isOwnerLevel(session?.permissionLevel ?? null)}
+      reach={environment.data?.reachable ?? null}
+      onNavigate={(path) => view.host?.navigate(conversationId, path)}
+      error={location.error ?? null}
+    />
+  );
+}
+
 function ViewTitle({
   view,
   onClose,
   closeLabel,
+  conversationId,
 }: {
   view: RailView;
   onClose?: () => void;
   closeLabel: string;
+  conversationId: string | undefined;
 }) {
   const TagIcon = railViewIcon(view.tag?.icon);
+  const navigation = view.actions.filter((action) => action.group === "navigation");
+  // Open In sits last, after the drawer's Close, as in the classic Files header.
+  const openIn = navigation.find((action) => action.kind === "openIn");
   return (
     <div className="flex h-11 shrink-0 items-center gap-[2px] px-2">
-      <h2 className="shrink-0 pl-1 font-medium text-ui">{view.title ?? view.name}</h2>
+      {view.locationBar ? (
+        <ViewLocationBar view={view} conversationId={conversationId} />
+      ) : (
+        <h2 className="shrink-0 pl-1 font-medium text-ui">{view.title ?? view.name}</h2>
+      )}
       {view.description && (
         <span className="min-w-0 truncate pl-1.5 text-muted-foreground text-sm">
           {view.description}
@@ -606,7 +682,13 @@ function ViewTitle({
         </TooltipProvider>
       )}
       <div className="ml-auto flex items-center gap-[2px]">
-        <ActionList actions={view.actions.filter((action) => action.group === "navigation")} />
+        {view.location && (
+          // Its own provider, as each header control brings one.
+          <TooltipProvider>
+            <CopyPathButton path={view.location.path} label="Copy folder path" />
+          </TooltipProvider>
+        )}
+        <ActionList actions={navigation.filter((action) => action !== openIn)} />
         {onClose && (
           <button
             type="button"
@@ -617,6 +699,7 @@ function ViewTitle({
             <XIcon className="size-4" />
           </button>
         )}
+        {openIn && view.location && <OpenInMenu path={view.location.path} directory />}
       </div>
     </div>
   );
@@ -635,30 +718,97 @@ function ViewFilter({
   const filter = view.filter;
   const host = view.host;
   const [text, setText] = useState(() => host?.getFilter(conversationId) ?? "");
+  const [fields, setFields] = useState(() => host?.getFilterFields(conversationId) ?? {});
+  const [showFields, setShowFields] = useState(false);
+  // The extension set the text (as when a revealed result ends its search): show it.
+  const revision = view.filterRevision;
+  const revisionRef = useRef(revision);
+  useEffect(() => {
+    if (revisionRef.current === revision) return;
+    revisionRef.current = revision;
+    setText(host?.getFilter(conversationId) ?? "");
+  }, [revision, host, conversationId]);
   if (!filter) return null;
+  const fieldsActive = Object.values(fields).some((value) => value.trim() !== "");
+  const renderHostAction = (action: RailViewTitleAction) =>
+    action.kind === "filterFields" && filter.fields ? (
+      <Tooltip key={action.id}>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            aria-label={showFields ? "Hide search filters" : "Show search filters"}
+            aria-expanded={showFields}
+            data-view-action={action.id}
+            className={cn(
+              "shrink-0",
+              showFields || fieldsActive
+                ? "text-foreground"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+            onClick={() => setShowFields((value) => !value)}
+          >
+            <FilterIcon />
+            {fieldsActive && !showFields && (
+              <span
+                className="absolute top-0.5 right-0.5 size-1.5 rounded-full bg-primary"
+                aria-hidden
+              />
+            )}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom">{action.tooltip ?? action.title}</TooltipContent>
+      </Tooltip>
+    ) : null;
   return (
-    <div
-      className="shrink-0 flex items-center gap-2 px-2 py-2 @max-[400px]/filespanel:flex-col @max-[400px]/filespanel:items-stretch"
-      onClick={(event) => event.stopPropagation()}
-    >
-      <div className="flex min-w-0 flex-1 items-center gap-[2px]">
-        <div className="flex min-w-0 flex-1 items-center gap-[6px] rounded-lg border border-border px-[10px] py-[4px] transition-colors focus-within:border-border-strong">
-          <SearchIcon className="size-4 shrink-0 text-muted-foreground" />
-          <input
-            ref={inputRef}
-            aria-label={filter.ariaLabel}
-            className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-            onChange={(event) => {
-              setText(event.target.value);
-              host?.setFilter(conversationId, event.target.value);
-            }}
-            placeholder={filter.placeholder}
-            type="search"
-            value={text}
+    <div className="shrink-0" onClick={(event) => event.stopPropagation()}>
+      <div className="flex items-center gap-2 px-2 py-2 @max-[400px]/filespanel:flex-col @max-[400px]/filespanel:items-stretch">
+        <div className="flex min-w-0 flex-1 items-center gap-[2px]">
+          <div className="flex min-w-0 flex-1 items-center gap-[6px] rounded-lg border border-border px-[10px] py-[4px] transition-colors focus-within:border-border-strong">
+            <SearchIcon className="size-4 shrink-0 text-muted-foreground" />
+            <input
+              ref={inputRef}
+              aria-label={filter.ariaLabel}
+              className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+              onChange={(event) => {
+                setText(event.target.value);
+                host?.setFilter(conversationId, event.target.value);
+              }}
+              placeholder={filter.placeholder}
+              type="search"
+              value={text}
+            />
+          </div>
+          <ActionList
+            actions={view.actions.filter((action) => action.group === "filter")}
+            renderHostAction={renderHostAction}
           />
         </div>
-        <ActionList actions={view.actions.filter((action) => action.group === "filter")} />
       </div>
+      {showFields && filter.fields && (
+        <div className="flex flex-col gap-1.5 border-border border-t px-3 py-2">
+          {filter.fields.map((field) => (
+            <label key={field.id} className="flex flex-col gap-0.5">
+              <span className="font-medium text-[10px] text-muted-foreground uppercase tracking-wide">
+                {field.label}
+              </span>
+              <input
+                aria-label={field.label}
+                className="w-full rounded border border-border bg-transparent px-2 py-1 font-mono text-sm outline-none placeholder:text-muted-foreground focus:border-ring"
+                onChange={(event) => {
+                  const next = { ...fields, [field.id]: event.target.value };
+                  setFields(next);
+                  host?.setFilterFields(conversationId, next);
+                }}
+                placeholder={field.placeholder}
+                type="text"
+                value={fields[field.id] ?? ""}
+              />
+            </label>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -680,7 +830,19 @@ function ViewTree({
     readExpandState(conversationId, view.id),
   );
   const { children, loaded } = useTreeChildren(tree, expanded);
-  const rows = useMemo(() => visibleTreeRows(children, expanded), [children, expanded]);
+  const [motions, setMotions] = useState<ReadonlyMap<string, TreeRowMotion>>(() => new Map());
+  const motionTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  useEffect(() => {
+    const timers = motionTimers.current;
+    return () => {
+      for (const timer of timers.values()) clearTimeout(timer);
+      timers.clear();
+    };
+  }, []);
+  const rows = useMemo(
+    () => visibleTreeRows(children, expanded, motions),
+    [children, expanded, motions],
+  );
   const listLayout = isListLayout(rows);
   const sessionLayout = rows.some((row) => row.node.sessionId !== undefined);
   // Text matches under their files read as the search results list: no row gap, padded.
@@ -695,24 +857,156 @@ function ViewTree({
     gap: sessionLayout ? SESSION_ROW_GAP_PX : matchLayout ? 0 : listLayout ? LIST_ROW_GAP_PX : 0,
     getItemKey: (index) => rows[index]?.node.handle ?? index,
   });
-  const toggle = useCallback(
-    (node: RailTreeNode) => {
+  const setOpen = useCallback(
+    (handles: readonly string[], open: boolean) => {
       setExpanded((previous) => {
+        if (handles.every((handle) => previous.get(handle) === open)) return previous;
         const next = new Map(previous);
-        next.set(node.handle, !(previous.get(node.handle) ?? node.collapsible === "expanded"));
+        for (const handle of handles) next.set(handle, open);
         writeExpandState(conversationId, view.id, next);
         return next;
       });
     },
     [conversationId, view.id],
   );
-  const run = useCallback(
-    (node: RailTreeNode) => {
-      if (node.hasCommand) tree.runCommand(node.handle);
+  // A folder's rows slide in when it opens and out before it closes, as in the classic Files tree.
+  const startMotion = useCallback(
+    (handle: string, motion: TreeRowMotion) => {
+      const timers = motionTimers.current;
+      clearTimeout(timers.get(handle));
+      setMotions((previous) => new Map(previous).set(handle, motion));
+      const reduceMotion =
+        typeof window !== "undefined" &&
+        window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+      timers.set(
+        handle,
+        setTimeout(
+          () => {
+            timers.delete(handle);
+            if (motion === "exit") setOpen([handle], false);
+            setMotions((previous) => {
+              if (previous.get(handle) !== motion) return previous;
+              const next = new Map(previous);
+              next.delete(handle);
+              return next;
+            });
+          },
+          reduceMotion ? 0 : TREE_MOTION_MS,
+        ),
+      );
+    },
+    [setOpen],
+  );
+  const [selected, setSelected] = useState<string | null>(null);
+  const select = useCallback(
+    (handle: string) => {
+      setSelected(handle);
+      tree.select?.([handle]);
     },
     [tree],
   );
+  const toggle = useCallback(
+    (node: RailTreeNode) => {
+      select(node.handle);
+      const open = isNodeOpen(node, expanded) && motions.get(node.handle) !== "exit";
+      if (node.icon !== "folder") {
+        setOpen([node.handle], !open);
+        return;
+      }
+      if (open) {
+        startMotion(node.handle, "exit");
+        return;
+      }
+      setOpen([node.handle], true);
+      startMotion(node.handle, "enter");
+    },
+    [expanded, motions, select, setOpen, startMotion],
+  );
+  const run = useCallback(
+    (node: RailTreeNode) => {
+      select(node.handle);
+      if (node.hasCommand) tree.runCommand(node.handle);
+    },
+    [select, tree],
+  );
+  // `TreeView.reveal`: open the ancestors, then once the row is there, scroll to it and flash it.
+  const [revealed, setRevealed] = useState<string | null>(null);
+  const [revealTick, setRevealTick] = useState(0);
+  const pendingReveal = useRef<RailRevealRequest | null>(null);
+  const flashTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(flashTimer.current), []);
+  useEffect(() => {
+    const take = tree.takeReveal;
+    if (!take) return;
+    const apply = () => {
+      const request = take(conversationId);
+      if (!request) return;
+      setOpen(
+        request.expand > 0 ? [...request.ancestors, request.handle] : request.ancestors,
+        true,
+      );
+      pendingReveal.current = request;
+      setRevealTick((value) => value + 1);
+    };
+    apply();
+    return tree.subscribeReveal?.(apply);
+  }, [tree, conversationId, setOpen]);
   const ready = loaded && !stale;
+  const focusIndex = useRef<number | null>(null);
+  const [focusTick, setFocusTick] = useState(0);
+  const focusRow = useCallback(
+    (index: number) => {
+      const row = rows[index];
+      if (!row) return;
+      select(row.node.handle);
+      focusIndex.current = index;
+      virtualizer.scrollToIndex(index);
+      setFocusTick((value) => value + 1);
+    },
+    [rows, select, virtualizer],
+  );
+  // Focus lands once the row is drawn (a scrolled-off row mounts after the scroll).
+  useEffect(() => {
+    const index = focusIndex.current;
+    if (index === null) return;
+    const button = scrollRef.current?.querySelector<HTMLElement>(
+      `[data-index="${index}"] button, [data-index="${index}"] a`,
+    );
+    if (!button) return;
+    focusIndex.current = null;
+    button.focus({ preventScroll: true });
+  });
+  useEffect(() => {
+    const request = pendingReveal.current;
+    if (!request || !ready) return;
+    const index = rows.findIndex((row) => row.node.handle === request.handle);
+    // Not there yet: a lazy ancestor is still loading.
+    if (index === -1) return;
+    pendingReveal.current = null;
+    virtualizer.scrollToIndex(index, { align: "center", behavior: "smooth" });
+    setRevealed(request.handle);
+    clearTimeout(flashTimer.current);
+    flashTimer.current = setTimeout(() => setRevealed(null), REVEAL_FLASH_MS);
+    if (request.select) select(request.handle);
+    if (request.focus) {
+      focusIndex.current = index;
+      setFocusTick((value) => value + 1);
+    }
+  }, [rows, ready, revealTick, virtualizer, select]);
+  // Arrow keys, Home and End move between rows; Right and Left open, close or go to the parent.
+  const onKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
+    if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+    const target = event.target as HTMLElement;
+    if (target.closest("input, textarea")) return;
+    const current = target.closest<HTMLElement>("[data-index]");
+    const index = current ? Number(current.dataset.index) : -1;
+    const move = keyboardTarget(rows, index, event.key);
+    if (!move) return;
+    event.preventDefault();
+    if ("toggle" in move) toggle(rows[move.toggle].node);
+    else focusRow(move.index);
+  };
+  void focusTick;
   const handleScroll = useScrollRestore(
     scrollRef,
     conversationId ? `view:${view.id}:${conversationId}` : null,
@@ -739,17 +1033,27 @@ function ViewTree({
               key={item.key}
               data-index={item.index}
               data-tree-item={row.node.handle}
+              aria-selected={selected === row.node.handle || undefined}
               ref={virtualizer.measureElement}
               className="absolute top-0 left-0 w-full"
               style={{ transform: `translateY(${item.start}px)` }}
             >
-              <TreeRow
-                row={row}
-                context={contexts[item.index]}
-                conversationId={conversationId}
-                onToggle={toggle}
-                onRun={run}
-              />
+              <div
+                data-tree-motion={row.motion}
+                className={cn(
+                  row.motion === "enter" && "file-tree-row-enter",
+                  row.motion === "exit" && "file-tree-row-exit",
+                )}
+              >
+                <TreeRow
+                  row={row}
+                  context={contexts[item.index]}
+                  conversationId={conversationId}
+                  onToggle={toggle}
+                  onRun={run}
+                  highlighted={revealed === row.node.handle}
+                />
+              </div>
             </div>
           );
         })}
@@ -763,9 +1067,15 @@ function ViewTree({
       aria-busy={progress !== undefined}
       className={cn(
         "min-h-0 flex-1 overflow-y-auto px-2 pb-2",
-        sessionLayout || matchLayout || view.searchInput ? "pt-2" : listLayout ? "pt-1" : "pt-0",
+        sessionLayout || matchLayout || view.searchInput
+          ? "pt-2"
+          : // The Files tab's search results sit right under its search bar, as its tree does.
+            listLayout && !view.locationBar
+            ? "pt-1"
+            : "pt-0",
       )}
       onScroll={handleScroll}
+      onKeyDown={onKeyDown}
     >
       {progress && <ViewProgress title={progress.title} />}
       {ready && !view.notice && view.message && (
@@ -876,7 +1186,12 @@ export function ExtensionRailView({
         />
       ) : (
         <>
-          <ViewTitle view={view} onClose={onClose} closeLabel={closeLabel} />
+          <ViewTitle
+            view={view}
+            onClose={onClose}
+            closeLabel={closeLabel}
+            conversationId={conversationId}
+          />
           <div className="workspace-panel-header-divider shrink-0 border-t border-border" />
         </>
       )}

@@ -33,6 +33,11 @@ export interface RailViewMenuItem {
 export interface RailViewTitleAction {
   /** The command or submenu id; unique within the view. */
   readonly id: string;
+  /**
+   * A control the host draws itself: the filter's fields toggle, or the Open
+   * In menu for the view's location.
+   */
+  readonly kind?: "filterFields" | "openIn";
   readonly title: string;
   /** The button's tooltip; defaults to the title. */
   readonly tooltip: string | undefined;
@@ -102,8 +107,25 @@ export interface RailTreeNode {
   readonly agentStatus: RailAgentStatus | undefined;
 }
 
+/** `TreeView.reveal`, for the drawn tree: expand the ancestors, then scroll to and mark the row. */
+export interface RailRevealRequest {
+  readonly handle: string;
+  /** From the root down; each is expanded. */
+  readonly ancestors: readonly string[];
+  readonly select: boolean;
+  readonly focus: boolean;
+  /** Levels to expand below the row (0 for none). */
+  readonly expand: number;
+}
+
 /** What the rail needs from a tree view; implemented by the extension host. */
 export interface RailTreeModel {
+  /** The reveal waiting for `sessionId`'s tree, removed as it is taken. */
+  takeReveal?: (sessionId: string | undefined) => RailRevealRequest | undefined;
+  /** Fires when a reveal is waiting. */
+  subscribeReveal?: (listener: () => void) => () => void;
+  /** The rows the user selected, by handle. */
+  select?: (handles: readonly string[]) => void;
   /** Children of `parent`, or the roots; rejects or resolves empty on provider failure. */
   getChildren: (parent: string | undefined) => Promise<readonly RailTreeNode[]>;
   /** Fires when the provider's data changed; the rail reloads what it shows. */
@@ -139,6 +161,21 @@ export interface RailViewHost {
   setSearchInput: (sessionId: string | undefined, value: RailSearchInputValue) => void;
   /** The user submitted the search input. */
   acceptSearchInput: (sessionId: string | undefined) => void;
+  /** The filter's extra field values kept for `sessionId`. */
+  getFilterFields: (sessionId: string | undefined) => Readonly<Record<string, string>>;
+  setFilterFields: (
+    sessionId: string | undefined,
+    fields: Readonly<Record<string, string>>,
+  ) => void;
+  /** The user picked a folder in the location bar (an absolute path). */
+  navigate: (sessionId: string | undefined, path: string) => void;
+}
+
+/** The folder a view browses (`TreeView.location`), absolute paths. */
+export interface RailViewLocation {
+  readonly path: string;
+  readonly root: string;
+  readonly error: string | undefined;
 }
 
 export interface RailSearchInputValue {
@@ -166,6 +203,12 @@ export interface RailSearchInput {
 export interface RailViewFilter {
   readonly placeholder: string;
   readonly ariaLabel: string;
+  /** Extra text fields under the filter, shown by its fields toggle. */
+  readonly fields?: readonly {
+    readonly id: string;
+    readonly label: string;
+    readonly placeholder: string | undefined;
+  }[];
 }
 
 export interface RailViewState {
@@ -192,6 +235,10 @@ export interface RailViewState {
   readonly plan: omnigent.PlanViewContent | undefined;
   /** Running tasks the view shows progress for, latest last. */
   readonly progress: readonly RailViewProgress[];
+  /** The folder the view browses, drawn as its location bar. */
+  readonly location: RailViewLocation | undefined;
+  /** Bumped when the extension set the filter text, so a drawn field shows it. */
+  readonly filterRevision: number;
 }
 
 /** A task shown as progress in a view, while the chat session it started in is on screen. */
@@ -213,6 +260,8 @@ export interface RailViewContribution {
   readonly filter?: RailViewFilter;
   /** A query form in place of the title bar. */
   readonly searchInput?: RailSearchInput;
+  /** The title bar is the location bar (`TreeView.location`). */
+  readonly locationBar?: boolean;
 }
 
 export interface RailView extends RailViewContribution, RailViewState {}
@@ -247,6 +296,8 @@ const INITIAL_STATE: RailViewState = {
   presentation: "tree",
   plan: undefined,
   progress: [],
+  location: undefined,
+  filterRevision: 0,
 };
 
 interface Entry {

@@ -2,13 +2,18 @@
 // renderer tests, against a workspace source the test publishes to.
 import type { QueryClient } from "@tanstack/react-query";
 import { type Mock, vi } from "vitest";
-import type { WorkspaceChangedFile } from "@/hooks/useWorkspaceChangedFiles";
+import type {
+  WorkspaceChangedFile,
+  WorkspaceFile,
+  WorkspaceFileSearchResult,
+} from "@/hooks/useWorkspaceChangedFiles";
 import { type RailViewRegistry, railViews } from "@/shell/railViews";
 import {
   DEFAULT_WORKSPACE_FILE_SETTINGS,
   type WorkspaceActions,
   type WorkspaceBridge,
   type WorkspaceBridgeState,
+  type WorkspaceFileQuery,
   type WorkspaceFileSettings,
   type WorkspaceSource,
   workspaceBridge,
@@ -41,6 +46,12 @@ export interface BuiltInHarness {
   readonly refreshChangedFiles: Mock<() => Promise<void>>;
   readonly updateSettings: Mock<(patch: Partial<WorkspaceFileSettings>) => void>;
   readonly openSession: Mock<(sessionId: string, options: { asSubagent: boolean }) => void>;
+  /** Folder listings ("" the root); entry paths relative to the folder. Rejects for a missing folder. */
+  readonly readDirectory: Mock<(location: string) => Promise<readonly WorkspaceFile[]>>;
+  readonly findFiles: Mock<
+    (query: WorkspaceFileQuery, signal: AbortSignal) => Promise<WorkspaceFileSearchResult>
+  >;
+  readonly refreshFiles: Mock<() => Promise<void>>;
   dispose: () => Promise<void>;
 }
 
@@ -68,6 +79,10 @@ export async function startBuiltIns(
     queryClient?: QueryClient;
     rootSessionId?: string | null;
     agentCostsEnabled?: boolean;
+    /** The workspace root (`/workspace` by default; null for none). */
+    rootPath?: string | null;
+    /** Listings by folder, entry paths relative to it ("" the root). */
+    listings?: Record<string, readonly WorkspaceFile[]>;
   } = {},
 ): Promise<BuiltInHarness> {
   const registry = options.registry ?? railViews;
@@ -81,7 +96,24 @@ export async function startBuiltIns(
     settings: DEFAULT_WORKSPACE_FILE_SETTINGS,
     rootSessionId: options.rootSessionId ?? null,
     agentCostsEnabled: options.agentCostsEnabled ?? false,
+    rootPath: options.rootPath === undefined ? "/workspace" : options.rootPath,
+    filesRevision: 0,
   };
+  const listings = options.listings ?? { "": [] };
+  const readDirectory = vi.fn<(location: string) => Promise<readonly WorkspaceFile[]>>(
+    (location) =>
+      Object.hasOwn(listings, location)
+        ? Promise.resolve(listings[location])
+        : Promise.reject(new Error("404 Not Found")),
+  );
+  const findFiles = vi.fn<
+    (query: WorkspaceFileQuery, signal: AbortSignal) => Promise<WorkspaceFileSearchResult>
+  >(() => Promise.resolve({ files: [], truncated: false, hasMore: false, unavailable: false }));
+  const refreshFiles = vi.fn<() => Promise<void>>(() => {
+    state = { ...state, filesRevision: (state.filesRevision ?? 0) + 1 };
+    source.update(state);
+    return Promise.resolve();
+  });
   const openFile = vi.fn<(path: string) => void>();
   const refreshChangedFiles = vi.fn<() => Promise<void>>(() => Promise.resolve());
   const updateSettings = vi.fn<(patch: Partial<WorkspaceFileSettings>) => void>((patch) => {
@@ -94,6 +126,9 @@ export async function startBuiltIns(
     refreshChangedFiles,
     updateSettings,
     openSession,
+    readDirectory,
+    findFiles,
+    refreshFiles,
     ...(options.queryClient ? { queryClient: options.queryClient } : {}),
   };
   source.update(state);
@@ -121,6 +156,9 @@ export async function startBuiltIns(
     refreshChangedFiles,
     updateSettings,
     openSession,
+    readDirectory,
+    findFiles,
+    refreshFiles,
     dispose: async () => {
       await runtime.dispose();
       source.dispose();

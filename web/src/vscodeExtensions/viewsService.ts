@@ -3,6 +3,7 @@
 // each view's filter text per chat session, and backs `window.createTreeView`.
 import type * as omnigent from "omnigent";
 import type {
+  RailViewLocation,
   RailViewBadge,
   RailViewHandle,
   RailViewHost,
@@ -18,12 +19,14 @@ import { isRailViewIconName } from "@/shell/railViewIcons";
 import { type Disposable, EventEmitter } from "./base";
 import { errorText } from "./progress";
 import type { ContextKeyService } from "./contextKeys";
-import type {
-  CommandContribution,
-  ExtensionContributions,
-  ViewContribution,
-  MenuItemContribution,
-  SubmenuContribution,
+import {
+  type CommandContribution,
+  type ExtensionContributions,
+  type ViewContribution,
+  type MenuItemContribution,
+  OPEN_IN_SUBMENU,
+  type SubmenuContribution,
+  TOGGLE_FILTER_FIELDS_COMMAND,
 } from "./contributions";
 import { createTreeViewModel } from "./treeView";
 import { planContentOf } from "./planContent";
@@ -102,10 +105,14 @@ export interface ViewsServiceOptions {
 
 interface TreeViewEntry {
   readonly owner: object;
+  /** Fires with the absolute folder the user picked in the location bar. */
+  readonly locationPicked: EventEmitter<string>;
   readonly visibility: EventEmitter<omnigent.TreeViewVisibilityChangeEvent>;
   readonly filterChanged: EventEmitter<string>;
   /** The filter text last delivered, to fire only on a real change. */
   lastFilter: string;
+  /** JSON of the filter fields last delivered. */
+  lastFields: string;
   readonly inputChanged: EventEmitter<RailSearchInputValue>;
   readonly inputAccepted: EventEmitter<RailSearchInputValue>;
   /** The search input value last delivered. */
@@ -128,6 +135,10 @@ interface ViewEntry {
   shown: number;
   /** Filter text per chat session ("" key without one). */
   readonly filters: Map<string, string>;
+  /** The filter's extra field values per chat session. */
+  readonly filterFields: Map<string, Readonly<Record<string, string>>>;
+  /** The contributed extra field ids of the filter. */
+  readonly filterFieldIds: readonly string[];
   readonly searchInput: ViewContribution["searchInput"];
   /** Search input values per chat session. */
   readonly inputs: Map<string, RailSearchInputValue>;
@@ -179,6 +190,36 @@ function tagOf(value: unknown): RailViewTag | undefined {
 }
 
 const sessionKey = (sessionId: string | undefined) => sessionId ?? "";
+const NO_FIELDS: Readonly<Record<string, string>> = Object.freeze({});
+
+/** Field values with only the contributed ids, capped. */
+function fieldValuesOf(value: unknown, ids: readonly string[]): Readonly<Record<string, string>> {
+  const record = (typeof value === "object" && value !== null ? value : {}) as Record<
+    string,
+    unknown
+  >;
+  return Object.freeze(
+    Object.fromEntries(
+      ids.map((id) => {
+        const text = Object.hasOwn(record, id) ? record[id] : undefined;
+        return [id, typeof text === "string" ? text.slice(0, MAX_FILTER) : ""];
+      }),
+    ),
+  );
+}
+
+function locationOf(value: unknown): RailViewLocation | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const { path, root, error } = value as { path?: unknown; root?: unknown; error?: unknown };
+  if (typeof path !== "string" || path === "" || typeof root !== "string" || root === "") {
+    return undefined;
+  }
+  return Object.freeze({
+    path: path.slice(0, 4096),
+    root: root.slice(0, 4096),
+    error: textOf(error, MAX_VIEW_TEXT * 5) || undefined,
+  });
+}
 
 const CONTEXT_REFERENCE = /\$\{([A-Za-z0-9_.:-]{1,128})\}/g;
 
@@ -249,8 +290,10 @@ export class ViewsService {
       const tree = entry.tree;
       if (!tree) continue;
       const filter = entry.filters.get(sessionKey(session)) ?? "";
-      if (filter !== tree.lastFilter) {
+      const fieldsKey = JSON.stringify(this.fieldsFor(entry, session));
+      if (filter !== tree.lastFilter || fieldsKey !== tree.lastFields) {
         tree.lastFilter = filter;
+        tree.lastFields = fieldsKey;
         tree.filterChanged.fire(filter);
       }
       if (entry.searchInput) {
@@ -262,6 +305,10 @@ export class ViewsService {
       }
       tree.refresh();
     }
+  }
+
+  private fieldsFor(entry: ViewEntry, sessionId: string | undefined) {
+    return entry.filterFields.get(sessionKey(sessionId)) ?? fieldValuesOf({}, entry.filterFieldIds);
   }
 
   private inputFor(entry: ViewEntry, sessionId: string | undefined): RailSearchInputValue {
@@ -285,6 +332,34 @@ export class ViewsService {
           tree.lastFilter = value;
           tree.filterChanged.fire(value);
         }
+      },
+      getFilterFields: (sessionId: string | undefined) => {
+        const view = entry();
+        return view ? this.fieldsFor(view, sessionId) : NO_FIELDS;
+      },
+      setFilterFields: (
+        sessionId: string | undefined,
+        fields: Readonly<Record<string, string>>,
+      ) => {
+        const view = entry();
+        if (!view || view.filterFieldIds.length === 0) return;
+        const key = sessionKey(sessionId);
+        const values = fieldValuesOf(fields, view.filterFieldIds);
+        view.filterFields.delete(key);
+        view.filterFields.set(key, values);
+        trimSessions(view.filterFields);
+        const tree = view.tree;
+        const json = JSON.stringify(values);
+        if (tree && key === sessionKey(this.currentSession()) && tree.lastFields !== json) {
+          tree.lastFields = json;
+          tree.filterChanged.fire(tree.lastFilter);
+        }
+      },
+      navigate: (sessionId: string | undefined, path: string) => {
+        const tree = entry()?.tree;
+        if (!tree || typeof path !== "string" || path === "") return;
+        if (sessionKey(sessionId) !== sessionKey(this.currentSession())) return;
+        tree.locationPicked.fire(path.slice(0, 4096));
       },
       reportVisible: () => {
         const view = entry();
@@ -374,6 +449,7 @@ export class ViewsService {
           ...(view.builtInTab === undefined ? {} : { builtInTab: view.builtInTab }),
           ...(view.filter === undefined ? {} : { filter: view.filter }),
           ...(view.searchInput === undefined ? {} : { searchInput: view.searchInput }),
+          ...(view.location ? { locationBar: true } : {}),
         },
         view.order,
       );
@@ -385,6 +461,8 @@ export class ViewsService {
         plan: undefined,
         shown: 0,
         filters: new Map(),
+        filterFields: new Map(),
+        filterFieldIds: (view.filter?.fields ?? []).map((field) => field.id),
         searchInput: view.searchInput,
         inputs: new Map(),
         progress: [],
@@ -478,6 +556,21 @@ export class ViewsService {
       if (item.when && !item.when.evaluate(lookup)) continue;
       const id = item.submenu ?? item.command;
       if (actions.some((action) => action.id === id)) continue;
+      if (id === TOGGLE_FILTER_FIELDS_COMMAND || id === OPEN_IN_SUBMENU) {
+        // Controls the host draws itself: the filter's fields toggle, the Open In menu.
+        actions.push({
+          id,
+          kind: id === OPEN_IN_SUBMENU ? "openIn" : "filterFields",
+          title: id === OPEN_IN_SUBMENU ? "Open in" : "Files to include / exclude",
+          tooltip: interpolate(item.tooltip, lookup),
+          icon: undefined,
+          toggled: undefined,
+          tone: undefined,
+          group: item.group,
+          run: () => Promise.resolve(),
+        });
+        continue;
+      }
       if (item.submenu !== undefined) {
         const submenu = this.submenus.get(item.submenu);
         if (!submenu) continue;
@@ -529,8 +622,9 @@ export class ViewsService {
     for (const [viewId, entry] of this.views) {
       const actions = this.titleActions(viewId);
       const key = JSON.stringify(
-        actions.map(({ id, title, tooltip, icon, toggled, tone, group, items }) => [
+        actions.map(({ id, kind, title, tooltip, icon, toggled, tone, group, items }) => [
           id,
+          kind,
           title,
           tooltip,
           icon,
@@ -579,6 +673,10 @@ export class ViewsService {
     });
     const treeEntry: TreeViewEntry = {
       owner: {},
+      locationPicked: new EventEmitter((error) =>
+        logError("onDidChangeLocation listener threw", error),
+      ),
+      lastFields: JSON.stringify(this.fieldsFor(entry, this.currentSession())),
       visibility: new EventEmitter((error) =>
         logError("onDidChangeVisibility listener threw", error),
       ),
@@ -627,6 +725,14 @@ export class ViewsService {
         }
       : undefined;
     let presentation: "tree" | "graph" = "tree";
+    let location: RailViewLocation | undefined;
+    let filterRevision = 0;
+    const selectionChanged = new EventEmitter<omnigent.TreeViewSelectionChangeEvent<T>>((error) =>
+      logError("onDidChangeSelection listener threw", error),
+    );
+    const stopSelection = tree.onSelection((selection) => {
+      if (!disposed) selectionChanged.fire(Object.freeze({ selection }));
+    });
     entry.tree = treeEntry;
     const state: {
       title: string | undefined;
@@ -648,6 +754,7 @@ export class ViewsService {
     let disposed = false;
     const currentSession = () => this.currentSession();
     const currentInput = () => this.inputFor(entry, currentSession());
+    const currentFields = () => this.fieldsFor(entry, currentSession());
     entry.handle.update({ tree: tree.model });
     const update = () => {
       if (disposed) return;
@@ -730,6 +837,41 @@ export class ViewsService {
         return disposed ? "" : (entry.filters.get(sessionKey(currentSession())) ?? "");
       },
       onDidChangeFilter: treeEntry.filterChanged.event,
+      setFilter: (text: string) => {
+        if (disposed) return;
+        const session = currentSession();
+        const key = sessionKey(session);
+        const value = String(text ?? "").slice(0, MAX_FILTER);
+        if ((entry.filters.get(key) ?? "") === value) return;
+        entry.filters.delete(key);
+        if (value !== "") entry.filters.set(key, value);
+        trimSessions(entry.filters);
+        filterRevision += 1;
+        entry.handle.update({ filterRevision });
+        if (treeEntry.lastFilter !== value) {
+          treeEntry.lastFilter = value;
+          treeEntry.filterChanged.fire(value);
+        }
+      },
+      get filterFields() {
+        return disposed ? NO_FIELDS : currentFields();
+      },
+      get selection() {
+        return disposed ? Object.freeze([]) : tree.selection();
+      },
+      onDidChangeSelection: selectionChanged.event,
+      reveal: (element: T, revealOptions?: omnigent.TreeViewRevealOptions) =>
+        disposed
+          ? Promise.reject(new Error("the tree view was disposed"))
+          : tree.reveal(element, revealOptions, currentSession()),
+      get location() {
+        return location;
+      },
+      set location(value) {
+        location = locationOf(value);
+        if (!disposed) entry.handle.update({ location });
+      },
+      onDidChangeLocation: treeEntry.locationPicked.event,
       searchInput,
       get presentation() {
         return presentation;
@@ -742,6 +884,9 @@ export class ViewsService {
         if (disposed) return;
         disposed = true;
         tree.dispose();
+        stopSelection();
+        selectionChanged.dispose();
+        treeEntry.locationPicked.dispose();
         treeEntry.visibility.dispose();
         treeEntry.filterChanged.dispose();
         treeEntry.inputChanged.dispose();
@@ -761,6 +906,7 @@ export class ViewsService {
             searchValidation: undefined,
             searchEnabled: true,
             presentation: "tree",
+            location: undefined,
           });
         }
       },

@@ -7,7 +7,11 @@
 
 import type { QueryClient } from "@tanstack/react-query";
 import type * as omnigent from "omnigent";
-import type { WorkspaceChangedFile } from "@/hooks/useWorkspaceChangedFiles";
+import type {
+  WorkspaceChangedFile,
+  WorkspaceFile,
+  WorkspaceFileSearchResult,
+} from "@/hooks/useWorkspaceChangedFiles";
 import type { ChangedSort } from "@/lib/changedSort";
 
 /** Why a workspace cannot be read right now, when the shell knows. */
@@ -34,6 +38,27 @@ export interface WorkspaceBridgeState {
   readonly rootSessionId?: string | null;
   /** Whether the server reports per-agent costs (the session overview feature). */
   readonly agentCostsEnabled?: boolean;
+  /** The workspace root's absolute path: undefined while unknown, null without a filesystem. */
+  readonly rootPath?: string | null;
+  /** Bumped whenever the session's file listings were invalidated (a turn ended, the server said so). */
+  readonly filesRevision?: number;
+}
+
+/** The session has no filesystem environment (its listing answered 404). */
+export class WorkspaceUnavailableError extends Error {
+  constructor() {
+    super("This workspace has no files");
+    this.name = "WorkspaceUnavailableError";
+  }
+}
+
+/** A file search of the workspace (or a browsed folder) by name, with include and exclude globs. */
+export interface WorkspaceFileQuery {
+  readonly pattern: string;
+  readonly include: string;
+  readonly exclude: string;
+  /** "" for the workspace root, a workspace-relative folder, or an absolute host path. */
+  readonly location: string;
 }
 
 /** Where a file opens: a 1-based line and column. */
@@ -50,6 +75,18 @@ export interface WorkspaceActions {
   openSession?: (sessionId: string, options: { asSubagent: boolean }) => void;
   /** The query cache the surface's session data lives in. */
   readonly queryClient?: QueryClient;
+  /**
+   * Lists a folder ("" the root, workspace-relative, or absolute on the host);
+   * entry paths are relative to it. Rejects with the listing's error.
+   */
+  readDirectory?: (location: string) => Promise<readonly WorkspaceFile[]>;
+  /** Searches files by name; result paths are relative to the query's location. */
+  findFiles?: (
+    query: WorkspaceFileQuery,
+    signal: AbortSignal,
+  ) => Promise<WorkspaceFileSearchResult>;
+  /** Marks the session's listings and searches stale and reloads its changed files. */
+  refreshFiles?: () => Promise<void>;
 }
 
 /** A task action the composer takes: run, continue, proceed with or retry a task. */
@@ -131,7 +168,9 @@ function sameState(left: WorkspaceBridgeState, right: WorkspaceBridgeState): boo
     left.settings.sortOrder === right.settings.sortOrder &&
     left.settings.showHidden === right.settings.showHidden &&
     (left.rootSessionId ?? null) === (right.rootSessionId ?? null) &&
-    (left.agentCostsEnabled ?? false) === (right.agentCostsEnabled ?? false)
+    (left.agentCostsEnabled ?? false) === (right.agentCostsEnabled ?? false) &&
+    left.rootPath === right.rootPath &&
+    (left.filesRevision ?? 0) === (right.filesRevision ?? 0)
   );
 }
 
@@ -334,6 +373,40 @@ export class WorkspaceBridge {
 
   async refreshChangedFiles(): Promise<void> {
     await this.actions().refreshChangedFiles();
+  }
+
+  /** Lists a folder of the workspace on screen; see {@link WorkspaceActions.readDirectory}. */
+  readDirectory(location: string): Promise<readonly WorkspaceFile[]> {
+    const read = this.actions().readDirectory;
+    if (!read) return Promise.reject(new Error("this workspace has no files"));
+    return read(location);
+  }
+
+  findFiles(query: WorkspaceFileQuery, signal: AbortSignal): Promise<WorkspaceFileSearchResult> {
+    const find = this.actions().findFiles;
+    if (!find) return Promise.reject(new Error("this workspace has no files"));
+    return find(query, signal);
+  }
+
+  async refreshFiles(): Promise<void> {
+    const actions = this.actions();
+    await (actions.refreshFiles ?? actions.refreshChangedFiles)();
+  }
+
+  private commandRunner: ((command: string, args: readonly unknown[]) => Promise<unknown>) | null =
+    null;
+
+  /** Set by the extension host: how the shell runs an extension's command. */
+  setCommandRunner(
+    runner: ((command: string, args: readonly unknown[]) => Promise<unknown>) | null,
+  ): void {
+    this.commandRunner = runner;
+  }
+
+  /** Runs a command of the window's extensions (such as `omnigent.revealInFiles`) from the shell. */
+  executeCommand(command: string, ...args: unknown[]): Promise<unknown> {
+    if (!this.commandRunner) return Promise.reject(new Error("no extension host is running"));
+    return this.commandRunner(command, args);
   }
 
   updateSettings(patch: Partial<WorkspaceFileSettings>): void {

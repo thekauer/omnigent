@@ -4,6 +4,7 @@
 import type * as omnigent from "omnigent";
 import { isThenable } from "@/lib/thenable";
 import type {
+  RailRevealRequest,
   RailAgentState,
   RailAgentStatus,
   RailTreeDecorationTone,
@@ -15,6 +16,10 @@ import type {
 import { isRailViewIconName } from "@/shell/railViewIcons";
 
 const MAX_LABEL = 200;
+// Text-match lines and path labels keep their tail (a match past column 200, a deep path).
+const MAX_LONG_LABEL = 2000;
+const MAX_REVEAL_DEPTH = 64;
+const MAX_REVEAL_EXPAND = 3;
 const MAX_DESCRIPTION = 200;
 const MAX_TOOLTIP = 500;
 const MAX_PATH = 4096;
@@ -50,6 +55,11 @@ export interface TreeViewModelOptions {
   logError: (message: string, error?: unknown) => void;
   /** The session the provider's data is for (the workspace on screen). */
   dataSessionId?: () => string | undefined;
+}
+
+/** The handle an element with a `TreeItem.id` gets (others are named by their label). */
+export function handleOfId(id: string): string {
+  return `id:${id.slice(0, MAX_ID)}`;
 }
 
 function text(value: unknown, max: number): string | undefined {
@@ -172,10 +182,11 @@ export function sanitizeTreeItem(
   handle: string,
 ): { node: RailTreeNode; command: { command: string; args: unknown[] } | undefined } {
   const resourcePath = resourcePathOf(item.resourceUri);
-  const label = (labelOf(item.label) ?? (resourcePath ? basename(resourcePath) : "")).slice(
-    0,
-    MAX_LABEL,
-  );
+  const rawLabel = labelOf(item.label) ?? (resourcePath ? basename(resourcePath) : "");
+  const longLabel =
+    Number.isInteger((item as { line?: unknown }).line) ||
+    (resourcePath !== undefined && rawLabel.includes("/"));
+  const label = rawLabel.slice(0, longLabel ? MAX_LONG_LABEL : MAX_LABEL);
   const description =
     (item.description as unknown) === true && resourcePath !== undefined
       ? dirname(resourcePath)
@@ -233,11 +244,29 @@ interface RowCommand {
   args: unknown[];
 }
 
+export interface TreeViewModelHandle<T> {
+  model: RailTreeModel;
+  dispose: () => void;
+  refresh: () => void;
+  /** Asks the drawn tree of `sessionId` to reveal `element` (now, or once drawn). */
+  reveal: (
+    element: T,
+    options: omnigent.TreeViewRevealOptions | undefined,
+    sessionId: string | undefined,
+  ) => Promise<void>;
+  /** The selected elements, from the latest selection the drawn tree reported. */
+  readonly selection: () => readonly T[];
+  /** Fires with the new selection when the drawn tree changes it. */
+  onSelection: (listener: (selection: readonly T[]) => void) => () => void;
+}
+
+const sessionKeyOf = (sessionId: string | undefined) => sessionId ?? "";
+
 /** The rail-side model of one tree view; `dispose` stops change events. */
 export function createTreeViewModel<T>(
   provider: omnigent.TreeDataProvider<T>,
   options: TreeViewModelOptions,
-): { model: RailTreeModel; dispose: () => void; refresh: () => void } {
+): TreeViewModelHandle<T> {
   // Handles of the current root load and the one before it (rows still on screen
   // while a reload runs); older ones are dropped, so the maps do not grow.
   let elements = new Map<string, T>();
@@ -306,7 +335,7 @@ export function createTreeViewModel<T>(
       // An item's id names it across refreshes; otherwise its label under its parent does.
       const base =
         typeof item.id === "string" && item.id !== ""
-          ? `id:${item.id.slice(0, MAX_ID)}`
+          ? handleOfId(item.id)
           : `${parent ?? ""}/${labelOf(item.label) ?? resourcePathOf(item.resourceUri) ?? ""}`;
       let handle = base;
       for (let copy = 2; used.has(handle); copy += 1) handle = `${base}#${copy}`;
@@ -320,8 +349,85 @@ export function createTreeViewModel<T>(
     return Object.freeze(nodes);
   };
 
+  // Reveals waiting for their session's tree to be drawn, one per session (the latest wins).
+  const pendingReveals = new Map<string, RailRevealRequest>();
+  const revealListeners = new Set<() => void>();
+  let selection: readonly T[] = Object.freeze([]);
+  const selectionListeners = new Set<(selection: readonly T[]) => void>();
+
+  const handleOf = async (element: T): Promise<string> => {
+    const item = await settle(provider.getTreeItem(element));
+    if (typeof item?.id !== "string" || item.id === "") {
+      throw new Error("reveal needs a TreeItem.id on the element and its ancestors");
+    }
+    return handleOfId(item.id);
+  };
+
+  const reveal = async (
+    element: T,
+    revealOptions: omnigent.TreeViewRevealOptions | undefined,
+    sessionId: string | undefined,
+  ): Promise<void> => {
+    if (disposed) return;
+    if (typeof provider.getParent !== "function") {
+      throw new Error("reveal needs a TreeDataProvider with getParent");
+    }
+    const handle = await handleOf(element);
+    const ancestors: string[] = [];
+    let current: T | null | undefined = await settle(provider.getParent(element));
+    while (current !== null && current !== undefined) {
+      if (ancestors.length >= MAX_REVEAL_DEPTH) throw new Error("reveal: the tree is too deep");
+      // Each parent is only known once its child's lookup answered: one level at a time.
+      // oxlint-disable-next-line no-await-in-loop
+      ancestors.unshift(await handleOf(current));
+      // oxlint-disable-next-line no-await-in-loop
+      current = await settle(provider.getParent(current));
+    }
+    const expand = revealOptions?.expand;
+    const request: RailRevealRequest = Object.freeze({
+      handle,
+      ancestors: Object.freeze(ancestors),
+      select: revealOptions?.select !== false,
+      focus: revealOptions?.focus === true,
+      expand:
+        expand === true
+          ? 1
+          : typeof expand === "number" && Number.isFinite(expand)
+            ? Math.max(0, Math.min(MAX_REVEAL_EXPAND, Math.floor(expand)))
+            : 0,
+    });
+    if (disposed) return;
+    pendingReveals.set(sessionKeyOf(sessionId), request);
+    for (const listener of [...revealListeners]) listener();
+  };
+
   const model: RailTreeModel = {
     getChildren,
+    takeReveal: (sessionId) => {
+      const key = sessionKeyOf(sessionId);
+      const request = pendingReveals.get(key);
+      pendingReveals.delete(key);
+      return request;
+    },
+    subscribeReveal: (listener) => {
+      revealListeners.add(listener);
+      return () => revealListeners.delete(listener);
+    },
+    select: (handles) => {
+      if (disposed) return;
+      const next = handles.flatMap((handle) => {
+        const lookup = elementOf(handle);
+        return lookup.found ? [lookup.element as T] : [];
+      });
+      if (
+        next.length === selection.length &&
+        next.every((value, index) => value === selection[index])
+      ) {
+        return;
+      }
+      selection = Object.freeze(next);
+      for (const listener of [...selectionListeners]) listener(selection);
+    },
     ...(options.dataSessionId ? { dataSessionId: options.dataSessionId } : {}),
     subscribe: (listener) => {
       listeners.add(listener);
@@ -337,6 +443,12 @@ export function createTreeViewModel<T>(
   };
   return {
     model,
+    reveal,
+    selection: () => selection,
+    onSelection: (listener) => {
+      selectionListeners.add(listener);
+      return () => selectionListeners.delete(listener);
+    },
     refresh: () => {
       if (disposed) return;
       for (const listener of [...listeners]) listener();
@@ -344,6 +456,9 @@ export function createTreeViewModel<T>(
     dispose: () => {
       disposed = true;
       listeners.clear();
+      revealListeners.clear();
+      selectionListeners.clear();
+      pendingReveals.clear();
       subscription?.dispose();
       elements.clear();
       commands.clear();
