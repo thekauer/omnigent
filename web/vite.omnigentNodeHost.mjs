@@ -348,6 +348,9 @@ async function execute({ callId, extensionId, command, args }) {
   }
   /** @type {object} */
   let outcome;
+  // Sent (and written to the pipe) before the handler runs, so the dev server
+  // can name the command even if it then blocks this event loop.
+  send({ type: "callStarted", callId });
   try {
     const value = await currentCall.run({ callId, extensionId }, () =>
       entry.handler(...(args ?? [])),
@@ -421,6 +424,10 @@ process.on("message", (message) => {
       break;
     case "cancel":
       cancelledCalls.add(message.callId);
+      break;
+    case "ping":
+      // The dev server's heartbeat: no answer means this event loop is blocked.
+      send({ type: "pong", seq: message.seq });
       break;
     case "shutdown":
       void deactivateAll().finally(() => exitHost(0));

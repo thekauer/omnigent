@@ -1,12 +1,13 @@
 // The Node extension host survives and recovers from misbehaving extensions:
 // uncaught throws, process.exit, hard crashes (auto-restart with backoff),
-// hung commands (per-call timeout, cancel on disconnect, forced restart), and
+// hung commands (per-call timeout, cancel on disconnect, forced restart), a
+// blocked event loop (heartbeat kill and restart), and
 // the command endpoint answers 503 while the host is down and 400 for a bad path.
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, request, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   COMMAND_TOKEN_HEADER,
   createCommandEndpoint,
@@ -47,6 +48,12 @@ export function activate(context) {
     setTimeout(() => process.stdout.write("ld\\n"), 40);
     return "written";
   });
+  register("acme.crash.spin", (ms) => {
+    const end = Date.now() + ms;
+    while (Date.now() < end) {}
+    return "spun";
+  });
+  register("acme.crash.wait", (ms) => new Promise((resolve) => setTimeout(() => resolve("waited"), ms)));
   register("acme.crash.spawnSleeper", () => {
     const child = spawn("sleep", ["60"], { stdio: "ignore" });
     return child.pid;
@@ -54,8 +61,18 @@ export function activate(context) {
 }
 `;
 
+const OTHER_ENTRY = `
+import * as omnigent from "omnigent/node";
+export function activate(context) {
+  context.subscriptions.push(
+    omnigent.commands.registerCommand("acme.other.echo", (value) => ({ value, pid: process.pid })),
+  );
+}
+`;
+
 let workspace: string;
 let description: NodeExtensionDescription;
+let other: NodeExtensionDescription;
 
 beforeAll(() => {
   workspace = mkdtempSync(path.join(tmpdir(), "omnigent-node-host-robust-"));
@@ -68,6 +85,16 @@ beforeAll(() => {
     version: "1.0.0",
     directory: folder,
     mainPath: path.join(folder, "src", "node.js"),
+  };
+  const otherFolder = path.join(workspace, "other");
+  mkdirSync(otherFolder, { recursive: true });
+  writeFileSync(path.join(otherFolder, "node.js"), OTHER_ENTRY);
+  writeFileSync(path.join(otherFolder, "package.json"), JSON.stringify({ type: "module" }));
+  other = {
+    id: "acme.other",
+    version: "1.0.0",
+    directory: otherFolder,
+    mainPath: path.join(otherFolder, "node.js"),
   };
 });
 
@@ -113,6 +140,15 @@ async function waitFor(check: () => boolean, timeoutMs = 10_000): Promise<void> 
     await sleep(20);
   }
 }
+
+const alive = (pid: number) => {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+};
 
 const echoPid = async (host: NodeExtensionHost) =>
   ((await host.execute("acme.crash", "acme.crash.echo", [1])) as { pid: number }).pid;
@@ -242,6 +278,20 @@ describe("NodeExtensionHost hung commands", () => {
     expect(await echoPid(host)).not.toBe(pid);
   });
 
+  it("logs a requested restart with no command running", async () => {
+    const { host, logged } = makeHost();
+    await host.start([description]);
+    const pid = await echoPid(host);
+    host.scheduleRestart([description], 10);
+    await waitFor(() =>
+      logged.some(({ line }) => line.includes("restarting for an extension change")),
+    );
+    const entry = logged.find(({ line }) => line.includes("restarting for an extension change"));
+    expect(entry?.level).toBe("log");
+    await host.ready;
+    expect(await echoPid(host)).not.toBe(pid);
+  });
+
   it("restarts as soon as the running calls finish, before the grace period", async () => {
     const { host } = makeHost({ restartGraceMs: 60_000 });
     await host.start([description]);
@@ -259,6 +309,75 @@ describe("NodeExtensionHost hung commands", () => {
       return newPid !== undefined && newPid !== pid;
     });
     expect(Date.now() - started).toBeLessThan(5000);
+  });
+});
+
+describe("NodeExtensionHost heartbeat", () => {
+  it.skipIf(process.platform === "win32")(
+    "kills and restarts a host whose command busy-loops, failing calls in flight",
+    async () => {
+      const { host, logged } = makeHost({ heartbeatIntervalMs: 100, heartbeatMaxMisses: 5 });
+      await host.start([description, other]);
+      const pid = await echoPid(host);
+      const sleeper = (await host.execute("acme.crash", "acme.crash.spawnSleeper", [])) as number;
+      expect(alive(sleeper)).toBe(true);
+
+      const started = Date.now();
+      const spin = host.execute("acme.crash", "acme.crash.spin", [60_000]).catch((e: Error) => e);
+      // Another extension's call queued behind the busy loop is failed too, not wedged.
+      await sleep(50);
+      const queued = host.execute("acme.other", "acme.other.echo", [1]).catch((e: Error) => e);
+      const spinError = await spin;
+      const elapsed = Date.now() - started;
+      expect(spinError).toBeInstanceOf(Error);
+      expect((spinError as Error).message).toContain("stopped responding");
+      expect((spinError as Error).message).toContain("acme.crash: acme.crash.spin");
+      expect(((await queued) as Error).message).toContain("stopped responding");
+      // Five 100ms pings, well inside the 60s loop.
+      expect(elapsed).toBeLessThan(3000);
+      const report = logged.find(({ line }) => line.includes("not responding"));
+      expect(report?.level).toBe("error");
+      expect(report?.line).toContain("5 heartbeats missed");
+      expect(report?.line).toMatch(/while running acme\.crash: acme\.crash\.spin \(for \d+ms\)/);
+      expect(report?.line).toContain("with acme.other: acme.other.echo queued");
+      expect(logged.some(({ line }) => /restarting in \d+ms/.test(line))).toBe(true);
+
+      await waitFor(() => host.status === "running");
+      const otherAnswer = (await host.execute("acme.other", "acme.other.echo", [2])) as {
+        value: number;
+        pid: number;
+      };
+      expect(otherAnswer.value).toBe(2);
+      expect(otherAnswer.pid).not.toBe(pid);
+      // Neither the old host nor what its extensions spawned is left behind.
+      await waitFor(() => !alive(pid) && !alive(sleeper));
+    },
+  );
+
+  it("does not trip on a long async command or a short synchronous one", async () => {
+    const { host, logged } = makeHost({ heartbeatIntervalMs: 100, heartbeatMaxMisses: 3 });
+    await host.start([description, other]);
+    const pid = await echoPid(host);
+    expect(await host.execute("acme.crash", "acme.crash.wait", [1500])).toBe("waited");
+    expect(await host.execute("acme.crash", "acme.crash.spin", [150])).toBe("spun");
+    expect(host.status).toBe("running");
+    expect(await echoPid(host)).toBe(pid);
+    expect(logged.some(({ line }) => line.includes("not responding"))).toBe(false);
+  });
+
+  it("takes its timings from the environment", async () => {
+    vi.stubEnv("OMNIGENT_NODE_HOST_HEARTBEAT_INTERVAL_MS", "50");
+    vi.stubEnv("OMNIGENT_NODE_HOST_HEARTBEAT_MISSES", "2");
+    try {
+      const { host, logged } = makeHost();
+      await host.start([description]);
+      await expect(host.execute("acme.crash", "acme.crash.spin", [60_000])).rejects.toThrow(
+        "stopped responding",
+      );
+      expect(logged.some(({ line }) => line.includes("2 heartbeats missed"))).toBe(true);
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 });
 
@@ -289,14 +408,7 @@ describe("NodeExtensionHost limits and output", () => {
       const pid = (await host.execute("acme.crash", "acme.crash.spawnSleeper", [])) as number;
       expect(() => process.kill(pid, 0)).not.toThrow();
       host.stop();
-      await waitFor(() => {
-        try {
-          process.kill(pid, 0);
-          return false;
-        } catch {
-          return true;
-        }
-      });
+      await waitFor(() => !alive(pid));
     },
   );
 });

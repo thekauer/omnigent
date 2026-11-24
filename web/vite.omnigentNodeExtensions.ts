@@ -50,10 +50,16 @@ type HostMessage =
   | { type: "activationFailed"; extensionId: string; error: string }
   | { type: "log"; extensionId: string; level: "info" | "warn" | "error"; message: string }
   | { type: "progress"; callId: number; event: NodeProgressEvent }
+  | { type: "pong"; seq: number }
+  | { type: "callStarted"; callId: number }
   | { type: "result"; callId: number; value?: unknown }
   | { type: "error"; callId: number; message: string };
 
 interface PendingCall {
+  extensionId: string;
+  command: string;
+  /** When the host started running it, epoch ms; unset while it is queued. */
+  startedAt?: number;
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
   onProgress: (event: NodeProgressEvent) => void;
@@ -68,6 +74,10 @@ export const NODE_RESTART_DELAY_MS = 1000;
 export const NODE_MAX_RESTART_DELAY_MS = 30_000;
 /** A host up this long before it crashed restarts after the first delay again. */
 export const NODE_STABLE_UPTIME_MS = 60_000;
+/** How often the dev server pings the host to check that its event loop is not blocked. */
+export const NODE_HEARTBEAT_INTERVAL_MS = 2000;
+/** Unanswered pings in a row after which the host counts as unresponsive and is killed. */
+export const NODE_HEARTBEAT_MAX_MISSES = 5;
 /** Grace between SIGTERM and SIGKILL for processes the extensions left behind. */
 const PROCESS_GROUP_KILL_GRACE_MS = 2000;
 /** The host runs as a process group leader, so its extensions' processes can be killed with it. */
@@ -90,12 +100,30 @@ export interface NodeExtensionHostOptions {
   restartDelayMs?: number;
   maxRestartDelayMs?: number;
   stableUptimeMs?: number;
+  /**
+   * Heartbeat period; 0 turns the heartbeat off. Defaults to
+   * OMNIGENT_NODE_HOST_HEARTBEAT_INTERVAL_MS, then NODE_HEARTBEAT_INTERVAL_MS.
+   */
+  heartbeatIntervalMs?: number;
+  /**
+   * Missed pings that make the host unresponsive. Defaults to
+   * OMNIGENT_NODE_HOST_HEARTBEAT_MISSES, then NODE_HEARTBEAT_MAX_MISSES.
+   */
+  heartbeatMaxMisses?: number;
   /** Extra environment for the host process (tests). */
   env?: NodeJS.ProcessEnv;
   log?: Pick<Console, "log" | "warn" | "error">;
 }
 
 const LOG_PREFIX = "[omnigent-extensions] node host:";
+
+/** A non-negative integer from the environment, or `fallback` when unset or invalid. */
+function envCount(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const value = Number(raw);
+  return Number.isInteger(value) && value >= 0 ? value : fallback;
+}
 
 /** Calls `onLine` once per complete line of `stream`, and for a last unterminated one at its end. */
 function forEachLine(stream: NodeJS.ReadableStream | null, onLine: (line: string) => void): void {
@@ -145,6 +173,8 @@ export class NodeExtensionHost {
   private readonly restartDelayMs: number;
   private readonly maxRestartDelayMs: number;
   private readonly stableUptimeMs: number;
+  private readonly heartbeatIntervalMs: number;
+  private readonly heartbeatMaxMisses: number;
   private readonly env: NodeJS.ProcessEnv | undefined;
   private readonly log: Pick<Console, "log" | "warn" | "error">;
   private child: ChildProcess | undefined;
@@ -162,6 +192,11 @@ export class NodeExtensionHost {
   private restartGraceTimer: ReturnType<typeof setTimeout> | undefined;
   /** A requested restart is waiting for running calls to finish. */
   private restartWaiting = false;
+  private heartbeatTimer: ReturnType<typeof setInterval> | undefined;
+  /** Pings to the current host since its last answer. */
+  private unansweredPings = 0;
+  /** When the oldest of those pings was sent, epoch ms. */
+  private firstUnansweredPingAt = 0;
 
   constructor(options: NodeExtensionHostOptions = {}) {
     this.script = options.script ?? NODE_HOST_SCRIPT;
@@ -171,6 +206,14 @@ export class NodeExtensionHost {
     this.restartDelayMs = options.restartDelayMs ?? NODE_RESTART_DELAY_MS;
     this.maxRestartDelayMs = options.maxRestartDelayMs ?? NODE_MAX_RESTART_DELAY_MS;
     this.stableUptimeMs = options.stableUptimeMs ?? NODE_STABLE_UPTIME_MS;
+    this.heartbeatIntervalMs =
+      options.heartbeatIntervalMs ??
+      envCount("OMNIGENT_NODE_HOST_HEARTBEAT_INTERVAL_MS", NODE_HEARTBEAT_INTERVAL_MS);
+    this.heartbeatMaxMisses = Math.max(
+      1,
+      options.heartbeatMaxMisses ??
+        envCount("OMNIGENT_NODE_HOST_HEARTBEAT_MISSES", NODE_HEARTBEAT_MAX_MISSES),
+    );
     this.env = options.env;
     this.log = options.log ?? console;
   }
@@ -243,7 +286,10 @@ export class NodeExtensionHost {
     let markReady!: () => void;
     const ready = new Promise<void>((resolve) => {
       markReady = () => {
-        if (this.child === child) this.childReady = true;
+        if (this.child === child && !this.childReady) {
+          this.childReady = true;
+          this.startHeartbeat(child, startedAt, markReady);
+        }
         resolve();
       };
     });
@@ -263,6 +309,7 @@ export class NodeExtensionHost {
     child.on("exit", (code, signal) => {
       killProcessGroup(child.pid);
       if (this.child !== child) return;
+      this.stopHeartbeat();
       this.child = undefined;
       this.childReady = false;
       this.clearCommands();
@@ -273,6 +320,78 @@ export class NodeExtensionHost {
     });
     child.send({ type: "activate", extensions });
     return this.readyPromise;
+  }
+
+  /**
+   * Pings the host every interval once its entries are activated, like VS Code's
+   * unresponsive extension host detection: a host whose event loop stays blocked
+   * (a command busy-looping, say) for `heartbeatMaxMisses` pings is killed with
+   * its process group and restarted, so it cannot wedge every other extension.
+   */
+  private startHeartbeat(child: ChildProcess, startedAt: number, markReady: () => void): void {
+    this.stopHeartbeat();
+    this.unansweredPings = 0;
+    if (this.heartbeatIntervalMs <= 0) return;
+    let seq = 0;
+    this.heartbeatTimer = setInterval(() => {
+      if (this.child !== child || !child.connected) return;
+      if (this.unansweredPings >= this.heartbeatMaxMisses) {
+        this.killUnresponsive(child, startedAt, markReady);
+        return;
+      }
+      if (this.unansweredPings === 0) this.firstUnansweredPingAt = Date.now();
+      this.unansweredPings += 1;
+      seq += 1;
+      child.send({ type: "ping", seq });
+    }, this.heartbeatIntervalMs);
+    this.heartbeatTimer.unref();
+  }
+
+  private stopHeartbeat(): void {
+    clearInterval(this.heartbeatTimer);
+    this.heartbeatTimer = undefined;
+    this.unansweredPings = 0;
+  }
+
+  /** Kills a host that stopped answering pings, fails its calls and restarts it with backoff. */
+  private killUnresponsive(child: ChildProcess, startedAt: number, markReady: () => void): void {
+    const silentMs = Date.now() - this.firstUnansweredPingAt;
+    const misses = this.unansweredPings;
+    this.stopHeartbeat();
+    // The host runs one handler at a time to its first await, so a handler that
+    // blocks it is the call it started last: list started calls newest first.
+    const now = Date.now();
+    const calls = [...this.pending.values()];
+    const describe = (call: PendingCall) => `${call.extensionId}: ${call.command}`;
+    const running = calls
+      .filter((call) => call.startedAt !== undefined)
+      .sort((a, b) => b.startedAt! - a.startedAt!)
+      .map((call) => `${describe(call)} (for ${now - call.startedAt!}ms)`);
+    const queued = calls.filter((call) => call.startedAt === undefined).map(describe);
+    const blamed =
+      (running.length > 0
+        ? `while running ${running.join(", ")}`
+        : "with no command running (activation or extension timer code)") +
+      (queued.length > 0 ? `, with ${queued.join(", ")} queued` : "");
+    this.log.error(
+      `${LOG_PREFIX} not responding for ${silentMs}ms (${misses} heartbeats missed) ${blamed}; killing it`,
+    );
+    this.child = undefined;
+    this.childReady = false;
+    this.clearCommands();
+    markReady();
+    if (USE_PROCESS_GROUP && child.pid !== undefined) {
+      try {
+        process.kill(-child.pid, "SIGKILL");
+      } catch {
+        // The group is already gone.
+      }
+    }
+    child.kill("SIGKILL");
+    this.failPending(
+      `the Node extension host stopped responding for ${silentMs}ms ${blamed} and was killed; it restarts automatically`,
+    );
+    this.scheduleCrashRestart(Date.now() - startedAt);
   }
 
   /** Starts the host again after it exited on its own, waiting longer after each quick crash. */
@@ -344,6 +463,14 @@ export class NodeExtensionHost {
         else call.reject(new Error(message.message));
         return;
       }
+      case "pong":
+        this.unansweredPings = 0;
+        return;
+      case "callStarted": {
+        const call = this.pending.get(message.callId);
+        if (call) call.startedAt = Date.now();
+        return;
+      }
       case "started":
         return;
     }
@@ -390,6 +517,8 @@ export class NodeExtensionHost {
       }, timeoutMs);
       signal?.addEventListener("abort", onAbort, { once: true });
       this.pending.set(callId, {
+        extensionId,
+        command,
         resolve: (value) => {
           settle();
           resolve(value);
@@ -413,7 +542,10 @@ export class NodeExtensionHost {
     clearTimeout(this.restartDebounceTimer);
     this.restartDebounceTimer = setTimeout(() => {
       this.restartDebounceTimer = undefined;
-      if (this.pending.size === 0) return this.restartNow();
+      if (this.pending.size === 0) {
+        this.log.log(`${LOG_PREFIX} restarting for an extension change`);
+        return this.restartNow();
+      }
       this.restartWaiting = true;
       this.restartGraceTimer ??= setTimeout(() => {
         this.log.warn(
@@ -454,6 +586,7 @@ export class NodeExtensionHost {
 
   stop(reason = "the Node extension host was stopped"): void {
     this.cancelScheduledRestarts();
+    this.stopHeartbeat();
     const child = this.child;
     this.child = undefined;
     this.childReady = false;

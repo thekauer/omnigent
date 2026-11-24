@@ -59,7 +59,11 @@ export function createCliRunner({
         if (error) reject(error);
         else resolve(Buffer.concat(chunks).toString("utf8"));
       };
+      let killed = false;
+      /** Fails the call and stops the CLI; later calls (more output, the timer) do nothing. */
       const kill = (reason: string) => {
+        if (killed) return;
+        killed = true;
         finish(new Error(`${command} ${reason}`));
         child.kill("SIGTERM");
         const force = setTimeout(() => {
@@ -69,6 +73,7 @@ export function createCliRunner({
       };
       const timer = setTimeout(() => kill(`timed out after ${timeoutMs}ms`), timeoutMs);
       child.stdout.on("data", (chunk: Buffer) => {
+        if (killed) return;
         size += chunk.length;
         if (size > CLI_MAX_OUTPUT_BYTES) kill("printed more than 1 MiB");
         else chunks.push(chunk);

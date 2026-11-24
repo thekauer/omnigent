@@ -1,3 +1,4 @@
+import { ChildProcess } from "node:child_process";
 import { chmodSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -289,6 +290,22 @@ describe("createCliRunner", () => {
     expect(Date.now() - started).toBeLessThan(2000);
     const [pid] = cli.pids();
     await vi.waitFor(() => expect(alive(pid!)).toBe(false), { timeout: 3000 });
+  });
+
+  it("signals a CLI that keeps printing past the output cap only once", async () => {
+    const cli = fakeCli('trap "" TERM\nwhile :; do head -c 262144 /dev/zero; done');
+    const kill = vi.spyOn(ChildProcess.prototype, "kill");
+    try {
+      const run = createCliRunner({ timeoutMs: 400, killGraceMs: 300 });
+      await expect(run(["auth", "token"])).rejects.toThrow("printed more than 1 MiB");
+      const [pid] = cli.pids();
+      await vi.waitFor(() => expect(alive(pid!)).toBe(false), { timeout: 3000 });
+      // Past the cap and the timeout, more output and the timer change nothing.
+      const signals = kill.mock.calls.map(([signal]) => signal);
+      expect(signals).toEqual(["SIGTERM", "SIGKILL"]);
+    } finally {
+      kill.mockRestore();
+    }
   });
 
   it("keeps a first start from hanging and caches the failure for the back-off", async () => {
