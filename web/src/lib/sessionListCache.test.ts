@@ -2,6 +2,7 @@ import { afterEach, describe, it, expect, vi } from "vitest";
 import { QueryClient } from "@tanstack/react-query";
 import type { Conversation, ConversationsPage } from "@/hooks/useConversations";
 import type { Session } from "@/lib/types";
+import { setOmnigentHostConfig } from "@/lib/host";
 import {
   type ConversationsInfiniteData,
   type SessionListWireItem,
@@ -12,6 +13,7 @@ import {
   insertCreatedRowIntoCaches,
   parseProjectSessionsQueryKey,
   insertNewRowsIntoPages,
+  markRecentlyCreated,
   mergeItemsIntoPages,
   nullsToUndefined,
   overlayArchivedIntoCaches,
@@ -851,5 +853,34 @@ describe("insertCreatedRowIntoCaches", () => {
 
     insertCreatedRowIntoCaches(qc, row);
     expect(ids(qc, ["conversations", "", false])).toEqual(["fork", "old"]);
+  });
+});
+
+describe("markRecentlyCreated keep-alive window", () => {
+  afterEach(() => {
+    clearRecentlyCreated();
+    setOmnigentHostConfig({});
+    vi.useRealTimers();
+  });
+
+  it.each([
+    ["the default", {}, 60_000],
+    ["the host's window", { sidebarCacheTtlSeconds: 5 }, 5_000],
+    ["at most an hour", { sidebarCacheTtlSeconds: 86_400 }, 3_600_000],
+    ["the default for an invalid value", { sidebarCacheTtlSeconds: -1 }, 60_000],
+  ])("keeps a created row for %s", (_name, config, windowMs) => {
+    vi.useFakeTimers();
+    setOmnigentHostConfig(config);
+    markRecentlyCreated(conv("conv_new"));
+    vi.advanceTimersByTime(windowMs - 1);
+    expect(recentlyCreatedSessions.has("conv_new")).toBe(true);
+    vi.advanceTimersByTime(1);
+    expect(recentlyCreatedSessions.has("conv_new")).toBe(false);
+  });
+
+  it("keeps nothing when the host sets 0", () => {
+    setOmnigentHostConfig({ sidebarCacheTtlSeconds: 0 });
+    markRecentlyCreated(conv("conv_new"));
+    expect(recentlyCreatedSessions.has("conv_new")).toBe(false);
   });
 });

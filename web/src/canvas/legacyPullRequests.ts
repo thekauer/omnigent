@@ -6,6 +6,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { Conversation } from "@/hooks/useConversations";
 import { fetchPullRequestInfo } from "@/hooks/usePullRequests";
 import type { CanvasPullRequest, CanvasPullRequests } from "./pullRequests";
+import { hostPollIntervalMs } from "@/lib/host";
 
 export const PULL_REQUEST_REFRESH_MS = 300_000;
 /** A failed lookup is retried this soon instead of waiting the full refresh window. */
@@ -87,6 +88,8 @@ export function useLivePullRequests(
   enabled = true,
 ): CanvasPullRequests {
   const queryClient = useQueryClient();
+  const refreshMs = hostPollIntervalMs("canvasPullRequests", PULL_REQUEST_REFRESH_MS);
+  const retryMs = hostPollIntervalMs("canvasPullRequestRetry", PULL_REQUEST_RETRY_MS);
   const [pullRequests, setPullRequests] = useState<CanvasPullRequests>({});
   // Bumped on a timer so lookups fall due even while the session list is unchanged.
   const [tick, setTick] = useState(0);
@@ -105,9 +108,9 @@ export function useLivePullRequests(
 
   useEffect(() => {
     if (!enabled) return;
-    const timer = setInterval(() => setTick((value) => value + 1), PULL_REQUEST_RETRY_MS);
+    const timer = setInterval(() => setTick((value) => value + 1), retryMs);
     return () => clearInterval(timer);
-  }, [enabled]);
+  }, [enabled, retryMs]);
 
   useEffect(() => {
     const queue = queueRef.current;
@@ -116,7 +119,7 @@ export function useLivePullRequests(
     const due = sessions.filter(
       (session) =>
         Boolean(session.git_branch?.trim()) &&
-        now - (checkedAtRef.current[session.id] ?? 0) >= PULL_REQUEST_REFRESH_MS,
+        now - (checkedAtRef.current[session.id] ?? 0) >= refreshMs,
     );
     queue.replace(
       due.map((session) => ({
@@ -133,8 +136,7 @@ export function useLivePullRequests(
               staleTime: GITHUB_INFO_STALE_MS,
             });
           } catch (error) {
-            checkedAtRef.current[session.id] =
-              Date.now() - PULL_REQUEST_REFRESH_MS + PULL_REQUEST_RETRY_MS;
+            checkedAtRef.current[session.id] = Date.now() - refreshMs + retryMs;
             throw error;
           }
           if (!aliveRef.current) return;
@@ -160,7 +162,7 @@ export function useLivePullRequests(
       })),
     );
     return () => queue.clear();
-  }, [enabled, queryClient, sessions, tick]);
+  }, [enabled, queryClient, sessions, tick, refreshMs, retryMs]);
 
   return pullRequests;
 }

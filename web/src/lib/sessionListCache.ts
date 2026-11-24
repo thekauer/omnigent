@@ -14,6 +14,7 @@ import { scopeBoundaryRow } from "@/lib/sidebarData";
 import type { Conversation, ConversationsPage, SessionSortBy } from "@/hooks/useConversations";
 import type { Session } from "@/lib/types";
 import { sessionVisibility } from "@/lib/sessionVisibility";
+import { getOmnigentSidebarCacheTtlSeconds } from "@/lib/host";
 
 /** Cache value shape for a `useConversations` infinite query. */
 export type ConversationsInfiniteData = InfiniteData<ConversationsPage, string | undefined>;
@@ -407,13 +408,27 @@ export function mergeItemsIntoPages(
 // optimistic-create writer) can reach it without an import cycle.
 export const recentlyCreatedSessions = new Map<string, Conversation>();
 
-/** Grace window for the server's async create reindex. */
+/** Grace window for the server's async create reindex, unless the host sets one. */
 const CREATED_KEEPALIVE_MS = 60_000;
+/** Upper bound, so a mis-set host value can't pin rows for hours. */
+const MAX_CREATED_KEEPALIVE_MS = 3_600_000;
+
+/** The keep-alive window: the host's `sidebarCacheTtlSeconds` (0 disables it), else the default. */
+function createdKeepAliveMs(): number {
+  const seconds = getOmnigentSidebarCacheTtlSeconds();
+  if (typeof seconds !== "number" || !Number.isFinite(seconds) || seconds < 0) {
+    return CREATED_KEEPALIVE_MS;
+  }
+  return Math.min(seconds * 1000, MAX_CREATED_KEEPALIVE_MS);
+}
 
 /** Keep a just-created session in the first-page list fetch until it's indexed. */
 export function markRecentlyCreated(conv: Conversation): void {
+  // Read at mark time, so a changed host value applies to the next create.
+  const keepAliveMs = createdKeepAliveMs();
+  if (keepAliveMs <= 0) return;
   recentlyCreatedSessions.set(conv.id, conv);
-  setTimeout(() => recentlyCreatedSessions.delete(conv.id), CREATED_KEEPALIVE_MS);
+  setTimeout(() => recentlyCreatedSessions.delete(conv.id), keepAliveMs);
 }
 
 /** Clear the keep-alive map — exported for test cleanup (mirrors `unmarkSessionsDeleting`). */

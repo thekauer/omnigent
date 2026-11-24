@@ -45,6 +45,7 @@ import { useSseEventLog } from "@/hooks/useSseEventLog";
 import type { SseLogEntry } from "@/lib/sseEventLog";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/store/chatStore";
+import { hostPollIntervalMs } from "@/lib/host";
 
 /** True when the focused session's agent loop is live. */
 function useFocusedSessionActive(): boolean {
@@ -259,7 +260,7 @@ function buildLogEntries(conversationId: string, children: ChildSessionInfo[]): 
 function SessionItemsList({ sessionId }: { sessionId: string }) {
   const sessionActive = useFocusedSessionActive();
   const { items, isLoading, error, hasNextPage, isFetchingNextPage, fetchNextPage } =
-    useSessionItems(sessionId, sessionActive ? ITEMS_POLL_MS : null);
+    useSessionItems(sessionId, sessionActive ? hostPollIntervalMs("items", ITEMS_POLL_MS) : null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const scrollRootRef = useRef<HTMLDivElement | null>(null);
 

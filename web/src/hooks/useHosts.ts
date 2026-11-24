@@ -7,7 +7,7 @@ import {
 } from "@tanstack/react-query";
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { authenticatedFetch } from "@/lib/identity";
-import { getOmnigentServerIdentity } from "@/lib/host";
+import { getOmnigentServerIdentity, hostPollIntervalMs } from "@/lib/host";
 import { harnessAccountKey } from "@/lib/nativeHarnessModes";
 import { ApiError, apiErrorFromResponse } from "@/lib/sessionsApi";
 import type { NativeModelOption } from "@/lib/types";
@@ -122,7 +122,7 @@ export function useHosts(options: UseHostsOptions = {}) {
     // interval remains the in-tab fallback.
     staleTime: refetchOnFocus ? 0 : 30_000,
     refetchOnWindowFocus: refetchOnFocus,
-    refetchInterval: enabled ? 60_000 : false,
+    refetchInterval: enabled ? hostPollIntervalMs("hosts", 60_000) : false,
   });
 }
 

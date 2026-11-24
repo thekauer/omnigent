@@ -15,7 +15,7 @@ import {
   type ConversationsPage,
 } from "@/hooks/useConversations";
 import { isAdminViewEnabled } from "@/lib/adminView";
-import { getOmnigentServerIdentity, withHostBackgroundTask } from "@/lib/host";
+import { getOmnigentServerIdentity, hostPollIntervalMs, withHostBackgroundTask } from "@/lib/host";
 import { authenticatedFetch, getCurrentUserId, resolveIdentity } from "@/lib/identity";
 import { sessionUpdatesSocket } from "@/lib/sessionUpdatesSocket";
 import { sessionVisibility } from "@/lib/sessionVisibility";
@@ -484,6 +484,7 @@ export function useCanvasSessions(): CanvasSessions {
     return request;
   }, [queryClient]);
 
+  const pollIntervalMs = hostPollIntervalMs("canvasSessions", SESSION_POLL_INTERVAL_MS);
   // Initial load, then poll like the sidebar does and catch up when the tab
   // becomes visible or the window regains focus after a poll interval.
   useEffect(() => {
@@ -495,7 +496,7 @@ export function useCanvasSessions(): CanvasSessions {
     // Focus and visibility flip every time the user switches windows, and each
     // refresh walks every session; within a poll interval the timer covers it.
     const refreshOnReturn = () => {
-      if (Date.now() - lastRefreshAtRef.current < SESSION_POLL_INTERVAL_MS) return;
+      if (Date.now() - lastRefreshAtRef.current < pollIntervalMs) return;
       refreshIfVisible();
     };
     // The updates stream mirrors changes in place for cards it watches, but its
@@ -504,8 +505,9 @@ export function useCanvasSessions(): CanvasSessions {
     // SESSION_POLL_INTERVAL_MS cadence when the stream is down, and skip
     // alternate ticks while connected so the hot set (covered by the stream)
     // reconciles at the slower CONNECTED_STREAM_REFETCH_INTERVAL_MS.
-    const connectedTickStride = Math.round(
-      CONNECTED_STREAM_REFETCH_INTERVAL_MS / SESSION_POLL_INTERVAL_MS,
+    const connectedTickStride = Math.max(
+      1,
+      Math.round(CONNECTED_STREAM_REFETCH_INTERVAL_MS / pollIntervalMs),
     );
     let tick = 0;
     const timer = setInterval(
@@ -514,7 +516,7 @@ export function useCanvasSessions(): CanvasSessions {
         if (sessionUpdatesSocket.isConnected() && tick % connectedTickStride !== 0) return;
         refreshIfVisible();
       }),
-      SESSION_POLL_INTERVAL_MS,
+      pollIntervalMs,
     );
     const refreshOnFocus = withHostBackgroundTask("focus_refresh", refreshOnReturn);
     window.addEventListener("focus", refreshOnFocus);
@@ -524,7 +526,7 @@ export function useCanvasSessions(): CanvasSessions {
       window.removeEventListener("focus", refreshOnFocus);
       document.removeEventListener("visibilitychange", refreshOnFocus);
     };
-  }, [awaitingStoredIdentity, refresh]);
+  }, [awaitingStoredIdentity, pollIntervalMs, refresh]);
 
   // Live updates: the sessions stream patches the sidebar's cache in place;
   // mirror those rows so cards change with the sidebar instead of on the next poll.

@@ -271,6 +271,34 @@ export interface OmnigentHostConfig {
    */
   runBackgroundTask?: (kind: OmnigentBackgroundTaskKind, task: () => void) => void;
   /**
+   * Optional overrides, in seconds, for the app's fixed-cadence polls, so a host
+   * can tune their load without a release. A field left unset, or not a
+   * positive number, keeps that poll's built-in default.
+   */
+  pollIntervals?: {
+    /** Execution-logs panel `GET /v1/sessions/{id}/items` refetch cadence. */
+    items?: number;
+    /**
+     * Accepted for compatibility; child-session lists update from the
+     * session-updates stream, so no timer reads it.
+     */
+    childSessions?: number;
+    /** Host picker and chat-header badge `GET /v1/hosts` refetch cadence. */
+    hosts?: number;
+    /** Canvas `GET /v1/sessions` refresh cadence. */
+    canvasSessions?: number;
+    /** Canvas pull-request lookup refresh cadence. */
+    canvasPullRequests?: number;
+    /** Canvas failed pull-request lookup retry cadence. */
+    canvasPullRequestRetry?: number;
+  };
+  /**
+   * How long, in seconds, a just-created or forked session stays pinned in the
+   * sidebar list while the server's session search catches up with it. Absent
+   * keeps the 60 second default; `0` disables the pin.
+   */
+  sidebarCacheTtlSeconds?: number;
+  /**
    * Optional URL to the host's appearance settings, linked beside the browser
    * embed's automatic theme option. Omitted standalone and hidden in Electron.
    */
@@ -377,6 +405,28 @@ export function getOmnigentTransformShareLink(): OmnigentHostConfig["transformSh
  */
 export function getOmnigentMcpConnections(): OmnigentHostConfig["mcpConnections"] {
   return hostConfig.mcpConnections;
+}
+
+/**
+ * The poll interval for `key` in milliseconds: the host's override when it is
+ * a positive number of seconds, else `defaultMs`.
+ */
+export function hostPollIntervalMs(
+  key: keyof NonNullable<OmnigentHostConfig["pollIntervals"]>,
+  defaultMs: number,
+): number {
+  const seconds = hostConfig.pollIntervals?.[key];
+  return typeof seconds === "number" && Number.isFinite(seconds) && seconds > 0
+    ? seconds * 1000
+    : defaultMs;
+}
+
+/**
+ * The host-provided sidebar keep-alive window in seconds, or `undefined` for
+ * the default. `0` disables the keep-alive.
+ */
+export function getOmnigentSidebarCacheTtlSeconds(): OmnigentHostConfig["sidebarCacheTtlSeconds"] {
+  return hostConfig.sidebarCacheTtlSeconds;
 }
 
 /**

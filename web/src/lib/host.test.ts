@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   getCliServerUrl,
   hostFetch,
+  hostPollIntervalMs,
   resolveMediaUrl,
   resolveWebSocketUrl,
   setOmnigentHostConfig,
@@ -210,5 +211,25 @@ describe("isHostRoutingEnabled", () => {
     vi.stubEnv("VITE_DATABRICKS_WORKSPACE", "true");
     const { isHostRoutingEnabled } = await import("./host");
     expect(isHostRoutingEnabled()).toBe(true);
+  });
+});
+
+describe("hostPollIntervalMs", () => {
+  it("uses the host's positive override in seconds", () => {
+    setOmnigentHostConfig({ pollIntervals: { hosts: 90, items: 2.5 } });
+    expect(hostPollIntervalMs("hosts", 60_000)).toBe(90_000);
+    expect(hostPollIntervalMs("items", 3_000)).toBe(2_500);
+  });
+
+  it.each([undefined, 0, -5, Number.NaN, Number.POSITIVE_INFINITY])(
+    "keeps the default for %s",
+    (seconds) => {
+      setOmnigentHostConfig({ pollIntervals: { canvasSessions: seconds } });
+      expect(hostPollIntervalMs("canvasSessions", 30_000)).toBe(30_000);
+    },
+  );
+
+  it("keeps the default without overrides", () => {
+    expect(hostPollIntervalMs("canvasPullRequests", 300_000)).toBe(300_000);
   });
 });
