@@ -57,6 +57,12 @@ export interface HostReconnectProvider {
   reconnect: (host: ReconnectHost, session: ReconnectSession) => Promise<void | ReconnectOutcome>;
 }
 
+/** Inline step texts of Reconnect host. */
+export const RECONNECT_STEP = {
+  starting: "Reconnecting...",
+  waiting: "Waiting for host...",
+} as const;
+
 /** A reconnect whose host did not come online; its message is the detail shown. */
 export class HostOfflineError extends Error {
   override name = "HostOfflineError";

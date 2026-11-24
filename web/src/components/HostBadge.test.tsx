@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 
 import { HostBadge, resolveHostBadge } from "./HostBadge";
 import { hostReconnectProviders } from "@/lib/hostReconnectProviders";
@@ -940,6 +940,92 @@ describe("HostBadge with progress at its host", () => {
     act(() => open[0]!.report("Waiting for host..."));
     expect(inline).toHaveTextContent("Waiting for host...");
     expect(screen.getByTestId("composer-host-status")).toHaveAttribute("data-status", "offline");
+  });
+
+  it("leaves the inline retry reachable as soon as Escape closes the menu after a failed reconnect", async () => {
+    // As in a browser, the closed menu stays mounted through its exit animation.
+    const computedStyle = window.getComputedStyle.bind(window);
+    const styles = vi.spyOn(window, "getComputedStyle").mockImplementation((element, pseudo) => {
+      const style = computedStyle(element, pseudo);
+      if (element.getAttribute("role") !== "menu") return style;
+      return new Proxy(style, {
+        get: (target, key) =>
+          key === "animationName"
+            ? element.getAttribute("data-state") === "closed"
+              ? "exit"
+              : "none"
+            : Reflect.get(target, key),
+      });
+    });
+    onTestFinished(() => styles.mockRestore());
+    offline();
+    const user = userEvent.setup();
+    const onReconnect = vi.fn(() => {
+      begin("Reconnecting...");
+    });
+    render(<HostBadge sessionId="conv_1" appearance="composer" onReconnect={onReconnect} />);
+    await user.click(screen.getByTestId("composer-host-select"));
+    await user.click(screen.getByRole("menuitem", { name: "Reconnect host" }));
+    expect(screen.getByRole("menu")).toBeInTheDocument();
+    act(() => {
+      open[0]!.end();
+      hostProgress.setFailure(
+        "host_a1b2",
+        { message: "Reconnect failed", detail: "exit 1" },
+        owner,
+      );
+    });
+    expect(screen.getByTestId("composer-host-menu-reconnect-failed")).toBeInTheDocument();
+    await user.keyboard("{Escape}");
+    expect(screen.getByTestId("composer-host-menu")).toHaveAttribute("data-state", "closed");
+    expect(screen.getByRole("button", { name: "Reconnect host" })).toBeEnabled();
+  });
+
+  it("announces each step once, from one live region mounted before the first", async () => {
+    offline();
+    const user = userEvent.setup();
+    const onReconnect = vi.fn(() => {
+      begin("Reconnecting...");
+    });
+    render(<HostBadge sessionId="conv_1" appearance="composer" onReconnect={onReconnect} />);
+    const announcer = screen.getByTestId("composer-host-reconnect-announcer");
+    expect(announcer).toHaveAttribute("aria-live", "polite");
+    expect(announcer).toHaveTextContent(/^$/);
+    await user.click(screen.getByTestId("composer-host-select"));
+    await user.click(screen.getByRole("menuitem", { name: "Reconnect host" }));
+    // The menu's and the chip's steps both show, but only the announcer is live.
+    expect(screen.getByTestId("composer-host-menu-reconnect-progress")).toBeInTheDocument();
+    expect(screen.getByTestId("composer-host-reconnect-progress")).toBeInTheDocument();
+    expect([...document.querySelectorAll("[aria-live], [role=status]")]).toEqual([announcer]);
+    expect(announcer).toHaveTextContent("Reconnecting...");
+    act(() => open[0]!.report("Starting omni..."));
+    expect(announcer).toHaveTextContent("Starting omni...");
+    act(() => {
+      open[0]!.end();
+      hostProgress.setFailure(
+        "host_a1b2",
+        { message: "Reconnect failed", detail: "exit 1" },
+        owner,
+      );
+    });
+    expect(announcer).toHaveTextContent("Reconnect failed. exit 1");
+  });
+
+  it("shows a grid cell's host only spinning while it reconnects, and no failure", () => {
+    offline();
+    begin("Starting omni...");
+    const { unmount } = render(<HostBadge sessionId="conv_1" appearance="composer" />);
+    expect(screen.queryByTestId("composer-host-offline")).not.toBeInTheDocument();
+    expect(screen.getByTestId("composer-host-status")).toHaveAttribute("data-status", "starting");
+    expect(screen.getByTestId("composer-host-reconnect-announcer")).toHaveTextContent(/^$/);
+    unmount();
+    act(() => open.splice(0)[0]!.end());
+    fail("Reconnect failed", "exit 1");
+    render(<HostBadge sessionId="conv_1" appearance="composer" />);
+    expect(screen.queryByText("Reconnect failed")).not.toBeInTheDocument();
+    expect(screen.getByTestId("composer-host-status")).toHaveAttribute("data-status", "offline");
+    fireEvent.pointerDown(screen.getByTestId("composer-host-select"), { button: 0 });
+    expect(screen.queryByTestId("composer-host-menu-reconnect-failed")).not.toBeInTheDocument();
   });
 
   it("draws the inline step at the size of the reconnect text it replaces", () => {

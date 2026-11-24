@@ -70,6 +70,8 @@ import {
 } from "@/components/composer/ComposerControls";
 import { useAppName } from "@/lib/branding";
 import { hasPendingOwnElicitation, isPendingBlockingElicitation } from "@/lib/blocks";
+import { useHostProgress } from "@/lib/hostProgress";
+import { RECONNECT_STEP } from "@/lib/hostReconnectProviders";
 import { cn } from "@/lib/utils";
 import { isInlineRenameFocused } from "@/lib/inlineRename";
 import { QueuedMessagesStrip } from "@/pages/QueuedMessagesStrip";
@@ -2862,8 +2864,11 @@ function ComposerImpl(
   isMobileRef.current = isMobile;
   // Mobile moves a bound host's button, with its Reconnect host item, into the
   // header; a session with no host still reconnects from the banner below.
-  const offlinePlaceholder =
-    isMobile && composerSession?.hostId
+  // While a reconnect runs at the host, the placeholder doesn't ask for another.
+  const hostReconnecting = useHostProgress(composerSession?.hostId).progress !== null;
+  const offlinePlaceholder = hostReconnecting
+    ? RECONNECT_STEP.starting
+    : isMobile && composerSession?.hostId
       ? "Session offline — reconnect from the host menu"
       : "Session offline — reconnect below to continue";
 

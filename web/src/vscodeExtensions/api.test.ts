@@ -294,6 +294,28 @@ describe("hosts.registerReconnectProvider", () => {
     expect(secondSession.reports).toEqual(["Starting machine...", "Starting omni..."]);
   });
 
+  it("shows a running reconnect at its host until it settles, for any session that opens", async () => {
+    const { api, registry, hostProgress } = setup();
+    const running = deferred();
+    let progress!: omnigent.Progress<omnigent.ProgressReport>;
+    api.hosts.registerReconnectProvider({
+      canReconnect: () => true,
+      reconnect: (_host, reporter) => {
+        progress = reporter;
+        return running.promise;
+      },
+    });
+    const selected = registry.select(offlineHost);
+    if (!selected || selected instanceof Promise) throw new Error("expected a sync selection");
+    const result = selected.provider.reconnect(offlineHost, reconnectSession());
+    expect(hostProgress.get(offlineHost.hostId).progress).toBe("Reconnecting...");
+    progress.report({ message: "Starting omni..." });
+    expect(hostProgress.get(offlineHost.hostId).progress).toBe("Starting omni...");
+    running.resolve();
+    await result;
+    expect(hostProgress.get(offlineHost.hostId)).toEqual({ progress: null, failure: null });
+  });
+
   it("is unregistered by its Disposable and by deactivation", () => {
     const { api, registry, handle } = setup();
     const provider = { canReconnect: () => true, reconnect: async () => {} };

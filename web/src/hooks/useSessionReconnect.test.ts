@@ -2,7 +2,7 @@ import type * as SessionsApiModule from "@/lib/sessionsApi";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, renderHook } from "@testing-library/react";
 import { createElement } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
 import { toast } from "sonner";
 
 import { fetchHosts } from "@/hooks/useHosts";
@@ -1483,6 +1483,26 @@ describe("useSessionReconnect host reconnect providers", () => {
       }
     },
   );
+
+  it("clears the host's failure once the host is online", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    onTestFinished(() => info.mockRestore());
+    addProvider({
+      canReconnect: () => true,
+      reconnect: async () => {
+        throw new Error("exited 1");
+      },
+    });
+    const { result, rerender } = renderHook((props) => useSessionReconnect(props), {
+      initialProps: userMachine,
+    });
+    await act(async () => {
+      await result.current.reconnect();
+    });
+    expect(devbox().failure).toEqual({ message: "Reconnect failed", detail: "exited 1" });
+    rerender({ ...userMachine, hostOnline: true });
+    expect(devbox()).toEqual({ progress: null, failure: null });
+  });
 
   it("shows a provider's rejection inline at the host, with no toast, and retries it", async () => {
     const info = vi.spyOn(console, "info").mockImplementation(() => {});

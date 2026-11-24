@@ -3,10 +3,11 @@
 import type * as omnigent from "omnigent";
 import type { GitHostProviderRegistry } from "@/lib/gitHostProviders";
 import type { HostProgressLocations } from "@/lib/hostProgress";
-import type {
-  HostReconnectProviderRegistry,
-  ReconnectHost,
-  ReconnectOutcome,
+import {
+  RECONNECT_STEP,
+  type HostReconnectProviderRegistry,
+  type ReconnectHost,
+  type ReconnectOutcome,
 } from "@/lib/hostReconnectProviders";
 import { isThenable } from "@/lib/thenable";
 import {
@@ -533,10 +534,13 @@ export function createExtensionApi(
           reporters: Set<ProgressReporter>;
           last?: string;
         } = { result: Promise.resolve(), reporters: new Set([session.progress]) };
+        // Shown at the host while it runs, also to a session opened after the one that started it.
+        const shown = services.hostProgress.begin(host.hostId, RECONNECT_STEP.starting);
         const progress: ProgressReporter = Object.freeze({
           report(value: ProgressReport) {
             if (typeof value?.message !== "string") return;
             entry.last = value.message;
+            shown.report(value.message);
             for (const reporter of entry.reporters) reporter.report({ message: value.message });
           },
         });
@@ -549,6 +553,7 @@ export function createExtensionApi(
           return typeof detail === "string" && detail ? { detail: detail.slice(0, 2000) } : {};
         })().finally(() => {
           untrack();
+          shown.end();
           running.delete(host.hostId);
         });
         running.set(host.hostId, entry);

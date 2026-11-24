@@ -7,6 +7,7 @@ import {
   HostOfflineError,
   hostReconnectProviders,
   isThenable,
+  RECONNECT_STEP,
   type ReconnectHost,
   type ReconnectOutcome,
   type SelectedReconnectProvider,
@@ -42,11 +43,7 @@ export const RECONNECT_ONLINE_POLL_MS = 2_000;
 /** How long a provider's reconnected host may take to come online. */
 export const RECONNECT_ONLINE_TIMEOUT_MS = 90_000;
 
-/** Inline step texts of Reconnect host. */
-export const RECONNECT_STEP = {
-  starting: "Reconnecting...",
-  waiting: "Waiting for host...",
-} as const;
+export { RECONNECT_STEP };
 
 /** Inline failure texts of Reconnect host. */
 export const RECONNECT_FAILED = "Reconnect failed";
@@ -288,6 +285,11 @@ export function useSessionReconnect({
     markSandboxStarting(sessionId, 1);
     return () => markSandboxStarting(sessionId, -1);
   }, [sessionId, starting]);
+
+  // A failure from an earlier reconnect is stale once the host is online.
+  useEffect(() => {
+    if (hostId && hostOnline === true) hostProgress.clearFailure(hostId);
+  }, [hostId, hostOnline]);
 
   // Liveness polls lag the wake, so stay "starting" until the host reads online.
   useEffect(() => {

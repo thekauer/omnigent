@@ -89,7 +89,10 @@ const CONNECTION_WORD: Record<HostBadgeStatus, string> = {
   unknown: "Unknown",
 };
 
-/** A small spinner and the latest step of the progress shown at the host. */
+/**
+ * A small spinner and the latest step of the progress shown at the host. Not a
+ * live region: the badge's one announcer speaks each step once.
+ */
 function HostProgressText({
   message,
   testId,
@@ -103,8 +106,6 @@ function HostProgressText({
 }) {
   return (
     <span
-      role="status"
-      aria-live="polite"
       className={cn("flex min-w-0 items-center gap-1.5 text-muted-foreground", className)}
       data-testid={testId}
     >
@@ -236,8 +237,9 @@ export function HostBadge({
   // Progress shown at this host (a reconnect's steps), and its last reconnect's failure.
   const hostProgressState = useHostProgress(hostId);
   const progressMessage = badge ? hostProgressState.progress : null;
+  // Only a badge that can retry shows the failure; elsewhere it would be a dead end.
   const reconnectFailure =
-    progressMessage === null && badge && badge.status !== "online"
+    onReconnect && progressMessage === null && badge && badge.status !== "online"
       ? hostProgressState.failure
       : null;
   const { switchHostDisabledReason } = useSessionActionRestrictions(sessionId);
@@ -261,7 +263,9 @@ export function HostBadge({
       badge?.status !== "online";
     const startingWord = launch && launchInProgress ? launchStatusWord(launch) : "Starting";
     // Beside the composer trigger, the step's own spinner shows the progress, so the dot doesn't spin too.
-    const progressInline = appearance === "composer" && progressMessage !== null && !readOnly;
+    // A badge that can't reconnect (a grid cell) only spins its dot.
+    const progressInline =
+      appearance === "composer" && progressMessage !== null && !readOnly && !!onReconnect;
     const dotStatus = hostStarting && !progressInline ? "starting" : (badge?.status ?? "unknown");
     // Only this tab's own wake hides Reconnect: a server-reported stage can go stale.
     const reconnectable =
@@ -300,9 +304,19 @@ export function HostBadge({
     const showInlineProgress = progressInline;
     const showInlineFailure = !showInlineProgress && !!reconnectFailure && !readOnly;
     const inlineChip = showReconnect || showInlineProgress || showInlineFailure;
+    // The one live region for this badge's reconnect, mounted before its first step.
+    const announcement =
+      onReconnect && !readOnly
+        ? (progressMessage ??
+          (reconnectFailure
+            ? [reconnectFailure.message, reconnectFailure.detail].filter(Boolean).join(". ")
+            : ""))
+        : "";
     const hostMenu = (
       <DropdownMenu
-        modal={appearance !== "header"}
+        // Not modal: it stays open while a reconnect runs, and a modal menu hides
+        // the rest of the page from assistive tech until its exit animation ends.
+        modal={false}
         onOpenChange={(open) => {
           setMenuOpen(open);
           // Lets reconnect providers warm what they decide from before a click.
@@ -474,6 +488,15 @@ export function HostBadge({
         ) : (
           hostMenu
         )}
+        {/* A live region without the status role, so it doesn't stand in for the composer's own. */}
+        <span
+          aria-live="polite"
+          aria-atomic="true"
+          className="sr-only"
+          data-testid="composer-host-reconnect-announcer"
+        >
+          {announcement}
+        </span>
         {switchOpen && canSwitch && (
           <SwitchHostDialog
             open

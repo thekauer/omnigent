@@ -54,6 +54,18 @@ repository's reference policy keeps them out of here.
      This adds the host progress location (scope item 11). Real test against
      the same machine: the host read online about a second after the start
      command (times in the personal extensions README).
+   - **Done, review fixes.** The composer's host menu is no longer modal, so
+     Escape after a failed reconnect leaves the inline retry reachable at once
+     (a modal menu kept the page `aria-hidden` until its exit animation
+     ended). Each badge has one always-mounted live region for the steps and
+     the failure; a badge without a retry (a grid cell) only spins its dot. A
+     reconnect in flight stays shown at its host when its session is left and
+     opened again, a failure clears once the host is online, and the offline
+     composer placeholder reads "Reconnecting..." while one runs.
+   - **Out of scope, noted:** the two desktop-app-only paths of
+     `useSessionReconnect` (the remote dev machine connect and this machine's
+     `controlHost` start) still show loading and success toasts; they are not
+     providers and keep the reconnect dialog for their failures.
 2. **Private Git host PR links** in the Pull Requests tab (a GitHub
    Enterprise-style host with numbered shards, such as
    `https://N.git.example.com/<org>/<repo>/pull/<number>` with any N).
@@ -385,7 +397,20 @@ sandboxProvider, resumable }`.
       stopped stage); its error toasts became the same inline failures.
     - Inline state belongs to the session on screen: a session or host switch
       and an unmount end the progress and clear the failure, and a late answer
-      of the old run shows nothing.
+      of the old run shows nothing. An extension provider's run stays shown at
+      its host (its steps, from the API's per-host run) until it settles, so
+      opening the session again shows it running; what it resolves to is only
+      seen by the session that started it. A stored failure clears once the
+      host reads online.
+    - Only a badge with a retry (the composer's, and the mobile header's)
+      shows a failure; a grid cell's badge spins its dot while a reconnect
+      runs and shows no step beside it. Each badge has one `aria-live`
+      region, mounted from the start, that speaks the step or the failure
+      (with its detail); the visible step texts are not live regions. The
+      host menu is not modal, as the header's and the agent picker's, so the
+      rest of the page stays reachable while it is open or closing.
+    - While a reconnect runs, the offline composer placeholder reads
+      "Reconnecting..." instead of asking for a reconnect.
 
 12. **Rail view registry** (`web/src/shell/railViews.ts`, `railTabs.ts`,
     `railViewIcons.ts`, `workspacePanelTabs.ts`; shipped in builds).
@@ -1371,7 +1396,12 @@ What the suites cover:
   in a tooltip and retried, "Waiting for host..." with 2-second polls until
   online (then nothing inline and no Reconnect host), the 90-second "Host
   didn't come online", cleanup on a session switch or unmount, the wake's
-  steps inline, and no toast.
+  steps inline, and no toast. The inline retry reachable by role right after
+  Escape closes the menu (with the menu still mounted for its exit
+  animation), one live region announcing steps and the failure, a grid
+  cell's badge with no failure and only its dot spinning, a failure cleared
+  once the host is online, the API showing a running reconnect at its host
+  until it settles, and the "Reconnecting..." placeholder.
 - `viteDevProxyToken.test.ts`: the async token cache of the dev proxy.
 - `railViews.test.ts`: tab ids (`ext:` accepted, malformed dropped), registry
   order, updates, duplicates, loading state; built-in descriptors unchanged,

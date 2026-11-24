@@ -42,6 +42,7 @@ import { createRef, StrictMode, type ComponentRef, type ReactElement } from "rea
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { setSessionHost } from "@/lib/sessionHost";
+import { hostProgress } from "@/lib/hostProgress";
 import { SideChatPane } from "@/components/chat/SideChatPane";
 import { toast } from "sonner";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
@@ -6215,6 +6216,20 @@ describe("Composer placeholder", () => {
       expect(textarea().placeholder).toBe(copy);
     },
   );
+
+  it("says Reconnecting... instead of asking for a reconnect while one runs at the host", () => {
+    composerSessionSnapshot.hostId = "host-a";
+    const running = hostProgress.begin("host-a", "Starting omni...");
+    onTestFinished(() => {
+      running.end();
+      composerSessionSnapshot.hostId = null;
+    });
+    render(<Composer {...composerProps({ unreachable: true })} />);
+    expect(textarea()).toBeDisabled();
+    expect(textarea().placeholder).toBe("Reconnecting...");
+    act(() => running.end());
+    expect(textarea().placeholder).toMatch(/^Session offline .* reconnect below to continue$/);
+  });
 
   it("resets the native text input when the Send button moves focus first", () => {
     const props = composerProps({ status: "streaming", isWorking: true });
