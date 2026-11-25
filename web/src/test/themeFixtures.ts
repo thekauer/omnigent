@@ -2,6 +2,10 @@
 // family, an invalid theme, a stock-like VS Code colour theme, a font and a brand logo.
 // The same shapes ship as an extension in my-extensions' verify fixtures.
 
+import { parseThemeContributions } from "@/theme/themeContributions";
+import type { ThemeExtension } from "@/theme/themeService";
+import { getToken } from "@/theme/tokens/registry";
+
 /** The fixture extension's id. */
 export const FIXTURE_EXTENSION_ID = "acme.fixture-themes";
 
@@ -229,4 +233,18 @@ export function fixtureFiles(assetBase = "/__omnigent/extension-assets/acme.fixt
       type: "font/woff2",
     },
   } as const;
+}
+
+/** The fixture extension as the theme service takes it (`ThemeExtension`), labelled. */
+export function fixtureThemeExtension(): ThemeExtension {
+  const { contributions } = parseThemeContributions(FIXTURE_EXTENSION_ID, FIXTURE_CONTRIBUTES, {
+    isKnownToken: (id) => getToken(id) !== undefined,
+  });
+  return {
+    id: FIXTURE_EXTENSION_ID,
+    version: "1.0.0",
+    label: "Fixture themes",
+    contributions,
+    files: fixtureFiles(),
+  };
 }

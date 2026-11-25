@@ -92,6 +92,7 @@ export interface DevExtension {
   publisher: string;
   name: string;
   version: string;
+  displayName?: string;
   engines: { omnigent: string };
   activationEvents: string[];
   /** Absolute, real path of the extension folder. */
@@ -197,6 +198,7 @@ export function readDevExtension(folder: string): ManifestResult {
       publisher: valid.publisher,
       name: valid.name,
       version: valid.version,
+      ...(valid.displayName === undefined ? {} : { displayName: valid.displayName }),
       engines: { omnigent: valid.engines.omnigent },
       activationEvents: [...valid.activationEvents],
       directory,
@@ -781,9 +783,18 @@ export function omnigentExtensionsDev(options: OmnigentExtensionsDevOptions = {}
           : null;
         const extensions = serving
           ? scan.extensions.map(
-              ({ id: extensionId, version, activationEvents, entryUrl, contributes, files }) => ({
+              ({
                 id: extensionId,
                 version,
+                displayName,
+                activationEvents,
+                entryUrl,
+                contributes,
+                files,
+              }) => ({
+                id: extensionId,
+                version,
+                ...(displayName === undefined ? {} : { displayName }),
                 activationEvents,
                 entryUrl,
                 ...(contributes === undefined ? {} : { contributes }),

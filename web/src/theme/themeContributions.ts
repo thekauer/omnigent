@@ -18,6 +18,10 @@ export interface ThemeContribution {
   readonly path: string;
   /** Pairs a light and a dark member, which switch with the mode. */
   readonly family: string | undefined;
+  /** A line the picker and Settings show under the label. */
+  readonly description?: string;
+  /** The family's name in the picker (the members' labels otherwise). */
+  readonly familyLabel?: string;
 }
 
 export interface ColorContribution {
@@ -232,7 +236,7 @@ export function parseThemeContributions(
   list("themes", THEME_CONTRIBUTION_LIMITS.themes).forEach((entry: unknown, index) => {
     const where = `contributes.themes[${index}]`;
     if (!isRecord(entry)) return void warnings.push(`${where} must be an object`);
-    const { id, label, uiTheme, path, family } = entry;
+    const { id, label, uiTheme, path, family, description, familyLabel } = entry;
     if (typeof id !== "string" || !THEME_ID.test(id)) {
       return void warnings.push(`${where}: "id" must match ${THEME_ID.source}`);
     }
@@ -262,6 +266,12 @@ export function parseThemeContributions(
       uiTheme: mode,
       path: file,
       family: familyId,
+      ...(labelOf(description, MAX_DESCRIPTION_LENGTH)
+        ? { description: labelOf(description, MAX_DESCRIPTION_LENGTH) }
+        : {}),
+      ...(familyId && labelOf(familyLabel, MAX_LABEL_LENGTH)
+        ? { familyLabel: labelOf(familyLabel, MAX_LABEL_LENGTH) }
+        : {}),
     });
   });
 

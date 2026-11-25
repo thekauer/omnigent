@@ -1,0 +1,13 @@
+{
+  "name": "themes",
+  "displayName": "Omnigent",
+  "description": "The built-in colour themes: the Omnigent palettes and Custom, listed in the theme picker and Settings > Appearance through the theme contribution API. Their themes are generated from lib/themePalette.ts (themes.ts) and their CSS is precompiled, so they paint before any extension loads.",
+  "publisher": "omnigent",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "omnigent": "*"
+  },
+  "activationEvents": [],
+  "browser": "./extension.ts"
+}

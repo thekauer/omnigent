@@ -1,7 +1,7 @@
 // The built-in extensions, bundled with the app and activated at startup in every
 // build. Each lives in its own folder with a package.json manifest, shaped like a
 // dev extension's, and an entry module that only uses the extension API.
-import type { ExtensionDescription } from "@/vscodeExtensions/host";
+import type { ExtensionDescription, ExtensionFile } from "@/vscodeExtensions/host";
 import { validateManifest } from "@/vscodeExtensions/manifest";
 import * as agents from "./omnigent.agents/extension";
 import agentsManifest from "./omnigent.agents/package.json";
@@ -15,10 +15,15 @@ import * as pullRequests from "./omnigent.pull-requests/extension";
 import pullRequestsManifest from "./omnigent.pull-requests/package.json";
 import * as tasks from "./omnigent.tasks/extension";
 import tasksManifest from "./omnigent.tasks/package.json";
+import * as themes from "./omnigent.themes/extension";
+import themesManifest from "./omnigent.themes/package.json";
+import { builtInThemeContributions, builtInThemeFiles } from "./builtInThemes";
 
 export interface BuiltInExtension {
   readonly manifest: unknown;
   readonly module: { activate: (context: never) => unknown; deactivate?: () => unknown };
+  /** The files its contributions name (theme files), imported with the bundle. */
+  readonly files?: Readonly<Record<string, ExtensionFile>>;
 }
 
 export const BUILT_IN_EXTENSIONS: readonly BuiltInExtension[] = Object.freeze([
@@ -28,6 +33,12 @@ export const BUILT_IN_EXTENSIONS: readonly BuiltInExtension[] = Object.freeze([
   { manifest: filesManifest, module: files },
   { manifest: pullRequestsManifest, module: pullRequests },
   { manifest: tasksManifest, module: tasks },
+  // The built-in colour themes: generated from the palettes (lib/themePalette.ts).
+  {
+    manifest: { ...themesManifest, contributes: { themes: builtInThemeContributions() } },
+    module: themes,
+    files: builtInThemeFiles(),
+  },
 ]);
 
 /** The built-ins as the host loads them; a manifest that fails its checks is logged and left out. */
@@ -35,7 +46,7 @@ export function builtInExtensions(
   extensions: readonly BuiltInExtension[] = BUILT_IN_EXTENSIONS,
 ): ExtensionDescription[] {
   const descriptions: ExtensionDescription[] = [];
-  for (const { manifest: raw, module } of extensions) {
+  for (const { manifest: raw, module, files: contributedFiles } of extensions) {
     const { manifest, problems, warnings } = validateManifest(raw, "built-in extension");
     for (const warning of warnings) console.warn(`[omnigent-extensions] ${warning}`);
     if (!manifest) {
@@ -45,11 +56,13 @@ export function builtInExtensions(
     descriptions.push({
       id: manifest.id,
       version: manifest.version,
+      ...(manifest.displayName === undefined ? {} : { displayName: manifest.displayName }),
       activationEvents: manifest.activationEvents,
       entryUrl: `builtin:${manifest.id}`,
       load: () => Promise.resolve(module),
       builtIn: true,
       ...(manifest.contributes === undefined ? {} : { contributes: manifest.contributes }),
+      ...(contributedFiles === undefined ? {} : { files: contributedFiles }),
     });
   }
   return descriptions;

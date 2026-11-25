@@ -20,6 +20,8 @@ export function isValidEngineRange(range: string): boolean {
 export interface ValidManifest {
   /** `publisher.name`. */
   readonly id: string;
+  /** A non-blank `displayName`, trimmed (at most 80 characters). */
+  readonly displayName: string | undefined;
   readonly publisher: string;
   readonly name: string;
   readonly version: string;
@@ -123,6 +125,10 @@ export function validateManifest(raw: unknown, where: string): ManifestValidatio
   return {
     manifest: {
       id: `${publisher as string}.${name as string}`,
+      displayName:
+        typeof manifest.displayName === "string" && manifest.displayName.trim() !== ""
+          ? manifest.displayName.trim().slice(0, 80)
+          : undefined,
       publisher: publisher as string,
       name: name as string,
       version: version as string,

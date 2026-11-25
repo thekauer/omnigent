@@ -25,6 +25,8 @@ export type ExtensionFile =
 export interface ExtensionDescription {
   readonly id: string;
   readonly version: string;
+  /** The manifest's `displayName`, for the places that name the extension (theme groups). */
+  readonly displayName?: string;
   readonly activationEvents: readonly string[];
   /** URL the browser entry is imported from, or where a built-in's module lives. */
   readonly entryUrl: string;
@@ -147,6 +149,8 @@ export class ExtensionHost {
     const removeThemes = this.services.themes?.addExtension({
       id: extension.id,
       version: extension.version,
+      ...(extension.displayName ? { label: extension.displayName } : {}),
+      builtIn: extension.builtIn === true,
       contributions: contributions.theming,
       files: extension.files ?? {},
     });

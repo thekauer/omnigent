@@ -363,6 +363,7 @@ describe("built-in extensions", () => {
       "omnigent.files",
       "omnigent.pull-requests",
       "omnigent.tasks",
+      "omnigent.themes",
     ]);
     expect(error).toHaveBeenCalledWith(expect.stringContaining("invalid built-in extension"));
     error.mockRestore();

@@ -143,3 +143,11 @@ Object.defineProperty(window, "matchMedia", {
     dispatchEvent: () => false,
   }),
 });
+
+// The built-in colour themes, as the extension host registers them at startup: the theme
+// picker and Settings > Appearance list them through the theme service.
+const [{ registerBuiltInThemes }, { themeService }] = await Promise.all([
+  import("./builtinExtensions/builtInThemes"),
+  import("./theme/themeService"),
+]);
+registerBuiltInThemes(themeService);

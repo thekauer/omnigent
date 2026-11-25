@@ -64,10 +64,28 @@ export interface ParsedTheme {
   readonly options: readonly ThemeOption[];
   /** Stored only until the variants ship (theming plan M9). */
   readonly variants: Readonly<Record<string, string>>;
+  /**
+   * `omnigent.palette`: the built-in palette whose precompiled CSS this theme is (only a
+   * built-in extension's theme may name one; the theme service ignores it otherwise).
+   */
+  readonly palette: string | undefined;
+  /** `omnigent.swatch`: the colours the picker previews it with, over the resolved ones. */
+  readonly swatch: ThemeSwatch | undefined;
   /** VS Code colour ids that have no Omnigent token (a partial import). */
   readonly unmapped: readonly string[];
   readonly issues: readonly string[];
 }
+
+/** A theme's preview swatch (the picker's and Settings' chip), as checked colours. */
+export interface ThemeSwatch {
+  readonly bg?: string;
+  readonly card?: string;
+  readonly accent?: string;
+  readonly border?: string;
+  readonly text?: string;
+}
+
+export const SWATCH_KEYS = ["bg", "card", "accent", "border", "text"] as const;
 
 export interface ThemeFileOptions {
   readonly uiTheme: UiTheme;
@@ -103,7 +121,7 @@ const KNOWN_KEYS = new Set([
   "semanticHighlighting",
   "semanticTokenColors",
 ]);
-const OMNIGENT_KEYS = new Set(["tokens", "variants", "options"]);
+const OMNIGENT_KEYS = new Set(["tokens", "variants", "options", "palette", "swatch"]);
 const BRAND_KEYS = ["logo", "wordmark", "favicon", "appName"] as const;
 const OPTION_ID = /^[a-z][a-zA-Z0-9-]{0,31}$/;
 const VARIANT_VALUE = /^[a-z][a-zA-Z0-9-]{0,31}$/;
@@ -172,6 +190,8 @@ export function parseThemeFile(raw: unknown, options: ThemeFileOptions): ParsedT
     brand: undefined,
     options: [],
     variants: nullMap<string>(),
+    palette: undefined,
+    swatch: undefined,
     unmapped: [],
     issues,
   };
@@ -337,6 +357,8 @@ export function parseThemeFile(raw: unknown, options: ThemeFileOptions): ParsedT
 
   const variants = nullMap<string>();
   const themeOptions: ThemeOption[] = [];
+  let palette: string | undefined;
+  let swatch: Record<string, string> | undefined;
   /** `omnigent.tokens` or an option choice's tokens, into `target`. */
   const readTokens = (source: PlainData | undefined, where: string, target: ThemeTokens) => {
     if (source === undefined) return;
@@ -362,6 +384,26 @@ export function parseThemeFile(raw: unknown, options: ThemeFileOptions): ParsedT
         if (!OMNIGENT_KEYS.has(key)) issues.push(`omnigent: unknown key ${quoted(key)}`);
       }
       readTokens(section.tokens, "omnigent.tokens", tokens);
+      if (section.palette !== undefined) {
+        if (typeof section.palette === "string" && /^[a-z][a-z0-9-]{0,31}$/.test(section.palette)) {
+          palette = section.palette;
+        } else issues.push("omnigent.palette: not a palette id");
+      }
+      if (section.swatch !== undefined) {
+        if (!isRecord(section.swatch)) issues.push("omnigent.swatch: not an object");
+        else {
+          swatch = nullMap<string>();
+          for (const [key, value] of Object.entries(section.swatch)) {
+            if (!(SWATCH_KEYS as readonly string[]).includes(key)) {
+              issues.push(`omnigent.swatch: unknown key ${quoted(key)}`);
+              continue;
+            }
+            const result = validateTokenValue("color", value, options.context);
+            if (result.ok) swatch[key] = result.value;
+            else issues.push(`omnigent.swatch.${key}: ${result.reason}; ignoring it`);
+          }
+        }
+      }
       if (section.variants !== undefined) {
         if (!isRecord(section.variants)) issues.push("omnigent.variants: not an object");
         else {
@@ -433,5 +475,15 @@ export function parseThemeFile(raw: unknown, options: ThemeFileOptions): ParsedT
     }
   }
 
-  return { tokens, syntax, brand, options: themeOptions, variants, unmapped, issues };
+  return {
+    tokens,
+    syntax,
+    brand,
+    options: themeOptions,
+    variants,
+    palette,
+    swatch,
+    unmapped,
+    issues,
+  };
 }
