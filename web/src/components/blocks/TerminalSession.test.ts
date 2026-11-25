@@ -295,6 +295,24 @@ describe("terminalTheme", () => {
     expect(theme.brightWhite).toBe("#18181b");
   });
 
+  it("reads the terminal tokens, leaving unset ANSI slots to xterm", () => {
+    const root = document.documentElement;
+    root.style.setProperty("--terminal-background", "#102030");
+    root.style.setProperty("--terminal-foreground", "#f0f0f0");
+    root.style.setProperty("--terminal-ansi-red", "#ff0000");
+    try {
+      const theme = terminalTheme(false);
+      expect(theme.background).toBe("#102030");
+      expect(theme.foreground).toBe("#f0f0f0");
+      expect(theme.red).toBe("#ff0000");
+      expect(theme).not.toHaveProperty("green");
+      // With the token stylesheet in play, an unset slot stays unset (no registry fallback).
+      expect(theme).not.toHaveProperty("white");
+    } finally {
+      root.removeAttribute("style");
+    }
+  });
+
   it("keeps dark mode terminal surfaces dark", () => {
     const theme = terminalTheme(true);
 

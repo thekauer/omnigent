@@ -1,25 +1,20 @@
 import type { ITheme } from "@xterm/xterm";
+import { terminalTokenColors } from "@/lib/terminalPalette";
 
 export const CODEX_INPUT_BACKGROUND_INDEX = 255;
 const BACKGROUND_TONES = {
   subtle: {
     index: 253,
-    light: "#fafafa",
-    dark: "#1f2123",
     rgb: ["14;14;14", "31;33;35"],
     indexed: [233, 234],
   },
   input: {
     index: CODEX_INPUT_BACKGROUND_INDEX,
-    light: "#f4f4f4",
-    dark: "#2f3132",
     rgb: ["30;30;30", "47;49;50", "244;244;244"],
     indexed: [8, 236, 255],
   },
   emphasis: {
     index: 254,
-    light: "#e0e0e0",
-    dark: "#464849",
     rgb: ["224;224;224"],
     indexed: [254],
   },
@@ -62,10 +57,12 @@ const MAX_CONTROL_SEQUENCE_LENGTH = 128;
 const MAX_XTERM_PARAMETER = 0x7fffffff;
 const encoder = new TextEncoder();
 
+/** `theme` with the background tones (the `terminal-tone-*` tokens) in their palette slots. */
 export function codexTerminalTheme(theme: ITheme, isDark: boolean): ITheme {
   const extendedAnsi = new Array<string>(EXTENDED_ANSI_COLOR_COUNT);
-  for (const tone of Object.values(BACKGROUND_TONES)) {
-    extendedAnsi[tone.index - STANDARD_ANSI_COLOR_COUNT] = isDark ? tone.dark : tone.light;
+  const { tones } = terminalTokenColors(isDark);
+  for (const [name, tone] of Object.entries(BACKGROUND_TONES)) {
+    extendedAnsi[tone.index - STANDARD_ANSI_COLOR_COUNT] = tones[name as keyof typeof tones];
   }
   return { ...theme, extendedAnsi };
 }

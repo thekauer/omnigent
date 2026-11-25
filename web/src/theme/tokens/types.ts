@@ -6,7 +6,8 @@
  * What a token's value is. `image` accepts any `background-image` value, colours
  * included; `channels` is an `R G B` triple for `rgb(var(--x) / alpha)`; `alpha` an
  * opacity, a number from 0 to 1 or a percentage; `font` a font-family list; `shadow`
- * a `box-shadow` list; `keyword` a single CSS keyword.
+ * a `box-shadow` list; `keyword` a single CSS keyword (an identifier: a syntax theme's
+ * name reads as one).
  */
 export type TokenKind =
   | "color"
@@ -30,7 +31,11 @@ export type TokenGroup =
   | "elevation"
   | "density"
   | "border"
-  | "scrollbar";
+  | "scrollbar"
+  | "code"
+  | "terminal"
+  | "diff"
+  | "fileTree";
 
 /**
  * An `@property` syntax for a token registered with the browser. A registered token
@@ -99,6 +104,12 @@ export interface TokenDef {
    * registration is document-global.
    */
   registerInEmbed?: boolean;
+  /**
+   * Read by script in either mode, whatever the app's mode (the terminal follows its
+   * own light or dark setting). The generator also writes both modes' defaults on
+   * `[data-token-mode="light"|"dark"]` probe elements (`theme/tokenValues.ts`).
+   */
+  perMode?: boolean;
 }
 
 /** The `@property` initial value per syntax, unless the token sets `initial`. */

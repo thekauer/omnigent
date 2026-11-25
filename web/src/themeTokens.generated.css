@@ -278,6 +278,30 @@
   --ui-scrollbar-thumb: initial;
   --ui-scrollbar-thumb-hover: initial;
   --ui-scrollbar-track: initial;
+  --terminal-background: #ffffff;
+  --terminal-foreground: #18181b;
+  --terminal-cursor: #0891b2;
+  --terminal-cursor-accent: var(--terminal-background);
+  --terminal-selection: #0891b233;
+  --terminal-ansi-black: #18181b;
+  --terminal-ansi-red: initial;
+  --terminal-ansi-green: initial;
+  --terminal-ansi-yellow: initial;
+  --terminal-ansi-blue: initial;
+  --terminal-ansi-magenta: initial;
+  --terminal-ansi-cyan: initial;
+  --terminal-ansi-white: #3f3f46;
+  --terminal-ansi-bright-black: #e4e4e7;
+  --terminal-ansi-bright-red: initial;
+  --terminal-ansi-bright-green: initial;
+  --terminal-ansi-bright-yellow: initial;
+  --terminal-ansi-bright-blue: initial;
+  --terminal-ansi-bright-magenta: initial;
+  --terminal-ansi-bright-cyan: initial;
+  --terminal-ansi-bright-white: #18181b;
+  --terminal-tone-subtle: #fafafa;
+  --terminal-tone-input: #f4f4f4;
+  --terminal-tone-emphasis: #e0e0e0;
 }
 
 .dark {
@@ -324,6 +348,18 @@
   --ui-shadow-onboarding-alpha: calc(56 / 255 * var(--omnigent-elevation));
   /* prettier-ignore */
   --onboarding-modal-shadow: 0 24px 80px 8px #00000038;
+  --terminal-background: #0a0a0a;
+  --terminal-foreground: #e4e4e7;
+  --terminal-cursor: #22d3ee;
+  --terminal-cursor-accent: var(--terminal-background);
+  --terminal-selection: #22d3ee33;
+  --terminal-ansi-black: #09090b;
+  --terminal-ansi-white: initial;
+  --terminal-ansi-bright-black: #71717a;
+  --terminal-ansi-bright-white: initial;
+  --terminal-tone-subtle: #1f2123;
+  --terminal-tone-input: #2f3132;
+  --terminal-tone-emphasis: #464849;
 }
 
 :root:not(.dark):not([data-theme]) {
@@ -1079,6 +1115,7 @@
   --ui-view-title-height: calc(var(--spacing) * 11);
   --ui-view-title-padding-x: calc(var(--spacing) * 2);
   --ui-scrollbar-size: calc(var(--spacing) * 2);
+  --terminal-cursor-accent: var(--terminal-background);
 }
 
 :root.dark,
@@ -1167,4 +1204,59 @@
   --ui-view-title-height: calc(var(--spacing) * 11);
   --ui-view-title-padding-x: calc(var(--spacing) * 2);
   --ui-scrollbar-size: calc(var(--spacing) * 2);
+  --terminal-cursor-accent: var(--terminal-background);
+}
+
+[data-token-mode="light"] {
+  --terminal-background: #ffffff;
+  --terminal-foreground: #18181b;
+  --terminal-cursor: #0891b2;
+  --terminal-cursor-accent: var(--terminal-background);
+  --terminal-selection: #0891b233;
+  --terminal-ansi-black: #18181b;
+  --terminal-ansi-red: initial;
+  --terminal-ansi-green: initial;
+  --terminal-ansi-yellow: initial;
+  --terminal-ansi-blue: initial;
+  --terminal-ansi-magenta: initial;
+  --terminal-ansi-cyan: initial;
+  --terminal-ansi-white: #3f3f46;
+  --terminal-ansi-bright-black: #e4e4e7;
+  --terminal-ansi-bright-red: initial;
+  --terminal-ansi-bright-green: initial;
+  --terminal-ansi-bright-yellow: initial;
+  --terminal-ansi-bright-blue: initial;
+  --terminal-ansi-bright-magenta: initial;
+  --terminal-ansi-bright-cyan: initial;
+  --terminal-ansi-bright-white: #18181b;
+  --terminal-tone-subtle: #fafafa;
+  --terminal-tone-input: #f4f4f4;
+  --terminal-tone-emphasis: #e0e0e0;
+}
+
+[data-token-mode="dark"] {
+  --terminal-background: #0a0a0a;
+  --terminal-foreground: #e4e4e7;
+  --terminal-cursor: #22d3ee;
+  --terminal-cursor-accent: var(--terminal-background);
+  --terminal-selection: #22d3ee33;
+  --terminal-ansi-black: #09090b;
+  --terminal-ansi-red: initial;
+  --terminal-ansi-green: initial;
+  --terminal-ansi-yellow: initial;
+  --terminal-ansi-blue: initial;
+  --terminal-ansi-magenta: initial;
+  --terminal-ansi-cyan: initial;
+  --terminal-ansi-white: initial;
+  --terminal-ansi-bright-black: #71717a;
+  --terminal-ansi-bright-red: initial;
+  --terminal-ansi-bright-green: initial;
+  --terminal-ansi-bright-yellow: initial;
+  --terminal-ansi-bright-blue: initial;
+  --terminal-ansi-bright-magenta: initial;
+  --terminal-ansi-bright-cyan: initial;
+  --terminal-ansi-bright-white: initial;
+  --terminal-tone-subtle: #1f2123;
+  --terminal-tone-input: #2f3132;
+  --terminal-tone-emphasis: #464849;
 }

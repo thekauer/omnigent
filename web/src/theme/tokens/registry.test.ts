@@ -164,15 +164,39 @@ describe("theme token registry", () => {
   it("adds only the Layer 0 groups' tokens beside the legacy ones", () => {
     const legacyIds = new Set([...Object.keys(legacy[":root"]), ...Object.keys(legacy[".dark"])]);
     const added = DEFAULT_TOKENS.filter((token) => !legacyIds.has(token.id));
-    expect(new Set(added.map((token) => token.group))).toEqual(
-      new Set(["shape", "typography", "elevation", "density", "border", "scrollbar"]),
-    );
-    // Public ids take the `ui-` prefix; the internal `omnigent-` ones are registered in
-    // the embed too, so they must stay off every name a host page may use.
+    const allowed = new Set([
+      "shape",
+      "typography",
+      "elevation",
+      "density",
+      "border",
+      "scrollbar",
+      "code",
+      "terminal",
+      "diff",
+      "fileTree",
+    ]);
     expect(
-      added.filter((token) => !token.id.startsWith("ui-")).map((token) => token.id),
-      "added ids",
-    ).toEqual(["omnigent-elevation"]);
+      [...new Set(added.map((token) => token.group))].filter((group) => !allowed.has(group)),
+    ).toEqual([]);
+    // Host ids take the `ui-` prefix, except the code surfaces' own groups (the theming
+    // plan's token groups) and the internal `omnigent-` ones, which are registered in
+    // the embed too, so they must stay off every name a host page may use.
+    const GROUP_PREFIXES: Record<string, RegExp> = {
+      code: /^(viewer-|syntax-theme-|code-)/,
+      terminal: /^terminal-/,
+      diff: /^diff-/,
+      fileTree: /^file-tree-/,
+    };
+    for (const token of added) {
+      const prefix = GROUP_PREFIXES[token.group] ?? /^ui-/;
+      if (token.id === "omnigent-elevation") continue;
+      expect(token.id, token.group).toMatch(prefix);
+    }
+    expect(
+      added.some((token) => token.id.startsWith("x-")),
+      "extension namespace",
+    ).toBe(false);
     expect(
       DEFAULT_TOKENS.filter((token) => token.registerInEmbed).map((token) => token.id),
     ).toEqual(["omnigent-elevation"]);
@@ -187,6 +211,29 @@ describe("theme token registry", () => {
       expect.arrayContaining(["ui-scrollbar-thumb", "ui-scrollbar-track"]),
     );
     for (const token of unset) expect(root[token.id], token.id).toBe(UNSET_VALUE);
+  });
+
+  it("writes the per-mode tokens' defaults on the mode probes", () => {
+    const light = generatedRule('[data-token-mode="light"]');
+    const dark = generatedRule('[data-token-mode="dark"]');
+    const perMode = DEFAULT_TOKENS.filter((token) => token.perMode).map((token) => token.id);
+    expect(perMode).toEqual(expect.arrayContaining(["terminal-background", "terminal-ansi-red"]));
+    expect(Object.keys(light).sort()).toEqual([...perMode].sort());
+    expect(Object.keys(dark).sort()).toEqual([...perMode].sort());
+    // Today's xterm theme: white text slots go dark on the light background only.
+    expect([light["terminal-background"], dark["terminal-background"]]).toEqual([
+      "#ffffff",
+      "#0a0a0a",
+    ]);
+    expect([light["terminal-ansi-white"], dark["terminal-ansi-white"]]).toEqual([
+      "#3f3f46",
+      UNSET_VALUE,
+    ]);
+    expect([light["terminal-ansi-red"], dark["terminal-ansi-red"]]).toEqual([
+      UNSET_VALUE,
+      UNSET_VALUE,
+    ]);
+    expect(generatedRule(".dark")["terminal-ansi-white"]).toBe(UNSET_VALUE);
   });
 
   it("keeps every generated custom property value on one line", () => {

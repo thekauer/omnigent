@@ -12,6 +12,7 @@ import { ELEVATION_TOKENS } from "./elevation.ts";
 import { SCROLLBAR_TOKENS } from "./scrollbar.ts";
 import { SHAPE_TOKENS } from "./shape.ts";
 import { STATUS_TOKENS } from "./status.ts";
+import { TERMINAL_TOKENS } from "./terminal.ts";
 import type { TokenDef } from "./types.ts";
 import { TYPOGRAPHY_TOKENS } from "./typography.ts";
 import { PALETTE_TOKENS, WORKBENCH_TOKENS } from "./workbench.ts";
@@ -27,6 +28,7 @@ export {
   type TokenSyntax,
 } from "./types.ts";
 export { PALETTE_TOKENS } from "./workbench.ts";
+export { TERMINAL_ANSI_NAMES } from "./terminal.ts";
 
 type PaletteTokenDef = (typeof PALETTE_TOKENS)[number];
 
@@ -58,6 +60,7 @@ export const TOKENS: readonly TokenDef[] = [
   ...DENSITY_TOKENS,
   ...BORDER_TOKENS,
   ...SCROLLBAR_TOKENS,
+  ...TERMINAL_TOKENS,
 ];
 
 /** Tokens with host defaults (no palette sets them), in registry order. */

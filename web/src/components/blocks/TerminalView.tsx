@@ -12,11 +12,13 @@ import {
   useContext,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
 } from "react";
 import { useTerminalIsDark } from "@/components/theme/useTerminalIsDark";
+import { subscribeThemeTokens } from "@/theme/tokenValues";
 import { Button } from "@/components/ui/button";
 import { toast } from "sonner";
 import {
@@ -301,7 +303,18 @@ export function TerminalView({
   const connectedAtRef = useRef<number | null>(null);
   // A Settings change re-themes a live terminal through the setTheme effect below.
   const isDark = useTerminalIsDark();
-  const terminalBackground = terminalTheme(isDark).background;
+  // The terminal-* tokens as read now: a theme or palette change that changes them
+  // re-themes the live terminal too (other page style changes leave it alone).
+  const themeKey = useSyncExternalStore(
+    subscribeThemeTokens,
+    () => JSON.stringify(terminalTheme(isDark)),
+    () => "",
+  );
+  const terminalBackground = useMemo(
+    () => terminalTheme(isDark).background,
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- re-read when the tokens change
+    [isDark, themeKey],
+  );
   // Stable ref so the theme-update effect can reach the live session
   // without adding isDark to the attachSession deps (which would
   // reconnect the WebSocket on every theme change).
@@ -700,7 +713,7 @@ export function TerminalView({
   // Push theme changes into the live session without remounting.
   useEffect(() => {
     sessionRef.current?.setTheme(isDark);
-  }, [isDark]);
+  }, [isDark, themeKey]);
 
   useEffect(() => {
     sessionRef.current?.setClipboardEnabled(!readOnly && active);

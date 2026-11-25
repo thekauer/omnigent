@@ -18,7 +18,7 @@ import "@xterm/xterm/css/xterm.css";
 import { withBasePath } from "@/lib/basePath";
 import { type CodeFont, codeFontFamilyForEditor, readCodeFont } from "@/lib/codeFontPreferences";
 import { parseHttpUrl } from "@/lib/openLinkInApp";
-import { terminalSurfaceColors } from "@/lib/terminalPalette";
+import { terminalTokenColors } from "@/lib/terminalPalette";
 import { splitWorkspaceFileCitation } from "@/components/ai-elements/streamdown-security";
 import { resolveChatFilePath } from "@/hooks/useWorkspaceChangedFiles";
 import { CodexTerminalPalette, codexTerminalTheme } from "./CodexTerminalPalette";
@@ -42,37 +42,46 @@ function terminalFontOptions({ sizePx, family, weight }: CodeFont) {
 // Mirrors ``ws_common.py`` ``WS_CLOSE_WRONG_REPLICA``.
 export const WS_CLOSE_WRONG_REPLICA = 4400;
 
+// xterm's ANSI slots, in palette order (the `terminal-ansi-*` tokens' order).
+const ANSI_THEME_KEYS = [
+  "black",
+  "red",
+  "green",
+  "yellow",
+  "blue",
+  "magenta",
+  "cyan",
+  "white",
+  "brightBlack",
+  "brightRed",
+  "brightGreen",
+  "brightYellow",
+  "brightBlue",
+  "brightMagenta",
+  "brightCyan",
+  "brightWhite",
+] as const satisfies readonly (keyof ITheme)[];
+
 /**
- * Return an xterm `ITheme` object matched to the app's light or dark palette.
+ * Return an xterm `ITheme` object for the light or dark terminal, from the
+ * `terminal-*` theme tokens. An unset ANSI slot is left out, so xterm's default
+ * colour applies. Light mode's defaults give white and bright white dark tones:
+ * CLIs that assume a dark terminal paint primary text with them.
  */
 export function terminalTheme(isDark: boolean): ITheme {
-  const { background: bg, foreground, selection } = terminalSurfaceColors(isDark);
-  return isDark
-    ? {
-        background: bg,
-        foreground,
-        cursor: "#22d3ee",
-        cursorAccent: bg,
-        selectionBackground: selection,
-        black: "#09090b",
-        brightBlack: "#71717a",
-      }
-    : {
-        background: bg,
-        foreground,
-        cursor: "#0891b2",
-        cursorAccent: bg,
-        selectionBackground: selection,
-        black: "#18181b",
-        brightBlack: "#e4e4e7",
-        // CLIs that assume a dark terminal paint primary text with ANSI
-        // white / bright-white. On the white card background those slots
-        // must be dark tones, or the text renders white-on-white and
-        // vanishes. brightWhite is the most emphasized text, so it maps to
-        // the strongest (darkest) tone; white is a slightly muted gray.
-        white: "#3f3f46",
-        brightWhite: "#18181b",
-      };
+  const colors = terminalTokenColors(isDark);
+  const theme: ITheme = {
+    background: colors.background,
+    foreground: colors.foreground,
+    cursor: colors.cursor,
+    cursorAccent: colors.cursorAccent,
+    selectionBackground: colors.selection,
+  };
+  ANSI_THEME_KEYS.forEach((key, index) => {
+    const color = colors.ansi[index];
+    if (color) theme[key] = color;
+  });
+  return theme;
 }
 
 /**
