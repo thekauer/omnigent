@@ -77,6 +77,12 @@ export const SHAPE_TOKENS = defineTokens("shape", [
     "<length-percentage>",
   ),
   derived(
+    "ui-radius-14",
+    1.75,
+    "Off-scale radius, 14px at the default base: the onboarding panel's top corners.",
+    "<length-percentage>",
+  ),
+  derived(
     "ui-radius-16",
     2,
     "Off-scale radius, 16px at the default base: composer menus and panels.",
@@ -86,6 +92,12 @@ export const SHAPE_TOKENS = defineTokens("shape", [
     "ui-radius-20",
     2.5,
     "Off-scale radius, 20px at the default base: the composer and large dialogs.",
+    "<length-percentage>",
+  ),
+  derived(
+    "ui-radius-24",
+    3,
+    "Off-scale radius, 24px at the default base: the onboarding card.",
     "<length-percentage>",
   ),
   derived(

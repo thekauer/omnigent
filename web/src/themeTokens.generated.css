@@ -42,6 +42,12 @@
   initial-value: 0px;
 }
 
+@property --ui-radius-14 {
+  syntax: "<length-percentage>";
+  inherits: true;
+  initial-value: 0px;
+}
+
 @property --ui-radius-16 {
   syntax: "<length-percentage>";
   inherits: true;
@@ -49,6 +55,12 @@
 }
 
 @property --ui-radius-20 {
+  syntax: "<length-percentage>";
+  inherits: true;
+  initial-value: 0px;
+}
+
+@property --ui-radius-24 {
   syntax: "<length-percentage>";
   inherits: true;
   initial-value: 0px;
@@ -172,8 +184,10 @@
   --ui-radius-3: calc(var(--ui-radius-base) * 0.375);
   --ui-radius-10: calc(var(--ui-radius-base) * 1.25);
   --ui-radius-12: calc(var(--ui-radius-base) * 1.5);
+  --ui-radius-14: calc(var(--ui-radius-base) * 1.75);
   --ui-radius-16: calc(var(--ui-radius-base) * 2);
   --ui-radius-20: calc(var(--ui-radius-base) * 2.5);
+  --ui-radius-24: calc(var(--ui-radius-base) * 3);
   --ui-radius-30: calc(var(--ui-radius-base) * 3.75);
   --radius: var(--ui-radius-base);
   --radius-otto-button: var(--ui-radius-md);
@@ -997,8 +1011,10 @@
   --ui-radius-3: calc(var(--ui-radius-base) * 0.375);
   --ui-radius-10: calc(var(--ui-radius-base) * 1.25);
   --ui-radius-12: calc(var(--ui-radius-base) * 1.5);
+  --ui-radius-14: calc(var(--ui-radius-base) * 1.75);
   --ui-radius-16: calc(var(--ui-radius-base) * 2);
   --ui-radius-20: calc(var(--ui-radius-base) * 2.5);
+  --ui-radius-24: calc(var(--ui-radius-base) * 3);
   --ui-radius-30: calc(var(--ui-radius-base) * 3.75);
   --radius: var(--ui-radius-base);
   --radius-otto-button: var(--ui-radius-md);
@@ -1086,8 +1102,10 @@
   --ui-radius-3: calc(var(--ui-radius-base) * 0.375);
   --ui-radius-10: calc(var(--ui-radius-base) * 1.25);
   --ui-radius-12: calc(var(--ui-radius-base) * 1.5);
+  --ui-radius-14: calc(var(--ui-radius-base) * 1.75);
   --ui-radius-16: calc(var(--ui-radius-base) * 2);
   --ui-radius-20: calc(var(--ui-radius-base) * 2.5);
+  --ui-radius-24: calc(var(--ui-radius-base) * 3);
   --ui-radius-30: calc(var(--ui-radius-base) * 3.75);
   --radius: var(--ui-radius-base);
   --radius-otto-button: var(--ui-radius-md);

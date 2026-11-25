@@ -83,7 +83,7 @@ function Decorations({ chart }: { chart: Chart }) {
         contentStyle={{
           background: "var(--popover)",
           border: "1px solid var(--border)",
-          borderRadius: 6,
+          borderRadius: "var(--ui-radius-md)",
           fontSize: 12,
         }}
       />
