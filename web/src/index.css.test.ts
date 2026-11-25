@@ -907,7 +907,7 @@ describe("index.css sidebar canvas", () => {
   });
 
   it("uses the shared inset shadow with a dark-only right border", () => {
-    const shadow = "inset -4px 0 6px -4px rgb(0 0 0 / calc(5% * var(--ui-elevation)))";
+    const shadow = "inset -4px 0 6px -4px rgb(0 0 0 / calc(5% * var(--omnigent-elevation)))";
     expect(lightEdgeRule).toContain(`box-shadow: ${shadow}`);
     expect(darkEdgeRule).toContain(`box-shadow: ${shadow}`);
     expect(lightEdgeRule).toContain("border-right: none");
@@ -1173,7 +1173,7 @@ describe("index.css shadow tokens", () => {
       `--ui-shadow-${step}: ${geometry} rgb(var(--ui-shadow-neutral-rgb) / var(--ui-shadow-${step}-alpha));`,
     );
     expect(generatedTokenCssSource).toContain(
-      `--ui-shadow-${step}-alpha: calc(${alpha} * var(--ui-elevation));`,
+      `--ui-shadow-${step}-alpha: calc(${alpha} * var(--omnigent-elevation));`,
     );
   });
 

@@ -3,6 +3,11 @@
 //
 // A recipe's alpha is its own registered token, so the recipe reads the same plain
 // colour (`rgb(0 0 0 / 0.08)`) it had as a literal.
+//
+// Readers scale by `omnigent-elevation`, not `ui-elevation` itself: the embed leaves
+// `ui-elevation` unregistered, where an invalid value would make every shadow alpha,
+// and so the whole `box-shadow` with its rings and insets, invalid. The guard is
+// registered in both builds and takes 1 instead.
 
 import { defineTokens, type TokenInput } from "./types.ts";
 
@@ -27,7 +32,7 @@ function recipe(
       kind: "alpha",
       syntax: ALPHA_SYNTAX,
       description: `Alpha of ui-shadow-${name}, scaled by ui-elevation.`,
-      default: { light: `calc(${alpha} * var(--ui-elevation))` },
+      default: { light: `calc(${alpha} * var(--omnigent-elevation))` },
     },
     {
       id: `ui-shadow-${name}`,
@@ -56,6 +61,16 @@ export const ELEVATION_TOKENS = defineTokens("elevation", [
     description:
       "Shadow strength, a number from 0 to 1 (not a percentage). Every shadow's alpha is multiplied by it.",
     default: { light: "1" },
+  },
+  {
+    id: "omnigent-elevation",
+    kind: "number",
+    syntax: "<number>",
+    initial: "1",
+    registerInEmbed: true,
+    description:
+      "Internal: ui-elevation as a registered number in both builds, so an invalid ui-elevation reads 1 (full shadows) in the embed too. Shadows read this; themes set ui-elevation.",
+    default: { light: "var(--ui-elevation)" },
   },
   {
     id: "ui-shadow-neutral-rgb",
@@ -94,8 +109,8 @@ export const ELEVATION_TOKENS = defineTokens("elevation", [
     syntax: ALPHA_SYNTAX,
     description: "Alpha of composer-shadow, scaled by ui-elevation.",
     default: {
-      light: "calc(12% * var(--ui-elevation))",
-      dark: "calc(80% * var(--ui-elevation))",
+      light: "calc(12% * var(--omnigent-elevation))",
+      dark: "calc(80% * var(--omnigent-elevation))",
     },
   },
   {
@@ -111,8 +126,8 @@ export const ELEVATION_TOKENS = defineTokens("elevation", [
     syntax: ALPHA_SYNTAX,
     description: "Alpha of ui-shadow-onboarding, scaled by ui-elevation.",
     default: {
-      light: "calc(18 / 255 * var(--ui-elevation))",
-      dark: "calc(56 / 255 * var(--ui-elevation))",
+      light: "calc(18 / 255 * var(--omnigent-elevation))",
+      dark: "calc(56 / 255 * var(--omnigent-elevation))",
     },
   },
   {

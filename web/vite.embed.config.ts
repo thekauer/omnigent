@@ -39,9 +39,12 @@ const SCOPE = ".omnigent-app";
 // retype the host page's own `--ui-*` variables (`--ui-elevation: high` on a host
 // element would read 0). The embed drops them; its tokens stay unregistered and
 // compute to their `calc()` text, which renders identically. Tailwind's own
-// `--tw-*` registrations are unaffected.
+// `--tw-*` registrations are unaffected, and so are the internal `omnigent-` tokens
+// marked `registerInEmbed` (the elevation guard), whose names no host page uses.
 const REGISTERED_TOKEN_PROPERTIES = new Set(
-  DEFAULT_TOKENS.filter((token) => token.syntax).map((token) => `--${token.id}`),
+  DEFAULT_TOKENS.filter((token) => token.syntax && !token.registerInEmbed).map(
+    (token) => `--${token.id}`,
+  ),
 );
 
 /** Split a selector list on top-level commas (ignoring commas inside () or []). */

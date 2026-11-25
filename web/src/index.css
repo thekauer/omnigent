@@ -200,9 +200,13 @@
   --icon-container-default: 16px;
 
   /* User-controlled UI font family (see Appearance settings /
-   * lib/uiFontPreferences.ts). Deliberately left unset here so the `html` rule's
-   * `var(--ui-font-family, var(--ui-font-ui))` falls back to the theme's UI font;
-   * the Appearance setting sets it at runtime on documentElement. */
+   * lib/uiFontPreferences.ts). Deliberately unset here (`initial`) so the `html`
+   * rule's `var(--ui-font-family, var(--ui-font-ui))` falls back to the theme's UI
+   * font; the Appearance setting sets it at runtime, inline on the style root
+   * (documentElement, or the embed's `.omnigent-app`), which wins over this rule.
+   * `initial` rather than no declaration: in the embed, `:root` is the scope root,
+   * and a host page's own `--ui-font-family` must not inherit into the app. */
+  --ui-font-family: initial;
 
   /* ---- Inset system -------------------------------------------------------
    * Single source of truth for how far content must stay clear of screen
@@ -1076,11 +1080,11 @@
 /* Edge treatment is mode-specific but palette-independent. */
 html:not(.dark) .conversations-sidebar:not(.is-peek) {
   border-right: none;
-  box-shadow: inset -4px 0 6px -4px rgb(0 0 0 / calc(5% * var(--ui-elevation)));
+  box-shadow: inset -4px 0 6px -4px rgb(0 0 0 / calc(5% * var(--omnigent-elevation)));
 }
 .dark .conversations-sidebar {
   border-right: 1px solid var(--sidebar-edge-border);
-  box-shadow: inset -4px 0 6px -4px rgb(0 0 0 / calc(5% * var(--ui-elevation)));
+  box-shadow: inset -4px 0 6px -4px rgb(0 0 0 / calc(5% * var(--omnigent-elevation)));
 }
 
 .dark .workspace-panel-motion {
@@ -1594,11 +1598,11 @@ html[data-electron-mac] .breadcrumb-folder {
      the shadow stays visible while open, separating it from the strip of chat
      behind. iOS-only: the web overlay is unchanged. */
   :is([data-ios-native], [data-android-native]) .conversations-sidebar:not([data-collapsed]) {
-    box-shadow: 8px 0 28px -6px rgb(0 0 0 / calc(0.22 * var(--ui-elevation)));
+    box-shadow: 8px 0 28px -6px rgb(0 0 0 / calc(0.22 * var(--omnigent-elevation)));
   }
 
   .dark :is([data-ios-native], [data-android-native]) .conversations-sidebar:not([data-collapsed]) {
-    box-shadow: 8px 0 30px -4px rgb(0 0 0 / calc(0.55 * var(--ui-elevation)));
+    box-shadow: 8px 0 30px -4px rgb(0 0 0 / calc(0.55 * var(--omnigent-elevation)));
   }
 
   [data-ios-native] :is(input, textarea, select, [contenteditable="true"]) {
@@ -1737,8 +1741,8 @@ html[data-electron-mac] .breadcrumb-folder {
   background: linear-gradient(150deg, #ff4da6 0%, #f22286 40%, #b8185f 100%);
   border: none;
   box-shadow:
-    0 4px 16px rgb(0 0 0 / calc(0.5 * var(--ui-elevation))),
-    0 1px 3px rgb(0 0 0 / calc(0.4 * var(--ui-elevation)));
+    0 4px 16px rgb(0 0 0 / calc(0.5 * var(--omnigent-elevation))),
+    0 1px 3px rgb(0 0 0 / calc(0.4 * var(--omnigent-elevation)));
   color: #ffffff;
 }
 

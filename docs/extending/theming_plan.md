@@ -147,7 +147,17 @@ Paths are relative to the omnigent repo root unless they start with `my-extensio
   own `--ui-*` variables stay untyped. There the registered tokens compute to their
   `calc()` text (`calc(.5rem * .5)` rather than `4px`), which renders identically: the
   embed dump differs from standalone in text only, and the harness checks that a host
-  element's `--ui-elevation: high` reads `high`.
+  element's `--ui-elevation: high` reads `high`. One exception: the internal
+  `--omnigent-elevation` (`registerInEmbed`), a `<number>` with initial 1 declared as
+  `var(--ui-elevation)` on the theme roots, stays registered in the embed too. Every
+  shadow alpha and inline shadow reads it instead of `ui-elevation`, so an invalid
+  elevation in the embed reads 1 there as well, and a `box-shadow` that combines rings or
+  insets with an elevation-scaled layer never turns invalid as a whole. The name is
+  Omnigent's own (`omnigent-`), never a host page's.
+- A token with no default in either mode is reset to `initial` on the top root (so on
+  the embed's scope root), and so is the Appearance layer `--ui-font-family` unless the
+  app sets it inline there: a host page's own variables of those names do not inherit
+  into the app. The harness probes both on the embed page.
 - Registered syntaxes take every plausible value, because a value outside the syntax
   silently computes to the parent's or the initial value: radii are
   `<length-percentage>`, every shadow alpha is kind `alpha` with

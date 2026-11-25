@@ -285,7 +285,8 @@ describe("embed token registrations", () => {
     scoped.walkAtRules("property", (rule) => {
       kept.push(rule.params);
     });
-    expect(kept).toEqual(["--tw-shadow"]);
+    // The internal elevation guard stays registered: its name is Omnigent's own.
+    expect(kept).toEqual(["--omnigent-elevation", "--tw-shadow"]);
     // The token declarations themselves stay, scoped onto the embed root.
     let elevation = "";
     scoped.walkDecls("--ui-elevation", (declaration) => {

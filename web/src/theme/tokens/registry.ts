@@ -19,6 +19,7 @@ import { PALETTE_TOKENS, WORKBENCH_TOKENS } from "./workbench.ts";
 export {
   isDerivedValue,
   SYNTAX_INITIAL_VALUES,
+  UNSET_VALUE,
   type TokenDef,
   type TokenDefaults,
   type TokenGroup,

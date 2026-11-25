@@ -15,6 +15,7 @@ import {
   TOKENS,
   getToken,
   isDerivedValue,
+  UNSET_VALUE,
 } from "./registry";
 
 const WEB_ROOT = resolve(__dirname, "../../..");
@@ -44,6 +45,8 @@ function rootBlocks(css: string): Record<":root" | ".dark", Record<string, strin
 const STILL_IN_INDEX_CSS = {
   ":root": [
     "desktop-ui-font-size",
+    // Not a token: the Appearance font layer, reset so a host page's doesn't leak in.
+    "ui-font-family",
     "icon-size-default",
     "icon-container-default",
     "omnigent-header-height",
@@ -164,10 +167,48 @@ describe("theme token registry", () => {
     expect(new Set(added.map((token) => token.group))).toEqual(
       new Set(["shape", "typography", "elevation", "density", "border", "scrollbar"]),
     );
+    // Public ids take the `ui-` prefix; the internal `omnigent-` ones are registered in
+    // the embed too, so they must stay off every name a host page may use.
     expect(
-      added.every((token) => token.id.startsWith("ui-")),
+      added.filter((token) => !token.id.startsWith("ui-")).map((token) => token.id),
       "added ids",
-    ).toBe(true);
+    ).toEqual(["omnigent-elevation"]);
+    expect(
+      DEFAULT_TOKENS.filter((token) => token.registerInEmbed).map((token) => token.id),
+    ).toEqual(["omnigent-elevation"]);
+  });
+
+  it("resets tokens without a default on the top root", () => {
+    const root = generatedRule(":root");
+    const unset = DEFAULT_TOKENS.filter(
+      (token) => token.default?.light === undefined && token.default?.dark === undefined,
+    );
+    expect(unset.map((token) => token.id)).toEqual(
+      expect.arrayContaining(["ui-scrollbar-thumb", "ui-scrollbar-track"]),
+    );
+    for (const token of unset) expect(root[token.id], token.id).toBe(UNSET_VALUE);
+  });
+
+  it("keeps every generated custom property value on one line", () => {
+    const css = readFileSync(resolve(WEB_ROOT, "src/themeTokens.generated.css"), "utf8");
+    parse(css).walkDecls(/^--/, (declaration) => {
+      expect(declaration.value, declaration.prop).not.toMatch(/\n|\s{2}/);
+    });
+  });
+
+  it("scales every shadow by the registered elevation guard", () => {
+    const guard = getToken("omnigent-elevation");
+    expect([guard?.syntax, guard?.initial, guard?.default?.light]).toEqual([
+      "<number>",
+      "1",
+      "var(--ui-elevation)",
+    ]);
+    const alphas = DEFAULT_TOKENS.filter((token) => /^ui-shadow-.*-alpha$/.test(token.id));
+    for (const token of alphas) {
+      for (const value of [token.default?.light, token.default?.dark].filter(Boolean)) {
+        expect(value, token.id).toMatch(/var\(--omnigent-elevation\)/);
+      }
+    }
   });
 
   it("registers every token with a syntax as an inherited property", () => {

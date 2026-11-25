@@ -49,13 +49,22 @@ export type TokenGroup =
 export type TokenSyntax = "<length-percentage>" | "<number>" | "<number> | <percentage>";
 
 /**
+ * The value that leaves a token unset (CSS's guaranteed-invalid value), so its readers'
+ * `var()` fallbacks apply. A token with no default in either mode gets it on the top
+ * root; a token set in light only writes it as its `dark` default to stay unset in dark
+ * instead of inheriting the light value.
+ */
+export const UNSET_VALUE = "initial";
+
+/**
  * Per-mode defaults, as written into the generated stylesheet.
  *
  * `light` is declared on `:root` (so dark mode inherits it unless `dark` is set) and
  * `dark` on `.dark`. A missing `light` leaves the token unset in light mode; a
- * missing `dark` keeps the light value in dark mode; `{}` leaves the token unset in
- * both, so its readers' `var()` fallbacks apply. A value may reference other
- * tokens with `var()`; such a token is derived (see `isDerivedValue`).
+ * missing `dark` keeps the light value in dark mode (`UNSET_VALUE` unsets it there);
+ * `{}` leaves the token unset in both, so its readers' `var()` fallbacks apply. A value
+ * may reference other tokens with `var()`; such a token is derived (see
+ * `isDerivedValue`).
  */
 export interface TokenDefaults {
   light?: string;
@@ -84,6 +93,12 @@ export interface TokenDef {
    * and on the top root when its value there is invalid.
    */
   initial?: string;
+  /**
+   * Keeps the `@property` registration in the embed build too, which drops the others.
+   * Only for internal, `omnigent-`-prefixed names no host page uses, since a
+   * registration is document-global.
+   */
+  registerInEmbed?: boolean;
 }
 
 /** The `@property` initial value per syntax, unless the token sets `initial`. */
