@@ -15,6 +15,7 @@ import { QueueFlushProvider } from "./hooks/QueueFlushProvider";
 import { prefetchSessionHostChain } from "./hooks/useSession";
 import { SessionUpdatesProvider } from "./hooks/SessionUpdatesProvider";
 import { getBasePath, withBasePath } from "./lib/basePath";
+import { resolveBranding, useBrandOverride } from "./lib/branding";
 import { resolveServerInfo, type ServerInfo } from "./lib/capabilities";
 import { CapabilitiesProvider } from "./lib/CapabilitiesContext";
 import { ExtensionProvider } from "./extensions/ExtensionProvider";
@@ -157,10 +158,13 @@ function RootApp({ initialInfo }: { initialInfo: ServerInfo | "loading" }) {
       alive = false;
     };
   }, []);
+  const brandOverride = useBrandOverride();
   useEffect(() => {
     if (info === "loading") return;
-    if (info.branding?.app_name) document.title = info.branding.app_name;
-    const faviconUrl = info.branding?.logos.favicon;
+    // The brand override (a theme's brand, M6) over the server's branding.
+    const branding = resolveBranding(info.branding ?? null, brandOverride);
+    if (branding.app_name) document.title = branding.app_name;
+    const faviconUrl = branding.logos.favicon;
     if (!faviconUrl) return;
     let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
     if (!link) {
@@ -170,7 +174,7 @@ function RootApp({ initialInfo }: { initialInfo: ServerInfo | "loading" }) {
     }
     link.removeAttribute("type");
     link.href = withBasePath(faviconUrl);
-  }, [info]);
+  }, [info, brandOverride]);
   return (
     <CapabilitiesProvider info={info}>
       <QueryClientProvider client={queryClient}>

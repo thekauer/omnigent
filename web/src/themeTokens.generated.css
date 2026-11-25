@@ -463,6 +463,12 @@
   --file-tree-icon-code: var(--color-purple-500);
   --file-tree-icon-image: var(--color-pink-500);
   --file-tree-icon-media: var(--color-indigo-500);
+  --brand-otto-body: #f53b9d;
+  --brand-otto-buddy: #4dc5a0;
+  --brand-otto-buddy-shade: #26a079;
+  --brand-otto-shade: #e60c7f;
+  --brand-otto-eye: #fefefe;
+  --brand-otto-pupil: black;
 }
 
 .dark {
@@ -573,6 +579,12 @@
   --file-tree-icon-code: var(--color-purple-400);
   --file-tree-icon-image: var(--color-pink-400);
   --file-tree-icon-media: var(--color-indigo-400);
+  --brand-otto-body: #f53b9d;
+  --brand-otto-buddy: #4dc5a0;
+  --brand-otto-buddy-shade: #26a079;
+  --brand-otto-shade: #e60c7f;
+  --brand-otto-eye: #fefefe;
+  --brand-otto-pupil: black;
 }
 
 :root:not(.dark):not([data-theme]) {

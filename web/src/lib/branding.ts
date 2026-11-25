@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from "react";
 import type { Branding } from "./capabilities";
 import { useServerInfo } from "./CapabilitiesContext";
 
@@ -11,10 +12,64 @@ const EMPTY_BRANDING: Branding = {
   powered_by: true,
 };
 
-/** Current operator branding, or all-null while loading / when unset. */
+/**
+ * Brand assets that take precedence over the server's branding: the active theme's
+ * `brand` section (theming plan M6). Unset keys fall back to the server's branding,
+ * then the defaults. Logos are image URLs, rendered as `<img>`.
+ */
+export interface BrandOverride {
+  appName?: string;
+  logos?: Partial<Branding["logos"]>;
+}
+
+let brandOverride: BrandOverride | null = null;
+const brandListeners = new Set<() => void>();
+
+/** Sets (or, with null, clears) the brand override; the logo, name and favicon follow. */
+export function setBrandOverride(override: BrandOverride | null): void {
+  brandOverride = override;
+  for (const listener of brandListeners) listener();
+}
+
+function subscribeBrandOverride(listener: () => void): () => void {
+  brandListeners.add(listener);
+  return () => {
+    brandListeners.delete(listener);
+  };
+}
+
+/** The current brand override, live. */
+export function useBrandOverride(): BrandOverride | null {
+  return useSyncExternalStore(
+    subscribeBrandOverride,
+    () => brandOverride,
+    () => null,
+  );
+}
+
+/**
+ * The branding the UI shows: the override's keys over the server's branding. Without an
+ * override, the server's branding object itself.
+ */
+export function resolveBranding(server: Branding | null, override: BrandOverride | null): Branding {
+  const base = server ?? EMPTY_BRANDING;
+  if (!override) return base;
+  return {
+    ...base,
+    app_name: override.appName ?? base.app_name,
+    logos: {
+      main: override.logos?.main ?? base.logos.main,
+      loading: override.logos?.loading ?? base.logos.loading,
+      favicon: override.logos?.favicon ?? base.logos.favicon,
+    },
+  };
+}
+
+/** Current branding: the brand override over the operator's, all-null while loading / when unset. */
 export function useBranding(): Branding {
   const info = useServerInfo();
-  return info !== "loading" && info.branding ? info.branding : EMPTY_BRANDING;
+  const override = useBrandOverride();
+  return resolveBranding(info !== "loading" ? (info.branding ?? null) : null, override);
 }
 
 /** Operator app name, falling back to the built-in default. */

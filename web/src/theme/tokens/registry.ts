@@ -6,6 +6,7 @@
 // `.ts` imports: the generator loads this module directly in Node.
 
 import { BORDER_TOKENS } from "./border.ts";
+import { BRAND_TOKENS } from "./brand.ts";
 import { CHART_TOKENS } from "./chart.ts";
 import { CODE_TOKENS } from "./code.ts";
 import { DENSITY_TOKENS } from "./density.ts";
@@ -67,6 +68,7 @@ export const TOKENS: readonly TokenDef[] = [
   ...TERMINAL_TOKENS,
   ...DIFF_TOKENS,
   ...FILE_TREE_TOKENS,
+  ...BRAND_TOKENS,
 ];
 
 /** Tokens with host defaults (no palette sets them), in registry order. */
