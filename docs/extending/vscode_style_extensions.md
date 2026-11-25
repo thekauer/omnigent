@@ -672,6 +672,28 @@ limitHit, message }`; a cancelled token aborts the request and rejects
       (`appKeyChords.ts`: content search's ⌘⇧F). While a text field has
       focus (the `inputFocus` context key), only Ctrl or Cmd chords run, and
       AltGr off macOS is typing, not Ctrl+Alt.
+    - Theme contributions (theming plan M6, `docs/extending/theming_plan.md`):
+      `contributes.themes` `{ id, label, uiTheme, path, family? }` (`uiTheme`
+      light or dark, VS Code's `vs`/`vs-dark`/`hc-*` accepted; the full id is
+      `<extension id>/<id>`; a `family` pairs a light and a dark member, and a
+      theme without one forces its mode), `contributes.colors`
+      `{ id, description, defaults: { light, dark } }` registered as
+      `--x-<publisher>-<name>-<id>`, and `contributes.fonts`
+      `{ family, src, weight?, style? }` (`.woff2` only), loaded with the
+      FontFace API as `x-<publisher>-<name>-<family>` while a theme of the
+      extension is active. Problems are warnings (`theme/themeContributions.ts`).
+      A theme file's `colors` (Omnigent token ids, the extension's colours and the
+      curated VS Code aliases of `theme/vscodeColorAliases.ts`), `tokenColors`
+      (registered as a syntax theme the `syntax-theme-*` tokens name),
+      `terminal`, `brand` (`logo`, `wordmark`, `favicon`, `appName`) and
+      `omnigent.tokens`/`.options`/`.variants` are checked by
+      `theme/themeFile.ts` and `theme/validate.ts`; `theme/themeService.ts`
+      applies them (`list()`, `select()`, `getActive()`, `setOption()`, and the
+      built-in `omnigent.selectColorTheme` command). The dev plugin reads the
+      theme files at scan time and inlines them into the virtual module
+      (`ExtensionDescription.files`; built-ins import them statically), hands an
+      edited file to the page without a reload, and serves the fonts and brand
+      images it checked (see the trust model).
     - Every contributed view gets VS Code's `<view id>.focus` command. It asks
       the workspace rail of the session on screen (`useWorkspaceRail`,
       registered by WorkspacePanel) to select the view's tab, reveal the rail
@@ -1009,6 +1031,16 @@ requests for files outside an extension's sources:
   work.
 - The dependency optimizer refuses to bundle any file in an extension folder, so
   nothing is served through `/node_modules/.vite/deps`.
+- Theme assets are served by exact allow-list from
+  `/__omnigent/extension-assets/<extension id>/<content hash>/<path>`: only the
+  `.woff2` files `contributes.fonts` names (the `wOF2` signature, at most 2 MiB)
+  and the brand images a theme file names (SVG, PNG or WebP by signature, at most
+  512 KiB), each by real path inside the folder. An SVG is rebuilt from an
+  allow-list of elements and attributes (no script, foreignObject, styles, event
+  handlers, external references, `javascript:` or `data:` URLs) and served with
+  `nosniff` and a `default-src 'none'` policy; the host shows brand images as
+  `<img>` only. Theme files themselves are read (at most 64 KiB) and inlined, not
+  served.
 
 What the guards do not protect against, by design:
 
@@ -1112,6 +1144,8 @@ Plain ESM with `// @ts-check`; no build step.
 | `workspace.findTextInFiles`, `TextSearchQuery`                       | same, plus `validateTextSearchQuery`                          | One result list, not a match callback               |
 | `CancellationTokenSource`                                            | same                                                          |                                                     |
 | `contributes.keybindings`                                            | same, a subset                                                | One chord; letters, digits, F-keys                  |
+| `contributes.themes`, `contributes.colors`                           | same, plus `family` and `brand`; colours as `--x-*` variables  | Tokens, not workbench colours; VS Code ids aliased  |
+| (none; product icon and font themes are separate in VS Code)         | `contributes.fonts`                                           | `.woff2` only, namespaced families                  |
 | `<view>.focus` and `view.<id>.visible` context keys                  | `<view>.focus` and `view.<id>.available`                      | Available: the tab is in the strip                  |
 | `withProgress({ location: { viewId } })`                             | same                                                          | Per chat session                                    |
 | `TreeItemLabel.highlights`, `AccessibilityInformation`               | same                                                          | Plus `TreeItem.line` for text matches               |

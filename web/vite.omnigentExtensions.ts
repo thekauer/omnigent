@@ -29,10 +29,19 @@ import {
   type NodeExtensionHostOptions,
 } from "./vite.omnigentNodeExtensions";
 import { isValidEngineRange, validateManifest } from "./src/vscodeExtensions/manifest";
+import { checkBrandFile, checkFontFile } from "./src/theme/brandAssets";
+import { parseThemeContributions } from "./src/theme/themeContributions";
+import { parseThemeFile } from "./src/theme/themeFile";
+import { getToken } from "./src/theme/tokens/registry";
+import { THEME_LIMITS, TOKEN_CONSTRAINTS } from "./src/theme/validate";
 
 export const DEV_PATHS_ENV = "OMNIGENT_WEB_EXTENSION_DEV_PATHS";
 export const DEV_EXTENSIONS_MODULE = "virtual:omnigent-dev-extensions";
 export const DEV_EXTENSIONS_ENDPOINT = "/__omnigent/extensions";
+/** Where the theme contributions' fonts and brand images are served, by exact allow-list. */
+export const DEV_EXTENSION_ASSETS_PATH = "/__omnigent/extension-assets/";
+/** The HMR event that carries an extension's edited theme files. */
+export const DEV_EXTENSION_FILES_EVENT = "omnigent-extensions:files";
 const RESOLVED_DEV_EXTENSIONS_MODULE = `\0${DEV_EXTENSIONS_MODULE}`;
 const API_MODULE_PREFIX = "\0omnigent-api:";
 
@@ -95,12 +104,27 @@ export interface DevExtension {
   entryUrl: string;
   /** `contributes` as written (an object); the page host checks its entries. */
   contributes?: Record<string, unknown>;
+  /** Theme files (inlined JSON) and assets (served URLs), by normalized path. */
+  files?: Record<string, DevExtensionFile>;
+  /** Real paths of the files `files` came from, so an edit can refresh them. */
+  sourceFiles?: string[];
+}
+
+export type DevExtensionFile =
+  { kind: "json"; data: unknown } | { kind: "asset"; url: string; type: string };
+
+/** A file the asset middleware serves: exactly these URLs, nothing else. */
+export interface DevAsset {
+  body: Uint8Array;
+  type: string;
 }
 
 export interface DevExtensionScan {
   extensions: DevExtension[];
   errors: string[];
   warnings: string[];
+  /** Served asset bytes by URL (never part of the JSON the endpoint returns). */
+  assets: Map<string, DevAsset>;
 }
 
 export function parseDevPaths(raw: string | undefined, cwd = process.cwd()): string[] {
@@ -120,7 +144,8 @@ function fsUrl(absolutePath: string): string {
 }
 
 type ManifestResult =
-  { extension: DevExtension; warnings: string[] } | { error: string; warnings: string[] };
+  | { extension: DevExtension; warnings: string[]; assets: Map<string, DevAsset> }
+  | { error: string; warnings: string[] };
 
 /** Validates one extension folder; errors name the folder and every problem found. */
 export function readDevExtension(folder: string): ManifestResult {
@@ -162,6 +187,10 @@ export function readDevExtension(folder: string): ManifestResult {
   if (problems.length > 0 || entryPath === undefined || valid === undefined) {
     return failure(problems);
   }
+  const theming =
+    valid.contributes === undefined
+      ? undefined
+      : readThemeFiles(valid.id, directory, valid.contributes, warnings);
   return {
     extension: {
       id: valid.id,
@@ -175,9 +204,130 @@ export function readDevExtension(folder: string): ManifestResult {
       entryUrl: fsUrl(entryPath),
       ...(mainPath === undefined ? {} : { mainPath }),
       ...(valid.contributes === undefined ? {} : { contributes: valid.contributes }),
+      ...(theming === undefined || Object.keys(theming.files).length === 0
+        ? {}
+        : { files: theming.files, sourceFiles: theming.sourceFiles }),
     },
     warnings,
+    assets: theming?.assets ?? new Map(),
   };
+}
+
+/** Reads a file inside `directory` by its normalized path: real path inside, a file, capped. */
+function readOwnFile(directory: string, relative: string, maxBytes: number): Buffer | string {
+  const file = path.join(directory, ...relative.split("/"));
+  const real = realpathOrUndefined(file);
+  if (real === undefined) return "does not exist";
+  if (!isOwnFile(real, directory)) return "resolves outside the extension folder";
+  const stats = statSync(real);
+  if (!stats.isFile()) return "is not a file";
+  if (stats.size > maxBytes) return `is larger than ${maxBytes} bytes`;
+  return readFileSync(real);
+}
+
+function assetUrl(extensionId: string, relative: string, body: Uint8Array): string {
+  let hash = 0x811c9dc5;
+  for (const byte of body) hash = Math.imul(hash ^ byte, 0x01000193) >>> 0;
+  return `${DEV_EXTENSION_ASSETS_PATH}${extensionId}/${hash.toString(16).padStart(8, "0")}/${relative}`;
+}
+
+/**
+ * The theme contributions' files: each theme file read and checked (its problems are
+ * warnings) and inlined, and each font and brand image checked and registered for the
+ * asset middleware. Nothing else in the folder becomes servable through this.
+ */
+export function readThemeFiles(
+  extensionId: string,
+  directory: string,
+  contributes: Record<string, unknown>,
+  warnings: string[],
+): {
+  files: Record<string, DevExtensionFile>;
+  sourceFiles: string[];
+  assets: Map<string, DevAsset>;
+} {
+  const files: Record<string, DevExtensionFile> = {};
+  const sourceFiles: string[] = [];
+  const assets = new Map<string, DevAsset>();
+  const warn = (message: string) => warnings.push(`${extensionId}: ${message}`);
+  // The page reports the manifest's problems; here only the files'.
+  const { contributions } = parseThemeContributions(extensionId, contributes, {
+    isKnownToken: (id) => getToken(id) !== undefined,
+  });
+  const realOf = (relative: string) => {
+    const joined = path.join(directory, ...relative.split("/"));
+    return realpathOrUndefined(joined) ?? joined;
+  };
+  const addAsset = (
+    relative: string,
+    check: (bytes: Uint8Array) => ReturnType<typeof checkFontFile>,
+    cap: number,
+  ) => {
+    if (files[relative]?.kind === "asset") return (files[relative] as { url: string }).url;
+    const bytes = readOwnFile(directory, relative, cap);
+    if (typeof bytes === "string") {
+      warn(`${relative} ${bytes}`);
+      return undefined;
+    }
+    const result = check(new Uint8Array(bytes));
+    if (!result.ok) {
+      warn(`${relative}: ${result.reason}; not served`);
+      return undefined;
+    }
+    for (const issue of result.issues) warn(`${relative}: ${issue}`);
+    const url = assetUrl(extensionId, relative, result.body);
+    assets.set(url, { body: result.body, type: result.type });
+    files[relative] = { kind: "asset", url, type: result.type };
+    sourceFiles.push(realOf(relative));
+    return url;
+  };
+  for (const font of contributions.fonts) {
+    addAsset(font.src, checkFontFile, 2 * 1024 * 1024);
+  }
+  const colorTokens = new Map(
+    contributions.colors.flatMap((color) => [
+      [color.id, color.token],
+      [color.token, color.token],
+    ]),
+  );
+  const fontFamilies = new Map(contributions.fonts.map((font) => [font.family, font.cssFamily]));
+  for (const theme of contributions.themes) {
+    const bytes = readOwnFile(directory, theme.path, THEME_LIMITS.jsonBytes);
+    sourceFiles.push(realOf(theme.path));
+    if (typeof bytes === "string") {
+      warn(`theme ${theme.id}: ${theme.path} ${bytes}`);
+      continue;
+    }
+    let data: unknown;
+    try {
+      data = JSON.parse(bytes.toString("utf8"));
+    } catch (error) {
+      warn(
+        `theme ${theme.id}: ${theme.path} is not JSON (${error instanceof Error ? error.message : String(error)})`,
+      );
+      continue;
+    }
+    const parsed = parseThemeFile(data, {
+      uiTheme: theme.uiTheme,
+      context: {
+        isKnownToken: (id) =>
+          [...colorTokens.values()].includes(id) ||
+          (getToken(id) !== undefined && !TOKEN_CONSTRAINTS[id]?.internal),
+        fontFamily: (name) => fontFamilies.get(name),
+      },
+      extensionColors: colorTokens,
+      assetUrl: (relative) =>
+        addAsset(relative, (asset) => checkBrandFile(relative, asset), 512 * 1024),
+    });
+    for (const issue of parsed.issues) warn(`theme ${theme.id}: ${issue}`);
+    if (parsed.unmapped.length > 0) {
+      warn(
+        `theme ${theme.id}: ${parsed.unmapped.length} VS Code colour id(s) have no Omnigent token (partial import)`,
+      );
+    }
+    files[theme.path] = { kind: "json", data };
+  }
+  return { files, sourceFiles, assets };
 }
 
 /**
@@ -216,7 +366,7 @@ function validateEntry(
 }
 
 export function scanDevExtensions(folders: readonly string[]): DevExtensionScan {
-  const scan: DevExtensionScan = { extensions: [], errors: [], warnings: [] };
+  const scan: DevExtensionScan = { extensions: [], errors: [], warnings: [], assets: new Map() };
   const seen = new Map<string, string>();
   for (const folder of folders) {
     const result = readDevExtension(folder);
@@ -234,6 +384,7 @@ export function scanDevExtensions(folders: readonly string[]): DevExtensionScan 
     }
     seen.set(result.extension.id, folder);
     scan.extensions.push(result.extension);
+    for (const [url, asset] of result.assets) scan.assets.set(url, asset);
   }
   return scan;
 }
@@ -406,6 +557,29 @@ export function omnigentExtensionsDev(options: OmnigentExtensionsDevOptions = {}
     allow.splice(0, allow.length, ...kept, ...allowedFiles);
   };
 
+  /** A theme file, font or brand image an extension's contributions name. */
+  const isThemeSource = (file: string) => {
+    const resolved = realpathOrUndefined(file) ?? path.resolve(file);
+    return scan.extensions.some((extension) => extension.sourceFiles?.includes(resolved));
+  };
+
+  /** Re-reads the theme files after an edit and hands the page the new ones (no reload). */
+  const refreshThemeFiles = (server: ViteDevServer) => {
+    const previous = new Map(scan.extensions.map((extension) => [extension.id, extension.files]));
+    scan = scanDevExtensions(folders);
+    report();
+    const module = server.moduleGraph.getModuleById(RESOLVED_DEV_EXTENSIONS_MODULE);
+    if (module) server.moduleGraph.invalidateModule(module);
+    for (const extension of scan.extensions) {
+      if (JSON.stringify(previous.get(extension.id)) === JSON.stringify(extension.files)) continue;
+      server.ws.send({
+        type: "custom",
+        event: DEV_EXTENSION_FILES_EVENT,
+        data: { id: extension.id, files: extension.files ?? {} },
+      });
+    }
+  };
+
   const rescan = (server: ViteDevServer) => {
     scan = scanDevExtensions(folders);
     refreshAllowList();
@@ -496,6 +670,23 @@ export function omnigentExtensionsDev(options: OmnigentExtensionsDevOptions = {}
     configureServer(server) {
       // Registered before Vite's own middlewares, so it sees every file request.
       server.middlewares.use(guardMiddleware);
+      server.middlewares.use(DEV_EXTENSION_ASSETS_PATH, (req, res, next) => {
+        if (req.method !== "GET" && req.method !== "HEAD") return next();
+        const pathname = (req.originalUrl ?? req.url ?? "").split("?")[0] ?? "";
+        const asset = scan.assets.get(pathname);
+        if (!asset) {
+          res.statusCode = 404;
+          res.end("Not found");
+          return;
+        }
+        res.setHeader("Content-Type", asset.type);
+        res.setHeader("X-Content-Type-Options", "nosniff");
+        res.setHeader("Cache-Control", "no-cache");
+        if (asset.type === "image/svg+xml") {
+          res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'");
+        }
+        res.end(req.method === "HEAD" ? undefined : Buffer.from(asset.body));
+      });
       server.middlewares.use(
         DEV_EXTENSIONS_ENDPOINT,
         createCommandEndpoint({
@@ -514,7 +705,8 @@ export function omnigentExtensionsDev(options: OmnigentExtensionsDevOptions = {}
       server.middlewares.use(DEV_EXTENSIONS_ENDPOINT, (req, res, next) => {
         if (req.method !== "GET") return next();
         res.setHeader("Content-Type", "application/json");
-        res.end(JSON.stringify(scan));
+        const { extensions, errors, warnings } = scan;
+        res.end(JSON.stringify({ extensions, errors, warnings }));
       });
       if (folders.length === 0) return;
       startNodeHost();
@@ -528,6 +720,7 @@ export function omnigentExtensionsDev(options: OmnigentExtensionsDevOptions = {}
       server.watcher.on("all", (event, file) => {
         if (event !== "add" && event !== "change" && event !== "unlink") return;
         if (isManifest(file)) rescan(server);
+        else if (isThemeSource(file)) refreshThemeFiles(server);
         // A new, replaced or removed source file changes what the extension may
         // import (a change can turn a file into a symlink); rebuilding is cheap.
         else if (inFolder(file)) {
@@ -588,12 +781,13 @@ export function omnigentExtensionsDev(options: OmnigentExtensionsDevOptions = {}
           : null;
         const extensions = serving
           ? scan.extensions.map(
-              ({ id: extensionId, version, activationEvents, entryUrl, contributes }) => ({
+              ({ id: extensionId, version, activationEvents, entryUrl, contributes, files }) => ({
                 id: extensionId,
                 version,
                 activationEvents,
                 entryUrl,
                 ...(contributes === undefined ? {} : { contributes }),
+                ...(files === undefined ? {} : { files }),
               }),
             )
           : [];

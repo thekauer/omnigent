@@ -6,7 +6,8 @@ import {
   devExtensions,
 } from "virtual:omnigent-dev-extensions";
 import { startExtensionHost } from "./extensionHost";
-import type { ExtensionHost } from "./host";
+import type { ExtensionFile, ExtensionHost } from "./host";
+import { themeService } from "@/theme/themeService";
 import { createNodeCommandRoute } from "./nodeCommands";
 
 let host: Promise<ExtensionHost | null> | undefined;
@@ -26,6 +27,12 @@ async function boot(): Promise<ExtensionHost | null> {
       createNodeCommandRoute(devCommandEndpoint, (input, init) => window.fetch(input, init)),
     );
   }
+  // An edited theme file, font or brand image arrives without a reload.
+  import.meta.hot?.on(
+    "omnigent-extensions:files",
+    (payload: { id: string; files: Record<string, ExtensionFile> }) =>
+      themeService.updateFiles(payload.id, payload.files),
+  );
   console.info(`[omnigent-extensions] loading ${devExtensions.length} dev-path extension(s)`);
   await runtime.host.start(devExtensions);
   return runtime.host;
