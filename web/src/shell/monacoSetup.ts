@@ -17,7 +17,6 @@
 // MonacoCodeEditor import so Monaco stays out of the initial bundle.
 
 import { loader } from "@monaco-editor/react";
-import { shikiToMonaco } from "@shikijs/monaco";
 import { createHighlighter } from "shiki";
 import type { BundledLanguage, BundledTheme, HighlighterGeneric } from "shiki";
 // editor.api.js gives the typed `monaco` namespace (it ships editor.api.d.ts).
@@ -34,12 +33,8 @@ import * as monaco from "monaco-editor/esm/vs/editor/editor.api.js";
 // missing worker). This keeps grammars out while still giving real editor UX.
 import "monaco-editor/esm/vs/editor/edcore.main.js";
 import type { ResolvedThemeMode } from "@/components/theme/themeMode";
-import {
-  ensureSyntaxThemes,
-  shikiThemeName,
-  SYNTAX_THEME_NAMES,
-  type SyntaxThemeNames,
-} from "@/lib/syntaxTheme";
+import { loadSyntaxThemes, SYNTAX_THEME_NAMES, type SyntaxThemeNames } from "@/lib/syntaxTheme";
+import { createShikiMonacoBridge, type ShikiMonacoBridge } from "./monacoShikiBridge";
 
 // The Shiki themes registered into Monaco first: the default syntax theme pair.
 const LIGHT_THEME = SYNTAX_THEME_NAMES.light;
@@ -69,6 +64,8 @@ loader.config({ monaco });
 type ShikiHighlighter = HighlighterGeneric<BundledLanguage, BundledTheme>;
 
 let readyPromise: Promise<ShikiHighlighter> | null = null;
+// Installed once with the highlighter; later themes and languages join it.
+let bridge: ShikiMonacoBridge | null = null;
 // Per-language load promise, cached so concurrent ensureLanguage() calls for
 // the same id share one load instead of double-registering. Keyed before any
 // await; cleared on failure so a later call can retry.
@@ -98,7 +95,7 @@ export function ensureMonacoReady(): Promise<ShikiHighlighter> {
       .then((hl) => {
         // Registers the github themes under their ids so the editor's `theme`
         // option and monaco.editor.setTheme resolve them.
-        shikiToMonaco(hl, monaco);
+        bridge ??= createShikiMonacoBridge(hl, monaco);
         return hl;
       })
       .catch((err: unknown) => {
@@ -114,7 +111,7 @@ export function ensureMonacoReady(): Promise<ShikiHighlighter> {
  * Ensure Shiki can tokenize `lang` and Monaco knows about it.
  *
  * Loads the grammar into the shared highlighter, registers the language id
- * with Monaco, then re-runs shikiToMonaco so the new tokenizer attaches. A
+ * with Monaco, then syncs the Shiki bridge so the new tokenizer attaches. A
  * no-op for "text" (Monaco's built-in plaintext). Concurrent calls for the
  * same id share one in-flight load (deduped via languageLoads); a failed load
  * is evicted so a later call retries.
@@ -129,7 +126,7 @@ export function ensureLanguage(lang: BundledLanguage | "text"): Promise<void> {
       const hl = await ensureMonacoReady();
       await hl.loadLanguage(lang);
       monaco.languages.register({ id: lang });
-      shikiToMonaco(hl, monaco);
+      bridge?.sync();
     })().catch((err: unknown) => {
       languageLoads.delete(lang);
       throw err;
@@ -154,22 +151,26 @@ export function monacoLanguageId(lang: BundledLanguage | "text"): string {
  * Map the app's resolved palette to the Monaco theme id to apply.
  *
  * @param resolved Concrete palette from `normalizeResolvedTheme`, e.g. `"dark"`.
- * @param names The syntax theme pair (the `syntax-theme-*` tokens), the GitHub
- *     themes by default.
+ * @param shikiNames The syntax theme pair as Monaco knows it (the Shiki names
+ *     {@link ensureMonacoThemes} returns), the GitHub themes by default.
  * @returns The registered Monaco theme id, e.g. `"github-dark"`.
  */
 export function resolvedThemeToMonaco(
   resolved: ResolvedThemeMode,
-  names: SyntaxThemeNames = SYNTAX_THEME_NAMES,
+  shikiNames: SyntaxThemeNames = SYNTAX_THEME_NAMES,
 ): string {
-  return shikiThemeName(resolved === "dark" ? names.dark : names.light);
+  return resolved === "dark" ? shikiNames.dark : shikiNames.light;
 }
 
 /**
  * Registers the pair with Monaco: loads any theme the shared highlighter lacks and
- * re-runs shikiToMonaco, which defines every loaded theme in Monaco.
+ * defines it in Monaco.
+ *
+ * @returns The pair's Monaco theme names, defined by the time it resolves.
  */
-export async function ensureMonacoThemes(names: SyntaxThemeNames): Promise<void> {
+export async function ensureMonacoThemes(names: SyntaxThemeNames): Promise<SyntaxThemeNames> {
   const hl = await ensureMonacoReady();
-  if (await ensureSyntaxThemes(hl, names)) shikiToMonaco(hl, monaco);
+  const { shikiNames, loadedAny } = await loadSyntaxThemes(hl, names);
+  if (loadedAny) bridge?.sync();
+  return shikiNames;
 }

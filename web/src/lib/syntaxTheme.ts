@@ -5,6 +5,7 @@
 import { useSyncExternalStore } from "react";
 import type { BundledTheme, ThemeRegistration } from "shiki";
 import { readThemeTokens, subscribeThemeTokens } from "@/theme/tokenValues";
+import { sanitizeSyntaxTheme, SYNTAX_THEME_NAME } from "@/theme/validate";
 
 export type SyntaxThemeMode = "light" | "dark";
 
@@ -54,18 +55,33 @@ function notifyRegistry(): void {
  * Registers a syntax theme from TextMate rules under `definition.name`, for the
  * `syntax-theme-*` tokens to name. Every highlighter loads it on its next highlight.
  *
+ * Its colours and font styles end up in inline styles (Shiki's tokens, the diffs'
+ * theme), so only hex colours and the `fontStyle` keywords are kept; anything else is
+ * dropped with a warning (`theme/validate.ts`).
+ *
+ * @throws TypeError when the name is not a keyword or the type not light or dark.
  * @returns Unregisters it (if not replaced since).
  */
 export function registerSyntaxTheme(definition: SyntaxThemeDefinition): () => void {
+  if (!SYNTAX_THEME_NAME.test(String(definition.name))) {
+    throw new TypeError(`syntax theme name ${JSON.stringify(definition.name)} is not a keyword`);
+  }
+  if (definition.type !== "light" && definition.type !== "dark") {
+    throw new TypeError(`syntax theme ${definition.name}: type must be "light" or "dark"`);
+  }
+  const { colors, tokenColors, issues } = sanitizeSyntaxTheme(
+    definition.colors,
+    definition.tokenColors,
+  );
+  if (issues.length > 0) {
+    console.warn(`[theme] syntax theme ${definition.name}: dropped ${issues.join("; ")}`);
+  }
   const theme: ThemeRegistration = {
     name: registeredThemeName(definition.name, revision + 1),
     displayName: definition.name,
     type: definition.type,
-    colors: { ...definition.colors },
-    tokenColors: definition.tokenColors.map((rule) => ({
-      ...rule,
-      settings: { ...rule.settings },
-    })),
+    colors,
+    tokenColors,
   };
   registered.set(definition.name, theme);
   notifyRegistry();
@@ -122,7 +138,26 @@ interface ThemeLoader {
 
 /**
  * Loads the pair into `highlighter` where it lacks them: a registered theme from its
- * rules, a bundled one by name.
+ * rules, a bundled one by name. The Shiki names are taken before loading, so a theme
+ * re-registered or unregistered meanwhile never yields a name that isn't loaded.
+ *
+ * @returns The pair's Shiki names, as loaded, and whether it loaded any.
+ */
+export async function loadSyntaxThemes(
+  highlighter: ThemeLoader,
+  names: SyntaxThemeNames,
+): Promise<{ shikiNames: SyntaxThemeNames; loadedAny: boolean }> {
+  const shikiNames = shikiThemeNames(names);
+  const loaded = new Set(highlighter.getLoadedThemes());
+  const missing = [...new Set([names.light, names.dark])]
+    .filter((name) => !loaded.has(shikiThemeName(name)))
+    .map(syntaxThemeInput);
+  if (missing.length > 0) await highlighter.loadTheme(...missing);
+  return { shikiNames, loadedAny: missing.length > 0 };
+}
+
+/**
+ * {@link loadSyntaxThemes}, for a caller that reads the Shiki names afterwards.
  *
  * @returns Whether it loaded any.
  */
@@ -130,12 +165,7 @@ export async function ensureSyntaxThemes(
   highlighter: ThemeLoader,
   names: SyntaxThemeNames,
 ): Promise<boolean> {
-  const loaded = new Set(highlighter.getLoadedThemes());
-  const missing = [...new Set([names.light, names.dark])]
-    .filter((name) => !loaded.has(shikiThemeName(name)))
-    .map(syntaxThemeInput);
-  if (missing.length > 0) await highlighter.loadTheme(...missing);
-  return missing.length > 0;
+  return (await loadSyntaxThemes(highlighter, names)).loadedAny;
 }
 
 // The pair as last read. While anything subscribes, it is re-read only after a change

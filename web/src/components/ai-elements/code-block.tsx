@@ -10,8 +10,7 @@ import {
 } from "@/components/ui/select";
 import { copyText } from "@/lib/clipboard";
 import {
-  ensureSyntaxThemes,
-  shikiThemeNames,
+  loadSyntaxThemes,
   SYNTAX_THEME_NAMES,
   syntaxThemeKey,
   syntaxThemeNames,
@@ -246,7 +245,7 @@ export const highlightCode = (
   getHighlighter(language)
     // oxlint-disable-next-line eslint-plugin-promise(prefer-await-to-then)
     .then(async (highlighter) => {
-      await ensureSyntaxThemes(highlighter, themeNames);
+      const { shikiNames } = await loadSyntaxThemes(highlighter, themeNames);
       const availableLangs = highlighter.getLoadedLanguages();
       // Shiki's built-in `ansi` renders terminal colors but is never listed as loaded.
       const langToUse =
@@ -254,7 +253,7 @@ export const highlightCode = (
 
       const result = highlighter.codeToTokens(code, {
         lang: langToUse,
-        themes: shikiThemeNames(themeNames),
+        themes: shikiNames,
       });
 
       const tokenized: TokenizedCode = {

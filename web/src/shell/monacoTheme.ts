@@ -11,31 +11,44 @@ import {
 } from "@/lib/syntaxTheme";
 import { ensureMonacoThemes, resolvedThemeToMonaco } from "./monacoSetup";
 
+interface LoadedPair {
+  /** The syntax theme key the pair was loaded for. */
+  key: string;
+  /** Its Monaco theme names, as loaded. */
+  monacoNames: SyntaxThemeNames;
+}
+
 /**
- * The Monaco theme for the app's mode: the syntax theme the tokens name, once it is
- * registered with Monaco (until then, the last registered pair's).
+ * The Monaco theme for the app's mode: the syntax theme the tokens name, once Monaco
+ * has it. Until then the previous pair's, which Monaco already has, so the editor
+ * never gets a theme name that isn't loaded (a re-registered theme takes a new name).
+ * A name that fails to load (an unregistered theme) falls back to the default pair.
  */
 export function useMonacoTheme(resolved: ResolvedThemeMode): string {
   const names = useSyntaxThemeNames();
   const key = syntaxThemeKey(names);
-  const [registered, setRegistered] = useState<{ key: string; names: SyntaxThemeNames }>(() => ({
+  const [loaded, setLoaded] = useState<LoadedPair>(() => ({
     key: syntaxThemeKey(SYNTAX_THEME_NAMES),
-    names: SYNTAX_THEME_NAMES,
+    monacoNames: SYNTAX_THEME_NAMES,
   }));
   useEffect(() => {
-    if (key === registered.key) return;
+    if (key === loaded.key) return;
     let cancelled = false;
-    void ensureMonacoThemes(names).then(
-      () => {
-        if (!cancelled) setRegistered({ key, names });
-      },
-      (error: unknown) => {
-        console.warn("[monaco] syntax theme not registered", error);
-      },
-    );
+    void (async () => {
+      let monacoNames: SyntaxThemeNames;
+      try {
+        monacoNames = await ensureMonacoThemes(names);
+      } catch (error: unknown) {
+        console.warn("[monaco] syntax theme not loaded, using the default pair", error);
+        monacoNames = await ensureMonacoThemes(SYNTAX_THEME_NAMES);
+      }
+      if (!cancelled) setLoaded({ key, monacoNames });
+    })().catch((error: unknown) => {
+      console.warn("[monaco] syntax theme not registered", error);
+    });
     return () => {
       cancelled = true;
     };
-  }, [key, names, registered.key]);
-  return resolvedThemeToMonaco(resolved, registered.names);
+  }, [key, names, loaded.key]);
+  return resolvedThemeToMonaco(resolved, loaded.monacoNames);
 }

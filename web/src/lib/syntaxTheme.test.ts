@@ -1,5 +1,5 @@
 import { createHighlighter } from "shiki";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   ensureSyntaxThemes,
@@ -78,5 +78,37 @@ describe("registerSyntaxTheme", () => {
     } finally {
       highlighter.dispose();
     }
+  });
+
+  it("keeps only hex colours and fontStyle keywords, with a warning", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    cleanups.push(
+      registerSyntaxTheme({
+        name: "hostile",
+        type: "dark",
+        colors: { "editor.background": "#000;--diffs-bg:url(https://example.com/x)" },
+        tokenColors: [
+          { scope: "keyword", settings: { foreground: "red;position:fixed", fontStyle: "bold" } },
+          { scope: "string", settings: { foreground: "#0f0", fontStyle: "italic;color:red" } },
+        ],
+      }),
+    );
+    const theme = syntaxThemeInput("hostile");
+    expect(theme).toMatchObject({
+      colors: {},
+      tokenColors: [
+        { scope: "keyword", settings: { fontStyle: "bold" } },
+        { scope: "string", settings: { foreground: "#0f0" } },
+      ],
+    });
+    expect(warn).toHaveBeenCalledOnce();
+    warn.mockRestore();
+  });
+
+  it("rejects a name that isn't a keyword and an unknown type", () => {
+    expect(() => registerSyntaxTheme({ ...FIXTURE, name: 'x"; color: red' })).toThrow(TypeError);
+    expect(() => registerSyntaxTheme({ ...FIXTURE, type: "sepia" as unknown as "dark" })).toThrow(
+      TypeError,
+    );
   });
 });
