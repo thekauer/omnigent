@@ -30,18 +30,21 @@ export interface ThemeSelectors {
 }
 
 /**
- * The runtime selectors: standalone on the document root; embedded, scoped to the
- * embed's scope root and its inner root (`scope`, `.omnigent-app`), never the host page.
+ * The runtime selectors: standalone on the document root (`:root`); embedded, on the
+ * embed's scope root (`scope`, `.omnigent-app`) and its direct child, the inner root,
+ * never the host page or an element deeper in the app.
  */
 export function themeSelectors(scope: string | null): ThemeSelectors {
+  // Anchored to the roots themselves: an element elsewhere that carries the attribute or
+  // the id (injected markup) matches none of these.
   if (scope === null) {
     return {
-      light: `${ROOT}:not(.dark)`,
-      dark: `${ROOT}.dark`,
-      probe: (mode) => `${ROOT} [data-token-mode="${mode}"]`,
+      light: `:root${ROOT}:not(.dark)`,
+      dark: `:root${ROOT}.dark`,
+      probe: (mode) => `:root${ROOT} [data-token-mode="${mode}"]`,
     };
   }
-  const scoped = (suffix: string) => `${scope}${ROOT}${suffix}, ${scope} ${ROOT}${suffix}`;
+  const scoped = (suffix: string) => `${scope}${ROOT}${suffix}, ${scope} > ${ROOT}${suffix}`;
   return {
     light: scoped(":not(.dark)"),
     dark: scoped(".dark"),

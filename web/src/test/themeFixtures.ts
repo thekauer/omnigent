@@ -76,7 +76,7 @@ export const FULL_DARK_THEME = {
       "ui-font-ui": "Fixture Sans, ui-sans-serif, sans-serif",
       "ui-label-transform": "uppercase",
       "ui-row-height": "34px",
-      "x-acme-fixture-themes-glow": "#ff00aa",
+      "x-acme__fixture_2dthemes-glow": "#ff00aa",
     },
     variants: { density: "compact", label: "mono-upper" },
     options: [

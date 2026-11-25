@@ -114,6 +114,8 @@ function escapeAttribute(value: string): string {
 function attributeProblem(name: string, value: string): string | undefined {
   const lower = name.toLowerCase();
   if (lower.startsWith("on")) return "an event handler";
+  // Presentation attributes style a logo; a style attribute is a whole CSS parser's worth.
+  if (lower === "style") return "a style attribute";
   if (lower === "xmlns" || lower.startsWith("xmlns:")) {
     return NAMESPACES.has(value) ? undefined : "a foreign namespace";
   }
@@ -133,8 +135,9 @@ function attributeProblem(name: string, value: string): string | undefined {
   ) {
     return "an external url()";
   }
-  if (lower === "style" && /@|\\|expression|behavior|-moz-binding/i.test(value)) {
-    return "an unsafe style";
+  // CSS images load what `url()` can't name: image-set("x.png" 1x) takes a bare string.
+  if (/(?:image-set|image|src|cross-fade|element|paint)\s*\(/i.test(value)) {
+    return "a CSS image function";
   }
   return undefined;
 }

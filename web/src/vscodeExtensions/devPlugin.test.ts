@@ -276,7 +276,8 @@ describe("dev server", () => {
 
   it("exposes the list through the virtual module", async () => {
     const result = await server.transformRequest("virtual:omnigent-dev-extensions");
-    expect(result?.code).toContain('"id":"acme.sample"');
+    // Inlined as JSON text (parsed by the page), so its quotes are escaped.
+    expect(result?.code).toContain(JSON.stringify('"id":"acme.sample"').slice(1, -1));
     expect(result?.code).toContain("devExtensionErrors");
   });
 

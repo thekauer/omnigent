@@ -63,7 +63,6 @@ const EXPORTABLE_KEYS = [
   THEME_OPTIONS_STORAGE_KEY,
   VARIANTS_STORAGE_KEY,
   COLOR_CUSTOMIZATIONS_STORAGE_KEY,
-  THEME_CACHE_STORAGE_KEY,
   "omnigent:custom-theme",
   "omnigent:default-workspace-panel",
   "omnigent:default-workspace-tab",
@@ -83,6 +82,10 @@ const EXPORTABLE_KEYS = [
   "web-theme",
 ] as const;
 
+// Derived state an older export may hold: accepted in a file, never written back. The
+// theme cache is rebuilt from the chosen theme, and an imported one could name any asset.
+const IGNORED_IMPORT_KEYS: ReadonlySet<string> = new Set([THEME_CACHE_STORAGE_KEY]);
+
 const CURRENT_VERSION = 1;
 
 export interface ExportedSettings {
@@ -97,7 +100,7 @@ function isExportedSettings(value: unknown): value is ExportedSettings {
   if (!candidate.settings || typeof candidate.settings !== "object") return false;
   const allowedKeys = new Set<string>(EXPORTABLE_KEYS);
   for (const [key, val] of Object.entries(candidate.settings)) {
-    if (!allowedKeys.has(key)) return false;
+    if (!allowedKeys.has(key) && !IGNORED_IMPORT_KEYS.has(key)) return false;
     if (typeof val !== "string") return false;
   }
   return true;
@@ -176,8 +179,9 @@ export function applyImportedSettings(imported: ExportedSettings): number {
   const previousPins = readPinnedWorkspaceTabs();
   const previousDefault = readDefaultWorkspaceTab();
 
-  // Clear all exportable keys first to honor the "overwrite" contract.
-  for (const key of EXPORTABLE_KEYS) {
+  // Clear all exportable keys first to honor the "overwrite" contract, and the derived
+  // state they leave stale.
+  for (const key of [...EXPORTABLE_KEYS, ...IGNORED_IMPORT_KEYS]) {
     try {
       window.localStorage.removeItem(key);
     } catch {

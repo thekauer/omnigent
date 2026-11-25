@@ -101,9 +101,24 @@ export function normalizeExtensionPath(value: unknown): string | undefined {
   return path;
 }
 
-/** The `x-<publisher>-<name>` prefix of an extension's CSS names. */
+/**
+ * The `x-<encoded id>` prefix of an extension's CSS names. The encoding is injective and
+ * has no `-`, so the first `-` after it ends the prefix: `a`-`z` and `0`-`9` stay, `.`
+ * becomes `__`, any other character `_` and two hex digits (`-` is `_2d`, `A` is `_41`), or
+ * `_u` and six past U+00FF.
+ * `acme.theme-fixture` is `x-acme__theme_2dfixture`.
+ */
 export function extensionCssPrefix(extensionId: string): string {
-  return `x-${extensionId.toLowerCase().replace(/[^a-z0-9-]+/g, "-")}`;
+  const encoded = [...extensionId]
+    .map((char) => {
+      if (/[a-z0-9]/.test(char)) return char;
+      if (char === ".") return "__";
+      const code = char.codePointAt(0)!;
+      const hex = code.toString(16);
+      return code < 0x100 ? `_${hex.padStart(2, "0")}` : `_u${hex.padStart(6, "0")}`;
+    })
+    .join("");
+  return `x-${encoded}`;
 }
 
 /** The namespaced family an extension's font loads as. */
@@ -111,8 +126,14 @@ export function namespacedFontFamily(extensionId: string, family: string): strin
   return `${extensionCssPrefix(extensionId)}-${family.toLowerCase().replace(/[^a-z0-9-]+/g, "-")}`;
 }
 
+// Control, format (bidi, zero-width) and separator characters, which a shown label must not carry.
+// eslint-disable-next-line no-control-regex
+const HIDDEN_CHARACTERS = /[\u0000-\u001f\u007f-\u009f\p{Cf}\p{Zl}\p{Zp}]/gu;
+
 function labelOf(value: unknown, max: number): string | undefined {
-  return typeof value === "string" && value.trim() !== "" ? value.trim().slice(0, max) : undefined;
+  if (typeof value !== "string") return undefined;
+  const clean = value.replace(HIDDEN_CHARACTERS, "").trim();
+  return clean !== "" ? [...clean].slice(0, max).join("").trim() : undefined;
 }
 
 /**

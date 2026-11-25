@@ -100,6 +100,35 @@ describe("theme files at scan time", () => {
     expect(text).not.toMatch(/theme full-dark/);
   });
 
+  it("warns about a __proto__ key as the page does, and keeps the rest of the theme", () => {
+    const proto = path.join(workspace, "proto");
+    mkdirSync(path.join(proto, "src"), { recursive: true });
+    writeFileSync(path.join(proto, "src/extension.js"), "export function activate() {}\n");
+    writeFileSync(
+      path.join(proto, "package.json"),
+      JSON.stringify({
+        name: "proto",
+        publisher: "acme",
+        version: "1.0.0",
+        engines: { omnigent: "^0.24.0" },
+        browser: "./src/extension.js",
+        contributes: { themes: [{ id: "p", uiTheme: "dark", path: "./p.json" }] },
+      }),
+    );
+    writeFileSync(
+      path.join(proto, "p.json"),
+      '{"colors": {"__proto__": {"x": "#fff"}, "background": "#101010"}}',
+    );
+    const result = readDevExtension(proto);
+    if ("error" in result) throw new Error(result.error);
+    expect(result.warnings.join("\n")).toMatch(
+      /theme p: colors.__proto__: a __proto__ key; ignoring it/,
+    );
+    // The page gets the file as JSON text, so the key reaches its parser as a key.
+    const data = (result.extension.files!["p.json"] as { data: unknown }).data;
+    expect(Object.keys((data as { colors: object }).colors)).toEqual(["__proto__", "background"]);
+  });
+
   it("keeps out what the folder doesn't really hold, and assets that fail their checks", () => {
     const escape = path.join(workspace, "escape");
     mkdirSync(path.join(escape, "src"), { recursive: true });
@@ -199,8 +228,15 @@ describe("the dev server", () => {
 
   it("inlines the theme files into the virtual module", async () => {
     const result = await server.transformRequest("virtual:omnigent-dev-extensions");
-    expect(result?.code).toContain('"themes/full-dark.json":{"kind":"json","data":{');
-    expect(result?.code).toContain('"kind":"asset"');
+    const json = /devExtensions = JSON\.parse\(("(?:[^"\\]|\\.)*")\)/.exec(result?.code ?? "");
+    const extensions = JSON.parse(JSON.parse(json![1]!) as string) as {
+      files: Record<string, { kind: string; data?: unknown }>;
+    }[];
+    expect(extensions[0]!.files["themes/full-dark.json"]).toEqual({
+      kind: "json",
+      data: FULL_DARK_THEME,
+    });
+    expect(Object.values(extensions[0]!.files).some((file) => file.kind === "asset")).toBe(true);
   });
 
   it("hands an edited theme file to the page without a reload", async () => {

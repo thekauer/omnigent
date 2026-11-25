@@ -26,7 +26,7 @@ describe("theme contributions in the extension host", () => {
       "invalid",
       "vscode-dark",
     ]);
-    expect(contributions.theming.colors[0]?.token).toBe("x-acme-fixture-themes-glow");
+    expect(contributions.theming.colors[0]?.token).toBe("x-acme__fixture_2dthemes-glow");
     expect(warnings).toEqual(['contributes.themes[4]: "uiTheme" must be light or dark']);
   });
 

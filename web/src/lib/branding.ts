@@ -34,15 +34,18 @@ export const MAX_LOGO_URL_LENGTH = 2048;
 // C0 and C1 control characters, which a name must not carry into the title or alt text.
 // eslint-disable-next-line no-control-regex
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f]/g;
+// Format characters (bidi overrides and isolates, zero-width joiners and spaces, the BOM)
+// and line or paragraph separators, which could reorder or hide parts of a shown name.
+const INVISIBLE_CHARACTERS = /[\p{Cf}\p{Zl}\p{Zp}]/gu;
 
 /**
- * An override's app name as the UI may show it: control characters stripped, trimmed,
+ * An override's app name as the UI may show it: control and format characters stripped, trimmed,
  * at most {@link MAX_APP_NAME_LENGTH} characters, and `undefined` when nothing is left
  * (an empty name means "unset", never a blank title).
  */
 export function normalizeAppName(name: unknown): string | undefined {
   if (typeof name !== "string") return undefined;
-  const clean = [...name.replace(CONTROL_CHARACTERS, "").trim()]
+  const clean = [...name.replace(CONTROL_CHARACTERS, "").replace(INVISIBLE_CHARACTERS, "").trim()]
     .slice(0, MAX_APP_NAME_LENGTH)
     .join("")
     .trim();

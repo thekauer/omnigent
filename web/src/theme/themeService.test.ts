@@ -80,9 +80,9 @@ describe("ThemeService", () => {
       [STOCK, "dark", undefined, true],
     ]);
     expect(service.getActive()).toBeNull();
-    expect(block("light")).toEqual({ "x-acme-fixture-themes-glow": "#ffcc00" });
+    expect(block("light")).toEqual({ "x-acme__fixture_2dthemes-glow": "#ffcc00" });
     expect(block("dark")).toEqual({
-      "x-acme-fixture-themes-glow": "color-mix(in srgb, var(--primary) 40%, transparent)",
+      "x-acme__fixture_2dthemes-glow": "color-mix(in srgb, var(--primary) 40%, transparent)",
     });
     expect(document.documentElement.getAttribute("data-omni-theme")).toBe("");
   });
@@ -112,8 +112,8 @@ describe("ThemeService", () => {
       "code-bg": "#101820",
       primary: "#ff6a00",
       "ui-radius-base": "0",
-      "ui-font-ui": '"x-acme-fixture-themes-fixture-sans", ui-sans-serif, sans-serif',
-      "x-acme-fixture-themes-glow": "#ff00aa",
+      "ui-font-ui": '"x-acme__fixture_2dthemes-fixture-sans", ui-sans-serif, sans-serif',
+      "x-acme__fixture_2dthemes-glow": "#ff00aa",
       "terminal-background": "#0a0e14",
     });
     expect(dark["syntax-theme-dark"]).toMatch(/^x-[0-9a-f]{8}-full-dark$/);
@@ -167,7 +167,7 @@ describe("ThemeService", () => {
       primary: "#0078d4",
       sidebar: "#181818",
     });
-    expect(block("light")).toEqual({ "x-acme-fixture-themes-glow": "#ffcc00" });
+    expect(block("light")).toEqual({ "x-acme__fixture_2dthemes-glow": "#ffcc00" });
     // The terminal keeps the theme in its other mode too.
     expect(block("probe-light")).toEqual(block("probe-dark"));
   });
@@ -177,7 +177,7 @@ describe("ThemeService", () => {
     service.markStarted();
     service.select(INVALID);
     expect(block("dark")).toEqual({
-      "x-acme-fixture-themes-glow": "color-mix(in srgb, var(--primary) 40%, transparent)",
+      "x-acme__fixture_2dthemes-glow": "color-mix(in srgb, var(--primary) 40%, transparent)",
       sidebar: "#123456",
       "sidebar-background": "#123456",
     });
@@ -202,7 +202,7 @@ describe("ThemeService", () => {
     reloaded.applyCached();
     expect(reloaded.getActive()).toMatchObject({ id: DARK, fromCache: true });
     // The cache holds the theme's values; the extension's colour defaults come with it.
-    const { "x-acme-fixture-themes-glow": _default, ...cachedLight } = live.light;
+    const { "x-acme__fixture_2dthemes-glow": _default, ...cachedLight } = live.light;
     const cachedDark = live.dark;
     expect(block("light")).toEqual(cachedLight);
     expect(block("dark")).toEqual(cachedDark);
@@ -242,13 +242,16 @@ describe("ThemeService", () => {
         probes: {},
       },
       fonts: [{ family: "x-a", url: "https://example.com/font.woff2" }],
-      brand: { appName: "x", logos: { main: "https://example.com/logo.svg", favicon: "/ok.svg" } },
+      brand: {
+        appName: "x",
+        logos: { main: "https://example.com/logo.svg", favicon: "/assets/ok.svg" },
+      },
       syntax: [{ name: "bad name!", type: "dark", tokenColors: [] }],
     };
     expect(checkCache(tampered)).toMatchObject({
       blocks: { dark: { foreground: "#fff" } },
       fonts: [],
-      brand: { appName: "x", logos: { favicon: "/ok.svg" } },
+      brand: { appName: "x", logos: { favicon: "/assets/ok.svg" } },
       syntax: [],
     });
     expect(Object.keys(checkCache(tampered)!.blocks.dark!)).toEqual(["foreground"]);

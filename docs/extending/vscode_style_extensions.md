@@ -678,9 +678,11 @@ limitHit, message }`; a cancelled token aborts the request and rejects
       `<extension id>/<id>`; a `family` pairs a light and a dark member, and a
       theme without one forces its mode), `contributes.colors`
       `{ id, description, defaults: { light, dark } }` registered as
-      `--x-<publisher>-<name>-<id>`, and `contributes.fonts`
-      `{ family, src, weight?, style? }` (`.woff2` only), loaded with the
-      FontFace API as `x-<publisher>-<name>-<family>` while a theme of the
+      `--x-<encoded extension id>-<id>` (an injective encoding without `-`:
+      `a`-`z` and `0`-`9` stay, `.` is `__`, any other character `_` and two hex
+      digits, so `acme.theme-fixture`'s `glow` is `--x-acme__theme_2dfixture-glow`),
+      and `contributes.fonts` `{ family, src, weight?, style? }` (`.woff2` only),
+      loaded with the FontFace API as `x-<encoded extension id>-<family>` while a theme of the
       extension is active. Problems are warnings (`theme/themeContributions.ts`).
       A theme file's `colors` (Omnigent token ids, the extension's colours and the
       curated VS Code aliases of `theme/vscodeColorAliases.ts`), `tokenColors`
@@ -1040,7 +1042,16 @@ requests for files outside an extension's sources:
   handlers, external references, `javascript:` or `data:` URLs) and served with
   `nosniff` and a `default-src 'none'` policy; the host shows brand images as
   `<img>` only. Theme files themselves are read (at most 64 KiB) and inlined, not
-  served.
+  served. The page takes asset URLs only from this origin, under
+  `/__omnigent/extension-assets/` or the bundle's `assets/` (never protocol-relative,
+  never with `.`/`..` segments), also when they come back from the first-paint cache in
+  `localStorage`, which settings export leaves out. A theme reads `var()` of registry
+  tokens and its own extension's colours only. Brand SVGs lose `style` attributes and CSS
+  image functions (`image-set()`, `cross-fade()`, ...) in any attribute.
+- A cross-origin logo from the server's branding (`/v1/info`) loads as an `<img>` with
+  `crossorigin="anonymous"` and no referrer: its server must answer with CORS headers
+  (`Access-Control-Allow-Origin`), or the default logo shows. Host paths keep loading
+  through the host's authenticated fetch.
 
 What the guards do not protect against, by design:
 

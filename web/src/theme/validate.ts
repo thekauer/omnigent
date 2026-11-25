@@ -361,6 +361,11 @@ export interface TokenConstraint {
   syntaxTheme?: boolean;
   /** Internal: themes may not set it. */
   internal?: boolean;
+  /**
+   * The range a length's literal must be in, in px (`rem` and `em` count 16px each, a
+   * percentage stays within -100..100 clipped to the range's sign). Default 0..10000.
+   */
+  lengthRange?: readonly [number, number];
 }
 
 const BORDER_STYLES = [
@@ -376,6 +381,15 @@ const BORDER_STYLES = [
   "outset",
 ] as const;
 const WEIGHT_RANGE = [1, 1000] as const;
+/** The default range of a length token, in px. */
+export const DEFAULT_LENGTH_RANGE = [0, 10_000] as const;
+/** The largest literal a calc() in a value may hold (lengths in px, or plain numbers). */
+const MATH_LITERAL_LIMIT = 10_000;
+const ROW_RANGE = [0, 400] as const;
+const TEXT_SIZE_RANGE = [0, 200] as const;
+const TRACKING_RANGE = [-100, 100] as const;
+// CSS-wide keywords: they would make a token take its parent's or initial value instead of a theme value.
+const CSS_WIDE_KEYWORDS = new Set(["initial", "inherit", "unset", "revert", "revert-layer"]);
 
 /** The registry tokens with limits beyond their kind. */
 export const TOKEN_CONSTRAINTS: Readonly<Record<string, TokenConstraint>> = {
@@ -393,6 +407,26 @@ export const TOKEN_CONSTRAINTS: Readonly<Record<string, TokenConstraint>> = {
   "ui-scrollbar-width": { keywords: ["auto", "thin", "none"] },
   "syntax-theme-light": { syntaxTheme: true },
   "syntax-theme-dark": { syntaxTheme: true },
+  "ui-border-width": { lengthRange: [0, 32] },
+  "ui-scrollbar-size": { lengthRange: [0, 64] },
+  "ui-row-line": { lengthRange: ROW_RANGE },
+  "ui-row-height": { lengthRange: ROW_RANGE },
+  "ui-control-h-xs": { lengthRange: ROW_RANGE },
+  "ui-control-h-sm": { lengthRange: ROW_RANGE },
+  "ui-control-h-md": { lengthRange: ROW_RANGE },
+  "ui-control-h-lg": { lengthRange: ROW_RANGE },
+  "ui-header-height": { lengthRange: ROW_RANGE },
+  "ui-tabstrip-height": { lengthRange: ROW_RANGE },
+  "ui-tabstrip-padding-x": { lengthRange: ROW_RANGE },
+  "ui-tabstrip-padding-y": { lengthRange: ROW_RANGE },
+  "ui-view-title-height": { lengthRange: ROW_RANGE },
+  "ui-view-title-padding-x": { lengthRange: ROW_RANGE },
+  "ui-view-title-gap": { lengthRange: ROW_RANGE },
+  "ui-label-size": { lengthRange: TEXT_SIZE_RANGE },
+  "ui-view-title-size": { lengthRange: TEXT_SIZE_RANGE },
+  "ui-fold-label-size": { lengthRange: TEXT_SIZE_RANGE },
+  "ui-letter-spacing": { lengthRange: TRACKING_RANGE },
+  "ui-label-tracking": { lengthRange: TRACKING_RANGE },
 };
 
 /** What a value may refer to, for {@link validateTokenValue}. */
@@ -708,6 +742,10 @@ class ValueChecker {
       if (expectOperand) {
         if (node.type === "number") {
           if (node.unit !== "" && !units.has(node.unit)) fail(`unit ${node.unit} not allowed`);
+          const scale = node.unit === "rem" || node.unit === "em" ? 16 : 1;
+          if (Math.abs(node.value * scale) > MATH_LITERAL_LIMIT) {
+            fail(`${formatNumber(node.value)}${node.unit} is too large for calc()`);
+          }
         } else if (node.type === "ident" && /^-?infinity$/i.test(node.value)) {
           // `calc(var(--ui-radius-base) * infinity)`, the pill radius.
         } else if (node.type === "group") {
@@ -830,12 +868,30 @@ class ValueChecker {
     }
   }
 
-  length(nodes: readonly CssNode[]): void {
+  length(
+    nodes: readonly CssNode[],
+    range: readonly [number, number] = this.constraint.lengthRange ?? DEFAULT_LENGTH_RANGE,
+  ): void {
     const node = this.single(nodes, "length");
     if (node.type === "number" && node.unit === "" && node.value !== 0) {
       fail("a length needs a unit (px, rem, em or %)");
     }
     this.numeric(node, LENGTH_UNITS);
+    if (node.type !== "number") return;
+    const [min, max] = range;
+    if (node.unit === "%") {
+      if (
+        node.value < Math.max(min, -100) ||
+        node.value > Math.min(max, 100) ||
+        (min >= 0 && node.value < 0)
+      ) {
+        fail(`${formatNumber(node.value)}% is outside ${min < 0 ? -100 : 0}..100%`);
+      }
+      return;
+    }
+    const px = node.unit === "rem" || node.unit === "em" ? node.value * 16 : node.value;
+    if (px < min || px > max)
+      fail(`${formatNumber(node.value)}${node.unit} is outside ${min}..${max}px`);
   }
 
   number(nodes: readonly CssNode[]): void {
@@ -939,9 +995,12 @@ class ValueChecker {
       if (family.length === 0) fail("empty font family");
       const [first] = family;
       if (family.length === 1 && first?.type === "function") {
+        // The name as written, not the last reference: a host variable records none.
+        const [name] = first.name === "var" ? first.args : [];
+        const id = name?.type === "ident" ? name.value.replace(/^--/, "") : "";
+        if (!/^ui-font-[a-z0-9-]+$/.test(id))
+          fail("a font list may read only the ui-font-* tokens");
         if (!this.variable(first)) fail("a font list takes names and var()");
-        const id = this.references[this.references.length - 1] ?? "";
-        if (!/^ui-font-/.test(id)) fail("a font list may read only the ui-font-* tokens");
         out.push(first);
         return;
       }
@@ -983,7 +1042,8 @@ class ValueChecker {
           node.type === "number" ||
           (node.type === "function" && (MATH_FUNCTIONS.has(node.name) || node.name === "var"));
         if (isLength && lengths < 4 && colors === 0) {
-          if (node.type === "number") this.length([node]);
+          // Offsets may be negative; blur and spread stay in the same bounds.
+          if (node.type === "number") this.length([node], [-10_000, 10_000]);
           else if (node.type === "function" && node.name === "var") this.variable(node);
           else this.numeric(node, LENGTH_UNITS);
           lengths += 1;
@@ -1030,6 +1090,16 @@ class ValueChecker {
   }
 }
 
+/** Fails on `initial`, `inherit`, `unset`, `revert` or `revert-layer` anywhere in a value. */
+function rejectCssWideKeywords(nodes: readonly CssNode[]): void {
+  for (const node of nodes) {
+    if (node.type === "ident" && CSS_WIDE_KEYWORDS.has(node.value.toLowerCase())) {
+      fail(`${node.value} is not a theme value`);
+    }
+    if (node.type === "function" || node.type === "group") rejectCssWideKeywords(node.args);
+  }
+}
+
 /**
  * Checks a theme's value for a token of `kind` and writes it back out in the host's own
  * syntax: dangerous text (`url(`, `@`, `;`, braces, comments, `!important`, ...),
@@ -1055,6 +1125,7 @@ export function validateTokenValue(
   if (value.trim() === "") return { ok: false, reason: "empty" };
   try {
     const nodes = parseValue(value);
+    rejectCssWideKeywords(nodes);
     const checker = new ValueChecker(context, constraint);
     let output = nodes;
     switch (kind) {

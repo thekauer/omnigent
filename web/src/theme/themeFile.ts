@@ -138,6 +138,27 @@ function quoted(text: string): string {
 }
 
 /**
+ * Removes `__proto__` keys (own keys of the copy, which a page's object literal would have
+ * turned into a prototype) with a warning, so the dev plugin and the page agree.
+ */
+function dropProtoKeys(value: PlainData, at: string, issues: string[]): void {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => dropProtoKeys(item, `${at}[${index}]`, issues));
+    return;
+  }
+  if (!isRecord(value)) return;
+  for (const key of Object.keys(value)) {
+    const where = at ? `${at}.${key.slice(0, 64)}` : key.slice(0, 64);
+    if (key === "__proto__") {
+      issues.push(`${where}: a __proto__ key; ignoring it`);
+      Reflect.deleteProperty(value, key);
+    } else {
+      dropProtoKeys((value as Record<string, PlainData>)[key]!, where, issues);
+    }
+  }
+}
+
+/**
  * Reads a theme file. Never throws: everything wrong is an issue, and the rest applies.
  *
  * @param raw The parsed JSON (copied once before anything checks it).
@@ -164,6 +185,7 @@ export function parseThemeFile(raw: unknown, options: ThemeFileOptions): ParsedT
     return empty;
   }
   const theme = snapshot.value;
+  dropProtoKeys(theme, "", issues);
   if (!isRecord(theme)) {
     issues.push("theme rejected: not a JSON object");
     return empty;

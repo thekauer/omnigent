@@ -50,13 +50,13 @@ describe("parseThemeFile", () => {
       // ...beaten by an Omnigent id in the same `colors`.
       background: "#0d1117",
       foreground: "#e6e1cf",
-      "x-acme-fixture-themes-glow": "#ff00aa",
+      "x-acme__fixture_2dthemes-glow": "#ff00aa",
       "terminal-background": "#0a0e14",
       "terminal-ansi-red": "#ff3333",
       "terminal-ansi-bright-green": "#c2d94c",
       "ui-radius-base": "0",
       "ui-elevation": "0.5",
-      "ui-font-ui": '"x-acme-fixture-themes-fixture-sans", ui-sans-serif, sans-serif',
+      "ui-font-ui": '"x-acme__fixture_2dthemes-fixture-sans", ui-sans-serif, sans-serif',
       "ui-label-transform": "uppercase",
     });
     expect(parsed.syntax?.tokenColors).toHaveLength(3);

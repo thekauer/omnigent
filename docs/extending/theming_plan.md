@@ -175,7 +175,9 @@ Paths are relative to the omnigent repo root unless they start with `my-extensio
   - Defaults go in `:root` and `.dark` (as built in M1: `:root` rather than `:root:not(.dark)`, so dark mode keeps inheriting a light-only default exactly as the hand-written blocks did).
   - Derived formulas are re-emitted on the palette-stamped roots (`[data-theme]:not(.dark)` and `.dark[data-theme]`), so embed inner roots resolve them. `derived` is computed from the value (`isDerivedValue`), not stored.
   - Palette blocks are generated as today.
-- Extension colours (`contributes.colors`) register at runtime as `--x-<publisher>-<name>-<id>`.
+- Extension colours (`contributes.colors`) register at runtime as `--x-<encoded extension id>-<id>`
+  (`extensionCssPrefix`: injective, no `-` in the encoded id; `acme.theme-fixture` is
+  `x-acme__theme_2dfixture`).
 
 ### Naming (decided after M2)
 
@@ -192,7 +194,7 @@ Paths are relative to the omnigent repo root unless they start with `my-extensio
   status tones), `terminal-`, `diff-`, `file-tree-`, `viewer-`, `syntax-theme-` and
   `code-` (the code surfaces) and `brand-` (brand art). The one exception is the
   internal `omnigent-elevation` (below). The tokens that predate the plan keep their names.
-- Namespaces never overlap: extension tokens are `--x-<publisher>-<name>-<id>`, so no
+- Namespaces never overlap: extension tokens are `--x-<encoded extension id>-<id>`, so no
   host token may start with `x-`. Themes address tokens by id (and by the VS Code
   aliases, decision 4); plugins read them through `getThemeToken(id)` or `var(--id)`.
 - `@property` registrations are document-global and cannot be scoped, so only
@@ -320,7 +322,7 @@ Defaults must match today exactly.
 
 - `.woff2` only, inside the folder, real-path checked, magic bytes `wOF2`, at most 2 MiB.
 - The dev plugin allows exactly these files.
-- Loaded with the FontFace API under a namespaced family `x-<publisher>-<name>-<family>`, on theme activation, `font-display: swap`.
+- Loaded with the FontFace API under a namespaced family `x-<encoded extension id>-<family>`, on theme activation, `font-display: swap`.
 
 ### Theme JSON
 
@@ -362,12 +364,17 @@ Defaults must match today exactly.
 `web/src/theme/validate.ts`: pure, shared by browser and Node. It tokenizes values; regex alone is not enough.
 
 - **Colours:** hex, functional colour functions, named colours, transparent/currentColor, `color-mix()` (depth 3 or less), `var()` of registered ids.
-- **Lengths:** px/rem/em/%, plus `calc()` of those.
+- **Lengths:** px/rem/em/%, plus `calc()` of those. Literals within 0..10000px (rem and em
+  at 16px; tighter per token: borders 32px, scrollbars 64px, rows and bars 400px, label
+  sizes 200px, letter spacing -100..100px), percentages within 0..100, and every literal in a
+  `calc()` at most 10000 (`infinity` stays for the pill radius).
 - **Other kinds:** numbers in range, durations, `cubic-bezier`, enums, shadow lists.
 - **Rejected values:**
   - `url(`, `image-set(`, `@`, `expression`, `attr(`, `env(`, `!important`
   - `; { } < > \`, comments
-  - foreign or unregistered `var()`, cycles
+  - foreign or unregistered `var()` (another extension's colours included), cycles
+  - the CSS-wide keywords `initial`, `inherit`, `unset`, `revert`, `revert-layer` anywhere in a value
+  - `__proto__` keys anywhere in a theme file (warned about and dropped, by the dev plugin and the page alike)
   - values over 256 chars
 - **Limits:** 1000 tokens per theme, 64 KiB of JSON, 20 themes per extension.
 - **Font families:** generic families, host-bundled families, the same extension's declared fonts, or `var(--ui-font-*)`. Names match `^[A-Za-z0-9 _-]{1,64}$`.

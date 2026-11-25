@@ -792,7 +792,9 @@ export function omnigentExtensionsDev(options: OmnigentExtensionsDevOptions = {}
             )
           : [];
         return [
-          `export const devExtensions = ${JSON.stringify(extensions)};`,
+          // Parsed, not an object literal: a `"__proto__"` key in a theme file stays a key
+          // (the page drops it with a warning) instead of becoming a prototype.
+          `export const devExtensions = ${extensions.length === 0 ? "[]" : `JSON.parse(${JSON.stringify(JSON.stringify(extensions))})`};`,
           `export const devExtensionErrors = ${JSON.stringify(serving ? scan.errors : [])};`,
           `export const devCommandEndpoint = ${JSON.stringify(commandEndpoint)};`,
         ].join("\n");

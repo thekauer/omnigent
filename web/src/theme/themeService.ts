@@ -29,12 +29,13 @@ import {
   themeSelectors,
   type ThemeBlocks,
 } from "./themeCss";
-import type {
-  ColorContribution,
-  FontContribution,
-  ThemeContribution,
-  ThemeContributions,
-  UiTheme,
+import {
+  extensionCssPrefix,
+  type ColorContribution,
+  type FontContribution,
+  type ThemeContribution,
+  type ThemeContributions,
+  type UiTheme,
 } from "./themeContributions";
 import { parseThemeFile, type ParsedTheme, type ThemeTokens } from "./themeFile";
 import { getToken, TOKENS } from "./tokens/registry";
@@ -128,8 +129,41 @@ interface CachedFont {
 }
 
 const CACHE_LIMIT = 256 * 1024;
-// Host asset paths only: what the dev plugin serves, or a bundled asset of the app.
-const HOST_ASSET_URL = /^\/[A-Za-z0-9@._~/+-]{1,512}$/;
+// What the dev plugin serves, or a bundled asset of the app (under any base path).
+const HOST_ASSET_PATH =
+  /^(?:\/__omnigent\/extension-assets|(?:\/[A-Za-z0-9._~-]+)*\/assets)\/[A-Za-z0-9@._~/+-]{1,480}$/;
+
+/**
+ * Whether `url` is one of this origin's theme assets: a path (or this origin's absolute
+ * URL) under the dev plugin's `/__omnigent/extension-assets/` or the bundle's `assets/`,
+ * that the URL parser leaves as written. Protocol-relative URLs, other origins,
+ * backslashes, `.` and `..` segments, empty segments, queries and fragments fail.
+ */
+export function isHostAssetUrl(url: unknown): url is string {
+  if (typeof url !== "string" || url.length > 1024 || typeof location === "undefined") {
+    return false;
+  }
+  if (/^[\\/]{2}/.test(url) || url.includes("\\")) return false;
+  let resolved: URL;
+  try {
+    resolved = new URL(url, location.href);
+  } catch {
+    return false;
+  }
+  if (resolved.origin !== location.origin) return false;
+  const path = url.startsWith("/")
+    ? url
+    : url.startsWith(`${location.origin}/`)
+      ? url.slice(location.origin.length)
+      : undefined;
+  if (path === undefined || resolved.pathname !== path || resolved.search || resolved.hash) {
+    return false;
+  }
+  if (path.includes("//") || path.split("/").some((part) => part === "." || part === "..")) {
+    return false;
+  }
+  return HOST_ASSET_PATH.test(path);
+}
 
 const BUNDLED_SYNTAX_THEMES = new Set(bundledThemesInfo.map((theme) => theme.id));
 
@@ -208,6 +242,8 @@ export class ThemeService implements ThemeContributionSink {
   private forcedMode: UiTheme | null = null;
   private appliedCss = "";
   private appliedKey = "";
+  /** Whether this page wrote (or checked) the cache for {@link appliedKey}. */
+  private cacheWritten = false;
   private unregisterSyntax: (() => void)[] = [];
   private fontFaces: FontFace[] = [];
   private fontKey = "";
@@ -353,11 +389,17 @@ export class ThemeService implements ThemeContributionSink {
   applyCached(): void {
     const choice = this.currentChoice();
     if (!choice || !isContributedThemeId(choice)) return;
+    // Settled, or registered already: the live values (or the default) are what applies.
+    if ((this.started && this.loading === 0) || this.find(choice)) {
+      this.refresh();
+      return;
+    }
     const cache = this.readCache();
     if (!cache || cache.id !== choice) return;
     const css = buildThemeCss([cache.blocks], themeSelectors(getThemeScopeSelector()));
     this.writeStyle(css);
     this.appliedKey = cache.key;
+    this.cacheWritten = false;
     this.stamp(choice);
     this.forcedMode = cache.forcedMode ?? null;
     this.applyFonts(cache.fonts);
@@ -412,11 +454,8 @@ export class ThemeService implements ThemeContributionSink {
   }
 
   private valueContext(extension: ThemeExtension | undefined, syntaxNames: string[]): ValueContext {
-    const colors = new Set(
-      [...this.extensions.values()].flatMap((entry) =>
-        entry.contributions.colors.map((color) => color.token),
-      ),
-    );
+    // A theme reads the registry and its own extension's colours, never another's.
+    const colors = new Set((extension?.contributions.colors ?? []).map((color) => color.token));
     const own = new Map<string, FontContribution>(
       (extension?.contributions.fonts ?? []).map((font) => [font.family, font]),
     );
@@ -460,7 +499,7 @@ export class ThemeService implements ThemeContributionSink {
       extensionColors,
       assetUrl: (path) => {
         const asset = extension.files[path];
-        return asset?.kind === "asset" && HOST_ASSET_URL.test(asset.url) ? asset.url : undefined;
+        return asset?.kind === "asset" && isHostAssetUrl(asset.url) ? asset.url : undefined;
       },
     });
     if (parsed.issues.length > 0) {
@@ -596,7 +635,7 @@ export class ThemeService implements ThemeContributionSink {
     }
     const fonts: CachedFont[] = extension.contributions.fonts.flatMap((font) => {
       const asset = extension.files[font.src];
-      if (asset?.kind !== "asset" || !HOST_ASSET_URL.test(asset.url)) {
+      if (asset?.kind !== "asset" || !isHostAssetUrl(asset.url)) {
         this.warnOnce(
           `${extension.id}:font:${font.src}`,
           `${extension.id}: font ${font.src} is not shipped`,
@@ -782,7 +821,7 @@ export class ThemeService implements ThemeContributionSink {
     this.fontFaces = [];
     if (!fontSet || typeof FontFace === "undefined") return;
     for (const font of fonts) {
-      if (!HOST_ASSET_URL.test(font.url) || !/^[a-z0-9-]{1,160}$/.test(font.family)) continue;
+      if (!isHostAssetUrl(font.url) || !/^x-[a-z0-9_-]{1,200}$/.test(font.family)) continue;
       const face = new FontFace(font.family, `url(${JSON.stringify(font.url)}) format("woff2")`, {
         display: "swap",
         ...(font.weight ? { weight: font.weight } : {}),
@@ -814,7 +853,8 @@ export class ThemeService implements ThemeContributionSink {
   }
 
   private writeCache(resolution: Resolution, id: string): void {
-    if (this.appliedKey === resolution.key) return;
+    // Compared by content, not by key: a forged cache may carry the live key.
+    if (this.appliedKey === resolution.key && this.cacheWritten) return;
     this.appliedKey = resolution.key;
     const cache: ThemeCache = {
       version: 1,
@@ -833,7 +873,10 @@ export class ThemeService implements ThemeContributionSink {
     if (text.length > CACHE_LIMIT) text = JSON.stringify({ ...cache, syntax: [] });
     if (text.length > CACHE_LIMIT) return;
     try {
-      window.localStorage.setItem(THEME_CACHE_STORAGE_KEY, text);
+      if (window.localStorage.getItem(THEME_CACHE_STORAGE_KEY) !== text) {
+        window.localStorage.setItem(THEME_CACHE_STORAGE_KEY, text);
+      }
+      this.cacheWritten = true;
     } catch {
       // A full storage only loses the first-paint cache.
     }
@@ -858,17 +901,20 @@ export function checkCache(raw: unknown): ThemeCache | undefined {
   if (family !== undefined && (typeof family !== "string" || !/^[a-z0-9-]{1,64}$/.test(family))) {
     return undefined;
   }
+  // Only the chosen theme's own extension names: `x-<its prefix>-...`.
+  const ownName = new RegExp(
+    `^${extensionCssPrefix(id.slice(0, id.indexOf("/")))}-[a-z0-9_-]{1,160}$`,
+  );
   const context: ValueContext = {
-    isKnownToken: (token) => getToken(token) !== undefined || /^x-[a-z0-9-]{1,160}$/.test(token),
-    fontFamily: (name) => (/^x-[a-z0-9-]{1,160}$/.test(name) ? name : undefined),
+    isKnownToken: (token) => getToken(token) !== undefined || ownName.test(token),
+    fontFamily: (name) => (ownName.test(name) ? name : undefined),
   };
   const checkTokens = (values: unknown): Record<string, string> | undefined => {
     if (values === undefined) return undefined;
     if (!isRecord(values)) return undefined;
     const out = nullMap<string>();
     for (const [token, value] of Object.entries(values)) {
-      const kind =
-        getToken(token)?.kind ?? (/^x-[a-z0-9-]{1,160}$/.test(token) ? "color" : undefined);
+      const kind = getToken(token)?.kind ?? (ownName.test(token) ? "color" : undefined);
       if (!kind) continue;
       const result = validateTokenValue(kind, value, context, TOKEN_CONSTRAINTS[token]);
       if (result.ok) out[token] = result.value;
@@ -886,9 +932,9 @@ export function checkCache(raw: unknown): ThemeCache | undefined {
     ? fonts.flatMap((font) =>
         isRecord(font) &&
         typeof font.family === "string" &&
-        /^[a-z0-9-]{1,160}$/.test(font.family) &&
+        ownName.test(font.family) &&
         typeof font.url === "string" &&
-        HOST_ASSET_URL.test(font.url)
+        isHostAssetUrl(font.url)
           ? [
               {
                 family: font.family,
@@ -908,7 +954,7 @@ export function checkCache(raw: unknown): ThemeCache | undefined {
   if (isRecord(brand)) {
     const logos = isRecord(brand.logos) ? brand.logos : {};
     const url = (value: unknown) =>
-      typeof value === "string" && HOST_ASSET_URL.test(value) ? value : undefined;
+      typeof value === "string" && isHostAssetUrl(value) ? value : undefined;
     const main = url(logos.main);
     const loading = url(logos.loading);
     const favicon = url(logos.favicon);

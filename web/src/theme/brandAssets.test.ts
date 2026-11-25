@@ -34,7 +34,7 @@ describe("sanitizeSvg", () => {
     expect(result.ok).toBe(true);
     if (!result.ok) return;
     expect(result.svg).toBe(
-      '<svg xmlns="http://www.w3.org/2000/svg"><use/><use/><rect width="1" height="1"/><path d="M0" style="fill: red" filter="url(#f)"/><circle r="1"/><circle r="1"/></svg>',
+      '<svg xmlns="http://www.w3.org/2000/svg"><use/><use/><rect width="1" height="1"/><path d="M0" filter="url(#f)"/><circle r="1"/><circle r="1"/></svg>',
     );
     expect(result.issues.join("\n")).toMatch(/onload/);
     expect(result.issues.join("\n")).toMatch(/<script>/);

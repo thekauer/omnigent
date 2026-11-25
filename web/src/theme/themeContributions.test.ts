@@ -30,7 +30,7 @@ describe("parseThemeContributions", () => {
     expect(contributions.colors).toEqual([
       {
         id: "glow",
-        token: "x-acme-fixture-themes-glow",
+        token: "x-acme__fixture_2dthemes-glow",
         description: "The fixture's glow.",
         defaults: { light: "#ffcc00", dark: "color-mix(in srgb, var(--primary) 40%, transparent)" },
       },
@@ -38,7 +38,7 @@ describe("parseThemeContributions", () => {
     expect(contributions.fonts).toEqual([
       {
         family: "Fixture Sans",
-        cssFamily: "x-acme-fixture-themes-fixture-sans",
+        cssFamily: "x-acme__fixture_2dthemes-fixture-sans",
         src: "fonts/fixture-sans.woff2",
         weight: "100 900",
         style: undefined,
@@ -79,7 +79,7 @@ describe("parseThemeContributions", () => {
     expect(contributions.themes.map((theme) => theme.id)).toEqual(["ok", "fam1", "fam2"]);
     expect(contributions.themes[2]!.family).toBeUndefined();
     expect(contributions.colors).toEqual([
-      { id: "x", token: "x-acme-x-x", description: "", defaults: { dark: "#000" } },
+      { id: "x", token: "x-acme__x-x", description: "", defaults: { dark: "#000" } },
     ]);
     expect(contributions.fonts.map((font) => font.family)).toEqual(["Ok"]);
     expect(warnings).toHaveLength(14);
@@ -120,6 +120,6 @@ describe("normalizeExtensionPath", () => {
   });
 
   it("namespaces font families by extension", () => {
-    expect(namespacedFontFamily("thekauer.dev", "Geist Mono")).toBe("x-thekauer-dev-geist-mono");
+    expect(namespacedFontFamily("thekauer.dev", "Geist Mono")).toBe("x-thekauer__dev-geist-mono");
   });
 });

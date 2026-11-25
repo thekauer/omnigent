@@ -102,7 +102,7 @@ describe("the runtime theme stylesheet's selectors", () => {
     }
     // The strongest generated blocks, for the record: palette-stamped light roots.
     expect(specificity(':root:not(.dark)[data-theme="nord"]')).toEqual([0, 3, 0]);
-    expect(weakest).toEqual([1, 1, 0]);
+    expect(weakest).toEqual([1, 2, 0]);
   });
 
   it("beat every generated token block in the embed's scoped stylesheet", () => {
@@ -157,9 +157,9 @@ describe("buildThemeCss", () => {
     );
     expect(css).toBe(
       [
-        ":is([data-omni-theme], #omnigent-theme-runtime-root):not(.dark) {\n  --x-a-b-glow: #fff;\n}\n",
-        ":is([data-omni-theme], #omnigent-theme-runtime-root).dark {\n  --background: #000;\n  --terminal-background: #111;\n}\n",
-        ':is([data-omni-theme], #omnigent-theme-runtime-root) [data-token-mode="light"] {\n  --terminal-background: #111;\n}\n',
+        ":root:is([data-omni-theme], #omnigent-theme-runtime-root):not(.dark) {\n  --x-a-b-glow: #fff;\n}\n",
+        ":root:is([data-omni-theme], #omnigent-theme-runtime-root).dark {\n  --background: #000;\n  --terminal-background: #111;\n}\n",
+        ':root:is([data-omni-theme], #omnigent-theme-runtime-root) [data-token-mode="light"] {\n  --terminal-background: #111;\n}\n',
       ].join("\n"),
     );
     expect(buildThemeCss([{}], themeSelectors(null))).toBe("");
