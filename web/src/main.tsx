@@ -14,8 +14,13 @@ import { RunnerHealthProvider } from "./hooks/RunnerHealthProvider";
 import { QueueFlushProvider } from "./hooks/QueueFlushProvider";
 import { prefetchSessionHostChain } from "./hooks/useSession";
 import { SessionUpdatesProvider } from "./hooks/SessionUpdatesProvider";
-import { getBasePath, withBasePath } from "./lib/basePath";
-import { resolveBranding, useBrandOverride } from "./lib/branding";
+import { getBasePath } from "./lib/basePath";
+import {
+  applyDocumentBranding,
+  readDocumentBrandDefaults,
+  resolveBranding,
+  useBrandOverride,
+} from "./lib/branding";
 import { resolveServerInfo, type ServerInfo } from "./lib/capabilities";
 import { CapabilitiesProvider } from "./lib/CapabilitiesContext";
 import { ExtensionProvider } from "./extensions/ExtensionProvider";
@@ -147,6 +152,9 @@ const bootServerInfo = createBootServerInfo(resolveServerInfo());
 // exactly as it did before this gate existed.
 const bootIdentityGate = withBootTimeout<string | null>(bootIdentity, null);
 
+// The title and favicon index.html ships, read before any branding replaces them.
+const DOCUMENT_BRAND_DEFAULTS = readDocumentBrandDefaults();
+
 function RootApp({ initialInfo }: { initialInfo: ServerInfo | "loading" }) {
   const [info, setInfo] = useState<ServerInfo | "loading">(initialInfo);
   useEffect(() => {
@@ -161,19 +169,12 @@ function RootApp({ initialInfo }: { initialInfo: ServerInfo | "loading" }) {
   const brandOverride = useBrandOverride();
   useEffect(() => {
     if (info === "loading") return;
-    // The brand override (a theme's brand, M6) over the server's branding.
-    const branding = resolveBranding(info.branding ?? null, brandOverride);
-    if (branding.app_name) document.title = branding.app_name;
-    const faviconUrl = branding.logos.favicon;
-    if (!faviconUrl) return;
-    let link = document.querySelector<HTMLLinkElement>('link[rel="icon"]');
-    if (!link) {
-      link = document.createElement("link");
-      link.rel = "icon";
-      document.head.appendChild(link);
-    }
-    link.removeAttribute("type");
-    link.href = withBasePath(faviconUrl);
+    // The brand override (a theme's brand, M6) over the server's branding; what both
+    // leave unset goes back to the page's own title and favicon.
+    applyDocumentBranding(
+      resolveBranding(info.branding ?? null, brandOverride),
+      DOCUMENT_BRAND_DEFAULTS,
+    );
   }, [info, brandOverride]);
   return (
     <CapabilitiesProvider info={info}>

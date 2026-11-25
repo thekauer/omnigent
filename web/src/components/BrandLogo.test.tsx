@@ -84,6 +84,29 @@ describe("BrandLogo", () => {
     expect(authenticatedFetch).not.toHaveBeenCalled();
   });
 
+  it("loads a cross-origin logo without credentials or the host transport", () => {
+    getOmnigentHostConfig.mockReturnValue({ fetcher: () => {} });
+
+    render(logoTree(serverInfo("https://cdn.example.com/logo.svg")));
+
+    const image = screen.getByRole("img", { name: "Acme Agent" });
+    expect(image).toHaveAttribute("src", "https://cdn.example.com/logo.svg");
+    expect(image).toHaveAttribute("crossorigin", "anonymous");
+    expect(image).toHaveAttribute("referrerpolicy", "no-referrer");
+    expect(authenticatedFetch).not.toHaveBeenCalled();
+  });
+
+  it("shows an inline image directly, also in the embed", () => {
+    getOmnigentHostConfig.mockReturnValue({ fetcher: () => {} });
+
+    render(logoTree(serverInfo("data:image/png;base64,AAAA")));
+
+    const image = screen.getByRole("img", { name: "Acme Agent" });
+    expect(image).toHaveAttribute("src", "data:image/png;base64,AAAA");
+    expect(image).not.toHaveAttribute("crossorigin");
+    expect(authenticatedFetch).not.toHaveBeenCalled();
+  });
+
   it("falls back to Otto when a standalone image fails to load", () => {
     getOmnigentHostConfig.mockReturnValue({ fetcher: undefined });
     render(logoTree(serverInfo("/v1/branding/logo/missing")));

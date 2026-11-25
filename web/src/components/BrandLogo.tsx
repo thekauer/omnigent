@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { OttoEyes } from "@/components/OttoEyes";
 import { OttoIcon } from "@/components/icons/OttoIcon";
 import { withBasePath } from "@/lib/basePath";
-import { useAppName, useLogoUrl } from "@/lib/branding";
+import { classifyBrandUrl, useAppName, useLogoUrl } from "@/lib/branding";
 import { authenticatedFetch } from "@/lib/identity";
 import { getOmnigentHostConfig, getOmnigentHostGeneration } from "@/lib/host";
 
@@ -145,20 +145,34 @@ function StandaloneBrandLogo({
   appName,
   className,
   variant,
+  crossOrigin,
 }: {
   path: string;
   appName: string;
   className?: string;
   variant: "eyes" | "icon";
+  /** A logo on another origin: no cookies and no referrer go with the request. */
+  crossOrigin: boolean;
 }) {
   const [failed, setFailed] = useState(false);
   if (failed) return <FallbackLogo className={className} variant={variant} />;
-  return <img src={path} className={className} alt={appName} onError={() => setFailed(true)} />;
+  return (
+    <img
+      src={path}
+      className={className}
+      alt={appName}
+      onError={() => setFailed(true)}
+      {...(crossOrigin
+        ? { crossOrigin: "anonymous" as const, referrerPolicy: "no-referrer" as const }
+        : {})}
+    />
+  );
 }
 
 /**
- * The app's brand logo: the operator's custom logo when configured, else the
- * Otto mascot. `variant` picks the logo variant and matching fallback —
+ * The app's brand logo: the theme's or operator's custom logo when configured, else the
+ * Otto mascot. In the embed, host paths are fetched with the host's credentials; other
+ * URLs load as a plain `<img>` (cross-origin ones without credentials). `variant` picks the logo variant and matching fallback —
  * `"eyes"` (hero) → `main`/`OttoEyes`, `"icon"` (indicators) → `loading`/`OttoIcon`.
  */
 export function BrandLogo({
@@ -171,7 +185,10 @@ export function BrandLogo({
   const logoUrl = useLogoUrl(variant === "icon" ? "loading" : "main");
   const appName = useAppName();
   if (logoUrl) {
-    if (getOmnigentHostConfig().fetcher) {
+    const kind = classifyBrandUrl(logoUrl);
+    // Only the host's own paths go through its authenticated fetch: credentials and
+    // identity headers never reach another origin.
+    if (kind === "host" && getOmnigentHostConfig().fetcher) {
       const generation = getOmnigentHostGeneration();
       return (
         <EmbeddedBrandLogo
@@ -187,10 +204,11 @@ export function BrandLogo({
     return (
       <StandaloneBrandLogo
         key={logoUrl}
-        path={withBasePath(logoUrl)}
+        path={kind === "host" ? withBasePath(logoUrl) : logoUrl}
         appName={appName}
         className={className}
         variant={variant}
+        crossOrigin={kind === "cross-origin"}
       />
     );
   }

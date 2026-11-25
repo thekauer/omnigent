@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from "react";
+import { withBasePath } from "./basePath";
 import type { Branding } from "./capabilities";
 import { useServerInfo } from "./CapabilitiesContext";
 
@@ -25,9 +26,55 @@ export interface BrandOverride {
 let brandOverride: BrandOverride | null = null;
 const brandListeners = new Set<() => void>();
 
-/** Sets (or, with null, clears) the brand override; the logo, name and favicon follow. */
+/** The longest app name an override may set; longer names are cut. */
+export const MAX_APP_NAME_LENGTH = 64;
+/** The longest logo URL an override may set; longer ones are dropped. */
+export const MAX_LOGO_URL_LENGTH = 2048;
+
+// C0 and C1 control characters, which a name must not carry into the title or alt text.
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f]/g;
+
+/**
+ * An override's app name as the UI may show it: control characters stripped, trimmed,
+ * at most {@link MAX_APP_NAME_LENGTH} characters, and `undefined` when nothing is left
+ * (an empty name means "unset", never a blank title).
+ */
+export function normalizeAppName(name: unknown): string | undefined {
+  if (typeof name !== "string") return undefined;
+  const clean = [...name.replace(CONTROL_CHARACTERS, "").trim()]
+    .slice(0, MAX_APP_NAME_LENGTH)
+    .join("")
+    .trim();
+  return clean === "" ? undefined : clean;
+}
+
+function normalizeLogoUrl(url: unknown): string | undefined {
+  if (typeof url !== "string") return undefined;
+  const trimmed = url.trim();
+  if (trimmed === "" || trimmed.length > MAX_LOGO_URL_LENGTH) return undefined;
+  return CONTROL_CHARACTERS.test(trimmed) ? undefined : trimmed;
+}
+
+function normalizeOverride(override: BrandOverride): BrandOverride | null {
+  const appName = normalizeAppName(override.appName);
+  const logos: Partial<Branding["logos"]> = {};
+  for (const key of ["main", "loading", "favicon"] as const) {
+    const url = normalizeLogoUrl(override.logos?.[key]);
+    if (url) logos[key] = url;
+  }
+  const normalized: BrandOverride = {};
+  if (appName) normalized.appName = appName;
+  if (Object.keys(logos).length > 0) normalized.logos = logos;
+  return Object.keys(normalized).length > 0 ? normalized : null;
+}
+
+/**
+ * Sets (or, with null, clears) the brand override; the logo, name and favicon follow.
+ * Empty names and logo URLs count as unset (see {@link normalizeAppName}).
+ */
 export function setBrandOverride(override: BrandOverride | null): void {
-  brandOverride = override;
+  brandOverride = override ? normalizeOverride(override) : null;
   for (const listener of brandListeners) listener();
 }
 
@@ -56,7 +103,7 @@ export function resolveBranding(server: Branding | null, override: BrandOverride
   if (!override) return base;
   return {
     ...base,
-    app_name: override.appName ?? base.app_name,
+    app_name: normalizeAppName(override.appName) ?? base.app_name,
     logos: {
       main: override.logos?.main ?? base.logos.main,
       loading: override.logos?.loading ?? base.logos.loading,
@@ -93,4 +140,78 @@ export function usePoweredBy(): boolean {
   const info = useServerInfo();
   const branding = info !== "loading" ? info.branding : null;
   return branding != null && branding.powered_by;
+}
+
+/**
+ * How a brand image URL may be loaded:
+ * - `"host"`: an app-absolute path (`/v1/...`, a host asset path), served by the
+ *   Omnigent host itself; the embed fetches it with the host's credentials.
+ * - `"inline"`: a `blob:` or `data:` image URL, which needs no request.
+ * - `"same-origin"`: an absolute URL on the page's own origin.
+ * - `"cross-origin"`: anything else; loaded as a plain `<img>` with no credentials and
+ *   no referrer, never through the host's authenticated fetch.
+ */
+export type BrandUrlKind = "host" | "inline" | "same-origin" | "cross-origin";
+
+/** Classifies a brand image URL ({@link BrandUrlKind}). */
+export function classifyBrandUrl(url: string): BrandUrlKind {
+  if (url.startsWith("/") && !url.startsWith("//") && !url.startsWith("/\\")) return "host";
+  if (/^(?:blob:|data:image\/)/i.test(url)) return "inline";
+  if (typeof window === "undefined") return "cross-origin";
+  try {
+    const parsed = new URL(url, window.location.href);
+    return parsed.origin === window.location.origin ? "same-origin" : "cross-origin";
+  } catch {
+    return "cross-origin";
+  }
+}
+
+/** The document's own title and favicon, to restore when no branding sets them. */
+export interface DocumentBrandDefaults {
+  title: string;
+  favicon: { href: string; type: string | null } | null;
+}
+
+/** Reads the document's title and favicon as the page shipped them. */
+export function readDocumentBrandDefaults(doc: Document = document): DocumentBrandDefaults {
+  const link = doc.querySelector<HTMLLinkElement>('link[rel="icon"]');
+  return {
+    title: doc.title || DEFAULT_APP_NAME,
+    favicon: link
+      ? { href: link.getAttribute("href") ?? "", type: link.getAttribute("type") }
+      : null,
+  };
+}
+
+/**
+ * Puts `branding`'s app name and favicon on the document, restoring `defaults` for
+ * whichever it leaves unset, so clearing an override (or the server's branding) never
+ * leaves the previous name or icon behind.
+ */
+export function applyDocumentBranding(
+  branding: Branding,
+  defaults: DocumentBrandDefaults,
+  doc: Document = document,
+): void {
+  doc.title = branding.app_name ?? defaults.title;
+  const faviconUrl = branding.logos.favicon;
+  let link = doc.querySelector<HTMLLinkElement>('link[rel="icon"]');
+  if (!faviconUrl) {
+    if (!link) return;
+    if (!defaults.favicon) {
+      link.remove();
+      return;
+    }
+    link.href = defaults.favicon.href;
+    if (defaults.favicon.type) link.type = defaults.favicon.type;
+    else link.removeAttribute("type");
+    return;
+  }
+  if (!link) {
+    link = doc.createElement("link");
+    link.rel = "icon";
+    doc.head.appendChild(link);
+  }
+  link.removeAttribute("type");
+  link.href = classifyBrandUrl(faviconUrl) === "host" ? withBasePath(faviconUrl) : faviconUrl;
 }
