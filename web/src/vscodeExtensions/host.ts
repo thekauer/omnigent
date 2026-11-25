@@ -181,9 +181,13 @@ export class ExtensionHost {
       if (events.includes("*")) eager.push(extension);
       else if (events.includes("onStartupFinished")) afterStartup.push(extension);
       else {
-        this.log.warn(
-          `[omnigent-extensions] ${extension.id}: no supported activation event; not activating it`,
-        );
+        // No activation events at all is a declarative extension (themes only, as in VS
+        // Code): it contributes without activating. Unsupported events alone warn.
+        if (events.length > 0) {
+          this.log.warn(
+            `[omnigent-extensions] ${extension.id}: no supported activation event; not activating it`,
+          );
+        }
         this.contribute(extension);
         this.services.views.extensionSettled(extension.id);
       }

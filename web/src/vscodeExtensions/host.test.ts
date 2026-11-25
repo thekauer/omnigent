@@ -428,6 +428,14 @@ describe("ExtensionHost", () => {
     );
   });
 
+  it("contributes a declarative extension (no activation events) without activating or warning", async () => {
+    const activate = vi.fn();
+    const { host, log } = setup({ "/ext/pub.themes.js": { activate } });
+    await host.start([describeExtension("pub.themes", [])]);
+    expect(activate).not.toHaveBeenCalled();
+    expect(log.warn).not.toHaveBeenCalled();
+  });
+
   it("runs * extensions before waiting for startup", async () => {
     const order: string[] = [];
     let finishStartup!: () => void;
