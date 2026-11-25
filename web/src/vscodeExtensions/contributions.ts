@@ -4,6 +4,12 @@ import { isExtensionViewId } from "@/shell/railTabs";
 import { isRailViewIconName } from "@/shell/railViewIcons";
 import { appShortcutsOwning, BUILT_IN_CHORD_OVERRIDES } from "./appKeyChords";
 import { parseWhen, type WhenClause } from "./when";
+import {
+  EMPTY_THEME_CONTRIBUTIONS,
+  parseThemeContributions,
+  type ThemeContributions,
+} from "@/theme/themeContributions";
+import { getToken } from "@/theme/tokens/registry";
 
 /** The view container of the classic workspace rail. */
 export const RIGHT_PANEL_CONTAINER = "omnigent.rightPanel";
@@ -102,6 +108,8 @@ export interface ExtensionContributions {
   readonly viewTitleMenu: readonly MenuItemContribution[];
   readonly submenus: readonly SubmenuContribution[];
   readonly keybindings: readonly KeybindingContribution[];
+  /** `contributes.themes`, `.colors` and `.fonts` (`theme/themeContributions.ts`). */
+  readonly theming: ThemeContributions;
 }
 
 export interface ParseContributionsOptions {
@@ -122,6 +130,7 @@ export const EMPTY_CONTRIBUTIONS: ExtensionContributions = Object.freeze({
   viewTitleMenu: [],
   submenus: [],
   keybindings: [],
+  theming: EMPTY_THEME_CONTRIBUTIONS,
 });
 
 const MAX_HINT_LENGTH = 300;
@@ -586,8 +595,13 @@ export function parseContributions(
       });
     }
   }
+  const theming = parseThemeContributions(extensionId, raw, {
+    isKnownToken: (id) => getToken(id) !== undefined,
+  });
+  warnings.push(...theming.warnings);
   return {
     contributions: Object.freeze({
+      theming: theming.contributions,
       keybindings: Object.freeze(keybindings),
       views: Object.freeze(views),
       commands: Object.freeze(commands),

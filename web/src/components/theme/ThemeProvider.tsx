@@ -4,19 +4,23 @@ import { usePrefersDarkColorScheme } from "@/hooks/usePrefersDarkColorScheme";
 import { useHostTheme } from "@/lib/embedded";
 import { setThemeSource } from "@/lib/nativeBridge";
 import { useThemeModePreview } from "@/store/themeModePreview";
+import { useThemeForcedMode } from "@/theme/themeService";
 import { isThemeMode, type ResolvedThemeMode, type ThemeMode } from "./themeMode";
 
 /**
- * Mirrors the shown theme mode, a preview included, onto native shell chrome.
+ * Mirrors the shown theme mode, a preview or a theme's forced mode included, onto
+ * native shell chrome.
  * Unmounting mid-preview hands the shell the saved mode again. Renders nothing.
  */
 function NativeThemeSync() {
   const { theme } = useTheme();
   const previewMode = useThemeModePreview();
+  const forcedMode = useThemeForcedMode();
   const savedRef = useRef<ThemeMode | null>(null);
   const sentRef = useRef<ThemeMode | null>(null);
   savedRef.current = isThemeMode(theme) ? theme : null;
-  const shown = previewMode ?? savedRef.current;
+  // A preview wins; a single-mode theme forces its mode on the native chrome too.
+  const shown = previewMode ?? forcedMode ?? savedRef.current;
   useEffect(() => {
     if (shown === null) return;
     sentRef.current = shown;
@@ -63,6 +67,8 @@ export function ThemeProvider({
   embedded?: boolean;
 }) {
   const previewedMode = usePreviewedThemeMode();
+  // A single-mode contributed theme forces its mode while active; a preview still wins.
+  const themeForcedMode = useThemeForcedMode();
   return (
     <NextThemesProvider
       // Embedded CSS is scoped to its portal root, never the host document.
@@ -72,7 +78,7 @@ export function ThemeProvider({
       enableSystem
       disableTransitionOnChange
       storageKey="web-theme"
-      forcedTheme={previewedMode}
+      forcedTheme={previewedMode ?? themeForcedMode ?? undefined}
     >
       <NativeThemeSync />
       {children}

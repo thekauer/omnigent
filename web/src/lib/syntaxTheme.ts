@@ -116,6 +116,11 @@ export function syntaxThemeInput(name: string): BundledTheme | ThemeRegistration
   return registered.get(name) ?? (name as BundledTheme);
 }
 
+/** Whether a syntax theme is registered under `name` ({@link registerSyntaxTheme}). */
+export function isRegisteredSyntaxTheme(name: string): boolean {
+  return registered.has(name);
+}
+
 /** The name a highlighter knows the theme by (a registered theme's own Shiki name). */
 export function shikiThemeName(name: string): string {
   return registered.get(name)?.name ?? name;

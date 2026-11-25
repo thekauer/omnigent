@@ -55,6 +55,7 @@ import {
 } from "./lib/uiFontPreferences";
 import { applyThemePalette, readThemePalette } from "./lib/themePalette";
 import { applyCustomTheme, readCustomTheme } from "./lib/customTheme";
+import { themeService } from "./theme/themeService";
 import {
   type RoutingApi,
   RoutingProvider,
@@ -207,6 +208,7 @@ function OmnigentProviders({
       applyUiFontFamily(readUiFontFamily());
       applyThemePalette(readThemePalette());
       applyCustomTheme(readCustomTheme());
+      themeService.applyCached();
     }
   }, []);
 

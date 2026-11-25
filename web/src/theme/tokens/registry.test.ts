@@ -71,6 +71,10 @@ const STILL_IN_INDEX_CSS = {
 // Legacy tokens the registry now derives from the shape and elevation scales. The
 // browser token dump (my-extensions verify harness) checks they compute to the same
 // values; `composer-shadow`'s dark value comes from its dark alpha.
+// Legacy tokens since removed: onboarding-modal-shadow, deprecated (unscaled by
+// ui-elevation) and removed with the theme contribution API.
+const REMOVED = ["onboarding-modal-shadow"];
+
 const RESTATED = {
   ":root": ["radius", "radius-otto-button", "radius-otto-sm", "radius-otto-md", "composer-shadow"],
   ".dark": ["composer-shadow"],
@@ -136,7 +140,10 @@ describe("theme token registry", () => {
       );
       const expected = Object.fromEntries(
         Object.entries(legacy[selector]).filter(
-          ([id]) => !STILL_IN_INDEX_CSS[selector].includes(id) && !RESTATED[selector].includes(id),
+          ([id]) =>
+            !STILL_IN_INDEX_CSS[selector].includes(id) &&
+            !RESTATED[selector].includes(id) &&
+            !REMOVED.includes(id),
         ),
       );
       expect(

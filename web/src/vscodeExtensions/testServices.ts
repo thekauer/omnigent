@@ -95,5 +95,7 @@ export function hostServices(overrides: Partial<HostServices> = {}): HostService
     tasks: overrides.tasks ?? new TasksService(new WorkspaceBridge()),
     pullRequests: overrides.pullRequests ?? new PullRequestsService(new WorkspaceBridge()),
     gitHosts: overrides.gitHosts ?? new GitHostProviderRegistry(),
+    ...(overrides.keybindings ? { keybindings: overrides.keybindings } : {}),
+    ...(overrides.themes ? { themes: overrides.themes } : {}),
   };
 }

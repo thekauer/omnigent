@@ -181,13 +181,6 @@ export const ELEVATION_TOKENS = defineTokens("elevation", [
     default: { light: `0 24px 80px 8px rgb(${NEUTRAL} / var(--ui-shadow-onboarding-alpha))` },
   },
   {
-    id: "onboarding-modal-shadow",
-    kind: "shadow",
-    description:
-      "Deprecated, not scaled by ui-elevation: the onboarding modal reads ui-shadow-onboarding. Kept with its value until the theme contribution API ships (theming plan M6).",
-    default: { light: "0 24px 80px 8px #00000012", dark: "0 24px 80px 8px #00000038" },
-  },
-  {
     id: "ui-glass-rim-edge",
     description: "The glass surfaces' inner edge highlight (the liquid glass and its frame).",
     default: {

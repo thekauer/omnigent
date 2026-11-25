@@ -97,7 +97,10 @@ function observe(): void {
   if (typeof MutationObserver === "undefined" || typeof document === "undefined") return;
   observer = new MutationObserver(notify);
   for (const root of getThemeRoots()) {
-    observer.observe(root, { attributes: true, attributeFilter: ["class", "data-theme", "style"] });
+    observer.observe(root, {
+      attributes: true,
+      attributeFilter: ["class", "data-theme", "data-omni-theme", "style"],
+    });
   }
   observer.observe(document.head, { childList: true, subtree: true, characterData: true });
 }

@@ -588,6 +588,19 @@ export function getThemeRoots(): HTMLElement[] {
   return typeof document !== "undefined" ? [document.documentElement] : [];
 }
 
+/**
+ * The selector a stylesheet that targets the theme roots scopes itself to: the embed's
+ * scope class while embedded (the scoped stylesheet's own prefix), else null (the
+ * document root). The theme service's runtime stylesheet uses it, so an embed's theme
+ * never reaches the host page.
+ */
+export function getThemeScopeSelector(): string | null {
+  return embedScopeRoot ? EMBED_SCOPE_SELECTOR : null;
+}
+
+/** The embed's scope class as a selector (`vite.embed.config.ts` prefixes every rule with it). */
+export const EMBED_SCOPE_SELECTOR = ".omnigent-app";
+
 /** Routing options for a request to the Omnigent server. */
 export interface RoutingOptions {
   /** Send no slice key, to reach a host whose tunnels connected without one. */

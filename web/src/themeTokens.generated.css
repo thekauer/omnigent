@@ -327,8 +327,6 @@
   /* prettier-ignore */
   --ui-shadow-onboarding: 0 24px 80px 8px rgb(var(--ui-shadow-neutral-rgb) / var(--ui-shadow-onboarding-alpha));
   /* prettier-ignore */
-  --onboarding-modal-shadow: 0 24px 80px 8px #00000012;
-  /* prettier-ignore */
   --ui-glass-rim-edge: light-dark(color-mix(in oklch, black, transparent 85%), color-mix(in oklch, white, transparent 65%));
   /* prettier-ignore */
   --ui-glass-rim-glow: light-dark(color-mix(in oklch, black, transparent 90%), color-mix(in oklch, white, transparent 85%));
@@ -541,8 +539,6 @@
   --ui-shadow-warm-rgb: 0 0 0;
   --ui-shadow-composer-alpha: calc(80% * var(--omnigent-elevation));
   --ui-shadow-onboarding-alpha: calc(56 / 255 * var(--omnigent-elevation));
-  /* prettier-ignore */
-  --onboarding-modal-shadow: 0 24px 80px 8px #00000038;
   --viewer-cited-line: rgba(161, 98, 7, 0.3);
   --viewer-model-background: #0e1013;
   --viewer-model-surface: #c4c9ce;

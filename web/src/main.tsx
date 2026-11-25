@@ -40,6 +40,7 @@ import {
 import { migrateLegacyProjectFolderPagination } from "./lib/projectFolderPaginationPreferences";
 import { applyThemePalette, readThemePalette } from "./lib/themePalette";
 import { applyCustomTheme, readCustomTheme } from "./lib/customTheme";
+import { themeService } from "./theme/themeService";
 import { initChatStore } from "./store/chatStore";
 import { railViews } from "./shell/railViews";
 import { startExtensionHost } from "./vscodeExtensions/extensionHost";
@@ -76,9 +77,16 @@ startExtensionHost();
 if (import.meta.env.DEV) {
   // A restored extension tab waits for the views those extensions contribute.
   const extensionViewsLoaded = railViews.beginLoading();
+  // A chosen theme from a dev extension keeps its cached values until they load.
+  const extensionThemesLoaded = themeService.beginLoading();
   void import("./vscodeExtensions/devLoader")
     .then(({ startDevExtensions }) => startDevExtensions())
-    .finally(extensionViewsLoaded);
+    .finally(() => {
+      extensionViewsLoaded();
+      extensionThemesLoaded();
+    });
+  // The dev-only way to drive the theme service (the theming harness, the console).
+  (window as unknown as { omnigentDevThemes?: unknown }).omnigentDevThemes = themeService;
 }
 
 // Let a host-scoped request resolve its session's routing host on demand,
@@ -138,6 +146,8 @@ migrateLegacyProjectFolderPagination();
 // so the app renders in the chosen theme rather than flashing the brand default.
 applyCustomTheme(readCustomTheme());
 applyThemePalette(readThemePalette());
+// A contributed theme's last applied values, until its extension registers it.
+themeService.applyCached();
 
 // Probe /v1/info BEFORE the first render so the route table knows
 // whether to mount accounts routes. The probe is unauthed and the

@@ -672,6 +672,45 @@ export function writeThemePalette(palette: ThemeSelection): void {
 }
 
 /**
+ * A contributed theme's id, `<publisher>.<name>/<theme id>` (theming plan M6), as the
+ * widened `omnigent:ui-theme-palette` stores it next to the built-in palette ids.
+ */
+export const CONTRIBUTED_THEME_ID =
+  /^[A-Za-z0-9][A-Za-z0-9-]*\.[a-z0-9][a-z0-9._-]*\/[a-z0-9][a-z0-9._-]{0,63}$/;
+
+/** Whether `value` names a contributed theme ({@link CONTRIBUTED_THEME_ID}). */
+export function isContributedThemeId(value: unknown): value is string {
+  return typeof value === "string" && value.length <= 200 && CONTRIBUTED_THEME_ID.test(value);
+}
+
+/**
+ * The stored theme choice as written: a built-in palette, a contributed theme's id, or
+ * null (nothing stored, or something malformed). {@link readThemePalette} reads the
+ * built-in palette to apply, which is the default while a contributed theme is chosen.
+ */
+export function readThemeChoice(): ThemeSelection | string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    return isThemeSelection(parsed) || isContributedThemeId(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Stores a contributed theme's id as the theme choice (the palette applied is the default). */
+export function writeContributedThemeChoice(id: string): void {
+  if (typeof window === "undefined" || !isContributedThemeId(id)) return;
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(id));
+  } catch {
+    // localStorage quota or access errors shouldn't break the app.
+  }
+}
+
+/**
  * Apply the palette to the DOM by setting `data-theme` on the theme roots.
  * The generated `[data-theme]` blocks re-point the color tokens; the default
  * "omni" palette removes the attribute. This composes with the `.dark` mode

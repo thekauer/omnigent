@@ -39,6 +39,12 @@ import {
 } from "./sessionWorkspaceState";
 import { notifyTerminalThemeChanged } from "./terminalThemePreferences";
 import {
+  COLOR_CUSTOMIZATIONS_STORAGE_KEY,
+  THEME_CACHE_STORAGE_KEY,
+  THEME_OPTIONS_STORAGE_KEY,
+  VARIANTS_STORAGE_KEY,
+} from "@/theme/themeService";
+import {
   PINNED_WORKSPACE_TABS_STORAGE_KEY,
   readDefaultWorkspaceTab,
   readPinnedWorkspaceTabs,
@@ -54,6 +60,10 @@ const EXPORTABLE_KEYS = [
   CODE_BLOCK_WORD_WRAP_STORAGE_KEY,
   "omnigent:terminal-theme",
   "omnigent:ui-theme-palette",
+  THEME_OPTIONS_STORAGE_KEY,
+  VARIANTS_STORAGE_KEY,
+  COLOR_CUSTOMIZATIONS_STORAGE_KEY,
+  THEME_CACHE_STORAGE_KEY,
   "omnigent:custom-theme",
   "omnigent:default-workspace-panel",
   "omnigent:default-workspace-tab",

@@ -5,6 +5,7 @@ import type { WorkspaceBridge, WorkspaceTaskAction } from "@/shell/workspaceBrid
 import { Disposable } from "./base";
 import type { CommandHandler, CommandRegistry } from "./commands";
 import type { ContextKeyService } from "./contextKeys";
+import type { ThemeService } from "@/theme/themeService";
 
 export const BUILT_IN_COMMAND_OWNER = "omnigent";
 export const SET_CONTEXT_COMMAND = "setContext";
@@ -29,6 +30,12 @@ export const PULL_REQUESTS_MERGE_COMMAND = "omnigent.pullRequests.merge";
 export const PULL_REQUESTS_UPDATE_LABELS_COMMAND = "omnigent.pullRequests.updateLabels";
 export const PULL_REQUESTS_UPDATE_REVIEWERS_COMMAND = "omnigent.pullRequests.updateReviewers";
 export const PULL_REQUESTS_POST_COMMENT_COMMAND = "omnigent.pullRequests.postComment";
+/**
+ * Chooses a colour theme: a contributed theme's id, a built-in palette's id, or none for
+ * the default. Returns the chosen theme as `getActive()` reports it. The picker comes in
+ * theming M7; until then extensions, the palette and the theming harness use this.
+ */
+export const SELECT_COLOR_THEME_COMMAND = "omnigent.selectColorTheme";
 
 const MERGE_METHODS = new Set(["merge", "squash", "rebase"]);
 const MAX_LIST = 100;
@@ -104,13 +111,25 @@ function optionalText(command: string, name: string, value: unknown): string | u
 
 export function registerBuiltInCommands(
   commands: CommandRegistry,
-  services: { contextKeys: ContextKeyService; workspace: WorkspaceBridge },
+  services: {
+    contextKeys: ContextKeyService;
+    workspace: WorkspaceBridge;
+    themes?: Pick<ThemeService, "select" | "getActive">;
+  },
 ): Disposable {
   const register = (id: string, handler: CommandHandler) =>
     commands.register(BUILT_IN_COMMAND_OWNER, id, handler, { builtIn: true });
   return Disposable.from(
     register(SET_CONTEXT_COMMAND, (key, value) => {
       services.contextKeys.set(key, value);
+    }),
+    register(SELECT_COLOR_THEME_COMMAND, (id) => {
+      if (!services.themes) throw new Error(`${SELECT_COLOR_THEME_COMMAND}: no theme service`);
+      if (id !== undefined && id !== null && typeof id !== "string") {
+        throw new TypeError(`${SELECT_COLOR_THEME_COMMAND} needs a theme id`);
+      }
+      services.themes.select(id ?? null);
+      return services.themes.getActive();
     }),
     register(OPEN_FILE_COMMAND, (path, position) => {
       if (typeof path !== "string" || path === "" || path.length > MAX_PATH) {

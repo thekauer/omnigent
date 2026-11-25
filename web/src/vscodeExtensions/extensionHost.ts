@@ -9,6 +9,7 @@ import { hostProgress } from "@/lib/hostProgress";
 import { hostReconnectProviders } from "@/lib/hostReconnectProviders";
 import { type RailViewRegistry, railViews } from "@/shell/railViews";
 import { type WorkspaceBridge, workspaceBridge } from "@/shell/workspaceBridge";
+import { type ThemeContributionSink, themeService } from "@/theme/themeService";
 import { registerBuiltInCommands } from "./builtinCommands";
 import { CommandRegistry } from "./commands";
 import { Disposable } from "./base";
@@ -43,6 +44,8 @@ export interface ExtensionRuntimeOptions {
   hostOptions?: Partial<ExtensionHostOptions>;
   /** Where contributed keybindings dispatch; the whole window by default. */
   keybindingScope?: KeybindingScope;
+  /** Where contributed themes go; the window's theme service by default. */
+  themes?: ThemeContributionSink & { markStarted?: () => void };
 }
 
 /** Builds the host and its services, and starts the built-in extensions. */
@@ -52,7 +55,12 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
   const commands = new CommandRegistry();
   const contextKeys = new ContextKeyService();
   const workspace = new WorkspaceService(bridge);
-  const builtInCommands = registerBuiltInCommands(commands, { contextKeys, workspace: bridge });
+  const themes = options.themes ?? themeService;
+  const builtInCommands = registerBuiltInCommands(commands, {
+    contextKeys,
+    workspace: bridge,
+    themes: "select" in themes ? (themes as typeof themeService) : undefined,
+  });
   // `config.<setting>` context keys, as in VS Code, so `when` and `toggled` can read settings.
   const syncSettings = () => {
     for (const [name, value] of Object.entries(workspace.settingValues())) {
@@ -110,6 +118,7 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
       pullRequests,
       gitHosts: options.gitHosts ?? gitHostProviders,
       keybindings,
+      themes,
     },
     ...options.hostOptions,
   });
@@ -117,6 +126,9 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
   // an extension's commands, in the page or on the Node side, are not the shell's to run.
   bridge.setCommandRunner((command, args) => commands.executeBuiltIn(command, args));
   const builtInsStarted = host.start(options.builtIns ?? builtInExtensions());
+  // Built-ins contribute as they start (synchronously): a theme chosen but not among
+  // them, nor in an extension still loading, is unavailable from here on.
+  themes.markStarted?.();
   return {
     host,
     commands,

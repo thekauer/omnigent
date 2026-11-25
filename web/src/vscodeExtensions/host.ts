@@ -12,6 +12,15 @@ import {
   sessionExtensionStateStore,
 } from "./memento";
 
+/**
+ * A file of an extension the host reads itself: a theme file as data (the dev plugin
+ * inlines it, built-ins import it), or an asset (a font, a brand image) as the URL the
+ * host serves it at.
+ */
+export type ExtensionFile =
+  | { readonly kind: "json"; readonly data: unknown }
+  | { readonly kind: "asset"; readonly url: string; readonly type: string };
+
 /** One extension as the dev plugin describes it (plain data). */
 export interface ExtensionDescription {
   readonly id: string;
@@ -28,6 +37,8 @@ export interface ExtensionDescription {
   readonly builtIn?: boolean;
   /** The manifest's `contributes`, unchecked. */
   readonly contributes?: unknown;
+  /** The files its contributions name (theme files, fonts, brand images), by normalized path. */
+  readonly files?: Readonly<Record<string, ExtensionFile>>;
 }
 
 interface ExtensionModule {
@@ -133,7 +144,14 @@ export class ExtensionHost {
       extension.id,
       contributions.keybindings,
     );
+    const removeThemes = this.services.themes?.addExtension({
+      id: extension.id,
+      version: extension.version,
+      contributions: contributions.theming,
+      files: extension.files ?? {},
+    });
     this.contributed.set(extension.id, () => {
+      removeThemes?.();
       removeKeybindings?.();
       removeViews();
     });

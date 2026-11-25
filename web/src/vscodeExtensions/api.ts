@@ -1,6 +1,7 @@
 // Builds the `omnigent` module an extension imports. One instance per extension,
 // like VS Code's per-extension `vscode` module, so every call is attributable.
 import type * as omnigent from "omnigent";
+import type { ThemeContributionSink } from "@/theme/themeService";
 import type { GitHostProviderRegistry } from "@/lib/gitHostProviders";
 import type { HostProgressLocations } from "@/lib/hostProgress";
 import {
@@ -83,6 +84,8 @@ export interface HostServices {
   gitHosts: GitHostProviderRegistry;
   /** Contributed keybindings; without it, `contributes.keybindings` is ignored. */
   keybindings?: KeybindingService;
+  /** Contributed themes, colours and fonts; without it, they are ignored. */
+  themes?: ThemeContributionSink;
 }
 
 export type ExtensionLogger = (message: string, error?: unknown) => void;
