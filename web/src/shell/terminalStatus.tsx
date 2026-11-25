@@ -14,8 +14,8 @@ export type TerminalStatus = "active" | "idle" | "connecting" | "error" | "close
 export const STATUS_CONFIG: Record<TerminalStatus, { label: string; className: string }> = {
   active: { label: "Active", className: "bg-emerald-500" },
   idle: { label: "Idle", className: "bg-muted-foreground/55" },
-  connecting: { label: "Connecting", className: "bg-amber-500 animate-pulse" },
-  error: { label: "Error", className: "bg-red-500" },
+  connecting: { label: "Connecting", className: "bg-(--ui-warning-tone) animate-pulse" },
+  error: { label: "Error", className: "bg-(--ui-danger-tone)" },
   closed: { label: "Closed", className: "bg-black dark:bg-white" },
 };
 

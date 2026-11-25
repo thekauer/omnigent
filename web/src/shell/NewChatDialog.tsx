@@ -1009,7 +1009,7 @@ function HarnessSetupNotice({
     <p
       // pl-2 lines the icon up with the chips tray directly above (which has
       // pl-2), so the notice reads as part of the composer, not indented left.
-      className="flex items-center gap-2 pl-2 text-sm text-amber-600 dark:text-amber-500"
+      className="flex items-center gap-2 pl-2 text-sm text-(--ui-warning-text)"
       data-testid="new-chat-landing-harness-warning"
     >
       <TriangleAlertIcon className="size-3.5 shrink-0" />
@@ -1023,7 +1023,7 @@ function HarnessSetupNotice({
           <button
             type="button"
             data-testid="new-chat-landing-harness-setup"
-            className="inline-flex h-5 shrink-0 items-center rounded-md border border-amber-300 px-2 text-sm font-medium text-amber-700 hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 dark:border-amber-500/40 dark:text-amber-400 dark:hover:bg-amber-500/20"
+            className="inline-flex h-5 shrink-0 items-center rounded-md border border-(--ui-warning-chip-border) px-2 text-sm font-medium text-(--ui-warning-text-strong) hover:bg-(--ui-warning-chip-hover) focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-(--ui-warning-chip-ring)"
             onClick={() => {
               trackClick("new_chat.setup", "button");
               onSetup();
@@ -1592,7 +1592,7 @@ export function AgentHarnessPicker({
             <span
               aria-label={warning}
               data-testid={`new-chat-landing-agent-warning-${agent.id}`}
-              className="flex size-4 shrink-0 items-center justify-center text-amber-700 dark:text-amber-300"
+              className="flex size-4 shrink-0 items-center justify-center text-(--ui-warning-text-emphasis)"
             >
               <TriangleAlertIcon className="size-3.5" aria-hidden="true" />
             </span>
@@ -1849,7 +1849,7 @@ export function AgentHarnessPicker({
           ) : selectedUnavailable ? (
             <span
               className={cn(
-                "flex shrink-0 items-center justify-center text-amber-700 dark:text-amber-300",
+                "flex shrink-0 items-center justify-center text-(--ui-warning-text-emphasis)",
                 appearance === "header" ? "size-5" : "size-4",
               )}
               data-testid="new-chat-landing-agent-warning"
@@ -4617,7 +4617,7 @@ function NewChatLandingContent({
                         {harnessUnconfiguredOnHost(id, harnessWarningHost) && (
                           <Badge
                             variant="outline"
-                            className="border-amber-300 bg-amber-50 text-sm text-amber-700 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-400"
+                            className="border-(--ui-warning-callout-border) bg-(--ui-warning-callout-background) text-sm text-(--ui-warning-text-strong)"
                             data-testid={`new-chat-landing-harness-warning-${id}`}
                           >
                             {harnessWarningBadgeText(
@@ -8436,7 +8436,7 @@ function NewChatLandingContent({
               the more actionable of the two. */}
           {smartRoutingDropped && !selectedAgentUnconfigured && (
             <p
-              className="flex items-center gap-2 pl-2 text-xs text-amber-600 dark:text-amber-500"
+              className="flex items-center gap-2 pl-2 text-xs text-(--ui-warning-text)"
               data-testid="new-chat-landing-smart-routing-dropped"
             >
               <TriangleAlertIcon className="size-3.5 shrink-0" />
@@ -8451,7 +8451,7 @@ function NewChatLandingContent({
 
           {automaticHarnessFallback?.candidate && automaticHarnessFallback.rejectedPreference && (
             <p
-              className="flex items-center gap-2 pl-2 text-xs text-amber-600 dark:text-amber-500"
+              className="flex items-center gap-2 pl-2 text-xs text-(--ui-warning-text)"
               data-testid="new-chat-landing-harness-fallback"
             >
               <TriangleAlertIcon className="size-3.5 shrink-0" />

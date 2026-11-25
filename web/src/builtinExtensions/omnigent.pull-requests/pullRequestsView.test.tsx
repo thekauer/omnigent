@@ -1331,9 +1331,9 @@ describe("PullRequestPanel", () => {
   });
 
   it.each([
-    ["OPEN", "Open", "text-green-700"],
-    ["CLOSED", "Closed", "text-red-700"],
-    ["MERGED", "Merged", "text-purple-700"],
+    ["OPEN", "Open", "text-(--ui-success-text-strong)"],
+    ["CLOSED", "Closed", "text-(--ui-danger-text-strong)"],
+    ["MERGED", "Merged", "text-(--ui-merged-text-strong)"],
   ])("shows a %s status pill beside the PR title", async (stateName, label, tone) => {
     state.info!.data!.pr!.state = stateName;
     await renderPanel();

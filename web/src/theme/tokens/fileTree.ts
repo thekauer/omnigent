@@ -4,6 +4,7 @@
 // The git status colours default to the vendored tree's own, as `light-dark()` pairs:
 // the tree picks them by its colour scheme.
 
+import { type TailwindColor, tw } from "./tailwindPalette.ts";
 import { defineTokens } from "./types.ts";
 
 const UNSET = {};
@@ -71,5 +72,34 @@ export const FILE_TREE_TOKENS = defineTokens("fileTree", [
     id: `file-tree-git-${status}`,
     description: `Git status colour of ${status} files.`,
     default: { light: `light-dark(${light}, ${dark})` },
+  })),
+
+  // The Files tab's own rows (shell/fileTreeRows.tsx): added and modified files.
+  {
+    id: "file-tree-status-added",
+    description: "Added files' names and dots in the Files tab's rows.",
+    default: { light: tw("green-500"), dark: tw("green-400") },
+  },
+  {
+    id: "file-tree-status-modified",
+    description: "Modified files' names and dots in the Files tab's rows.",
+    default: { light: tw("amber-500"), dark: tw("amber-400") },
+  },
+  // File-type icons outside the vendored tree (shell/WorkspaceFileIcon.tsx), per group.
+  ...(
+    [
+      ["pdf", "PDF files", "orange-500", "orange-400"],
+      ["document", "documents", "blue-500", "blue-400"],
+      ["spreadsheet", "spreadsheets", "lime-600", "lime-400"],
+      ["presentation", "presentations", "yellow-500", "yellow-400"],
+      ["archive", "archives", "amber-700", "amber-500"],
+      ["code", "code, JSON and databases", "purple-500", "purple-400"],
+      ["image", "images", "pink-500", "pink-400"],
+      ["media", "video and audio", "indigo-500", "indigo-400"],
+    ] as const satisfies readonly (readonly [string, string, TailwindColor, TailwindColor])[]
+  ).map(([group, what, light, dark]) => ({
+    id: `file-tree-icon-${group}`,
+    description: `The file-type icon of ${what} outside the file trees.`,
+    default: { light: tw(light), dark: tw(dark) },
   })),
 ]);

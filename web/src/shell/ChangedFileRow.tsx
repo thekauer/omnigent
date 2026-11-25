@@ -112,8 +112,8 @@ export function ChangedFileRow({
                 isDeleted
                   ? "bg-destructive/10 text-destructive"
                   : status === "created"
-                    ? "bg-green-500/10 text-green-600 dark:text-green-400"
-                    : "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+                    ? "bg-(--ui-success-tone)/10 text-(--ui-success-text)"
+                    : "bg-(--ui-warning-tone)/10 text-(--ui-warning-text-soft)",
               )}
               title={gitStatusLabel(status)}
             >

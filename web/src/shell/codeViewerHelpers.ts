@@ -4,6 +4,8 @@
 import type { BundledLanguage } from "shiki";
 import type { ResolvedThemeMode } from "@/components/theme/themeMode";
 import { isVideoFile } from "@/lib/video";
+import { getToken } from "@/theme/tokens/registry";
+import { readThemeTokens } from "@/theme/tokenValues";
 
 // ---------------------------------------------------------------------------
 // Shared selection type
@@ -296,33 +298,45 @@ export interface ModelViewerTheme {
   keyIntensity: number;
 }
 
-const MODEL_VIEWER_THEMES: Record<ResolvedThemeMode, ModelViewerTheme> = {
-  // Light: white canvas (matches `--background: #fff`), a neutral grey surface,
-  // and moderate lights.
-  light: {
-    background: 0xffffff,
-    stlMaterial: 0x9aa0a6,
-    ambientIntensity: 1.0,
-    keyIntensity: 1.2,
-  },
-  // Dark: the app's dark panel color (`--background: #0e1013`), a lighter grey
-  // surface, and brighter lights so the mesh doesn't sink into the background.
-  dark: {
-    background: 0x0e1013,
-    stlMaterial: 0xc4c9ce,
-    ambientIntensity: 1.5,
-    keyIntensity: 1.6,
-  },
+// Light: a white canvas and a neutral grey surface, moderate lights. Dark: the dark
+// panel colour, a lighter grey surface and brighter lights, so the mesh doesn't sink
+// into the background. The colours are the `viewer-model-*` tokens.
+const MODEL_VIEWER_LIGHTS: Record<
+  ResolvedThemeMode,
+  Pick<ModelViewerTheme, "ambientIntensity" | "keyIntensity">
+> = {
+  light: { ambientIntensity: 1.0, keyIntensity: 1.2 },
+  dark: { ambientIntensity: 1.5, keyIntensity: 1.6 },
 };
 
+/** A `#rgb` or `#rrggbb` colour as three.js takes it, or null. */
+function hexColor(value: string): number | null {
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(value.trim())?.[1];
+  if (!hex) return null;
+  return Number.parseInt(hex.length === 3 ? [...hex].map((c) => c + c).join("") : hex, 16);
+}
+
+function modelColor(id: string, value: string, resolved: ResolvedThemeMode): number {
+  const token = getToken(id);
+  const fallback =
+    (resolved === "dark" ? token?.default?.dark : undefined) ?? token?.default?.light;
+  return hexColor(value) ?? hexColor(fallback ?? "") ?? 0;
+}
+
 /**
- * Map the app's resolved palette to the 3D model preview's appearance.
+ * Map the app's resolved palette to the 3D model preview's appearance: the colours
+ * from the `viewer-model-*` tokens (hex only; anything else keeps the default).
  *
  * @param resolved Concrete mode from `normalizeResolvedTheme`, e.g. `"dark"`.
  * @returns The background/material/light values for that mode.
  */
 export function modelViewerTheme(resolved: ResolvedThemeMode): ModelViewerTheme {
-  return MODEL_VIEWER_THEMES[resolved];
+  const tokens = readThemeTokens(["viewer-model-background", "viewer-model-surface"]);
+  return {
+    background: modelColor("viewer-model-background", tokens["viewer-model-background"], resolved),
+    stlMaterial: modelColor("viewer-model-surface", tokens["viewer-model-surface"], resolved),
+    ...MODEL_VIEWER_LIGHTS[resolved],
+  };
 }
 
 /** The Shiki language for each file extension the viewer highlights. */

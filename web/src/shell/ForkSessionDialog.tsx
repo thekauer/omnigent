@@ -196,7 +196,7 @@ export function HostLabel({ host }: { host: Host }) {
         }`}
       >
         <span
-          className={`inline-block size-1.5 rounded-full ${isOnline ? "bg-green-500" : "bg-muted-foreground"}`}
+          className={`inline-block size-1.5 rounded-full ${isOnline ? "bg-(--ui-success-tone)" : "bg-muted-foreground"}`}
         />
         {host.status}
       </span>

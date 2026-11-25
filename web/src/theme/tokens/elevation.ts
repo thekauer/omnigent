@@ -9,6 +9,7 @@
 // and so the whole `box-shadow` with its rings and insets, invalid. The guard is
 // registered in both builds and takes 1 instead.
 
+import { tw } from "./tailwindPalette.ts";
 import { defineTokens, type TokenInput } from "./types.ts";
 
 const NEUTRAL = "var(--ui-shadow-neutral-rgb)";
@@ -184,5 +185,93 @@ export const ELEVATION_TOKENS = defineTokens("elevation", [
     description:
       "Deprecated, not scaled by ui-elevation: the onboarding modal reads ui-shadow-onboarding. Kept with its value until the theme contribution API ships (theming plan M6).",
     default: { light: "0 24px 80px 8px #00000012", dark: "0 24px 80px 8px #00000038" },
+  },
+  {
+    id: "ui-glass-rim-edge",
+    description: "The glass surfaces' inner edge highlight (the liquid glass and its frame).",
+    default: {
+      light:
+        "light-dark(color-mix(in oklch, black, transparent 85%), color-mix(in oklch, white, transparent 65%))",
+    },
+  },
+  {
+    id: "ui-glass-rim-glow",
+    description: "The glass surfaces' inner glow.",
+    default: {
+      light:
+        "light-dark(color-mix(in oklch, black, transparent 90%), color-mix(in oklch, white, transparent 85%))",
+    },
+  },
+  {
+    id: "ui-glass-fallback-highlight-top",
+    description: "The fallback glass's top highlight, where SVG filters are unavailable.",
+    default: { light: "light-dark(hsl(0 0% 100% / 0.85), hsl(0 0% 100% / 0.3))" },
+  },
+  {
+    id: "ui-glass-fallback-highlight-bottom",
+    description: "The fallback glass's bottom highlight.",
+    default: { light: "light-dark(hsl(0 0% 100% / 0.35), hsl(0 0% 100% / 0.08))" },
+  },
+  {
+    id: "ui-glass-fallback-edge",
+    description: "The fallback glass's inner edge.",
+    default: {
+      light:
+        "light-dark(color-mix(in oklch, black, transparent 88%), color-mix(in oklch, white, transparent 72%))",
+    },
+  },
+  {
+    id: "ui-glass-fallback-glow",
+    description: "The fallback glass's inner glow.",
+    default: {
+      light:
+        "light-dark(color-mix(in oklch, white, transparent 72%), color-mix(in oklch, white, transparent 90%))",
+    },
+  },
+  {
+    id: "ui-glass-sheen",
+    kind: "image",
+    description: "The glass surfaces' diagonal sheen (a background image).",
+    default: {
+      light:
+        "linear-gradient(135deg, light-dark(hsl(0 0% 100% / 0.42), hsl(0 0% 100% / 0.14)) 0%, transparent 42%, transparent 64%, light-dark(hsl(0 0% 100% / 0.18), hsl(0 0% 100% / 0.05)) 100%)",
+    },
+  },
+  {
+    id: "ui-glass-rim",
+    kind: "image",
+    description: "The glass surfaces' rim (a background image, masked to the border).",
+    default: {
+      light:
+        "linear-gradient(150deg, light-dark(hsl(0 0% 100% / 0.7), hsl(0 0% 100% / 0.34)), light-dark(hsl(0 0% 100% / 0.1), hsl(0 0% 100% / 0.03)) 45%, light-dark(hsl(0 0% 100% / 0.08), hsl(0 0% 100% / 0.02)) 60%, light-dark(hsl(0 0% 100% / 0.42), hsl(0 0% 100% / 0.18)))",
+    },
+  },
+  {
+    id: "ui-omni-glass-highlight-top",
+    description: "The app's glass panels' top highlight (OmniGlassSurface).",
+    default: { light: "light-dark(hsl(0 0% 100% / 0.85), hsl(0 0% 100% / 0.15))" },
+  },
+  {
+    id: "ui-omni-glass-highlight-bottom",
+    description: "The app's glass panels' bottom highlight.",
+    default: { light: "light-dark(hsl(0 0% 100% / 0.35), hsl(0 0% 100% / 0.04))" },
+  },
+  {
+    id: "ui-omni-glass-ring",
+    description: "The app's glass panels' inner ring.",
+    default: { light: "rgba(212, 212, 216, 0.08)" },
+  },
+  {
+    id: "ui-omni-glass-glow",
+    description: "The app's glass panels' inner glow.",
+    default: {
+      light:
+        "light-dark(color-mix(in oklch, white, transparent 72%), color-mix(in oklch, white, transparent 95%))",
+    },
+  },
+  {
+    id: "ui-omni-glass-border",
+    description: "The app's glass panels' border in light mode (none in dark).",
+    default: { light: `color-mix(in oklab, ${tw("black")} 8%, transparent)` },
   },
 ]);

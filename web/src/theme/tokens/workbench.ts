@@ -1,6 +1,7 @@
 // Workbench colour tokens: the palette tokens every built-in palette sets, then the
 // colours and surfaces with one host default per mode.
 
+import { tw } from "./tailwindPalette.ts";
 import { defineTokens, type TokenDef } from "./types.ts";
 
 /**
@@ -224,5 +225,36 @@ export const WORKBENCH_TOKENS = defineTokens("workbench", [
     id: "segmented-trough-bg",
     description: "Segmented control trough in dark mode.",
     default: { dark: "rgb(255 255 255 / 6%)" },
+  },
+  // Colour picker chrome (ThemeColorPicker): edges that read on any picked colour.
+  {
+    id: "ui-color-swatch-border",
+    description: "A colour swatch's inner border, white at 25%.",
+    default: { light: `color-mix(in oklab, ${tw("white")} 25%, transparent)` },
+  },
+  {
+    id: "ui-color-swatch-ring",
+    description: "A colour swatch's and the colour field's outer ring, black at 10%.",
+    default: { light: `color-mix(in oklab, ${tw("black")} 10%, transparent)` },
+  },
+  {
+    id: "ui-color-picker-ring",
+    description: "The colour picker popover's ring, black at 5%.",
+    default: { light: `color-mix(in oklab, ${tw("black")} 5%, transparent)` },
+  },
+  {
+    id: "ui-color-picker-handle",
+    description: "The colour picker's handles (the field's and the hue slider's).",
+    default: { light: tw("white") },
+  },
+  {
+    id: "ui-color-picker-handle-ring",
+    description: "The colour field handle's ring, black at 60%.",
+    default: { light: `color-mix(in oklab, ${tw("black")} 60%, transparent)` },
+  },
+  {
+    id: "ui-qr-background",
+    description: "The tile behind QR codes; keep it light, or phones can't scan them.",
+    default: { light: tw("white") },
   },
 ]);

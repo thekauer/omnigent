@@ -546,7 +546,7 @@ function HarnessStatusText({
   if (status.ready) {
     return (
       <span className="flex items-center gap-1.5 text-xs">
-        <span className="text-green-600 dark:text-green-400">Configured</span>
+        <span className="text-(--ui-success-text)">Configured</span>
         {configuredCredential && (
           <span className="text-muted-foreground">· {configuredCredential}</span>
         )}
@@ -555,7 +555,7 @@ function HarnessStatusText({
   }
   if (status.reason === "cli-unresponsive") {
     return (
-      <span className="flex w-fit items-center gap-1 text-xs text-amber-600 dark:text-amber-500">
+      <span className="flex w-fit items-center gap-1 text-xs text-(--ui-warning-text)">
         <TriangleAlertIcon className="size-3.5" aria-hidden />
         CLI did not respond
       </span>
@@ -564,7 +564,7 @@ function HarnessStatusText({
   if (status.needsSetup && !enhanced) {
     const text = harnessWarningBadgeText(status.reason);
     return (
-      <span className="text-xs text-amber-600 dark:text-amber-500">
+      <span className="text-xs text-(--ui-warning-text)">
         {text.charAt(0).toUpperCase() + text.slice(1)}
       </span>
     );
@@ -572,7 +572,7 @@ function HarnessStatusText({
   if (status.needsSetup) {
     if (status.reason === "binary-missing" || status.reason === "unconfigured") {
       return (
-        <span className="flex w-fit items-center gap-1 text-xs text-amber-600 dark:text-amber-500">
+        <span className="flex w-fit items-center gap-1 text-xs text-(--ui-warning-text)">
           <TriangleAlertIcon className="size-3.5" aria-hidden />
           {reconfigurationReason(status.reason)}
         </span>
@@ -583,7 +583,7 @@ function HarnessStatusText({
       <Tooltip>
         <TooltipTrigger asChild>
           <span
-            className="flex w-fit cursor-default items-center gap-1 text-xs text-amber-600 dark:text-amber-500"
+            className="flex w-fit cursor-default items-center gap-1 text-xs text-(--ui-warning-text)"
             aria-label={`Needs reconfiguration: ${label}`}
           >
             <TriangleAlertIcon className="size-3.5" aria-hidden />
@@ -982,9 +982,9 @@ function HarnessWarning({
   const actionLabel =
     fixKey === undefined ? detail.parts.fixAction : detail.nameAlternatives.fixAction[fixKey];
   return (
-    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-4 text-ui">
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-(--ui-warning-tone)/30 bg-(--ui-warning-tone)/10 p-4 text-ui">
       <div className="flex min-w-0 flex-1 items-start gap-3">
-        <TriangleAlertIcon className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-500" />
+        <TriangleAlertIcon className="mt-0.5 size-4 shrink-0 text-(--ui-warning-text)" />
         <p>{copy}</p>
       </div>
       {!host.sandbox_provider && reason !== "cli-unresponsive" && (
@@ -1028,7 +1028,7 @@ function ReadyNotice({
   account?: HarnessAccount;
 }) {
   return (
-    <div className="flex items-center gap-3 rounded-xl border border-green-500/30 bg-green-500/10 p-4 text-ui text-green-700 dark:text-green-300">
+    <div className="flex items-center gap-3 rounded-xl border border-(--ui-success-tone)/30 bg-(--ui-success-tone)/10 p-4 text-ui text-(--ui-success-text-emphasis)">
       <CheckCircle2Icon className="size-4 shrink-0" aria-hidden />
       <p>
         {entry.name}
@@ -1168,20 +1168,15 @@ function CredentialCard({
       <span
         className={cn(
           "flex size-8 shrink-0 items-center justify-center rounded-lg",
-          warning ? "bg-amber-500/15" : "bg-muted",
+          warning ? "bg-(--ui-warning-tone)/15" : "bg-muted",
         )}
       >
         <KeyRoundIcon
-          className={cn(
-            "size-4",
-            warning ? "text-amber-600 dark:text-amber-500" : "text-muted-foreground",
-          )}
+          className={cn("size-4", warning ? "text-(--ui-warning-text)" : "text-muted-foreground")}
         />
       </span>
       <span className="flex min-w-0 flex-1 flex-col text-left">
-        <span
-          className={cn("text-ui font-medium", warning && "text-amber-700 dark:text-amber-300")}
-        >
+        <span className={cn("text-ui font-medium", warning && "text-(--ui-warning-text-emphasis)")}>
           {warning && <TriangleAlertIcon className="mr-1 inline size-3.5" aria-hidden />}
           {label}
         </span>
@@ -1193,10 +1188,7 @@ function CredentialCard({
         </span>
       ) : showStatus ? (
         <span
-          className={cn(
-            "text-xs",
-            ready ? "text-green-600 dark:text-green-400" : "text-amber-600 dark:text-amber-500",
-          )}
+          className={cn("text-xs", ready ? "text-(--ui-success-text)" : "text-(--ui-warning-text)")}
         >
           {ready ? "Configured" : statusLabel}
         </span>
@@ -1215,7 +1207,7 @@ function CredentialCard({
           className={cn(
             "flex w-full cursor-pointer items-center gap-3 rounded-xl border p-3 text-left transition-colors focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none",
             warning
-              ? "border-amber-500/30 bg-amber-500/10 hover:bg-amber-500/15"
+              ? "border-(--ui-warning-tone)/30 bg-(--ui-warning-tone)/10 hover:bg-(--ui-warning-tone)/15"
               : "border-border hover:bg-muted/50",
           )}
           onClick={action.onClick}
@@ -1226,7 +1218,7 @@ function CredentialCard({
         <div
           className={cn(
             "flex items-center gap-3 rounded-xl border p-3",
-            warning ? "border-amber-500/30 bg-amber-500/10" : "border-border",
+            warning ? "border-(--ui-warning-tone)/30 bg-(--ui-warning-tone)/10" : "border-border",
           )}
         >
           {body}

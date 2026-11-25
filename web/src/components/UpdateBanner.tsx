@@ -142,7 +142,7 @@ export function UpdateBanner({ variant = "floating" }: { variant?: "floating" | 
           className={cn(
             "mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full",
             isError
-              ? "bg-amber-500/10 text-amber-600 dark:text-amber-500"
+              ? "bg-(--ui-warning-tone)/10 text-(--ui-warning-text)"
               : "bg-primary/10 text-primary",
           )}
         >

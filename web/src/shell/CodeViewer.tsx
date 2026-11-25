@@ -1268,7 +1268,7 @@ export function CodeViewer({
       )}
 
       {/* GitHub Light/Dark backgrounds match the shiki themes used by highlightCode */}
-      <div ref={codeContainerRef} className="font-mono text-sm bg-white dark:bg-[#0d1117]">
+      <div ref={codeContainerRef} className="font-mono text-sm bg-(--viewer-shiki-background)">
         {rawLines.map((rawLine, idx) => {
           const lineNum = idx + 1;
           const isMatchLine =
@@ -1319,7 +1319,7 @@ export function CodeViewer({
               className={cn(
                 (isCurrentMatch ||
                   (citedLines && lineNum >= citedLines.start && lineNum <= citedLines.end)) &&
-                  "bg-yellow-200/40 dark:bg-yellow-700/30",
+                  "bg-(--viewer-mark-cited)",
               )}
             >
               <div className="flex items-stretch">
@@ -1330,9 +1330,9 @@ export function CodeViewer({
                     "relative w-12 shrink-0 select-none border-r border-border text-sm",
                     "flex items-center justify-end px-2 py-0.5 leading-5",
                     commentOnLine
-                      ? "cursor-pointer text-yellow-500 dark:text-yellow-400 hover:bg-muted/60"
+                      ? "cursor-pointer text-(--viewer-mark-icon) hover:bg-muted/60"
                       : "text-muted-foreground/50",
-                    hasAnyHighlight && "bg-yellow-500/10 dark:bg-yellow-400/15",
+                    hasAnyHighlight && "bg-(--viewer-mark-line)",
                   )}
                   onClick={() => {
                     if (commentOnLine) {
@@ -1364,9 +1364,7 @@ export function CodeViewer({
                       aria-hidden
                       className={cn(
                         "absolute inset-y-0 pointer-events-none",
-                        o.isSelected
-                          ? "bg-yellow-400/25 dark:bg-yellow-400/25"
-                          : "bg-yellow-200/40 dark:bg-yellow-400/20",
+                        o.isSelected ? "bg-(--viewer-mark-active)" : "bg-(--viewer-mark-range)",
                       )}
                       style={{
                         left: `calc(0.75rem + ${o.startCol}ch)`,
@@ -1384,7 +1382,7 @@ export function CodeViewer({
                     ) && (
                       <span
                         aria-hidden
-                        className="absolute inset-y-0 bg-yellow-400/25 dark:bg-yellow-400/25 pointer-events-none"
+                        className="absolute inset-y-0 bg-(--viewer-mark-active) pointer-events-none"
                         style={{
                           left: `calc(0.75rem + ${selStartCol}ch)`,
                           width: `${selEndCol - selStartCol}ch`,

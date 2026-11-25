@@ -1490,7 +1490,7 @@ describe("run history", () => {
       const row = screen.getByTestId("task-detail-run");
       const icon = within(row).getByTestId("run-status-icon");
       expect(icon).toHaveAttribute("data-run-icon", "failed");
-      expect(icon.getAttribute("class") ?? "").toContain("text-amber-500");
+      expect(icon.getAttribute("class") ?? "").toContain("text-(--ui-warning-tone)");
       expect(within(row).getByTestId("run-failure-stage")).toHaveTextContent(stage);
       expect(within(row).getByTestId("run-failure")).toHaveTextContent(`${stage} · ${reason}`);
       fireEvent.focus(icon);
@@ -2183,12 +2183,12 @@ describe("runs of a saved workflow", () => {
       .getAllByTestId("task-detail-run")
       .map((row) => within(row).getByTestId("run-status-text"));
     expect(first).toHaveTextContent("Done: Found it");
-    expect(first!.className).not.toContain("text-amber");
+    expect(first!.className).not.toContain("--ui-warning");
     // A failed step stands out, and what happened is shown before the words.
     expect(second).toHaveTextContent("Failed: CI is down");
     expect(within(second!).getByText("Failed:")).not.toHaveClass("sr-only");
     expect(second).toHaveAttribute("data-run-status", "failed");
-    expect(second!.className).toContain("text-amber-700");
+    expect(second!.className).toContain("text-(--ui-warning-text-strong)");
     expect(second).toHaveAttribute("title", "CI is down");
     // A started step has no words, so the newest ones are shown.
     expect(third).toHaveTextContent("Waiting for you: Approve the deploy?");

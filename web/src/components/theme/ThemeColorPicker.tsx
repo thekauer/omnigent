@@ -135,7 +135,7 @@ export function ThemeColorPicker({
           >
             <span
               aria-hidden
-              className="size-7 shrink-0 rounded-lg border border-white/25 shadow-sm ring-1 ring-black/10"
+              className="size-7 shrink-0 rounded-lg border border-(--ui-color-swatch-border) shadow-sm ring-1 ring-(--ui-color-swatch-ring)"
               style={{ backgroundColor: value }}
             />
             <span className="min-w-0 flex-1 font-mono text-sm font-medium tracking-wide">
@@ -147,7 +147,7 @@ export function ThemeColorPicker({
           {...owned.overlay()}
           align="end"
           sideOffset={8}
-          className="w-72 gap-0 overflow-hidden rounded-2xl border border-border/70 bg-popover p-0 shadow-xl ring-1 ring-black/5"
+          className="w-72 gap-0 overflow-hidden rounded-2xl border border-border/70 bg-popover p-0 shadow-xl ring-1 ring-(--ui-color-picker-ring)"
         >
           <div className="flex items-center justify-between px-3.5 py-2.5">
             <span className="text-sm font-medium">{label}</span>
@@ -185,7 +185,7 @@ export function ThemeColorPicker({
                   value: clamp(color.value + delta[1], 0, 1),
                 });
               }}
-              className="relative h-44 cursor-crosshair touch-none overflow-hidden rounded-xl outline-none ring-1 ring-black/10 focus-visible:ring-2 focus-visible:ring-ring"
+              className="relative h-44 cursor-crosshair touch-none overflow-hidden rounded-xl outline-none ring-1 ring-(--ui-color-swatch-ring) focus-visible:ring-2 focus-visible:ring-ring"
               style={{
                 backgroundColor: `hsl(${color.hue} 100% 50%)`,
                 backgroundImage:
@@ -194,7 +194,7 @@ export function ThemeColorPicker({
             >
               <span
                 aria-hidden
-                className="pointer-events-none absolute size-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-[0_1px_4px_rgb(0_0_0/calc(0.75*var(--omnigent-elevation)))] ring-1 ring-black/60"
+                className="pointer-events-none absolute size-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-(--ui-color-picker-handle) shadow-[0_1px_4px_rgb(0_0_0/calc(0.75*var(--omnigent-elevation)))] ring-1 ring-(--ui-color-picker-handle-ring)"
                 style={{
                   left: `${color.saturation * 100}%`,
                   top: `${(1 - color.value) * 100}%`,
@@ -213,12 +213,12 @@ export function ThemeColorPicker({
               onChange={(event) =>
                 updateColor({ ...color, hue: Number.parseInt(event.target.value, 10) })
               }
-              className="h-3 w-full cursor-pointer appearance-none rounded-full bg-[linear-gradient(to_right,#ff3b30,#ffcc00,#34c759,#00c7be,#0a84ff,#bf5af2,#ff2d55,#ff3b30)] shadow-inner outline-none [&::-moz-range-thumb]:size-5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-white [&::-moz-range-thumb]:bg-transparent [&::-moz-range-thumb]:shadow-md [&::-webkit-slider-thumb]:size-5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-white [&::-webkit-slider-thumb]:bg-transparent [&::-webkit-slider-thumb]:shadow-md"
+              className="h-3 w-full cursor-pointer appearance-none rounded-full bg-[linear-gradient(to_right,#ff3b30,#ffcc00,#34c759,#00c7be,#0a84ff,#bf5af2,#ff2d55,#ff3b30)] shadow-inner outline-none [&::-moz-range-thumb]:size-5 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-(--ui-color-picker-handle) [&::-moz-range-thumb]:bg-transparent [&::-moz-range-thumb]:shadow-md [&::-webkit-slider-thumb]:size-5 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-(--ui-color-picker-handle) [&::-webkit-slider-thumb]:bg-transparent [&::-webkit-slider-thumb]:shadow-md"
             />
             <div className="mt-3 flex items-center gap-2">
               <span
                 aria-hidden
-                className="size-8 shrink-0 rounded-xl border border-white/25 shadow-sm ring-1 ring-black/10"
+                className="size-8 shrink-0 rounded-xl border border-(--ui-color-swatch-border) shadow-sm ring-1 ring-(--ui-color-swatch-ring)"
                 style={{ backgroundColor: value }}
               />
               <input

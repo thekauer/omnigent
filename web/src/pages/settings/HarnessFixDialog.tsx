@@ -622,7 +622,7 @@ export function HarnessFixDialog(props: HarnessFixDialogProps) {
 
         <div className="flex flex-col gap-5 px-6 pb-2">
           {updatedNeedsSetup && phase !== "progress" && (
-            <p role="status" className="text-sm text-amber-700 dark:text-amber-300">
+            <p role="status" className="text-sm text-(--ui-warning-text-emphasis)">
               {harnessLabel} was updated but still needs to be set up on {hostName}.
             </p>
           )}
@@ -884,7 +884,7 @@ function SwitchAccountConfirm({
       <DialogDescription>
         {hostName} is signed in as <span className="font-medium text-foreground">{current}</span>.
       </DialogDescription>
-      <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm">
+      <div className="rounded-xl border border-(--ui-warning-tone)/30 bg-(--ui-warning-tone)/10 p-3 text-sm">
         Switching signs this machine out of that account. Every session on {hostName} that uses this
         harness will use the new account. Running sessions keep working until their token expires.
       </div>

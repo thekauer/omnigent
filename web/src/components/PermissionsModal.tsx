@@ -924,7 +924,7 @@ function QrCodeDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="flex justify-center">
-          <div className="rounded-lg bg-white p-3">
+          <div className="rounded-lg bg-(--ui-qr-background) p-3">
             <QRCodeSVG
               value={deepLink}
               size={200}

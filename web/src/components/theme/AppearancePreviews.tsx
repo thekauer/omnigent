@@ -1,21 +1,8 @@
-import type { PaletteSwatch } from "@/lib/themePalette";
+import { DARK_MODE_PREVIEW, LIGHT_MODE_PREVIEW, type PaletteSwatch } from "@/lib/themePalette";
 import type { ThemeMode } from "./themeMode";
 
-export const LIGHT_MODE_PREVIEW: PaletteSwatch = {
-  bg: "#e9ebee",
-  card: "#ffffff",
-  accent: "#aab2bd",
-  border: "#d7dbe0",
-  text: "#11171c",
-};
-
-export const DARK_MODE_PREVIEW: PaletteSwatch = {
-  bg: "#0e1013",
-  card: "#232a33",
-  accent: "#5b6672",
-  border: "#2b333d",
-  text: "#e6edf3",
-};
+// The mode previews' swatches live with the palettes' (lib/themePalette.ts).
+export { DARK_MODE_PREVIEW, LIGHT_MODE_PREVIEW };
 
 export function ModePreview({ variant }: { variant: ThemeMode }) {
   if (variant === "light") return <PaletteSwatchPreview swatch={LIGHT_MODE_PREVIEW} />;

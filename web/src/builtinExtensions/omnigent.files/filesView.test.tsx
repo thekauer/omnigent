@@ -674,7 +674,7 @@ describe("Files tab change overlay", () => {
       ],
     });
     render(view());
-    expect(await screen.findByText("src/")).toHaveClass("text-green-500");
+    expect(await screen.findByText("src/")).toHaveClass("text-(--file-tree-status-added)");
   });
 
   it("matches workspace changes after browsing into a subfolder", async () => {
@@ -686,7 +686,7 @@ describe("Files tab change overlay", () => {
     fireEvent.doubleClick(await folder("src"));
     await waitFor(() => expect(harness.readDirectory).toHaveBeenCalledWith("src"));
     expect(await screen.findByTitle("Modified")).toBeInTheDocument();
-    expect(screen.getByText("app.ts")).toHaveClass("text-amber-500");
+    expect(screen.getByText("app.ts")).toHaveClass("text-(--file-tree-status-modified)");
   });
 
   it("reloads the listing when the files changed on disk", async () => {

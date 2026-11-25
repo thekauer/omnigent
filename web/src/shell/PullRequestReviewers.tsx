@@ -49,22 +49,22 @@ const REVIEWER_STATE_META: Record<
 > = {
   PENDING: {
     label: "Pending",
-    className: "text-amber-700 dark:text-amber-400",
+    className: "text-(--ui-warning-text-strong)",
     Icon: CircleDotIcon,
   },
   APPROVED: {
     label: "Approved",
-    className: "text-green-700 dark:text-green-400",
+    className: "text-(--ui-success-text-strong)",
     Icon: CircleCheckIcon,
   },
   COMMENTED: {
     label: "Commented",
-    className: "text-blue-700 dark:text-blue-400",
+    className: "text-(--ui-info-text-strong)",
     Icon: MessageCircleIcon,
   },
   CHANGES_REQUESTED: {
     label: "Changes requested",
-    className: "text-red-700 dark:text-red-400",
+    className: "text-(--ui-danger-text-strong)",
     Icon: CircleXIcon,
   },
   DISMISSED: {

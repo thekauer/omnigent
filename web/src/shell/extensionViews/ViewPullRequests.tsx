@@ -230,8 +230,8 @@ function PullRequestListRow({
               : summary.state === "OPEN"
                 ? "text-green-600"
                 : summary.state === "MERGED"
-                  ? "text-purple-500"
-                  : "text-red-500",
+                  ? "text-(--ui-merged-tone)"
+                  : "text-(--ui-danger-tone)",
           )}
         />
         <span className="truncate">

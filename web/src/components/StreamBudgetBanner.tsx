@@ -45,8 +45,7 @@ export function StreamBudgetBanner() {
       aria-live="polite"
       className={cn(
         "pointer-events-auto flex max-w-2xl items-center gap-2.5 rounded-xl px-3.5 py-2 text-ui shadow-lg",
-        "border border-amber-300 bg-amber-100 text-amber-900",
-        "dark:border-amber-700/60 dark:bg-amber-950 dark:text-amber-100",
+        "border border-(--ui-warning-banner-border) bg-(--ui-warning-banner-background) text-(--ui-warning-banner-foreground)",
         "animate-in fade-in-0 slide-in-from-top-1 duration-200",
       )}
     >
@@ -60,8 +59,7 @@ export function StreamBudgetBanner() {
         onClick={dismiss}
         aria-label="Dismiss"
         className={cn(
-          "-mr-1 shrink-0 rounded p-0.5 text-amber-900/60 hover:bg-amber-200 hover:text-amber-900",
-          "dark:text-amber-100/60 dark:hover:bg-amber-900 dark:hover:text-amber-100",
+          "-mr-1 shrink-0 rounded p-0.5 text-(--ui-warning-banner-foreground)/60 hover:bg-(--ui-warning-banner-hover) hover:text-(--ui-warning-banner-foreground)",
         )}
       >
         <XIcon className="size-4" aria-hidden="true" />

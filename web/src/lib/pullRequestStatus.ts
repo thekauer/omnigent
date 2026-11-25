@@ -47,31 +47,31 @@ export function hasNewerPullRequestLifecycle(
 const PRESENTATION: Record<PullRequestStatus, PullRequestStatusPresentation> = {
   conflict: {
     label: "Merge conflicts",
-    className: "text-red-700 dark:text-red-400",
+    className: "text-(--ui-danger-text-strong)",
     Icon: GitCompareArrowsIcon,
     priority: 0,
   },
   failed: {
     label: "Checks failing",
-    className: "text-red-700 dark:text-red-400",
+    className: "text-(--ui-danger-text-strong)",
     Icon: CircleXIcon,
     priority: 1,
   },
   ready: {
     label: "Ready to merge",
-    className: "text-green-700 dark:text-green-400",
+    className: "text-(--ui-success-text-strong)",
     Icon: CircleCheckIcon,
     priority: 2,
   },
   pending: {
     label: "Checks running",
-    className: "text-amber-700 dark:text-amber-400",
+    className: "text-(--ui-warning-text-strong)",
     Icon: CircleDotIcon,
     priority: 3,
   },
   open: {
     label: "Open",
-    className: "text-green-700 dark:text-green-400",
+    className: "text-(--ui-success-text-strong)",
     Icon: GitPullRequestIcon,
     priority: 4,
   },
@@ -89,13 +89,13 @@ const PRESENTATION: Record<PullRequestStatus, PullRequestStatusPresentation> = {
   },
   merged: {
     label: "Merged",
-    className: "text-purple-700 dark:text-purple-400",
+    className: "text-(--ui-merged-text-strong)",
     Icon: GitMergeIcon,
     priority: 7,
   },
   closed: {
     label: "Closed",
-    className: "text-red-700 dark:text-red-400",
+    className: "text-(--ui-danger-text-strong)",
     Icon: GitPullRequestClosedIcon,
     priority: 8,
   },

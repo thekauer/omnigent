@@ -1109,7 +1109,7 @@ function RunRow({
           (run.conversationPendingApprovals ?? 0) > 0 &&
           run.conversationId && (
             <span
-              className="text-xs text-amber-600 dark:text-amber-400"
+              className="text-xs text-(--ui-warning-text-soft)"
               role="status"
               data-testid="run-pending-approval"
             >
@@ -1121,7 +1121,7 @@ function RunRow({
             className={cn(
               "min-w-0 truncate text-xs",
               statusText.status === "failed"
-                ? "text-amber-700 dark:text-amber-400"
+                ? "text-(--ui-warning-text-strong)"
                 : "text-muted-foreground",
             )}
             data-testid="run-status-text"
@@ -1275,7 +1275,7 @@ function RunStatusIcon({
         <TriangleAlertIcon
           data-testid="run-status-icon"
           data-run-icon="failed"
-          className="size-4 shrink-0 text-amber-500"
+          className="size-4 shrink-0 text-(--ui-warning-tone)"
           strokeWidth={1.75}
         />
       </IndicatorWithTooltip>

@@ -48,7 +48,7 @@ export const MERGE_BUTTON_LABELS: Record<PullRequestMergeMethod, string> = {
 
 /** GitHub's green merge button. */
 const MERGE_BUTTON_CLASS =
-  "bg-green-600 text-white hover:bg-green-700 dark:bg-green-600 dark:hover:bg-green-500";
+  "bg-(--ui-merge-button) text-(--ui-merge-button-foreground) hover:bg-(--ui-merge-button-hover)";
 
 /** Why GitHub won't merge the PR yet, by mergeStateStatus. */
 const BLOCKED_HINTS: Record<string, string> = {
@@ -303,7 +303,7 @@ function PullRequestMergeDialog({
           </DialogDescription>
         </DialogHeader>
         {warning && (
-          <p role="note" className="text-ui text-amber-700 dark:text-amber-400">
+          <p role="note" className="text-ui text-(--ui-warning-text-strong)">
             {warning}
           </p>
         )}
@@ -453,7 +453,7 @@ export function PullRequestMerge({
           variant={!compact && state.kind === "ready" ? "default" : "outline"}
           className={cn(
             compact
-              ? "border-green-600 text-green-700 hover:bg-green-500/10 dark:text-green-400"
+              ? "border-(--ui-merge-button) text-(--ui-success-text-strong) hover:bg-(--ui-success-tone)/10"
               : state.kind === "ready" && MERGE_BUTTON_CLASS,
           )}
           disabled={unavailable || state.kind !== "ready"}

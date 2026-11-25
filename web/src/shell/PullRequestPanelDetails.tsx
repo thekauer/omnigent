@@ -200,7 +200,7 @@ function GithubAccountSelector({
         </SelectContent>
       </Select>
       {setPref.isError && (
-        <p className="text-ui text-red-600 dark:text-red-400">
+        <p className="text-ui text-(--ui-danger-text)">
           Couldn’t apply: {(setPref.error as Error).message}
         </p>
       )}
@@ -303,18 +303,20 @@ export function PullRequestStatus({
       : normalized === "OPEN"
         ? {
             label: "Open",
-            className: "border-green-500/25 bg-green-500/10 text-green-700 dark:text-green-400",
+            className:
+              "border-(--ui-success-tone)/25 bg-(--ui-success-tone)/10 text-(--ui-success-text-strong)",
           }
         : normalized === "MERGED"
           ? {
               label: "Merged",
               className:
-                "border-purple-500/25 bg-purple-500/10 text-purple-700 dark:text-purple-400",
+                "border-(--ui-merged-tone)/25 bg-(--ui-merged-tone)/10 text-(--ui-merged-text-strong)",
             }
           : normalized === "CLOSED"
             ? {
                 label: "Closed",
-                className: "border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-400",
+                className:
+                  "border-(--ui-danger-tone)/25 bg-(--ui-danger-tone)/10 text-(--ui-danger-text-strong)",
               }
             : { label: state, className: "border-border bg-muted text-muted-foreground" };
 
@@ -585,24 +587,24 @@ export function PullRequestCheckCounts({
         label="passed"
         count={checks.passing}
         runs={checks.runs.filter((r) => r.bucket === "passing")}
-        icon={<CircleCheckIcon className="size-2.5 text-green-600 dark:text-green-400" />}
-        className="border-green-500/25 bg-green-500/10 text-green-700 dark:text-green-400"
+        icon={<CircleCheckIcon className="size-2.5 text-(--ui-success-text)" />}
+        className="border-(--ui-success-tone)/25 bg-(--ui-success-tone)/10 text-(--ui-success-text-strong)"
       />
       <CheckPill
         compact={compact}
         label="pending"
         count={checks.pending}
         runs={checks.runs.filter((r) => r.bucket === "pending")}
-        icon={<CircleDotIcon className="size-2.5 text-amber-600 dark:text-amber-400" />}
-        className="border-amber-500/25 bg-amber-500/10 text-amber-700 dark:text-amber-400"
+        icon={<CircleDotIcon className="size-2.5 text-(--ui-warning-text-soft)" />}
+        className="border-(--ui-warning-tone)/25 bg-(--ui-warning-tone)/10 text-(--ui-warning-text-strong)"
       />
       <CheckPill
         compact={compact}
         label="failed"
         count={checks.failing}
         runs={checks.runs.filter((r) => r.bucket === "failing")}
-        icon={<CircleXIcon className="size-2.5 text-red-600 dark:text-red-400" />}
-        className="border-red-500/25 bg-red-500/10 text-red-700 dark:text-red-400"
+        icon={<CircleXIcon className="size-2.5 text-(--ui-danger-text)" />}
+        className="border-(--ui-danger-tone)/25 bg-(--ui-danger-tone)/10 text-(--ui-danger-text-strong)"
       />
       <CheckPill
         compact={compact}

@@ -106,9 +106,9 @@ export function FileRowItem({
   const isDeleted = fileStatus === "deleted";
   const fileColorClass =
     fileStatus === "created"
-      ? "text-green-500 dark:text-green-400"
+      ? "text-(--file-tree-status-added)"
       : fileStatus === "modified"
-        ? "text-amber-500 dark:text-amber-400"
+        ? "text-(--file-tree-status-modified)"
         : undefined;
   const { handlers, tooltip } = useCursorTooltip(path);
   const reveal = useRevealMenu(isDeleted ? null : path);
@@ -160,8 +160,8 @@ export function FileRowItem({
                   isDeleted
                     ? "bg-destructive/10 text-destructive"
                     : fileStatus === "created"
-                      ? "bg-green-500/10 text-green-600 dark:text-green-400"
-                      : "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+                      ? "bg-(--ui-success-tone)/10 text-(--ui-success-text)"
+                      : "bg-(--ui-warning-tone)/10 text-(--ui-warning-text-soft)",
                 )}
                 title={gitStatusLabel(fileStatus)}
               >
@@ -283,9 +283,9 @@ export function FolderRowItem({
   const dirStatus = status;
   const dirDotClass =
     dirStatus === "created"
-      ? "text-green-500 dark:text-green-400"
+      ? "text-(--file-tree-status-added)"
       : dirStatus === "modified"
-        ? "text-amber-500 dark:text-amber-400"
+        ? "text-(--file-tree-status-modified)"
         : dirStatus === "deleted"
           ? "text-destructive"
           : undefined;

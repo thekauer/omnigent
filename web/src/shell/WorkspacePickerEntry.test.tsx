@@ -57,7 +57,7 @@ describe("WorkspacePickerEntry", () => {
     expect(row).not.toHaveClass("cursor-not-allowed", "opacity-55", "hover:bg-muted");
     const icon = row.querySelector('[data-file-type="document"]');
     expect(icon).toHaveAttribute("data-tag-color", "blue");
-    expect(icon).toHaveClass("size-4", "text-blue-500", "dark:text-blue-400");
+    expect(icon).toHaveClass("size-4", "text-(--file-tree-icon-document)");
     expect(screen.getByText("README.md")).toHaveClass("flex-1", "truncate");
     expect(row.querySelector('[data-lucide="chevron-right"]')).toBeNull();
   });

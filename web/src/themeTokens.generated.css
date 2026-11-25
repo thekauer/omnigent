@@ -188,6 +188,12 @@
   --onboarding-wizard-background: #fcfbfb;
   --onboarding-modal-border: #0000001a;
   --composer-header-bg: color-mix(in srgb, var(--background) 94%, black);
+  --ui-color-swatch-border: color-mix(in oklab, var(--color-white) 25%, transparent);
+  --ui-color-swatch-ring: color-mix(in oklab, var(--color-black) 10%, transparent);
+  --ui-color-picker-ring: color-mix(in oklab, var(--color-black) 5%, transparent);
+  --ui-color-picker-handle: var(--color-white);
+  --ui-color-picker-handle-ring: color-mix(in oklab, var(--color-black) 60%, transparent);
+  --ui-qr-background: var(--color-white);
   --success: #2ea65c;
   --warning: #d4972a;
   --info: #3b8ff5;
@@ -196,6 +202,34 @@
   --status-yellow: #d4972a;
   --status-red: #f04858;
   --status-gray: #8e99a4;
+  --ui-success-tone: var(--color-green-500);
+  --ui-warning-tone: var(--color-amber-500);
+  --ui-danger-tone: var(--color-red-500);
+  --ui-merged-tone: var(--color-purple-500);
+  --ui-success-text: var(--color-green-600);
+  --ui-success-text-strong: var(--color-green-700);
+  --ui-success-text-emphasis: var(--color-green-700);
+  --ui-warning-text: var(--color-amber-600);
+  --ui-warning-text-soft: var(--color-amber-600);
+  --ui-warning-text-strong: var(--color-amber-700);
+  --ui-warning-text-emphasis: var(--color-amber-700);
+  --ui-danger-text: var(--color-red-600);
+  --ui-danger-text-strong: var(--color-red-700);
+  --ui-info-text: var(--color-blue-600);
+  --ui-info-text-strong: var(--color-blue-700);
+  --ui-merged-text-strong: var(--color-purple-700);
+  --ui-warning-banner-background: var(--color-amber-100);
+  --ui-warning-banner-border: var(--color-amber-300);
+  --ui-warning-banner-foreground: var(--color-amber-900);
+  --ui-warning-banner-hover: var(--color-amber-200);
+  --ui-warning-callout-border: var(--color-amber-300);
+  --ui-warning-callout-background: var(--color-amber-50);
+  --ui-warning-chip-border: var(--color-amber-300);
+  --ui-warning-chip-hover: var(--color-amber-100);
+  --ui-warning-chip-ring: var(--color-amber-400);
+  --ui-merge-button: var(--color-green-600);
+  --ui-merge-button-hover: var(--color-green-700);
+  --ui-merge-button-foreground: var(--color-white);
   --chart-1: #3b8ff5;
   --chart-2: #2272b4;
   --chart-3: #2ea65c;
@@ -294,6 +328,26 @@
   --ui-shadow-onboarding: 0 24px 80px 8px rgb(var(--ui-shadow-neutral-rgb) / var(--ui-shadow-onboarding-alpha));
   /* prettier-ignore */
   --onboarding-modal-shadow: 0 24px 80px 8px #00000012;
+  /* prettier-ignore */
+  --ui-glass-rim-edge: light-dark(color-mix(in oklch, black, transparent 85%), color-mix(in oklch, white, transparent 65%));
+  /* prettier-ignore */
+  --ui-glass-rim-glow: light-dark(color-mix(in oklch, black, transparent 90%), color-mix(in oklch, white, transparent 85%));
+  --ui-glass-fallback-highlight-top: light-dark(hsl(0 0% 100% / 0.85), hsl(0 0% 100% / 0.3));
+  --ui-glass-fallback-highlight-bottom: light-dark(hsl(0 0% 100% / 0.35), hsl(0 0% 100% / 0.08));
+  /* prettier-ignore */
+  --ui-glass-fallback-edge: light-dark(color-mix(in oklch, black, transparent 88%), color-mix(in oklch, white, transparent 72%));
+  /* prettier-ignore */
+  --ui-glass-fallback-glow: light-dark(color-mix(in oklch, white, transparent 72%), color-mix(in oklch, white, transparent 90%));
+  /* prettier-ignore */
+  --ui-glass-sheen: linear-gradient(135deg, light-dark(hsl(0 0% 100% / 0.42), hsl(0 0% 100% / 0.14)) 0%, transparent 42%, transparent 64%, light-dark(hsl(0 0% 100% / 0.18), hsl(0 0% 100% / 0.05)) 100%);
+  /* prettier-ignore */
+  --ui-glass-rim: linear-gradient(150deg, light-dark(hsl(0 0% 100% / 0.7), hsl(0 0% 100% / 0.34)), light-dark(hsl(0 0% 100% / 0.1), hsl(0 0% 100% / 0.03)) 45%, light-dark(hsl(0 0% 100% / 0.08), hsl(0 0% 100% / 0.02)) 60%, light-dark(hsl(0 0% 100% / 0.42), hsl(0 0% 100% / 0.18)));
+  --ui-omni-glass-highlight-top: light-dark(hsl(0 0% 100% / 0.85), hsl(0 0% 100% / 0.15));
+  --ui-omni-glass-highlight-bottom: light-dark(hsl(0 0% 100% / 0.35), hsl(0 0% 100% / 0.04));
+  --ui-omni-glass-ring: rgba(212, 212, 216, 0.08);
+  /* prettier-ignore */
+  --ui-omni-glass-glow: light-dark(color-mix(in oklch, white, transparent 72%), color-mix(in oklch, white, transparent 95%));
+  --ui-omni-glass-border: color-mix(in oklab, var(--color-black) 8%, transparent);
   --ui-row-line: 20px;
   --ui-row-height: calc(var(--ui-row-line) + calc(var(--spacing) * 2));
   --ui-control-h-xs: calc(var(--spacing) * 6);
@@ -329,6 +383,16 @@
   --code-selected-line: initial;
   --syntax-theme-light: github-light;
   --syntax-theme-dark: github-dark;
+  --viewer-highlight-rgb: 250 204 21;
+  --viewer-cited-line: rgba(254, 240, 138, 0.4);
+  --viewer-model-background: #ffffff;
+  --viewer-model-surface: #9aa0a6;
+  --viewer-shiki-background: #ffffff;
+  --viewer-mark-cited: color-mix(in oklab, var(--color-yellow-200) 40%, transparent);
+  --viewer-mark-icon: var(--color-yellow-500);
+  --viewer-mark-line: color-mix(in oklab, var(--color-yellow-500) 10%, transparent);
+  --viewer-mark-active: color-mix(in oklab, var(--color-yellow-400) 25%, transparent);
+  --viewer-mark-range: color-mix(in oklab, var(--color-yellow-200) 40%, transparent);
   --terminal-background: #ffffff;
   --terminal-foreground: #18181b;
   --terminal-cursor: #0891b2;
@@ -363,8 +427,8 @@
   --diff-deletion-text: initial;
   --diff-number-text: initial;
   --diff-word-mix: initial;
-  --diff-stat-added: oklch(62.7% 0.194 149.214);
-  --diff-stat-deleted: oklch(57.7% 0.245 27.325);
+  --diff-stat-added: var(--color-green-600);
+  --diff-stat-deleted: var(--color-red-600);
   --diff-line-mix: initial;
   --diff-line-mix-light: 12%;
   --diff-line-mix-dark: 20%;
@@ -389,6 +453,16 @@
   --file-tree-git-modified: light-dark(#1ca1c7, #08c0ef);
   --file-tree-git-renamed: light-dark(#d5a910, #ffd452);
   --file-tree-git-untracked: light-dark(#16a994, #00cab1);
+  --file-tree-status-added: var(--color-green-500);
+  --file-tree-status-modified: var(--color-amber-500);
+  --file-tree-icon-pdf: var(--color-orange-500);
+  --file-tree-icon-document: var(--color-blue-500);
+  --file-tree-icon-spreadsheet: var(--color-lime-600);
+  --file-tree-icon-presentation: var(--color-yellow-500);
+  --file-tree-icon-archive: var(--color-amber-700);
+  --file-tree-icon-code: var(--color-purple-500);
+  --file-tree-icon-image: var(--color-pink-500);
+  --file-tree-icon-media: var(--color-indigo-500);
 }
 
 .dark {
@@ -424,6 +498,34 @@
   --status-yellow: #d4972a;
   --status-red: #f04858;
   --status-gray: #8e99a4;
+  --ui-success-tone: var(--color-green-500);
+  --ui-warning-tone: var(--color-amber-500);
+  --ui-danger-tone: var(--color-red-500);
+  --ui-merged-tone: var(--color-purple-500);
+  --ui-success-text: var(--color-green-400);
+  --ui-success-text-strong: var(--color-green-400);
+  --ui-success-text-emphasis: var(--color-green-300);
+  --ui-warning-text: var(--color-amber-500);
+  --ui-warning-text-soft: var(--color-amber-400);
+  --ui-warning-text-strong: var(--color-amber-400);
+  --ui-warning-text-emphasis: var(--color-amber-300);
+  --ui-danger-text: var(--color-red-400);
+  --ui-danger-text-strong: var(--color-red-400);
+  --ui-info-text: var(--color-blue-400);
+  --ui-info-text-strong: var(--color-blue-400);
+  --ui-merged-text-strong: var(--color-purple-400);
+  --ui-warning-banner-background: var(--color-amber-950);
+  --ui-warning-banner-border: color-mix(in oklab, var(--color-amber-700) 60%, transparent);
+  --ui-warning-banner-foreground: var(--color-amber-100);
+  --ui-warning-banner-hover: var(--color-amber-900);
+  --ui-warning-callout-border: color-mix(in oklab, var(--color-amber-500) 30%, transparent);
+  --ui-warning-callout-background: color-mix(in oklab, var(--color-amber-500) 10%, transparent);
+  --ui-warning-chip-border: color-mix(in oklab, var(--color-amber-500) 40%, transparent);
+  --ui-warning-chip-hover: color-mix(in oklab, var(--color-amber-500) 20%, transparent);
+  --ui-warning-chip-ring: var(--color-amber-400);
+  --ui-merge-button: var(--color-green-600);
+  --ui-merge-button-hover: var(--color-green-500);
+  --ui-merge-button-foreground: var(--color-white);
   --chart-1: oklch(0.64 0.22 254);
   --chart-2: oklch(0.65 0.14 200);
   --chart-3: oklch(0.68 0.15 145);
@@ -435,6 +537,14 @@
   --ui-shadow-onboarding-alpha: calc(56 / 255 * var(--omnigent-elevation));
   /* prettier-ignore */
   --onboarding-modal-shadow: 0 24px 80px 8px #00000038;
+  --viewer-cited-line: rgba(161, 98, 7, 0.3);
+  --viewer-model-background: #0e1013;
+  --viewer-model-surface: #c4c9ce;
+  --viewer-shiki-background: #0d1117;
+  --viewer-mark-cited: color-mix(in oklab, var(--color-yellow-700) 30%, transparent);
+  --viewer-mark-icon: var(--color-yellow-400);
+  --viewer-mark-line: color-mix(in oklab, var(--color-yellow-400) 15%, transparent);
+  --viewer-mark-range: color-mix(in oklab, var(--color-yellow-400) 20%, transparent);
   --terminal-background: #0a0a0a;
   --terminal-foreground: #e4e4e7;
   --terminal-cursor: #22d3ee;
@@ -451,8 +561,18 @@
   --terminal-tone-subtle: #1f2123;
   --terminal-tone-input: #2f3132;
   --terminal-tone-emphasis: #464849;
-  --diff-stat-added: oklch(79.2% 0.209 151.711);
-  --diff-stat-deleted: oklch(70.4% 0.191 22.216);
+  --diff-stat-added: var(--color-green-400);
+  --diff-stat-deleted: var(--color-red-400);
+  --file-tree-status-added: var(--color-green-400);
+  --file-tree-status-modified: var(--color-amber-400);
+  --file-tree-icon-pdf: var(--color-orange-400);
+  --file-tree-icon-document: var(--color-blue-400);
+  --file-tree-icon-spreadsheet: var(--color-lime-400);
+  --file-tree-icon-presentation: var(--color-yellow-400);
+  --file-tree-icon-archive: var(--color-amber-500);
+  --file-tree-icon-code: var(--color-purple-400);
+  --file-tree-icon-image: var(--color-pink-400);
+  --file-tree-icon-media: var(--color-indigo-400);
 }
 
 :root:not(.dark):not([data-theme]) {
@@ -1131,6 +1251,40 @@
 :root:not(.dark)[data-theme],
 :root > :not(.dark)[data-theme] {
   --composer-header-bg: color-mix(in srgb, var(--background) 94%, black);
+  --ui-color-swatch-border: color-mix(in oklab, var(--color-white) 25%, transparent);
+  --ui-color-swatch-ring: color-mix(in oklab, var(--color-black) 10%, transparent);
+  --ui-color-picker-ring: color-mix(in oklab, var(--color-black) 5%, transparent);
+  --ui-color-picker-handle: var(--color-white);
+  --ui-color-picker-handle-ring: color-mix(in oklab, var(--color-black) 60%, transparent);
+  --ui-qr-background: var(--color-white);
+  --ui-success-tone: var(--color-green-500);
+  --ui-warning-tone: var(--color-amber-500);
+  --ui-danger-tone: var(--color-red-500);
+  --ui-merged-tone: var(--color-purple-500);
+  --ui-success-text: var(--color-green-600);
+  --ui-success-text-strong: var(--color-green-700);
+  --ui-success-text-emphasis: var(--color-green-700);
+  --ui-warning-text: var(--color-amber-600);
+  --ui-warning-text-soft: var(--color-amber-600);
+  --ui-warning-text-strong: var(--color-amber-700);
+  --ui-warning-text-emphasis: var(--color-amber-700);
+  --ui-danger-text: var(--color-red-600);
+  --ui-danger-text-strong: var(--color-red-700);
+  --ui-info-text: var(--color-blue-600);
+  --ui-info-text-strong: var(--color-blue-700);
+  --ui-merged-text-strong: var(--color-purple-700);
+  --ui-warning-banner-background: var(--color-amber-100);
+  --ui-warning-banner-border: var(--color-amber-300);
+  --ui-warning-banner-foreground: var(--color-amber-900);
+  --ui-warning-banner-hover: var(--color-amber-200);
+  --ui-warning-callout-border: var(--color-amber-300);
+  --ui-warning-callout-background: var(--color-amber-50);
+  --ui-warning-chip-border: var(--color-amber-300);
+  --ui-warning-chip-hover: var(--color-amber-100);
+  --ui-warning-chip-ring: var(--color-amber-400);
+  --ui-merge-button: var(--color-green-600);
+  --ui-merge-button-hover: var(--color-green-700);
+  --ui-merge-button-foreground: var(--color-white);
   --ui-radius-xs: calc(var(--ui-radius-base) * 0.25);
   --ui-radius-sm: calc(var(--ui-radius-base) * 0.5);
   --ui-radius-md: calc(var(--ui-radius-base) * 0.75);
@@ -1207,6 +1361,7 @@
   --ui-shadow-onboarding-alpha: calc(18 / 255 * var(--omnigent-elevation));
   /* prettier-ignore */
   --ui-shadow-onboarding: 0 24px 80px 8px rgb(var(--ui-shadow-neutral-rgb) / var(--ui-shadow-onboarding-alpha));
+  --ui-omni-glass-border: color-mix(in oklab, var(--color-black) 8%, transparent);
   --ui-row-height: calc(var(--ui-row-line) + calc(var(--spacing) * 2));
   --ui-control-h-xs: calc(var(--spacing) * 6);
   --ui-control-h-sm: calc(var(--spacing) * 7);
@@ -1224,7 +1379,14 @@
   --viewer-search-match: color-mix(in oklch, var(--warning) 30%, transparent);
   --viewer-search-match-selected: color-mix(in oklch, var(--warning) 70%, transparent);
   --viewer-selection-match: color-mix(in oklch, var(--primary) 16%, transparent);
+  --viewer-mark-cited: color-mix(in oklab, var(--color-yellow-200) 40%, transparent);
+  --viewer-mark-icon: var(--color-yellow-500);
+  --viewer-mark-line: color-mix(in oklab, var(--color-yellow-500) 10%, transparent);
+  --viewer-mark-active: color-mix(in oklab, var(--color-yellow-400) 25%, transparent);
+  --viewer-mark-range: color-mix(in oklab, var(--color-yellow-200) 40%, transparent);
   --terminal-cursor-accent: var(--terminal-background);
+  --diff-stat-added: var(--color-green-600);
+  --diff-stat-deleted: var(--color-red-600);
   --file-tree-hover: var(--muted);
   --file-tree-selected: var(--sidebar-active, var(--accent));
   --file-tree-row-active: var(--muted);
@@ -1232,6 +1394,16 @@
   --file-tree-review-deleted: var(--destructive);
   --file-tree-focus-ring: var(--ring);
   --file-tree-radius: var(--ui-radius-md);
+  --file-tree-status-added: var(--color-green-500);
+  --file-tree-status-modified: var(--color-amber-500);
+  --file-tree-icon-pdf: var(--color-orange-500);
+  --file-tree-icon-document: var(--color-blue-500);
+  --file-tree-icon-spreadsheet: var(--color-lime-600);
+  --file-tree-icon-presentation: var(--color-yellow-500);
+  --file-tree-icon-archive: var(--color-amber-700);
+  --file-tree-icon-code: var(--color-purple-500);
+  --file-tree-icon-image: var(--color-pink-500);
+  --file-tree-icon-media: var(--color-indigo-500);
 }
 
 :root.dark,
@@ -1243,6 +1415,40 @@
   --menu-surface-bg: var(--composer-surface-bg);
   /* prettier-ignore */
   --card-surface-bg: color-mix(in srgb, color-mix(in srgb, var(--card) 95%, white) 75%, transparent);
+  --ui-color-swatch-border: color-mix(in oklab, var(--color-white) 25%, transparent);
+  --ui-color-swatch-ring: color-mix(in oklab, var(--color-black) 10%, transparent);
+  --ui-color-picker-ring: color-mix(in oklab, var(--color-black) 5%, transparent);
+  --ui-color-picker-handle: var(--color-white);
+  --ui-color-picker-handle-ring: color-mix(in oklab, var(--color-black) 60%, transparent);
+  --ui-qr-background: var(--color-white);
+  --ui-success-tone: var(--color-green-500);
+  --ui-warning-tone: var(--color-amber-500);
+  --ui-danger-tone: var(--color-red-500);
+  --ui-merged-tone: var(--color-purple-500);
+  --ui-success-text: var(--color-green-400);
+  --ui-success-text-strong: var(--color-green-400);
+  --ui-success-text-emphasis: var(--color-green-300);
+  --ui-warning-text: var(--color-amber-500);
+  --ui-warning-text-soft: var(--color-amber-400);
+  --ui-warning-text-strong: var(--color-amber-400);
+  --ui-warning-text-emphasis: var(--color-amber-300);
+  --ui-danger-text: var(--color-red-400);
+  --ui-danger-text-strong: var(--color-red-400);
+  --ui-info-text: var(--color-blue-400);
+  --ui-info-text-strong: var(--color-blue-400);
+  --ui-merged-text-strong: var(--color-purple-400);
+  --ui-warning-banner-background: var(--color-amber-950);
+  --ui-warning-banner-border: color-mix(in oklab, var(--color-amber-700) 60%, transparent);
+  --ui-warning-banner-foreground: var(--color-amber-100);
+  --ui-warning-banner-hover: var(--color-amber-900);
+  --ui-warning-callout-border: color-mix(in oklab, var(--color-amber-500) 30%, transparent);
+  --ui-warning-callout-background: color-mix(in oklab, var(--color-amber-500) 10%, transparent);
+  --ui-warning-chip-border: color-mix(in oklab, var(--color-amber-500) 40%, transparent);
+  --ui-warning-chip-hover: color-mix(in oklab, var(--color-amber-500) 20%, transparent);
+  --ui-warning-chip-ring: var(--color-amber-400);
+  --ui-merge-button: var(--color-green-600);
+  --ui-merge-button-hover: var(--color-green-500);
+  --ui-merge-button-foreground: var(--color-white);
   --ui-radius-xs: calc(var(--ui-radius-base) * 0.25);
   --ui-radius-sm: calc(var(--ui-radius-base) * 0.5);
   --ui-radius-md: calc(var(--ui-radius-base) * 0.75);
@@ -1319,6 +1525,7 @@
   --ui-shadow-onboarding-alpha: calc(56 / 255 * var(--omnigent-elevation));
   /* prettier-ignore */
   --ui-shadow-onboarding: 0 24px 80px 8px rgb(var(--ui-shadow-neutral-rgb) / var(--ui-shadow-onboarding-alpha));
+  --ui-omni-glass-border: color-mix(in oklab, var(--color-black) 8%, transparent);
   --ui-row-height: calc(var(--ui-row-line) + calc(var(--spacing) * 2));
   --ui-control-h-xs: calc(var(--spacing) * 6);
   --ui-control-h-sm: calc(var(--spacing) * 7);
@@ -1336,7 +1543,14 @@
   --viewer-search-match: color-mix(in oklch, var(--warning) 30%, transparent);
   --viewer-search-match-selected: color-mix(in oklch, var(--warning) 70%, transparent);
   --viewer-selection-match: color-mix(in oklch, var(--primary) 16%, transparent);
+  --viewer-mark-cited: color-mix(in oklab, var(--color-yellow-700) 30%, transparent);
+  --viewer-mark-icon: var(--color-yellow-400);
+  --viewer-mark-line: color-mix(in oklab, var(--color-yellow-400) 15%, transparent);
+  --viewer-mark-active: color-mix(in oklab, var(--color-yellow-400) 25%, transparent);
+  --viewer-mark-range: color-mix(in oklab, var(--color-yellow-400) 20%, transparent);
   --terminal-cursor-accent: var(--terminal-background);
+  --diff-stat-added: var(--color-green-400);
+  --diff-stat-deleted: var(--color-red-400);
   --file-tree-hover: var(--muted);
   --file-tree-selected: var(--sidebar-active, var(--accent));
   --file-tree-row-active: var(--muted);
@@ -1344,6 +1558,16 @@
   --file-tree-review-deleted: var(--destructive);
   --file-tree-focus-ring: var(--ring);
   --file-tree-radius: var(--ui-radius-md);
+  --file-tree-status-added: var(--color-green-400);
+  --file-tree-status-modified: var(--color-amber-400);
+  --file-tree-icon-pdf: var(--color-orange-400);
+  --file-tree-icon-document: var(--color-blue-400);
+  --file-tree-icon-spreadsheet: var(--color-lime-400);
+  --file-tree-icon-presentation: var(--color-yellow-400);
+  --file-tree-icon-archive: var(--color-amber-500);
+  --file-tree-icon-code: var(--color-purple-400);
+  --file-tree-icon-image: var(--color-pink-400);
+  --file-tree-icon-media: var(--color-indigo-400);
 }
 
 [data-token-mode="light"] {

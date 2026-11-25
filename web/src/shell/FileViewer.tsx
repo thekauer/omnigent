@@ -1624,7 +1624,7 @@ function FileViewerBody({
     label: "Copy link to file",
     tooltip: linkCopied ? "Copied!" : "Copy link",
     icon: linkCopied ? (
-      <CheckIcon className="size-4 text-green-500" />
+      <CheckIcon className="size-4 text-(--ui-success-tone)" />
     ) : (
       <Link2Icon className="size-4" />
     ),
@@ -1926,7 +1926,7 @@ function FileViewerBody({
               )}
               {saveStatus === "saved" && (
                 <>
-                  <CheckIcon className="size-3 text-green-500" />
+                  <CheckIcon className="size-3 text-(--ui-success-tone)" />
                   Saved
                 </>
               )}

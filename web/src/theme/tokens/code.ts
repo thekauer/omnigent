@@ -1,6 +1,7 @@
 // Code surface tokens: the file viewer's (CodeMirror) washes and the syntax themes every
 // highlighter colours code with (Shiki in chat and the viewers, Monaco, diffs).
 
+import { tw } from "./tailwindPalette.ts";
 import { defineTokens } from "./types.ts";
 
 export const CODE_TOKENS = defineTokens("code", [
@@ -72,5 +73,67 @@ export const CODE_TOKENS = defineTokens("code", [
     kind: "keyword",
     description: "The syntax theme code is coloured with in dark mode, as syntax-theme-light.",
     default: { light: "github-dark" },
+  },
+  {
+    id: "viewer-highlight-rgb",
+    kind: "channels",
+    description:
+      "The comment highlight's colour as `R G B` (Monaco's comment ranges, the PDF viewer's comments and selection), used at several alphas.",
+    default: { light: "250 204 21" },
+  },
+  {
+    id: "viewer-cited-line",
+    description: "Lines a chat citation points at, in Monaco.",
+    default: { light: "rgba(254, 240, 138, 0.4)", dark: "rgba(161, 98, 7, 0.3)" },
+  },
+  {
+    id: "viewer-model-background",
+    description: "The 3D model viewer's canvas (a hex colour, read by three.js).",
+    default: { light: "#ffffff", dark: "#0e1013" },
+  },
+  {
+    id: "viewer-model-surface",
+    description: "The 3D model viewer's default material for STL meshes (a hex colour).",
+    default: { light: "#9aa0a6", dark: "#c4c9ce" },
+  },
+  // The Shiki code viewer's marks (shell/CodeViewer.tsx): comments, citations, matches.
+  {
+    id: "viewer-shiki-background",
+    description: "The Shiki code viewer's background, the GitHub themes' own.",
+    default: { light: "#ffffff", dark: "#0d1117" },
+  },
+  {
+    id: "viewer-mark-cited",
+    description: "Cited lines and the current find match in the Shiki code viewer.",
+    default: {
+      light: `color-mix(in oklab, ${tw("yellow-200")} 40%, transparent)`,
+      dark: `color-mix(in oklab, ${tw("yellow-700")} 30%, transparent)`,
+    },
+  },
+  {
+    id: "viewer-mark-icon",
+    description: "The Shiki code viewer's comment icon in the gutter.",
+    default: { light: tw("yellow-500"), dark: tw("yellow-400") },
+  },
+  {
+    id: "viewer-mark-line",
+    description: "The gutter of a commented line in the Shiki code viewer.",
+    default: {
+      light: `color-mix(in oklab, ${tw("yellow-500")} 10%, transparent)`,
+      dark: `color-mix(in oklab, ${tw("yellow-400")} 15%, transparent)`,
+    },
+  },
+  {
+    id: "viewer-mark-active",
+    description: "The selected comment's range, or a new selection, in the Shiki code viewer.",
+    default: { light: `color-mix(in oklab, ${tw("yellow-400")} 25%, transparent)` },
+  },
+  {
+    id: "viewer-mark-range",
+    description: "A comment's range in the Shiki code viewer.",
+    default: {
+      light: `color-mix(in oklab, ${tw("yellow-200")} 40%, transparent)`,
+      dark: `color-mix(in oklab, ${tw("yellow-400")} 20%, transparent)`,
+    },
   },
 ]);

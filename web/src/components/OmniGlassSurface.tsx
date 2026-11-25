@@ -53,16 +53,16 @@ export function OmniGlassSurface({
         distortionScale={-270}
         refraction={false}
         opacity={0.45}
-        className="omni-glass-surface border border-black/[0.08] dark:border-0 [&>.glass-surface\_\_sheen]:opacity-0 dark:[&>.glass-surface\_\_rim]:opacity-25 dark:[&>.glass-surface\_\_rim]:p-px!"
+        className="omni-glass-surface border border-(--ui-omni-glass-border) dark:border-0 [&>.glass-surface\_\_sheen]:opacity-0 dark:[&>.glass-surface\_\_rim]:opacity-25 dark:[&>.glass-surface\_\_rim]:p-px!"
         style={{
           background: `var(--omni-glass-background, ${surface.background})`,
           WebkitBackdropFilter: backdropFilter,
           backdropFilter,
           boxShadow: [
-            "inset 0 1px 0 0 light-dark(hsl(0 0% 100% / 0.85), hsl(0 0% 100% / 0.15))",
-            "inset 0 -1px 0 0 light-dark(hsl(0 0% 100% / 0.35), hsl(0 0% 100% / 0.04))",
-            "inset 0 0 2px 1px rgba(212, 212, 216, 0.08)",
-            "inset 0 0 12px 3px light-dark(color-mix(in oklch, white, transparent 72%), color-mix(in oklch, white, transparent 95%))",
+            "inset 0 1px 0 0 var(--ui-omni-glass-highlight-top)",
+            "inset 0 -1px 0 0 var(--ui-omni-glass-highlight-bottom)",
+            "inset 0 0 2px 1px var(--ui-omni-glass-ring)",
+            "inset 0 0 12px 3px var(--ui-omni-glass-glow)",
             "var(--omni-glass-drop-shadow, var(--ui-shadow-glass-drop))",
           ].join(", "),
         }}

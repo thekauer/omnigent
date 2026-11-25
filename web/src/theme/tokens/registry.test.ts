@@ -175,6 +175,9 @@ describe("theme token registry", () => {
       "terminal",
       "diff",
       "fileTree",
+      "status",
+      "workbench",
+      "brand",
     ]);
     expect(
       [...new Set(added.map((token) => token.group))].filter((group) => !allowed.has(group)),
@@ -187,6 +190,7 @@ describe("theme token registry", () => {
       terminal: /^terminal-/,
       diff: /^diff-/,
       fileTree: /^file-tree-/,
+      brand: /^brand-/,
     };
     for (const token of added) {
       const prefix = GROUP_PREFIXES[token.group] ?? /^ui-/;

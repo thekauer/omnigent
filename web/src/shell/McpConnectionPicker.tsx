@@ -157,7 +157,7 @@ export function McpConnectionPicker({ selected, onToggle }: McpConnectionPickerP
           </span>
           {needsSignInCount > 0 && (
             <span
-              className="truncate text-amber-600 dark:text-amber-500"
+              className="truncate text-(--ui-warning-text)"
               data-testid="new-chat-landing-mcps-needs-signin"
             >
               · {needsSignInCount} needs sign-in
@@ -200,7 +200,7 @@ export function McpConnectionPicker({ selected, onToggle }: McpConnectionPickerP
               {unavailable.map((name) => (
                 <span
                   key={name}
-                  className="text-xs text-red-600 dark:text-red-400"
+                  className="text-xs text-(--ui-danger-text)"
                   data-testid={`new-chat-landing-mcp-unavailable-${name}`}
                 >
                   You don&apos;t have permission to use {name}.
@@ -239,7 +239,7 @@ export function McpConnectionPicker({ selected, onToggle }: McpConnectionPickerP
                             Authorizing…
                           </span>
                         ) : failed ? (
-                          <span className="truncate text-xs text-red-600 dark:text-red-400">
+                          <span className="truncate text-xs text-(--ui-danger-text)">
                             Sign-in failed. Try again.
                           </span>
                         ) : adminProvided ? (
@@ -247,7 +247,7 @@ export function McpConnectionPicker({ selected, onToggle }: McpConnectionPickerP
                             className={
                               connection.authorized
                                 ? "truncate text-xs text-muted-foreground"
-                                : "truncate text-xs text-amber-600 dark:text-amber-500"
+                                : "truncate text-xs text-(--ui-warning-text)"
                             }
                           >
                             Added by your admin
@@ -258,7 +258,7 @@ export function McpConnectionPicker({ selected, onToggle }: McpConnectionPickerP
                           // Restored selection whose grant lapsed: toggle is on but
                           // the connection isn't authorized. Name the gap so the
                           // user knows which one to re-authorize.
-                          <span className="truncate text-xs text-amber-600 dark:text-amber-500">
+                          <span className="truncate text-xs text-(--ui-warning-text)">
                             Needs sign-in
                           </span>
                         ) : null}
@@ -377,14 +377,12 @@ function McpServiceBrowser({
     }
     if (failed(name)) {
       return (
-        <span className="truncate text-xs text-red-600 dark:text-red-400">
-          Sign-in failed. Try again.
-        </span>
+        <span className="truncate text-xs text-(--ui-danger-text)">Sign-in failed. Try again.</span>
       );
     }
     if (unavailable.includes(name)) {
       return (
-        <span className="truncate text-xs text-red-600 dark:text-red-400">
+        <span className="truncate text-xs text-(--ui-danger-text)">
           You don&apos;t have permission to use this
         </span>
       );
@@ -441,7 +439,7 @@ function McpServiceBrowser({
           <li className="px-3 py-1.5 text-xs text-muted-foreground">Loading…</li>
         )}
         {isError && (
-          <li className="px-3 py-1.5 text-xs text-red-600 dark:text-red-400">
+          <li className="px-3 py-1.5 text-xs text-(--ui-danger-text)">
             Couldn&apos;t load MCP servers.
           </li>
         )}

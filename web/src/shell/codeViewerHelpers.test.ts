@@ -351,6 +351,20 @@ describe("modelViewerTheme", () => {
     expect(dark.keyIntensity).toBeGreaterThan(light.keyIntensity);
   });
 
+  it("keeps the former colours by default, and takes hex tokens", () => {
+    expect([modelViewerTheme("light").background, modelViewerTheme("light").stlMaterial]).toEqual([
+      0xffffff, 0x9aa0a6,
+    ]);
+    expect([modelViewerTheme("dark").background, modelViewerTheme("dark").stlMaterial]).toEqual([
+      0x0e1013, 0xc4c9ce,
+    ]);
+    document.documentElement.style.setProperty("--viewer-model-surface", "#123");
+    expect(modelViewerTheme("light").stlMaterial).toBe(0x112233);
+    document.documentElement.style.setProperty("--viewer-model-surface", "oklch(0.5 0 0)");
+    expect(modelViewerTheme("light").stlMaterial).toBe(0x9aa0a6);
+    document.documentElement.style.removeProperty("--viewer-model-surface");
+  });
+
   it("provides an STL default material color for each mode", () => {
     expect(typeof modelViewerTheme("light").stlMaterial).toBe("number");
     expect(typeof modelViewerTheme("dark").stlMaterial).toBe("number");

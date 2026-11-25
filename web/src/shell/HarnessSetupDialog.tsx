@@ -202,7 +202,7 @@ function StepIcon({ status }: { status: ResolvedSetupStep["status"] }) {
   if (status === "unknown") {
     return <InfoIcon className="size-4 shrink-0 text-muted-foreground" />;
   }
-  return <CircleDashedIcon className="size-4 shrink-0 text-amber-600 dark:text-amber-500" />;
+  return <CircleDashedIcon className="size-4 shrink-0 text-(--ui-warning-text)" />;
 }
 
 function SetupStepRow({

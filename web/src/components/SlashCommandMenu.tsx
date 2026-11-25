@@ -221,7 +221,7 @@ const MCP_LIVE_LABEL = new Map<string, string>([
 
 const MCP_LIVE_TONE = new Map<string, string>([
   ["failed", "text-destructive"],
-  ["needs-auth", "text-amber-600 dark:text-amber-500"],
+  ["needs-auth", "text-(--ui-warning-text)"],
 ]);
 
 /** Live states a Reconnect can change, as in Claude Code's own `/mcp`. */
@@ -294,7 +294,10 @@ function McpConnectionIcon({
     );
   if (live?.status === "needs-auth" || connection === "sign-in-required")
     return (
-      <TriangleAlertIcon aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 text-amber-500" />
+      <TriangleAlertIcon
+        aria-hidden="true"
+        className="mt-0.5 size-3.5 shrink-0 text-(--ui-warning-tone)"
+      />
     );
   if (connection === "unavailable")
     return (
@@ -459,7 +462,7 @@ function McpServerRows({
                   <div
                     className={cn(
                       "text-xs leading-4",
-                      needsSignIn ? "text-amber-600 dark:text-amber-500" : "text-muted-foreground",
+                      needsSignIn ? "text-(--ui-warning-text)" : "text-muted-foreground",
                     )}
                   >
                     {live ? "Account: " : ""}

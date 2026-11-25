@@ -138,6 +138,24 @@ export interface PaletteMeta {
   };
 }
 
+/** The swatch of the Appearance setting's light mode preview (no palette's own). */
+export const LIGHT_MODE_PREVIEW: PaletteSwatch = {
+  bg: "#e9ebee",
+  card: "#ffffff",
+  accent: "#aab2bd",
+  border: "#d7dbe0",
+  text: "#11171c",
+};
+
+/** The swatch of the dark mode preview. */
+export const DARK_MODE_PREVIEW: PaletteSwatch = {
+  bg: "#0e1013",
+  card: "#232a33",
+  accent: "#5b6672",
+  border: "#2b333d",
+  text: "#e6edf3",
+};
+
 // Swatch colors are a hand-picked summary used for mini-previews.
 export const PALETTES: readonly PaletteMeta[] = [
   {

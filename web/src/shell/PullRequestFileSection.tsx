@@ -76,16 +76,16 @@ export const STATUS_META: Record<
   PullRequestChangedFile["status"],
   { label: string; className: string; Icon: LucideIcon }
 > = {
-  created: { label: "Added", className: "text-green-600 dark:text-green-400", Icon: FilePlusIcon },
+  created: { label: "Added", className: "text-(--ui-success-text)", Icon: FilePlusIcon },
   modified: {
     label: "Modified",
-    className: "text-amber-600 dark:text-amber-400",
+    className: "text-(--ui-warning-text-soft)",
     Icon: FileDiffIcon,
   },
-  deleted: { label: "Deleted", className: "text-red-600 dark:text-red-400", Icon: FileMinusIcon },
+  deleted: { label: "Deleted", className: "text-(--ui-danger-text)", Icon: FileMinusIcon },
   renamed: {
     label: "Renamed",
-    className: "text-blue-600 dark:text-blue-400",
+    className: "text-(--ui-info-text)",
     Icon: FileSymlinkIcon,
   },
 };

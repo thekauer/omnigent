@@ -1417,7 +1417,7 @@ describe("source line navigation", () => {
       const line = screen.getByText("second").closest("[data-line]")?.parentElement?.parentElement;
       expect(scroll).toHaveBeenCalledWith({ block: "center" });
       expect(scroll.mock.instances.at(-1)).toBe(line);
-      expect(line).toHaveClass("bg-yellow-200/40");
+      expect(line).toHaveClass("bg-(--viewer-mark-cited)");
     } finally {
       HTMLElement.prototype.scrollIntoView = original;
     }
@@ -1440,8 +1440,8 @@ describe("source line navigation", () => {
           screen.getByText(text).closest("[data-line]")?.parentElement?.parentElement;
         expect(scroll.mock.instances.at(-1)).toBe(row(cited[0]));
         for (const text of ["one", "two", "three", "four", "five"]) {
-          if (cited.includes(text)) expect(row(text)).toHaveClass("bg-yellow-200/40");
-          else expect(row(text)).not.toHaveClass("bg-yellow-200/40");
+          if (cited.includes(text)) expect(row(text)).toHaveClass("bg-(--viewer-mark-cited)");
+          else expect(row(text)).not.toHaveClass("bg-(--viewer-mark-cited)");
         }
       } finally {
         HTMLElement.prototype.scrollIntoView = original;
@@ -1460,7 +1460,7 @@ it.each([true, false])(
       renderViewer("first\nlast", true, "notes.md", { truncated, position: { line: 5000 } });
       const last = screen.getByText("last").closest("[data-line]")?.parentElement?.parentElement;
       expect(scroll.mock.instances.at(-1)).toBe(last);
-      expect(last).toHaveClass("bg-yellow-200/40");
+      expect(last).toHaveClass("bg-(--viewer-mark-cited)");
     } finally {
       HTMLElement.prototype.scrollIntoView = original;
     }

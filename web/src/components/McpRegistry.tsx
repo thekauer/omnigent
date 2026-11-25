@@ -291,7 +291,7 @@ export function McpRegistryPicker({
                       className={cn(
                         "block text-xs",
                         selected && !service.connected && authorizing !== service.id && !conflict
-                          ? "text-amber-600 dark:text-amber-500"
+                          ? "text-(--ui-warning-text)"
                           : "text-muted-foreground",
                       )}
                     >
