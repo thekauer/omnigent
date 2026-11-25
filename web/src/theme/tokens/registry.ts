@@ -7,8 +7,11 @@
 
 import { BORDER_TOKENS } from "./border.ts";
 import { CHART_TOKENS } from "./chart.ts";
+import { CODE_TOKENS } from "./code.ts";
 import { DENSITY_TOKENS } from "./density.ts";
+import { DIFF_TOKENS } from "./diff.ts";
 import { ELEVATION_TOKENS } from "./elevation.ts";
+import { FILE_TREE_TOKENS } from "./fileTree.ts";
 import { SCROLLBAR_TOKENS } from "./scrollbar.ts";
 import { SHAPE_TOKENS } from "./shape.ts";
 import { STATUS_TOKENS } from "./status.ts";
@@ -60,7 +63,10 @@ export const TOKENS: readonly TokenDef[] = [
   ...DENSITY_TOKENS,
   ...BORDER_TOKENS,
   ...SCROLLBAR_TOKENS,
+  ...CODE_TOKENS,
   ...TERMINAL_TOKENS,
+  ...DIFF_TOKENS,
+  ...FILE_TREE_TOKENS,
 ];
 
 /** Tokens with host defaults (no palette sets them), in registry order. */

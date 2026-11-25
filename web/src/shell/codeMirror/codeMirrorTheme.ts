@@ -60,14 +60,14 @@ export const codeMirrorViewerTheme: Extension = EditorView.theme({
     backgroundColor: "var(--code-selection)",
   },
   ".cm-searchMatch": {
-    backgroundColor: "color-mix(in oklch, var(--warning) 30%, transparent)",
-    borderRadius: "2px",
+    backgroundColor: "var(--viewer-search-match)",
+    borderRadius: "var(--ui-radius-xs)",
   },
   ".cm-searchMatch.cm-searchMatch-selected": {
-    backgroundColor: "color-mix(in oklch, var(--warning) 70%, transparent)",
+    backgroundColor: "var(--viewer-search-match-selected)",
   },
   ".cm-selectionMatch": {
-    backgroundColor: "color-mix(in oklch, var(--primary) 16%, transparent)",
+    backgroundColor: "var(--viewer-selection-match)",
   },
 });
 

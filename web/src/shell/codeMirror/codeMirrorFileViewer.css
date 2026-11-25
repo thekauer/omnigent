@@ -1,8 +1,4 @@
-/* The active line's wash, faint enough that code on a commented or cited active line stays
-   readable on the page and the dark canvas's glow (VIEWER_ACTIVE_LINE_MIX). */
-.cm-editor {
-  --viewer-active-line: color-mix(in oklch, var(--foreground) 3%, transparent);
-}
+/* The active line's wash is the `viewer-active-line` token (theme/tokens/code.ts). */
 /* In dark, the Files viewer shows the shell canvas through its editor; the sticky gutter
    repaints that canvas (pinned to the window), so code scrolled sideways stays hidden under it. */
 .dark [data-testid="file-viewer"] .cm-editor {
@@ -80,7 +76,7 @@
   background: var(--muted);
   border: 1px solid var(--border);
   color: var(--muted-foreground);
-  border-radius: 4px;
+  border-radius: var(--ui-radius-sm);
   padding: 0 4px;
   margin: 0 2px;
 }

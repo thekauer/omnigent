@@ -44,6 +44,7 @@ import { readFileViewPreferences, writeFileViewPreferences } from "@/lib/fileVie
 import { gitProviderCopy } from "@/lib/gitProviders";
 import { hasCommandModifier } from "@/lib/hotkeys";
 import { consumeLocalReviewNavigation, useLocalReviewNavigation } from "@/lib/localReviewContext";
+import { DIFF_TOKEN_CSS } from "@/lib/diffTheme";
 import { PULL_REQUEST_DIFF_THEME, type ReviewThread } from "@/lib/pullRequestReviewThreads";
 import { patchFileHashes, useViewedFiles, type PullRequestIdentity } from "@/lib/pullRequestViewed";
 import { cn } from "@/lib/utils";
@@ -984,13 +985,14 @@ export function PullRequestChangesTab({
       themeType,
       diffStyle,
       unsafeCSS: `
-        [data-selected-line] { background-color: var(--sidebar-active); }
+        ${DIFF_TOKEN_CSS}
+        [data-selected-line] { background-color: var(--code-selected-line, var(--sidebar-active)); }
         [data-column-number][data-selected-line], [data-gutter-buffer][data-selected-line] {
           color: var(--sidebar-active-foreground);
           box-shadow: inset -3px 0 var(--sidebar-active-foreground);
         }
         ::highlight(pr-find-active) {
-          background-color: color-mix(in oklch, var(--warning) 70%, transparent);
+          background-color: var(--viewer-search-match-selected);
           color: inherit;
         }
       `,

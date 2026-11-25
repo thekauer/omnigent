@@ -278,6 +278,11 @@
   --ui-scrollbar-thumb: initial;
   --ui-scrollbar-thumb-hover: initial;
   --ui-scrollbar-track: initial;
+  --viewer-active-line: color-mix(in oklch, var(--foreground) 3%, transparent);
+  --viewer-search-match: color-mix(in oklch, var(--warning) 30%, transparent);
+  --viewer-search-match-selected: color-mix(in oklch, var(--warning) 70%, transparent);
+  --viewer-selection-match: color-mix(in oklch, var(--primary) 16%, transparent);
+  --code-selected-line: initial;
   --terminal-background: #ffffff;
   --terminal-foreground: #18181b;
   --terminal-cursor: #0891b2;
@@ -302,6 +307,33 @@
   --terminal-tone-subtle: #fafafa;
   --terminal-tone-input: #f4f4f4;
   --terminal-tone-emphasis: #e0e0e0;
+  --diff-addition-base: initial;
+  --diff-deletion-base: initial;
+  --diff-addition-text: initial;
+  --diff-deletion-text: initial;
+  --diff-number-text: initial;
+  --diff-word-mix: initial;
+  --diff-line-mix: initial;
+  --diff-line-mix-light: 12%;
+  --diff-line-mix-dark: 20%;
+  --diff-gutter-mix: initial;
+  --diff-gutter-mix-light: 9%;
+  --diff-gutter-mix-dark: 15%;
+  --diff-hover-mix: initial;
+  --diff-hover-mix-light: 3%;
+  --diff-hover-mix-dark: 9%;
+  --file-tree-hover: var(--muted);
+  --file-tree-selected: var(--sidebar-active, var(--accent));
+  --file-tree-selected-foreground: initial;
+  --file-tree-guide: initial;
+  --file-tree-focus-ring: var(--ring);
+  --file-tree-radius: var(--ui-radius-md);
+  --file-tree-git-added: light-dark(#16a994, #00cab1);
+  --file-tree-git-deleted: light-dark(#ff2e3f, #ff6762);
+  --file-tree-git-ignored: light-dark(#adadb1, #4a4a4e);
+  --file-tree-git-modified: light-dark(#1ca1c7, #08c0ef);
+  --file-tree-git-renamed: light-dark(#d5a910, #ffd452);
+  --file-tree-git-untracked: light-dark(#16a994, #00cab1);
 }
 
 .dark {
@@ -1115,7 +1147,15 @@
   --ui-view-title-height: calc(var(--spacing) * 11);
   --ui-view-title-padding-x: calc(var(--spacing) * 2);
   --ui-scrollbar-size: calc(var(--spacing) * 2);
+  --viewer-active-line: color-mix(in oklch, var(--foreground) 3%, transparent);
+  --viewer-search-match: color-mix(in oklch, var(--warning) 30%, transparent);
+  --viewer-search-match-selected: color-mix(in oklch, var(--warning) 70%, transparent);
+  --viewer-selection-match: color-mix(in oklch, var(--primary) 16%, transparent);
   --terminal-cursor-accent: var(--terminal-background);
+  --file-tree-hover: var(--muted);
+  --file-tree-selected: var(--sidebar-active, var(--accent));
+  --file-tree-focus-ring: var(--ring);
+  --file-tree-radius: var(--ui-radius-md);
 }
 
 :root.dark,
@@ -1204,7 +1244,15 @@
   --ui-view-title-height: calc(var(--spacing) * 11);
   --ui-view-title-padding-x: calc(var(--spacing) * 2);
   --ui-scrollbar-size: calc(var(--spacing) * 2);
+  --viewer-active-line: color-mix(in oklch, var(--foreground) 3%, transparent);
+  --viewer-search-match: color-mix(in oklch, var(--warning) 30%, transparent);
+  --viewer-search-match-selected: color-mix(in oklch, var(--warning) 70%, transparent);
+  --viewer-selection-match: color-mix(in oklch, var(--primary) 16%, transparent);
   --terminal-cursor-accent: var(--terminal-background);
+  --file-tree-hover: var(--muted);
+  --file-tree-selected: var(--sidebar-active, var(--accent));
+  --file-tree-focus-ring: var(--ring);
+  --file-tree-radius: var(--ui-radius-md);
 }
 
 [data-token-mode="light"] {
