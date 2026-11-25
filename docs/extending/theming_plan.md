@@ -119,6 +119,43 @@ Paths are relative to the omnigent repo root unless they start with `my-extensio
   - Palette blocks are generated as today.
 - Extension colours (`contributes.colors`) register at runtime as `--x-<publisher>-<name>-<id>`.
 
+### Naming (decided after M2)
+
+- The public token names stay as they are: the registry id is the CSS variable name.
+  The palette colours keep shadcn's names (`background`, `primary`, `sidebar-*`), which
+  `components/ui/*`, Tailwind's `@theme` and upstream already use; host tokens added by
+  this plan take the `ui-` prefix (as `ui-font-family` and `ui-shadow-neutral-rgb`
+  already did upstream). No `--omni-*` rename: VS Code's `--vscode-*` exists because
+  its webviews receive the workbench colours under a separate namespace, while here
+  the names are the host's own variables, and the collision risk is confined by the two
+  rules below.
+- Namespaces never overlap: extension tokens are `--x-<publisher>-<name>-<id>`, so no
+  host token may start with `x-`. Themes address tokens by id (and by the VS Code
+  aliases, decision 4); plugins read them through `getThemeToken(id)` or `var(--id)`.
+- `@property` registrations are document-global and cannot be scoped, so only
+  standalone registers tokens. The embed build drops the token `@property` rules and
+  their Tailwind no-`@property` fallbacks (`vite.embed.config.ts`), so a host page's
+  own `--ui-*` variables stay untyped. There the registered tokens compute to their
+  `calc()` text (`calc(.5rem * .5)` rather than `4px`), which renders identically: the
+  embed dump differs from standalone in text only, and the harness checks that a host
+  element's `--ui-elevation: high` reads `high`.
+- Registered syntaxes take every plausible value, because a value outside the syntax
+  silently computes to the parent's or the initial value: radii are
+  `<length-percentage>`, every shadow alpha is kind `alpha` with
+  `<number> | <percentage>`. `ui-elevation` stays a `<number>`: `calc()` cannot multiply
+  two percentages, so a percentage elevation would invalidate the percentage alphas. Its
+  initial value is 1, so an invalid elevation on the top root keeps full shadows (below
+  it, the parent's value inherits). M6's `validate.ts` rejects such values with a
+  warning before they reach CSS; raw CSS from extensions gets the fallbacks above. The
+  harness probes which values each registration takes.
+- Derived tokens resolve where they are declared: on `:root`, `.dark` and the theme
+  roots (the top root and its direct child). Overriding a base (`ui-radius-base`,
+  `ui-elevation`, a palette colour) on an element below the theme roots does not
+  recompute the tokens derived from it there; those inherit already computed. Nested
+  theme roots deeper than one level are not supported. M6 (runtime theme CSS) and M9
+  (variants) must write bases on the theme roots, or re-emit the derived formulas on
+  any new scope they add.
+
 ### Token groups
 
 Defaults must match today exactly.

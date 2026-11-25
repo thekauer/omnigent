@@ -47,7 +47,7 @@ function defaultRules() {
 function propertyRules() {
   return DEFAULT_TOKENS.filter((token) => token.syntax).map(
     (token) =>
-      `@property --${token.id} {\n  syntax: "${token.syntax}";\n  inherits: true;\n  initial-value: ${SYNTAX_INITIAL_VALUES[token.syntax]};\n}`,
+      `@property --${token.id} {\n  syntax: "${token.syntax}";\n  inherits: true;\n  initial-value: ${token.initial ?? SYNTAX_INITIAL_VALUES[token.syntax]};\n}`,
   );
 }
 

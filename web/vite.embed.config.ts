@@ -29,9 +29,20 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import postcss from "postcss";
 import { defineConfig, transformWithOxc, type Plugin } from "vite";
+import { DEFAULT_TOKENS } from "./src/theme/tokens/registry.ts";
 import { workerBuildOptions } from "./vite.workerExports";
 
 const SCOPE = ".omnigent-app";
+
+// The theme tokens standalone registers with `@property` (see `TokenSyntax`). A
+// registration is document-global and cannot be scoped: in the embed it would
+// retype the host page's own `--ui-*` variables (`--ui-elevation: high` on a host
+// element would read 0). The embed drops them; its tokens stay unregistered and
+// compute to their `calc()` text, which renders identically. Tailwind's own
+// `--tw-*` registrations are unaffected.
+const REGISTERED_TOKEN_PROPERTIES = new Set(
+  DEFAULT_TOKENS.filter((token) => token.syntax).map((token) => `--${token.id}`),
+);
 
 /** Split a selector list on top-level commas (ignoring commas inside () or []). */
 function splitTopLevel(selectorList: string): string[] {
@@ -75,7 +86,18 @@ const scopePlugin = (): postcss.Plugin => ({
   // ordering; dropping them makes the embed compete on specificity, which it
   // wins (`.omnigent-app .util` ≥ host's typical element selectors).
   AtRule(atRule) {
+    if (atRule.name === "property") {
+      if (REGISTERED_TOKEN_PROPERTIES.has(atRule.params.trim())) atRule.remove();
+      return;
+    }
     if (atRule.name !== "layer") return;
+    // Tailwind's `@property` fallback for browsers without it sets each registered
+    // property's initial value on the root; the dropped token registrations go too.
+    if (atRule.params === "properties") {
+      atRule.walkDecls((declaration) => {
+        if (REGISTERED_TOKEN_PROPERTIES.has(declaration.prop)) declaration.remove();
+      });
+    }
     // Statement form `@layer a, b, c;` (no body) — just delete the declaration.
     if (!atRule.nodes) {
       atRule.remove();

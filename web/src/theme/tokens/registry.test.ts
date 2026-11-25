@@ -187,6 +187,33 @@ describe("theme token registry", () => {
     );
   });
 
+  // A value outside a registered token's syntax computes to the parent's value or the
+  // initial one, so each syntax must take every plausible theme value. (jsdom has no
+  // `@property`; the theming harness checks the browser's reading of these values.)
+  it("registers radii as lengths or percentages and every shadow alpha alike", () => {
+    const registered = DEFAULT_TOKENS.filter((token) => token.syntax);
+    const radii = registered.filter((token) => token.group === "shape");
+    expect(radii.length).toBeGreaterThan(0);
+    expect(new Set(radii.map((token) => token.syntax))).toEqual(new Set(["<length-percentage>"]));
+    const alphas = DEFAULT_TOKENS.filter((token) => /^ui-shadow-.*-alpha$/.test(token.id));
+    expect(alphas.map((token) => token.id)).toEqual(
+      expect.arrayContaining([
+        "ui-shadow-xs-alpha",
+        "ui-shadow-composer-alpha",
+        "ui-shadow-onboarding-alpha",
+      ]),
+    );
+    expect(new Set(alphas.map((token) => `${token.kind} ${token.syntax}`))).toEqual(
+      new Set(["alpha <number> | <percentage>"]),
+    );
+    // Elevation multiplies percentage alphas, so it is a number; an invalid value on
+    // the top root falls back to full shadows, not none.
+    const elevation = getToken("ui-elevation");
+    expect([elevation?.syntax, elevation?.initial]).toEqual(["<number>", "1"]);
+    const css = readFileSync(resolve(WEB_ROOT, "src/themeTokens.generated.css"), "utf8");
+    expect(css).toMatch(/@property --ui-elevation \{[^}]*initial-value: 1;/);
+  });
+
   it("re-emits derived tokens on the theme roots, light formulas included on dark ones", () => {
     const dark = generatedRule(":root.dark, :root > .dark");
     const light = generatedRule(":root:not(.dark)[data-theme], :root > :not(.dark)[data-theme]");

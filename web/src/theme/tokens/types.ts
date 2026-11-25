@@ -4,8 +4,9 @@
 
 /**
  * What a token's value is. `image` accepts any `background-image` value, colours
- * included; `channels` is an `R G B` triple for `rgb(var(--x) / alpha)`; `font` a
- * font-family list; `shadow` a `box-shadow` list; `keyword` a single CSS keyword.
+ * included; `channels` is an `R G B` triple for `rgb(var(--x) / alpha)`; `alpha` an
+ * opacity, a number from 0 to 1 or a percentage; `font` a font-family list; `shadow`
+ * a `box-shadow` list; `keyword` a single CSS keyword.
  */
 export type TokenKind =
   | "color"
@@ -14,6 +15,7 @@ export type TokenKind =
   | "length"
   | "number"
   | "percentage"
+  | "alpha"
   | "font"
   | "shadow"
   | "keyword";
@@ -25,8 +27,17 @@ export type TokenGroup = "workbench" | "status" | "chart" | "shape" | "typograph
  * An `@property` syntax for a token registered with the browser. A registered token
  * computes to a plain value (`calc(0.5rem * 0.75)` reads `6px`), so tokens that
  * alias it read the same value they had as literals.
+ *
+ * A value outside the syntax is invalid at computed-value time: the token then
+ * inherits its parent's value, or takes its initial value on the top root. So each
+ * syntax accepts every value a theme may plausibly write for the token: radii take
+ * lengths and percentages, alphas numbers and percentages.
+ *
+ * The embed build drops these registrations (`vite.embed.config.ts`), since
+ * `@property` names are global and would reach the host page; there the tokens stay
+ * unregistered and compute to their (identically rendering) `calc()` text.
  */
-export type TokenSyntax = "<length>" | "<number>" | "<percentage>";
+export type TokenSyntax = "<length-percentage>" | "<number>" | "<number> | <percentage>";
 
 /**
  * Per-mode defaults, as written into the generated stylesheet.
@@ -57,13 +68,19 @@ export interface TokenDef {
   default?: TokenDefaults;
   /** Registers the token with `@property`; see `TokenSyntax`. */
   syntax?: TokenSyntax;
+  /**
+   * The `@property` initial value, when not the syntax's zero
+   * (`SYNTAX_INITIAL_VALUES`). A registered token takes it outside every theme root,
+   * and on the top root when its value there is invalid.
+   */
+  initial?: string;
 }
 
-/** The `@property` initial value per syntax: only used outside every theme root. */
+/** The `@property` initial value per syntax, unless the token sets `initial`. */
 export const SYNTAX_INITIAL_VALUES: Readonly<Record<TokenSyntax, string>> = {
-  "<length>": "0px",
+  "<length-percentage>": "0px",
   "<number>": "0",
-  "<percentage>": "0%",
+  "<number> | <percentage>": "0",
 };
 
 /** Whether a token value references another token, so it resolves where it is declared. */

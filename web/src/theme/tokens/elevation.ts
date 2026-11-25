@@ -8,6 +8,11 @@ import { defineTokens, type TokenInput } from "./types.ts";
 
 const NEUTRAL = "var(--ui-shadow-neutral-rgb)";
 
+// Every shadow alpha takes a number or a percentage, the two forms `rgb()` accepts,
+// so a theme may write either. Each keeps the form of the literal it replaced
+// (0.08, 12%), so it computes to the same value.
+const ALPHA_SYNTAX = "<number> | <percentage>";
+
 /** A recipe's elevation-scaled alpha and the recipe reading it. */
 function recipe(
   name: string,
@@ -19,8 +24,8 @@ function recipe(
   return [
     {
       id: alphaId,
-      kind: "number",
-      syntax: "<number>",
+      kind: "alpha",
+      syntax: ALPHA_SYNTAX,
       description: `Alpha of ui-shadow-${name}, scaled by ui-elevation.`,
       default: { light: `calc(${alpha} * var(--ui-elevation))` },
     },
@@ -38,11 +43,18 @@ function recipe(
 // One raised-surface recipe at every size: the drop is ~0.3x the blur and the spread
 // ~-0.4x it, so each shadow gathers under the element's bottom center.
 export const ELEVATION_TOKENS = defineTokens("elevation", [
+  // A number only: `calc()` cannot multiply two percentages, so a percentage
+  // elevation would invalidate the percentage alphas (composer-shadow's 12%). An
+  // invalid value (`50%`, `high`) on the top root falls back to the initial 1, full
+  // shadows, and below it to the parent's value; it never silently flattens the UI.
+  // The theme API's validation (theming plan M6) rejects it with a warning first.
   {
     id: "ui-elevation",
     kind: "number",
     syntax: "<number>",
-    description: "Shadow strength, 0 to 1. Every shadow's alpha is multiplied by it.",
+    initial: "1",
+    description:
+      "Shadow strength, a number from 0 to 1 (not a percentage). Every shadow's alpha is multiplied by it.",
     default: { light: "1" },
   },
   {
@@ -78,8 +90,8 @@ export const ELEVATION_TOKENS = defineTokens("elevation", [
   ...recipe("inner", 0.05, ["inset 0 2px 4px 0"], "Inset shadow, `shadow-inner`."),
   {
     id: "ui-shadow-composer-alpha",
-    kind: "percentage",
-    syntax: "<percentage>",
+    kind: "alpha",
+    syntax: ALPHA_SYNTAX,
     description: "Alpha of composer-shadow, scaled by ui-elevation.",
     default: {
       light: "calc(12% * var(--ui-elevation))",
@@ -95,8 +107,8 @@ export const ELEVATION_TOKENS = defineTokens("elevation", [
   },
   {
     id: "ui-shadow-onboarding-alpha",
-    kind: "number",
-    syntax: "<number>",
+    kind: "alpha",
+    syntax: ALPHA_SYNTAX,
     description: "Alpha of ui-shadow-onboarding, scaled by ui-elevation.",
     default: {
       light: "calc(18 / 255 * var(--ui-elevation))",

@@ -5,7 +5,7 @@ import { useTheme } from "next-themes";
 import { useResolvedThemeMode } from "./components/theme/useResolvedThemeMode";
 import { MemoryRouter } from "react-router-dom";
 import { transform } from "lightningcss";
-import { parse, type Rule } from "postcss";
+import { parse, type AtRule, type Rule } from "postcss";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { scopeCss } from "../vite.embed.config";
 import { OmnigentApp } from "./embed";
@@ -265,4 +265,38 @@ describe("mobile app embed target scope", () => {
       expect(document.documentElement).not.toHaveAttribute("data-mobile-app");
     },
   );
+});
+
+describe("embed token registrations", () => {
+  // `@property` is document-global: registering the theme tokens from the embed would
+  // retype the host page's own variables of the same names.
+  it("drops the theme tokens' @property rules and keeps other registrations", () => {
+    const generated = readFileSync("src/themeTokens.generated.css", "utf8");
+    const registered = [...generated.matchAll(/@property (--[\w-]+)/g)].map((match) => match[1]);
+    expect(registered).toContain("--ui-elevation");
+    expect(registered).toContain("--ui-radius-sm");
+    const scoped = parse(
+      scopeCss(
+        `@layer properties { @supports (not (x: y)) { :root { --ui-elevation: 1; --tw-shadow: 0 0 #0000; } } }\n` +
+          `${generated}\n@property --tw-shadow { syntax: "*"; inherits: false; }`,
+      ),
+    );
+    const kept: string[] = [];
+    scoped.walkAtRules("property", (rule) => {
+      kept.push(rule.params);
+    });
+    expect(kept).toEqual(["--tw-shadow"]);
+    // The token declarations themselves stay, scoped onto the embed root.
+    let elevation = "";
+    scoped.walkDecls("--ui-elevation", (declaration) => {
+      elevation ||= `${(declaration.parent as Rule).selector} ${declaration.value}`;
+    });
+    expect(elevation).toBe(".omnigent-app 1");
+    // Tailwind's no-`@property` fallback keeps its own initial values only.
+    const fallback = scoped.first as AtRule;
+    expect([fallback.name, fallback.toString()]).toEqual([
+      "supports",
+      "@supports (not (x: y)) { .omnigent-app { --tw-shadow: 0 0 #0000; } }",
+    ]);
+  });
 });
