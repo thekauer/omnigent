@@ -159,7 +159,11 @@ import { McpRegistryConnections } from "@/components/McpRegistry";
 import { ThemeColorPicker } from "@/components/theme/ThemeColorPicker";
 import { CardRadioGroup } from "@/components/theme/CardRadioGroup";
 import { IconSegmentedControl } from "@/components/theme/IconSegmentedControl";
-import { PaletteChip, PaletteSwatchPreview } from "@/components/theme/AppearancePreviews";
+import {
+  PaletteChip,
+  PaletteSwatchPreview,
+  UnavailableMarker,
+} from "@/components/theme/AppearancePreviews";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
@@ -368,7 +372,7 @@ import {
   HIDDEN_PICKER_AGENTS_STORAGE_KEY,
   notifyHiddenPickerAgentsChanged,
 } from "@/lib/pickerEntryVisibility";
-import { isThemeSelection, PALETTES } from "@/lib/themePalette";
+import { isThemeSelection, type PaletteSwatch, PALETTES } from "@/lib/themePalette";
 import {
   commitThemePalette,
   reloadThemePalette,
@@ -379,6 +383,7 @@ import {
   type CustomizationProblem,
   type ThemeListEntry,
   themeService,
+  useThemeCustomizationsHidden,
   useThemeForcedMode,
   useThemePickerHidden,
 } from "@/theme/themeService";
@@ -916,6 +921,7 @@ function ColorThemeControl() {
   const choice = useThemeChoice();
   const entries = useThemeEntries();
   const pickerHidden = useThemePickerHidden();
+  const customizationsHidden = useThemeCustomizationsHidden();
   const [customTheme, setCustomTheme] = useState<CustomTheme>(() => readCustomTheme());
   const current = entries.find((entry) => entry.id === choice);
   // A built-in palette (or Custom) is chosen: its colours are editable as a Custom theme.
@@ -964,92 +970,116 @@ function ColorThemeControl() {
         : current?.description;
   const groups = groupThemeEntries(entries);
   const itemSwatch = (entry: ThemeListEntry) => entrySwatch(entry, isDark, customSwatches);
+  const unavailable = current !== undefined && !current.available;
+  const chip = (entry: ThemeListEntry | undefined, shown: PaletteSwatch) =>
+    entry && !entry.available ? (
+      <UnavailableMarker>
+        <PaletteChip swatch={shown} />
+      </UnavailableMarker>
+    ) : (
+      <PaletteChip swatch={shown} />
+    );
 
-  if (pickerHidden) return null;
+  // A product may hide the picker (the theme stays its choice) and, separately, the
+  // theme's options and the Advanced customizations.
+  if (pickerHidden && customizationsHidden) return null;
   return (
     <SettingsItem entry={COLOR_THEME_ENTRY}>
       <ThemeSubsection
         labelId={settingsLabelId(COLOR_THEME_ENTRY)}
         descriptionId={settingsDescriptionId(COLOR_THEME_ENTRY)}
         title="Color theme"
-        helper="Choose a preset, then tune it across light and dark mode."
+        helper={
+          pickerHidden
+            ? "Tune the theme's options and colors."
+            : "Choose a preset, then tune it across light and dark mode."
+        }
       >
         <div
           data-testid="color-theme-editor"
           className="overflow-hidden rounded-xl border bg-transparent"
         >
-          <div className="flex flex-col gap-3 border-b bg-muted/30 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex min-w-0 items-center gap-3">
-              <div className="w-28 shrink-0 overflow-hidden rounded-lg shadow-sm">
-                <PaletteSwatchPreview swatch={swatch} />
-              </div>
-              <SettingsLabel
-                label="Theme palette"
-                description={description}
-                descriptionClassName="truncate"
-              />
-            </div>
-            <Select
-              value={choice}
-              onValueChange={(next) => {
-                if (entries.some((entry) => entry.id === next && entry.available)) choose(next);
-              }}
-              componentId="settings.appearance.color_theme"
-              valueHasNoPii
-            >
-              <SelectTrigger
-                {...settingsControlProps(COLOR_THEME_ENTRY)}
-                data-testid="color-theme-select"
-                className="w-full gap-2 sm:w-48"
-              >
-                <SelectValue>
-                  <PaletteChip swatch={swatch} />
-                  <span className="truncate">{current?.label ?? "Omnigent"}</span>
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent {...settingsOverlayProps(COLOR_THEME_ENTRY)}>
-                {groups.map((group) =>
-                  group.builtIn ? (
-                    group.entries.map((entry) => (
-                      <SelectItem
-                        key={entry.id}
-                        value={entry.id}
-                        data-testid={`palette-${entry.id}`}
-                      >
-                        <PaletteChip swatch={itemSwatch(entry)} />
-                        <span>{entry.label}</span>
-                      </SelectItem>
-                    ))
+          {!pickerHidden && (
+            <div className="flex flex-col gap-3 border-b bg-muted/30 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="w-28 shrink-0 overflow-hidden rounded-lg shadow-sm">
+                  {unavailable ? (
+                    <UnavailableMarker size="preview">
+                      <PaletteSwatchPreview swatch={swatch} />
+                    </UnavailableMarker>
                   ) : (
-                    <SelectGroup key={group.extensionId}>
-                      <SelectLabel>{group.label}</SelectLabel>
-                      {group.entries.map((entry) => (
+                    <PaletteSwatchPreview swatch={swatch} />
+                  )}
+                </div>
+                <SettingsLabel
+                  label="Current theme"
+                  description={description}
+                  // The Unavailable explanation wraps: it says why the default shows.
+                  descriptionClassName={unavailable ? undefined : "truncate"}
+                />
+              </div>
+              <Select
+                value={choice}
+                onValueChange={(next) => {
+                  if (entries.some((entry) => entry.id === next && entry.available)) choose(next);
+                }}
+                componentId="settings.appearance.color_theme"
+                valueHasNoPii
+              >
+                <SelectTrigger
+                  {...settingsControlProps(COLOR_THEME_ENTRY)}
+                  data-testid="color-theme-select"
+                  className="w-full shrink-0 gap-2 sm:w-60"
+                >
+                  <SelectValue>
+                    {chip(current, swatch)}
+                    <span className="truncate">{current?.label ?? "Omnigent"}</span>
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent {...settingsOverlayProps(COLOR_THEME_ENTRY)}>
+                  {groups.map((group) =>
+                    group.builtIn ? (
+                      group.entries.map((entry) => (
                         <SelectItem
-                          {...settingsRuntimeChoiceProps(COLOR_THEME_ENTRY, "")}
                           key={entry.id}
                           value={entry.id}
-                          disabled={!entry.available}
-                          data-testid={`theme-${entry.id}`}
+                          data-testid={`palette-${entry.id}`}
                         >
                           <PaletteChip swatch={itemSwatch(entry)} />
                           <span>{entry.label}</span>
-                          {(!entry.available || entry.forcedMode) && (
-                            <span className="text-muted-foreground text-xs">
-                              {entry.available ? forcedModeLabel(entry) : UNAVAILABLE_LABEL}
-                            </span>
-                          )}
                         </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  ),
-                )}
-              </SelectContent>
-            </Select>
-          </div>
+                      ))
+                    ) : (
+                      <SelectGroup key={group.extensionId}>
+                        <SelectLabel>{group.label}</SelectLabel>
+                        {group.entries.map((entry) => (
+                          <SelectItem
+                            {...settingsRuntimeChoiceProps(COLOR_THEME_ENTRY, "")}
+                            key={entry.id}
+                            value={entry.id}
+                            disabled={!entry.available}
+                            data-testid={`theme-${entry.id}`}
+                          >
+                            {chip(entry, itemSwatch(entry))}
+                            <span>{entry.label}</span>
+                            {(!entry.available || entry.forcedMode) && (
+                              <span className="text-muted-foreground text-xs">
+                                {entry.available ? forcedModeLabel(entry) : UNAVAILABLE_LABEL}
+                              </span>
+                            )}
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    ),
+                  )}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
-          <ThemeOptionsControl />
+          {!customizationsHidden && <ThemeOptionsControl />}
 
-          {palette !== null && (
+          {palette !== null && !pickerHidden && (
             <div className="border-b border-border/70 px-4">
               <SettingsOwner entry={COLOR_THEME_ENTRY} part="accent">
                 <ThemeColorPicker
@@ -1116,7 +1146,7 @@ function ColorThemeControl() {
             </div>
           )}
 
-          <ColorCustomizationsControl />
+          {!customizationsHidden && <ColorCustomizationsControl />}
         </div>
       </ThemeSubsection>
     </SettingsItem>
@@ -1162,7 +1192,7 @@ function ThemeOptionsControl() {
       <SettingsEntryLabel entry={THEME_OPTIONS_ENTRY} className="py-1" />
       {options.map((option) => (
         <div key={option.id} className="flex items-center justify-between gap-4 py-2">
-          <span aria-hidden="true" className="text-sm">
+          <span aria-hidden="true" className="min-w-0 flex-1 truncate text-sm">
             {option.label}
           </span>
           <Select
@@ -1174,7 +1204,7 @@ function ThemeOptionsControl() {
             <SelectTrigger
               {...settingsControlProps(THEME_OPTIONS_ENTRY, "option", { runtime: option.label })}
               data-testid={`theme-option-${option.id}`}
-              className="w-full sm:w-48"
+              className="w-40 shrink-0 sm:w-60"
             >
               <SelectValue />
             </SelectTrigger>
@@ -1205,12 +1235,20 @@ function useThemeServiceVersion(): number {
   );
 }
 
+/** The Advanced editor's cap (the theme service's), checked before any parse. */
+const MAX_CUSTOMIZATIONS_LENGTH = 65_536;
+/** How long typing pauses before the Advanced editor checks the text. */
+const CUSTOMIZATIONS_CHECK_DELAY_MS = 250;
+
 /** Advanced: colour customizations as JSON, global and per theme, checked as typed. */
 function ColorCustomizationsControl() {
   const [open, setOpen] = useState(false);
   const [text, setText] = useState("");
   const [problems, setProblems] = useState<CustomizationProblem[]>([]);
   const [saved, setSaved] = useState(false);
+  const pendingCheck = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(pendingCheck.current), []);
+  const errors = problems.filter((problem) => problem.severity !== "warning");
   const toggle = () => {
     if (!open) {
       setText(themeService.getCustomizationsText());
@@ -1219,10 +1257,23 @@ function ColorCustomizationsControl() {
     }
     setOpen(!open);
   };
+  // Checked once typing pauses; an oversized text fails at once, without parsing it.
+  const scheduleCheck = (next: string) => {
+    clearTimeout(pendingCheck.current);
+    if (next.length > MAX_CUSTOMIZATIONS_LENGTH) {
+      setProblems([{ key: "", message: `longer than ${MAX_CUSTOMIZATIONS_LENGTH} characters` }]);
+      return;
+    }
+    pendingCheck.current = setTimeout(
+      () => setProblems(themeService.checkCustomizations(next)),
+      CUSTOMIZATIONS_CHECK_DELAY_MS,
+    );
+  };
   const apply = () => {
+    clearTimeout(pendingCheck.current);
     const found = themeService.setCustomizations(text);
     setProblems(found);
-    setSaved(found.length === 0);
+    setSaved(found.every((problem) => problem.severity === "warning"));
   };
   return (
     <SettingsItem entry={COLOR_CUSTOMIZATIONS_ENTRY} className="px-4 py-4">
@@ -1250,12 +1301,12 @@ function ColorCustomizationsControl() {
             value={text}
             spellCheck={false}
             rows={8}
-            aria-invalid={problems.length > 0 || undefined}
-            aria-errormessage={problems.length > 0 ? "color-customizations-errors" : undefined}
+            aria-invalid={errors.length > 0 || undefined}
+            aria-errormessage={errors.length > 0 ? "color-customizations-errors" : undefined}
             onChange={(event) => {
               setText(event.target.value);
               setSaved(false);
-              setProblems(themeService.checkCustomizations(event.target.value));
+              scheduleCheck(event.target.value);
             }}
             className="font-mono text-xs"
           />
@@ -1263,10 +1314,16 @@ function ColorCustomizationsControl() {
             <ul
               id="color-customizations-errors"
               data-testid="color-customizations-errors"
-              className="text-destructive text-xs"
+              className="text-xs"
             >
               {problems.slice(0, 20).map((problem) => (
-                <li key={`${problem.key}:${problem.message}`}>
+                <li
+                  key={`${problem.key}:${problem.message}`}
+                  data-severity={problem.severity ?? "error"}
+                  className={
+                    problem.severity === "warning" ? "text-muted-foreground" : "text-destructive"
+                  }
+                >
                   {problem.key ? `${problem.key}: ` : ""}
                   {problem.message}
                 </li>
@@ -1277,7 +1334,7 @@ function ColorCustomizationsControl() {
             <Button
               {...settingsControlProps(COLOR_CUSTOMIZATIONS_ENTRY, "apply")}
               size="sm"
-              disabled={problems.length > 0}
+              disabled={errors.length > 0}
               onClick={apply}
               data-testid="color-customizations-apply"
               componentId="settings.appearance.color_customizations_apply"

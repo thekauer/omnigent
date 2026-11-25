@@ -1,3 +1,7 @@
+import { TriangleAlertIcon } from "lucide-react";
+import type { ReactNode } from "react";
+
+import { cn } from "@/lib/utils";
 import { DARK_MODE_PREVIEW, LIGHT_MODE_PREVIEW, type PaletteSwatch } from "@/lib/themePalette";
 import type { ThemeMode } from "./themeMode";
 
@@ -69,5 +73,35 @@ export function PaletteSwatchPreview({ swatch }: { swatch: PaletteSwatch }) {
         <div className="mt-auto h-2.5 w-2/5 rounded" style={{ backgroundColor: swatch.accent }} />
       </div>
     </div>
+  );
+}
+
+/**
+ * Marks a chip or swatch preview of a theme that isn't installed: it shows the default
+ * that applies meanwhile, with this badge on its corner.
+ */
+export function UnavailableMarker({
+  children,
+  size = "chip",
+}: {
+  children: ReactNode;
+  size?: "chip" | "preview";
+}) {
+  return (
+    <span
+      data-testid="theme-unavailable-marker"
+      className={cn("relative inline-flex shrink-0", size === "preview" && "flex w-full")}
+    >
+      {children}
+      <span
+        aria-hidden
+        className={cn(
+          "absolute flex items-center justify-center rounded-full bg-background text-muted-foreground ring-1 ring-border",
+          size === "chip" ? "-right-1 -bottom-1 size-3" : "top-1 right-1 size-5",
+        )}
+      >
+        <TriangleAlertIcon className={size === "chip" ? "size-2" : "size-3"} />
+      </span>
+    </span>
   );
 }

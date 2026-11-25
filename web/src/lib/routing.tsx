@@ -38,6 +38,7 @@ import {
   type NavigateOptions,
   Outlet as RROutlet,
   type To,
+  useInRouterContext,
   useLocation as useRRLocation,
   useNavigate as useRRNavigate,
   useNavigationType as useRRNavigationType,
@@ -191,6 +192,13 @@ export function RoutingProvider({ value, children }: RoutingProviderProps) {
 /** The active implementation — provider value, or react-router-dom fallback. */
 function useRouting(): RoutingApi {
   return useContext(RoutingContext) ?? reactRouterRouting;
+}
+
+/** Whether a routing implementation is in reach: a provider's, or a react-router router. */
+export function useHasRouting(): boolean {
+  const provided = useContext(RoutingContext) !== null;
+  const inRouter = useInRouterContext();
+  return provided || inRouter;
 }
 
 export const useNavigate: typeof useRRNavigate = () => useRouting().useNavigate();

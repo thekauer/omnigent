@@ -134,7 +134,8 @@ export function namespacedFontFamily(extensionId: string, family: string): strin
 // eslint-disable-next-line no-control-regex
 const HIDDEN_CHARACTERS = /[\u0000-\u001f\u007f-\u009f\p{Cf}\p{Zl}\p{Zp}]/gu;
 
-function labelOf(value: unknown, max: number): string | undefined {
+/** A label as the host shows it: control, format and separator characters removed, capped. */
+export function labelOf(value: unknown, max: number): string | undefined {
   if (typeof value !== "string") return undefined;
   const clean = value.replace(HIDDEN_CHARACTERS, "").trim();
   return clean !== "" ? [...clean].slice(0, max).join("").trim() : undefined;

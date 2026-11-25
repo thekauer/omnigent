@@ -702,8 +702,15 @@ limitHit, message }`; a cancelled token aborts the request and rejects
       "Unavailable" (the choice kept, the default shown). The picker previews the
       highlighted theme live (`preview()`), and Escape reverts it. Under the
       picker, Settings shows the chosen theme's options and an Advanced editor
-      for colour customizations (JSON, global and `[<theme id>]`, checked with
-      inline errors); a single-mode theme locks the mode control ("Set by
+      for colour customizations (JSON, global and `[<theme id>]`, checked once
+      typing pauses, with inline errors). A `[<id>]` key applies to what is on
+      screen: a family's `[<extension id>/<family>]` in both modes, then the
+      member's own `[<extension id>/<member id>]` in its mode only (so
+      `[acme.x/paper]` holds in light mode); a built-in palette also takes its
+      palette id (`[nord]`), below `[omnigent.themes/nord]` and
+      `[omnigent.themes/nord-dark]`. An id that names no theme is an error; a
+      theme of an extension that isn't installed only a warning (kept, applied
+      once it is). A single-mode theme locks and dims the mode control ("Set by
       theme"). The built-in palettes are the `omnigent.themes` built-in
       extension (`builtinExtensions/builtInThemes.ts` generates its themes from
       `lib/themePalette.ts`); their files name `omnigent.palette`, which only a

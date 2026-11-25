@@ -2624,17 +2624,40 @@ describe("Color theme with contributed themes", () => {
     )!;
     expect(unavailable).toBeDisabled();
     expect(unavailable).toHaveTextContent("Unavailable");
-    expect(screen.getByText(/its extension isn't installed/)).toBeInTheDocument();
+    // The explanation wraps rather than truncates; the tile shows the default, marked.
+    expect(screen.getByText(/its extension isn't installed/)).not.toHaveClass("truncate");
+    expect(screen.getAllByTestId("theme-unavailable-marker").length).toBeGreaterThan(0);
     expect(screen.queryByTestId("theme-options")).toBeNull();
   });
 
-  it("hides the picker when the product does", () => {
-    act(() => themeService.setProductPolicy({ hidePicker: true }));
+  it("hides only the picker row when the product hides the picker", () => {
+    act(() => {
+      themeService.select(`${FIXTURE_EXTENSION_ID}/full-dark`);
+      themeService.setProductPolicy({ hidePicker: true });
+    });
     renderPage("/settings/appearance");
     expect(screen.queryByTestId("color-theme-select")).toBeNull();
+    // The theme's options and Advanced stay; the palette editor (which picks Custom) goes.
+    expect(screen.getByTestId("theme-options")).toBeInTheDocument();
+    expect(screen.getByTestId("color-customizations-toggle")).toBeInTheDocument();
+    act(() => themeService.select("nord"));
+    expect(screen.queryByTestId("custom-theme-accent")).toBeNull();
   });
 
-  it("edits the colour customizations as JSON under Advanced, with inline errors", () => {
+  it("hides the options and Advanced when the product hides customizations", () => {
+    act(() => {
+      themeService.select(`${FIXTURE_EXTENSION_ID}/full-dark`);
+      themeService.setProductPolicy({ hideCustomizations: true });
+    });
+    renderPage("/settings/appearance");
+    expect(screen.getByTestId("color-theme-select")).toBeInTheDocument();
+    expect(screen.queryByTestId("theme-options")).toBeNull();
+    expect(screen.queryByTestId("color-customizations-toggle")).toBeNull();
+    act(() => themeService.setProductPolicy({ hideCustomizations: true, hidePicker: true }));
+    expect(screen.queryByTestId("color-theme-editor")).toBeNull();
+  });
+
+  it("edits the colour customizations as JSON under Advanced, with inline errors", async () => {
     renderPage("/settings/appearance");
     expect(screen.queryByTestId("color-customizations-editor")).toBeNull();
     const toggle = screen.getByTestId("color-customizations-toggle");
@@ -2646,14 +2669,29 @@ describe("Color theme with contributed themes", () => {
     fireEvent.change(editor, {
       target: { value: '{"background": "url(x)", "[nord]": {"primary": "#123456"}}' },
     });
-    expect(screen.getByTestId("color-customizations-errors")).toHaveTextContent(
+    // Checked once typing pauses.
+    expect(screen.queryByTestId("color-customizations-errors")).toBeNull();
+    expect(await screen.findByTestId("color-customizations-errors")).toHaveTextContent(
       'background: "url(" is not allowed',
     );
     expect(screen.getByTestId("color-customizations-apply")).toBeDisabled();
+    // An unknown theme id is an error; a missing extension's theme only a warning.
+    fireEvent.change(editor, { target: { value: '{"[nrod]": {}, "[acme.gone/x]": {}}' } });
+    await waitFor(() =>
+      expect(screen.getByTestId("color-customizations-errors")).toHaveTextContent(
+        "[nrod]: no theme nrod",
+      ),
+    );
+    expect(screen.getByText(/acme\.gone\/x is installed/).closest("li")).toHaveAttribute(
+      "data-severity",
+      "warning",
+    );
+    fireEvent.change(editor, { target: { value: "x".repeat(70_000) } });
+    expect(screen.getByTestId("color-customizations-errors")).toHaveTextContent("longer than");
     fireEvent.change(editor, {
       target: { value: '{"background": "#101010", "[nord]": {"primary": "#123456"}}' },
     });
-    expect(screen.queryByTestId("color-customizations-errors")).toBeNull();
+    await waitFor(() => expect(screen.queryByTestId("color-customizations-errors")).toBeNull());
     fireEvent.click(screen.getByTestId("color-customizations-apply"));
     expect(JSON.parse(localStorage.getItem("omnigent:ui-color-customizations")!)).toEqual({
       background: "#101010",

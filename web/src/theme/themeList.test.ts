@@ -125,7 +125,10 @@ describe("the theme list", () => {
       builtIn: false,
       groupLabel: FIXTURE_EXTENSION_ID,
     });
-    expect(missing.swatches.dark?.bg).toBe("#0d1117");
+    // The default applies meanwhile, so the chip shows the default's colours.
+    const fallback = service.entries().find((entry) => entry.id === "omni")!;
+    expect(missing.swatches).toEqual(fallback.swatches);
+    expect(missing.swatches.dark?.bg).not.toBe("#0d1117");
     expect(service.getChoice()).toBe(DARK);
   });
 
@@ -301,5 +304,21 @@ describe("colour customizations", () => {
     ]) {
       expect(localStorage.getItem(key), key).toBeNull();
     }
+  });
+});
+
+describe("the theme list's family labels", () => {
+  it("takes the family label from whichever member declares it", () => {
+    const base = fixtureThemeExtension();
+    const themes = base.contributions.themes.map((theme) =>
+      theme.uiTheme === "light" && theme.family
+        ? { ...theme, familyLabel: "Fixture Family" }
+        : theme,
+    );
+    const familyService = new ThemeService();
+    familyService.addExtension({ ...base, contributions: { ...base.contributions, themes } });
+    expect(familyService.entries().find((entry) => entry.members.dark === DARK)?.label).toBe(
+      "Fixture Family",
+    );
   });
 });

@@ -4,7 +4,8 @@
 // keeps it.
 
 import { useTheme } from "next-themes";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
+import { useHasRouting, useLocation } from "@/lib/routing";
 
 import { normalizeThemeMode, type ThemeMode } from "@/components/theme/themeMode";
 import { useResolvedThemeMode } from "@/components/theme/useResolvedThemeMode";
@@ -110,30 +111,45 @@ export function ThemePicker() {
     return undefined;
   };
 
+  const inRouter = useHasRouting();
   // Replaced by another dialog: unmount now, so the closing picker can't take its Escape.
   if (replaced) return null;
   return (
-    <QuickPickDialog<ThemePickerValue>
-      open={open}
-      onOpenChange={(nextOpen) => {
-        if (!nextOpen) closeThemePicker();
-      }}
-      onCancel={cancelPreviews}
-      // A clear backdrop shows the previewed palette across the whole app; the
-      // picker frosts what's behind it, as menus do, so translucent surfaces stay readable.
-      overlayClassName="bg-transparent supports-backdrop-filter:backdrop-blur-none"
-      contentClassName="supports-backdrop-filter:backdrop-blur-xl"
-      title="Select theme"
-      description="Use the arrow keys to preview a theme or appearance, press Enter to keep it, or Escape to go back."
-      label={onAppearancePage ? "Select appearance" : "Select theme"}
-      placeholder={onAppearancePage ? "Select appearance…" : "Select theme…"}
-      backLabel="Back to themes"
-      segments={[{ sourceId: "themes", ranking: "client", items }]}
-      {...pages.pickerProps}
-      onActiveRowShown={previewRow}
-      emptyMessage={onAppearancePage ? "No matching appearance" : "No matching themes"}
-      acceptLabel={onAppearancePage ? "Apply" : "Select"}
-      onAccept={handleAccept}
-    />
+    <>
+      {open && inRouter && <CloseOnNavigation />}
+      <QuickPickDialog<ThemePickerValue>
+        open={open}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) closeThemePicker();
+        }}
+        onCancel={cancelPreviews}
+        // A clear backdrop shows the previewed palette across the whole app; the
+        // picker frosts what's behind it, as menus do, so translucent surfaces stay readable.
+        overlayClassName="bg-transparent supports-backdrop-filter:backdrop-blur-none"
+        contentClassName="supports-backdrop-filter:backdrop-blur-xl"
+        title="Select theme"
+        description="Use the arrow keys to preview a theme or appearance, press Enter to keep it, or Escape to go back."
+        label={onAppearancePage ? "Select appearance" : "Select theme"}
+        placeholder={onAppearancePage ? "Select appearance…" : "Select theme…"}
+        backLabel="Back to themes"
+        segments={[{ sourceId: "themes", ranking: "client", items }]}
+        {...pages.pickerProps}
+        onActiveRowShown={previewRow}
+        emptyMessage={onAppearancePage ? "No matching appearance" : "No matching themes"}
+        acceptLabel={onAppearancePage ? "Apply" : "Select"}
+        onAccept={handleAccept}
+      />
+    </>
   );
+}
+
+/** Closes the open picker when the route changes; closing reverts its previews. */
+function CloseOnNavigation() {
+  const location = useLocation();
+  const path = `${location.pathname}${location.search}`;
+  const opened = useRef(path);
+  useEffect(() => {
+    if (path !== opened.current) closeThemePicker();
+  }, [path]);
+  return null;
 }

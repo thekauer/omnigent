@@ -1,5 +1,6 @@
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter, useNavigate } from "react-router-dom";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
@@ -143,6 +144,33 @@ describe("ThemePicker", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(dataTheme()).toBeNull();
     expect(readThemePalette()).toBe("omni");
+    expect(themeService.getChoice()).toBe("omni");
+  });
+
+  it("closes and reverts its preview when the route changes", async () => {
+    let navigate: (to: string) => void = () => {};
+    function Navigator() {
+      navigate = useNavigate();
+      return null;
+    }
+    render(
+      <MemoryRouter initialEntries={["/a"]}>
+        <ThemeProvider>
+          <TooltipProvider>
+            <Navigator />
+            <ThemePicker />
+          </TooltipProvider>
+        </ThemeProvider>
+      </MemoryRouter>,
+    );
+    act(() => openThemePicker());
+    const input = screen.getByRole("combobox", { name: "Select theme" });
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}{ArrowDown}");
+    expect(activeOption(input)).toHaveTextContent("GitHub");
+    await waitFor(() => expect(dataTheme()).toBe("github"));
+    act(() => navigate("/b"));
+    await waitFor(() => expect(useThemePickerStore.getState().open).toBe(false));
+    await waitFor(() => expect(dataTheme()).toBeNull());
     expect(themeService.getChoice()).toBe("omni");
   });
 

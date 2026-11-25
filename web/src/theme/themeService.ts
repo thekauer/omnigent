@@ -37,6 +37,7 @@ import {
 } from "./themeCss";
 import {
   extensionCssPrefix,
+  labelOf,
   type ColorContribution,
   type FontContribution,
   type ThemeContribution,
@@ -129,12 +130,17 @@ export interface ThemeListEntry {
 }
 
 /**
- * What a product allows (theming plan M10 fills it from `OmnigentAppProps.product.theme`):
- * the themes the list offers (by entry or member id) and whether the picker shows at all.
+ * What a product allows (theming plan M10 fills it from `OmnigentAppProps.product.theme`).
+ * `allowed`: the themes the list offers and {@link ThemeService.select} takes (by entry or
+ * member id; the chosen one always stays). `hidePicker`: no picker command and no picker
+ * row in Settings (nor the built-in palette editor, which chooses Custom); the chosen
+ * theme's options and the Advanced customizations stay. `hideCustomizations`: no theme
+ * options and no Advanced customizations in Settings.
  */
 export interface ThemeProductPolicy {
   readonly allowed?: readonly string[];
   readonly hidePicker?: boolean;
+  readonly hideCustomizations?: boolean;
 }
 
 /** A colour customizations problem, for Settings' inline errors. */
@@ -142,6 +148,15 @@ export interface CustomizationProblem {
   /** `background`, or `[acme.x/dark].primary`; empty for the whole value. */
   readonly key: string;
   readonly message: string;
+  /** A warning is shown but doesn't stop the customizations from being stored. */
+  readonly severity?: "warning";
+}
+
+/** The theme on screen, as the plugin read API reports it. */
+export interface AppliedTheme {
+  /** The member theme on screen (`omnigent.themes/<palette>-<mode>` for a built-in). */
+  readonly id: string;
+  readonly label: string;
 }
 
 export interface ActiveThemeOption {
@@ -170,6 +185,7 @@ interface ThemeCache {
   readonly label: string;
   readonly uiTheme: UiTheme;
   readonly family?: string;
+  readonly familyLabel?: string;
   readonly forcedMode?: UiTheme;
   readonly blocks: ThemeBlocks;
   readonly fonts: readonly CachedFont[];
@@ -306,19 +322,6 @@ function themeSwatch(
       own ?? resolve(fromTokens) ?? resolve(lookup(SWATCH_TOKENS[key][0]!)) ?? "transparent";
   }
   return swatch;
-}
-
-/** A cached theme's swatches, from its cached blocks (an unavailable theme's chip). */
-function cachedSwatches(cache: ThemeCache): Partial<Record<UiTheme, PaletteSwatch>> {
-  const out: Partial<Record<UiTheme, PaletteSwatch>> = {};
-  for (const mode of ["light", "dark"] as const) {
-    const values = cache.blocks[mode];
-    if (!values) continue;
-    const tokens = nullMap<{ value: string; references: readonly string[] }>();
-    for (const [id, value] of Object.entries(values)) tokens[id] = { value, references: [] };
-    out[mode] = themeSwatch({ tokens, swatch: undefined } as unknown as ParsedTheme, mode);
-  }
-  return out;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -467,7 +470,7 @@ export class ThemeService implements ThemeContributionSink {
       const cached = this.readCache();
       themes.push({
         id: choice,
-        label: cached?.id === choice ? cached.label : choice,
+        label: cached?.id === choice ? (cached.familyLabel ?? cached.label) : choice,
         uiTheme: cached?.id === choice ? cached.uiTheme : "dark",
         family: cached?.id === choice ? cached.family : undefined,
         extensionId: choice.slice(0, choice.indexOf("/")),
@@ -491,6 +494,9 @@ export class ThemeService implements ThemeContributionSink {
       throw new TypeError(`no theme ${JSON.stringify(String(requested).slice(0, 80))}`);
     }
     const id = requested === null ? null : this.selectionId(requested);
+    if (id !== null && !this.isAllowed(id)) {
+      throw new TypeError(`theme ${JSON.stringify(id.slice(0, 80))} is not allowed here`);
+    }
     this.previewing = undefined;
     if (id === null || isThemeSelection(id)) {
       const palette = id ?? DEFAULT_PALETTE;
@@ -515,7 +521,11 @@ export class ThemeService implements ThemeContributionSink {
       if (id !== null && !isContributedThemeId(id) && !isThemeSelection(id)) {
         throw new TypeError(`no theme ${JSON.stringify(String(id).slice(0, 80))}`);
       }
-      this.previewing = id === null ? DEFAULT_PALETTE : this.selectionId(id);
+      const next = id === null ? DEFAULT_PALETTE : this.selectionId(id);
+      if (!this.isAllowed(next)) {
+        throw new TypeError(`theme ${JSON.stringify(next.slice(0, 80))} is not allowed here`);
+      }
+      this.previewing = next;
     }
     this.refresh();
   }
@@ -523,6 +533,36 @@ export class ThemeService implements ThemeContributionSink {
   /** The chosen theme, as {@link ThemeListEntry.id} names it (the default palette's id when none). */
   getChoice(): string {
     return this.committedChoice() ?? DEFAULT_PALETTE;
+  }
+
+  /** Whether a picker's preview shows instead of the chosen theme. */
+  isPreviewing(): boolean {
+    return this.previewing !== undefined;
+  }
+
+  /**
+   * The theme that applies in `mode` for the chosen theme (previews aside): a family's
+   * member for that mode, a built-in palette's member theme, and the default's when the
+   * chosen theme's extension is missing (the default is what shows).
+   */
+  appliedTheme(mode: UiTheme): AppliedTheme {
+    const choice = this.getChoice();
+    if (isContributedThemeId(choice)) {
+      const found = this.find(choice);
+      if (found) {
+        const { theme, extension } = found;
+        const member = theme.family
+          ? (extension.contributions.themes.find(
+              (entry) => entry.family === theme.family && entry.uiTheme === mode,
+            ) ?? theme)
+          : theme;
+        return { id: member.fullId, label: member.label };
+      }
+    }
+    const palette = isThemeSelection(choice) ? choice : DEFAULT_PALETTE;
+    const builtIn = this.builtInMember(palette, mode);
+    if (builtIn) return { id: builtIn.theme.fullId, label: builtIn.theme.label };
+    return { id: palette, label: palette };
   }
 
   /** Reads the choice again after something else stored it (a settings import, a reset). */
@@ -553,6 +593,25 @@ export class ThemeService implements ThemeContributionSink {
    */
   entries(): ThemeListEntry[] {
     const choice = this.getChoice();
+    const entries = this.allEntries(choice);
+    const allowed = this.policy?.allowed;
+    if (!allowed) return entries;
+    return entries.filter(
+      (entry) =>
+        entryHas(entry, choice) || allowed.some((id) => entry.id === id || entryHas(entry, id)),
+    );
+  }
+
+  /** Whether the product allows `id` (a list id): its entry, or one of its members, is allowed. */
+  private isAllowed(id: string): boolean {
+    const allowed = this.policy?.allowed;
+    if (!allowed || id === this.getChoice() || allowed.includes(id)) return true;
+    const entry = this.allEntries(this.getChoice()).find((candidate) => entryHas(candidate, id));
+    return entry !== undefined && allowed.some((other) => entryHas(entry, other));
+  }
+
+  /** {@link entries}, before the product's `allowed`. */
+  private allEntries(choice: string): ThemeListEntry[] {
     const extensions = [...this.extensions.values()]
       .filter((extension) => extension.contributions.themes.length > 0)
       .sort((a, b) =>
@@ -599,7 +658,9 @@ export class ThemeService implements ThemeContributionSink {
         const ids = Object.values(members);
         entries.push({
           id: palette ?? (ids.includes(choice) ? choice : memberThemes[0]!.fullId),
-          label: theme.familyLabel ?? [...new Set(labels)].join(" / "),
+          label:
+            memberThemes.find((member) => member.familyLabel)?.familyLabel ??
+            [...new Set(labels)].join(" / "),
           description: memberThemes.find((member) => member.description)?.description,
           extensionId: extension.id,
           groupLabel: extension.label ?? extension.id,
@@ -617,9 +678,11 @@ export class ThemeService implements ThemeContributionSink {
       const known = cached?.id === choice ? cached : undefined;
       const extensionId = choice.slice(0, choice.indexOf("/"));
       const uiTheme = known?.uiTheme ?? "dark";
+      // The default applies meanwhile: its colours show, with an Unavailable marker.
+      const fallback = entries.find((entry) => entry.id === DEFAULT_PALETTE);
       entries.push({
         id: choice,
-        label: known?.label ?? choice,
+        label: known?.familyLabel ?? known?.label ?? choice,
         description: undefined,
         extensionId,
         groupLabel: extensionId,
@@ -628,15 +691,10 @@ export class ThemeService implements ThemeContributionSink {
         forcedMode: known?.forcedMode,
         available: false,
         custom: false,
-        swatches: known ? cachedSwatches(known) : {},
+        swatches: fallback?.swatches ?? {},
       });
     }
-    const allowed = this.policy?.allowed;
-    if (!allowed) return entries;
-    return entries.filter(
-      (entry) =>
-        entryHas(entry, choice) || allowed.some((id) => entry.id === id || entryHas(entry, id)),
-    );
+    return entries;
   }
 
   /** The user's style variant choices (`omnigent:ui-variants`), "Theme default" left out. */
@@ -674,6 +732,9 @@ export class ThemeService implements ThemeContributionSink {
    * values, and `[<theme id>]` objects of the same), without storing them.
    */
   checkCustomizations(text: string): CustomizationProblem[] {
+    if (text.length > CUSTOMIZATION_LIMITS.chars) {
+      return [{ key: "", message: `longer than ${CUSTOMIZATION_LIMITS.chars} characters` }];
+    }
     let raw: unknown;
     try {
       raw = JSON.parse(text);
@@ -693,7 +754,11 @@ export class ThemeService implements ThemeContributionSink {
           else if (!/^\[[^[\]]{1,200}\]$/.test(id))
             problems.push({ key, message: "a theme scope is [<theme id>]" });
           else if (!isRecord(value)) problems.push({ key, message: "must be an object of tokens" });
-          else check(value, `${id}.`);
+          else {
+            const unknown = this.scopeProblem(id.slice(1, -1));
+            if (unknown) problems.push({ key, ...unknown });
+            check(value, `${id}.`);
+          }
           continue;
         }
         const kind = getToken(id)?.kind ?? (context.isKnownToken(id) ? "color" : undefined);
@@ -709,14 +774,38 @@ export class ThemeService implements ThemeContributionSink {
     return problems;
   }
 
-  /** Stores colour customizations when they check out; returns the problems otherwise. */
+  /**
+   * Why `[<id>]` names no theme, or undefined when it does: a theme's id (a family's
+   * member or a single theme), a family's `<extension id>/<family>`, or a built-in
+   * palette's id. A theme of an extension that isn't installed is a warning: it is kept,
+   * and applies once the extension is.
+   */
+  private scopeProblem(id: string): Omit<CustomizationProblem, "key"> | undefined {
+    if (isThemeSelection(id)) return undefined;
+    const slash = id.indexOf("/");
+    const extension = slash > 0 ? this.extensions.get(id.slice(0, slash)) : undefined;
+    if (!extension) {
+      return isContributedThemeId(id)
+        ? { message: `no theme ${id} is installed; kept for when it is`, severity: "warning" }
+        : { message: `no theme ${id}` };
+    }
+    const local = id.slice(slash + 1);
+    const known = extension.contributions.themes.some(
+      (theme) => theme.fullId === id || theme.family === local,
+    );
+    return known
+      ? undefined
+      : { message: `${extension.label ?? extension.id} has no theme ${local}` };
+  }
+
+  /** Stores colour customizations unless they have errors; returns every problem found. */
   setCustomizations(text: string): CustomizationProblem[] {
     const problems = this.checkCustomizations(text);
-    if (problems.length > 0) return problems;
+    if (problems.some((problem) => problem.severity !== "warning")) return problems;
     const value = JSON.parse(text) as Record<string, unknown>;
     writeJson(COLOR_CUSTOMIZATIONS_STORAGE_KEY, Object.keys(value).length > 0 ? value : undefined);
     this.refresh();
-    return [];
+    return problems;
   }
 
   /** Settings' reset: the default theme, and no options, variants or customizations. */
@@ -872,6 +961,45 @@ export class ThemeService implements ThemeContributionSink {
     return extension && theme ? { theme, extension } : undefined;
   }
 
+  /** The built-in theme that applies `palette` in `mode` (its file names the palette). */
+  private builtInMember(
+    palette: string,
+    mode: UiTheme,
+  ): { theme: ThemeContribution; extension: ThemeExtension } | undefined {
+    for (const extension of this.extensions.values()) {
+      if (!extension.builtIn) continue;
+      for (const theme of extension.contributions.themes) {
+        if (theme.uiTheme !== mode) continue;
+        if (this.member(theme, extension)?.parsed.palette === palette) return { theme, extension };
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * The `[<id>]` scopes of the colour customizations that apply to `choice` in `mode`,
+   * lowest first: a family's `<extension id>/<family>`, then the member on screen in that
+   * mode (so `[acme.x/paper]` holds in light mode only). A built-in palette also takes its
+   * palette id, as before themes were extensions, below its family's.
+   */
+  private customizationScopes(choice: string, mode: UiTheme): string[] {
+    if (isThemeSelection(choice)) {
+      const member = this.builtInMember(choice, mode);
+      if (!member) return [choice];
+      const family = member.theme.family ? [`${member.extension.id}/${member.theme.family}`] : [];
+      return [...new Set([choice, ...family, member.theme.fullId])];
+    }
+    const found = this.find(choice);
+    if (!found) return [choice];
+    const { theme, extension } = found;
+    if (!theme.family) return [theme.fullId];
+    const member =
+      extension.contributions.themes.find(
+        (entry) => entry.family === theme.family && entry.uiTheme === mode,
+      ) ?? theme;
+    return [...new Set([`${extension.id}/${theme.family}`, member.fullId])];
+  }
+
   private warnOnce(key: string, message: string): void {
     if (this.warned.has(key)) return;
     this.warned.add(key);
@@ -958,8 +1086,8 @@ export class ThemeService implements ThemeContributionSink {
     return isRecord(stored) && isRecord(stored[key]) ? stored[key] : {};
   }
 
-  /** The colour customizations for `themeId`: global ones, then the `[themeId]` ones. */
-  private customizations(themeId: string, context: ValueContext): ThemeTokens {
+  /** The colour customizations: global ones, then those of each `[scope]` in order. */
+  private customizations(scopes: readonly string[], context: ValueContext): ThemeTokens {
     const tokens = nullMap<{ value: string; references: readonly string[] }>();
     const snapshot = snapshotPlainData(
       readJson(COLOR_CUSTOMIZATIONS_STORAGE_KEY) ?? null,
@@ -976,8 +1104,10 @@ export class ThemeService implements ThemeContributionSink {
       }
     };
     read(snapshot.value);
-    const scoped = snapshot.value[`[${themeId}]`];
-    if (isRecord(scoped)) read(scoped);
+    for (const scope of scopes) {
+      const scoped = snapshot.value[`[${scope}]`];
+      if (isRecord(scoped)) read(scoped);
+    }
     return tokens;
   }
 
@@ -1018,7 +1148,6 @@ export class ThemeService implements ThemeContributionSink {
       };
     });
     const context = this.valueContext(extension, []);
-    const custom = this.customizations(id, context);
     const blocks: { light?: Record<string, string>; dark?: Record<string, string> } = {};
     const probes: { light?: Record<string, string>; dark?: Record<string, string> } = {};
     const syntax: TokenSyntaxTheme[] = [];
@@ -1031,7 +1160,7 @@ export class ThemeService implements ThemeContributionSink {
         const choice = definition?.choices.find((entry) => entry.id === option.value);
         if (choice) layers.push(choice.tokens);
       }
-      layers.push(custom);
+      layers.push(this.customizations(this.customizationScopes(id, mode), context));
       for (const layer of layers) Object.assign(layered, layer);
       if (member.syntaxName && member.parsed.syntax) {
         syntax.push({
@@ -1156,13 +1285,18 @@ export class ThemeService implements ThemeContributionSink {
     const layers: ThemeBlocks[] = [defaults];
     if (resolution) layers.push(resolution.blocks);
     else if (choice === null || isThemeSelection(choice)) {
-      const custom = this.customizations(
-        choice ?? DEFAULT_PALETTE,
-        this.valueContext(undefined, []),
-      );
-      const values = nullMap<string>();
-      for (const [token, value] of Object.entries(custom)) values[token] = value.value;
-      if (Object.keys(values).length > 0) layers.push({ light: values, dark: values });
+      const context = this.valueContext(undefined, []);
+      const block: { light?: Record<string, string>; dark?: Record<string, string> } = {};
+      for (const mode of ["light", "dark"] as const) {
+        const custom = this.customizations(
+          this.customizationScopes(choice ?? DEFAULT_PALETTE, mode),
+          context,
+        );
+        const values = nullMap<string>();
+        for (const [token, value] of Object.entries(custom)) values[token] = value.value;
+        if (Object.keys(values).length > 0) block[mode] = values;
+      }
+      if (block.light || block.dark) layers.push(block);
     }
     const css = buildThemeCss(layers, selectors);
     this.writeStyle(css);
@@ -1310,6 +1444,11 @@ export class ThemeService implements ThemeContributionSink {
     // Compared by content, not by key: a forged cache may carry the live key.
     if (this.appliedKey === resolution.key && this.cacheWritten) return;
     this.appliedKey = resolution.key;
+    const familyLabel = resolution.theme.family
+      ? resolution.extension.contributions.themes.find(
+          (theme) => theme.family === resolution.theme.family && theme.familyLabel,
+        )?.familyLabel
+      : undefined;
     const cache: ThemeCache = {
       version: 1,
       id,
@@ -1317,6 +1456,7 @@ export class ThemeService implements ThemeContributionSink {
       label: resolution.theme.label,
       uiTheme: resolution.theme.uiTheme,
       ...(resolution.theme.family ? { family: resolution.theme.family } : {}),
+      ...(familyLabel ? { familyLabel } : {}),
       ...(resolution.forcedMode ? { forcedMode: resolution.forcedMode } : {}),
       blocks: resolution.blocks,
       fonts: resolution.fonts,
@@ -1349,7 +1489,8 @@ export class ThemeService implements ThemeContributionSink {
  */
 export function checkCache(raw: unknown): ThemeCache | undefined {
   if (!isRecord(raw) || raw.version !== 1) return undefined;
-  const { id, key, label, uiTheme, family, forcedMode, blocks, fonts, brand, syntax } = raw;
+  const { id, key, label, uiTheme, family, familyLabel, forcedMode, blocks, fonts, brand, syntax } =
+    raw;
   if (!isContributedThemeId(id) || typeof key !== "string" || key.length > 300) return undefined;
   if (typeof label !== "string" || (uiTheme !== "light" && uiTheme !== "dark")) return undefined;
   if (forcedMode !== undefined && forcedMode !== "light" && forcedMode !== "dark") return undefined;
@@ -1440,13 +1581,17 @@ export function checkCache(raw: unknown): ThemeCache | undefined {
           : [],
       )
     : [];
+  // Shown in the picker and Settings: no bidi or zero-width characters.
+  const shownLabel = labelOf(label, 80) ?? id;
+  const shownFamilyLabel = labelOf(familyLabel, 80);
   return {
     version: 1,
     id,
     key,
-    label: label.slice(0, 80),
+    label: shownLabel,
     uiTheme,
     ...(family ? { family } : {}),
+    ...(shownFamilyLabel ? { familyLabel: shownFamilyLabel } : {}),
     ...(forcedMode ? { forcedMode } : {}),
     blocks: checkedBlocks,
     fonts: checkedFonts,
@@ -1488,6 +1633,15 @@ export function useThemePickerHidden(): boolean {
   return useSyncExternalStore(
     subscribe,
     () => themeService.getProductPolicy()?.hidePicker === true,
+    () => false,
+  );
+}
+
+/** Whether the product hides the theme options and Advanced customizations, live. */
+export function useThemeCustomizationsHidden(): boolean {
+  return useSyncExternalStore(
+    subscribe,
+    () => themeService.getProductPolicy()?.hideCustomizations === true,
     () => false,
   );
 }

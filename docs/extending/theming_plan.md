@@ -143,6 +143,16 @@ Paths are relative to the omnigent repo root unless they start with `my-extensio
    - Custom stays an entry.
    - A theme whose extension is missing shows "Unavailable".
    - Products can restrict the allowed themes or hide the picker.
+   - Decided in M8's Part A (M7 follow-ups): `allowed` binds `select()`, `preview()` and
+     `omnigent.selectColorTheme` too, not only the list. `hidePicker` hides only the picker
+     (the command and Settings' picker row, with the built-in palette editor, which would
+     choose Custom); the chosen theme's options and Advanced stay unless the product also
+     sets `hideCustomizations`.
+   - Per-theme customization keys apply to what is on screen: `[<extension id>/<family>]`
+     in both of a family's modes, then `[<member id>]` in that member's mode only; a
+     built-in palette also takes its old palette id (`[nord]`) below
+     `[omnigent.themes/nord]` and `[omnigent.themes/nord-dark]`. Unknown ids are inline
+     errors in the Advanced editor, a missing extension's theme a warning.
 
 ## Findings to build on
 

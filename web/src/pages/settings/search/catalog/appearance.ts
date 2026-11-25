@@ -50,7 +50,7 @@ export const COLOR_THEME_ENTRY = settingsEntry({
     tint: { before: "Background tint: " },
   },
   // The sub-labels the palette select and the contrast slider show beside them.
-  partLabels: { "": "Theme palette", contrast: "Contrast" },
+  partLabels: { "": "Current theme", contrast: "Contrast" },
   // The editable colours show for a built-in theme only.
   presence: {
     accent: { states: ["built-in theme"] },

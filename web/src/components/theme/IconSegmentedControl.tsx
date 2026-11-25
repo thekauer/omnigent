@@ -48,7 +48,8 @@ export function IconSegmentedControl<T extends string>({
         aria-disabled={disabled || undefined}
         className={cn(
           "inline-flex shrink-0 gap-0.5 rounded-lg bg-muted p-0.5",
-          disabled && "opacity-60",
+          // Locked (a theme sets the mode): clearly dimmed, the choice still readable.
+          disabled && "cursor-not-allowed opacity-50 grayscale",
         )}
       >
         {items.map((item, index) => {
@@ -82,8 +83,11 @@ export function IconSegmentedControl<T extends string>({
                   className={cn(
                     "flex size-9 items-center justify-center rounded-md text-muted-foreground transition-colors",
                     selected
-                      ? "bg-background text-foreground shadow-sm ring-1 ring-border"
-                      : "hover:bg-background/60 hover:text-foreground",
+                      ? disabled
+                        ? "bg-background/70 text-foreground ring-1 ring-border"
+                        : "bg-background text-foreground shadow-sm ring-1 ring-border"
+                      : !disabled && "hover:bg-background/60 hover:text-foreground",
+                    disabled && "cursor-not-allowed",
                   )}
                 >
                   <Icon aria-hidden="true" className="size-4" />

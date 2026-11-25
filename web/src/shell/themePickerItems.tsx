@@ -4,7 +4,7 @@
 
 import { ContrastIcon } from "lucide-react";
 
-import { PaletteChip } from "@/components/theme/AppearancePreviews";
+import { PaletteChip, UnavailableMarker } from "@/components/theme/AppearancePreviews";
 import type { ThemeMode } from "@/components/theme/themeMode";
 import { THEME_MODE_OPTIONS, themeModeLabel } from "@/components/theme/themeModeOptions";
 import type { QuickPickItem } from "@/components/ui/quick-pick";
@@ -76,7 +76,9 @@ export function forcedModeLabel(entry: ThemeListEntry | undefined): string | und
 }
 
 function chip(entry: ThemeListEntry | undefined, context: ThemePickerContext) {
-  return <PaletteChip swatch={entrySwatch(entry, context.isDark, context.customSwatches)} />;
+  const shown = <PaletteChip swatch={entrySwatch(entry, context.isDark, context.customSwatches)} />;
+  // An unavailable theme's chip is the default's, which applies meanwhile, marked.
+  return entry && !entry.available ? <UnavailableMarker>{shown}</UnavailableMarker> : shown;
 }
 
 function themeItem(

@@ -6,6 +6,8 @@ import { setEmbedRoot, setEmbedScopeRoot } from "@/lib/host";
 import { isRegisteredSyntaxTheme } from "@/lib/syntaxTheme";
 import { FIXTURE_CONTRIBUTES, FIXTURE_EXTENSION_ID, fixtureFiles } from "@/test/themeFixtures";
 
+import { registerBuiltInThemes } from "@/builtinExtensions/builtInThemes";
+
 import { parseThemeContributions } from "./themeContributions";
 import {
   checkCache,
@@ -256,10 +258,14 @@ describe("ThemeService", () => {
     });
     expect(Object.keys(checkCache(tampered)!.blocks.dark!)).toEqual(["foreground"]);
     expect(checkCache({ ...tampered, id: "not an id" })).toBeUndefined();
+    // Labels the picker and Settings show lose bidi and zero-width characters.
+    expect(
+      checkCache({ ...tampered, label: "Fix\u202eture\u200b", familyLabel: "Fam\u2066ily" }),
+    ).toMatchObject({ label: "Fixture", familyLabel: "Family" });
     expect(checkCache({ ...tampered, version: 2 })).toBeUndefined();
   });
 
-  it("applies colour customizations over the theme, globally and per theme", () => {
+  it("applies colour customizations over the theme: global, the family's, the member's on screen", () => {
     localStorage.setItem(
       COLOR_CUSTOMIZATIONS_STORAGE_KEY,
       JSON.stringify({
@@ -267,14 +273,24 @@ describe("ThemeService", () => {
         foreground: "url(x)",
         [`[${DARK}]`]: { "ui-radius-base": "12px" },
         [`[${LIGHT}]`]: { "ui-radius-base": "2px" },
+        [`[${FIXTURE_EXTENSION_ID}/fixture]`]: { "ui-radius-base": "6px", primary: "#010203" },
       }),
     );
     service.addExtension(FIXTURE);
     service.markStarted();
     service.select(DARK);
-    expect(block("dark")).toMatchObject({ background: "#222222", "ui-radius-base": "12px" });
+    // Each member's key holds in its own mode, over the family's key.
+    expect(block("dark")).toMatchObject({
+      background: "#222222",
+      "ui-radius-base": "12px",
+      primary: "#010203",
+    });
     expect(block("dark").foreground).toBe("#e6e1cf");
-    expect(block("light")).toMatchObject({ background: "#222222", "ui-radius-base": "12px" });
+    expect(block("light")).toMatchObject({
+      background: "#222222",
+      "ui-radius-base": "2px",
+      primary: "#010203",
+    });
   });
 
   it("scopes the stylesheet to the embed and stamps both of its theme roots", () => {
@@ -322,5 +338,90 @@ describe("ThemeService", () => {
     service.markStarted();
     service.select(DARK);
     expect(listener).toHaveBeenCalled();
+  });
+});
+
+describe("ThemeService: per-theme customization keys, product policy, applied theme (M7 follow-ups)", () => {
+  it("keys a built-in palette by its palette id, its family and the member on screen", () => {
+    registerBuiltInThemes(service);
+    service.markStarted();
+    localStorage.setItem(
+      COLOR_CUSTOMIZATIONS_STORAGE_KEY,
+      JSON.stringify({
+        "[nord]": { background: "#000001" },
+        "[omnigent.themes/nord]": { primary: "#000002" },
+        "[omnigent.themes/nord-dark]": { background: "#000003" },
+        "[omnigent.themes/nord-light]": { "ui-radius-base": "3px" },
+      }),
+    );
+    service.select("nord");
+    expect(block("dark")).toMatchObject({ background: "#000003", primary: "#000002" });
+    expect(block("dark")["ui-radius-base"]).toBeUndefined();
+    expect(block("light")).toMatchObject({
+      background: "#000001",
+      primary: "#000002",
+      "ui-radius-base": "3px",
+    });
+    // The member id selects the same entry.
+    service.select("omnigent.themes/nord-dark");
+    expect(service.getChoice()).toBe("nord");
+  });
+
+  it("checks theme scopes: unknown ids are errors, a missing extension's a warning", () => {
+    registerBuiltInThemes(service);
+    service.addExtension(FIXTURE);
+    service.markStarted();
+    const problems = (value: Record<string, unknown>) =>
+      service.checkCustomizations(JSON.stringify(value));
+    expect(
+      problems({
+        "[nord]": {},
+        "[omnigent.themes/nord-dark]": {},
+        "[omnigent.themes/nord]": {},
+        [`[${DARK}]`]: {},
+        [`[${FIXTURE_EXTENSION_ID}/fixture]`]: {},
+      }),
+    ).toEqual([]);
+    expect(problems({ "[nrod]": {} })).toEqual([{ key: "[nrod]", message: "no theme nrod" }]);
+    expect(problems({ "[omnigent.themes/nrod-dark]": {} })[0]?.message).toMatch(/has no theme/);
+    expect(problems({ [`[${FIXTURE_EXTENSION_ID}/nope]`]: {} })[0]?.severity).toBeUndefined();
+    const missing = problems({ "[acme.gone/dark]": { background: "#000" } });
+    expect(missing).toEqual([
+      expect.objectContaining({ key: "[acme.gone/dark]", severity: "warning" }),
+    ]);
+    // A warning doesn't stop the store; an error does.
+    expect(service.setCustomizations('{"[acme.gone/dark]": {}}')).toHaveLength(1);
+    expect(localStorage.getItem(COLOR_CUSTOMIZATIONS_STORAGE_KEY)).toBe('{"[acme.gone/dark]":{}}');
+    service.setCustomizations('{"[nrod]": {}}');
+    expect(localStorage.getItem(COLOR_CUSTOMIZATIONS_STORAGE_KEY)).toBe('{"[acme.gone/dark]":{}}');
+    expect(service.checkCustomizations(" ".repeat(70_000))[0]?.message).toMatch(/longer than/);
+  });
+
+  it("enforces the product's allowed themes on select and preview", () => {
+    registerBuiltInThemes(service);
+    service.addExtension(FIXTURE);
+    service.markStarted();
+    service.setProductPolicy({ allowed: [DARK, "nord"] });
+    expect(() => service.select("dracula")).toThrow(/not allowed/);
+    expect(() => service.preview("dracula")).toThrow(/not allowed/);
+    service.select("omnigent.themes/nord-light");
+    expect(service.getChoice()).toBe("nord");
+    // A family is allowed by any of its members.
+    service.select(LIGHT);
+    expect(service.getChoice()).toBe(LIGHT);
+    service.select(null);
+    service.setProductPolicy(null);
+  });
+
+  it("reports the theme that applies per mode, the default's for a missing extension", () => {
+    registerBuiltInThemes(service);
+    const remove = service.addExtension(FIXTURE);
+    service.markStarted();
+    expect(service.appliedTheme("dark").id).toBe("omnigent.themes/omni-dark");
+    service.select(DARK);
+    expect(service.appliedTheme("light")).toEqual({ id: LIGHT, label: expect.any(String) });
+    expect(service.appliedTheme("dark").id).toBe(DARK);
+    remove();
+    expect(service.appliedTheme("dark").id).toBe("omnigent.themes/omni-dark");
   });
 });
