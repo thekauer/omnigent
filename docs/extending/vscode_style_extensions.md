@@ -1059,14 +1059,25 @@ requests for files outside an extension's sources:
   512 KiB), each by real path inside the folder. An SVG is rebuilt from an
   allow-list of elements and attributes (no script, foreignObject, styles, event
   handlers, external references, `javascript:` or `data:` URLs) and served with
-  `nosniff` and a `default-src 'none'` policy; the host shows brand images as
+  `nosniff` and `default-src 'none'; style-src 'none'; sandbox`, so even opened as a
+  document it loads, styles and runs nothing; the host shows brand images as
   `<img>` only. Theme files themselves are read (at most 64 KiB) and inlined, not
-  served. The page takes asset URLs only from this origin, under
-  `/__omnigent/extension-assets/` or the bundle's `assets/` (never protocol-relative,
-  never with `.`/`..` segments), also when they come back from the first-paint cache in
+  served. The page takes asset URLs only from this origin, under exactly
+  `/__omnigent/extension-assets/` or the bundle's own `BASE_URL` + `assets/` (a
+  relative production base is the directory the bundle's chunks are in; never another
+  `assets/` path such as a backend route, never protocol-relative, never with `.`/`..`
+  segments), also when they come back from the first-paint cache in
   `localStorage`, which settings export leaves out. A theme reads `var()` of registry
-  tokens and its own extension's colours only. Brand SVGs lose `style` attributes and CSS
-  image functions (`image-set()`, `cross-fade()`, ...) in any attribute.
+  tokens and its own extension's colours only. Brand SVGs lose `style` attributes, CSS
+  image functions (`image-set()`, `cross-fade()`, ...) and backslashes (CSS escapes)
+  in any attribute, `xml:base` and `requiredExtensions`, every namespace but SVG's
+  (default) and XLink's (as `xmlns:xlink`), and any attribute prefix but `xlink:` and
+  `xml:`, so `xmlns:foo` with `foo:href` can't name an external reference. A
+  `calc()` (with `min()`, `max()` and `clamp()`) is evaluated as an interval, each
+  `var()` at its token's range: a literal one must stay in the token's range, one that
+  reads tokens within that range widened by its width, never past 10000px; it divides
+  only by a number range without zero, and `infinity` is for the pill radius only.
+  Colour channels and gradient stops are capped too (at most 32 stops).
 - A cross-origin logo from the server's branding (`/v1/info`) loads as an `<img>` with
   `crossorigin="anonymous"` and no referrer: its server must answer with CORS headers
   (`Access-Control-Allow-Origin`), or the default logo shows. Host paths keep loading

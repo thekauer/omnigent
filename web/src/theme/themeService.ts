@@ -185,15 +185,44 @@ interface CachedFont {
 }
 
 const CACHE_LIMIT = 256 * 1024;
-// What the dev plugin serves, or a bundled asset of the app (under any base path).
-const HOST_ASSET_PATH =
-  /^(?:\/__omnigent\/extension-assets|(?:\/[A-Za-z0-9._~-]+)*\/assets)\/[A-Za-z0-9@._~/+-]{1,480}$/;
+const EXTENSION_ASSETS_PREFIX = "/__omnigent/extension-assets/";
+const ASSET_PATH_REST = /^[A-Za-z0-9@._~/+-]{1,480}$/;
+
+/**
+ * The path of the app's own bundled assets: `BASE_URL` + `assets/`. A relative base (the
+ * production build's `./`) is the directory this chunk was emitted to, which is that
+ * `assets/` directory under wherever the app is served.
+ */
+function bundleAssetsPrefix(): string | undefined {
+  const base = import.meta.env.BASE_URL ?? "/";
+  if (base.startsWith("/")) return `${base.endsWith("/") ? base : `${base}/`}assets/`;
+  try {
+    const here = new URL(".", import.meta.url);
+    if (typeof location === "undefined" || here.origin !== location.origin) return undefined;
+    return here.pathname.endsWith("/assets/") ? here.pathname : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+const BUNDLE_ASSETS_PREFIX = bundleAssetsPrefix();
+
+/** Whether `path` lies under the dev plugin's assets or the bundle's own `assets/`, exactly. */
+function isHostAssetPath(path: string): boolean {
+  return [EXTENSION_ASSETS_PREFIX, BUNDLE_ASSETS_PREFIX].some(
+    (prefix) =>
+      prefix !== undefined &&
+      path.startsWith(prefix) &&
+      ASSET_PATH_REST.test(path.slice(prefix.length)),
+  );
+}
 
 /**
  * Whether `url` is one of this origin's theme assets: a path (or this origin's absolute
- * URL) under the dev plugin's `/__omnigent/extension-assets/` or the bundle's `assets/`,
- * that the URL parser leaves as written. Protocol-relative URLs, other origins,
- * backslashes, `.` and `..` segments, empty segments, queries and fragments fail.
+ * URL) under exactly the dev plugin's `/__omnigent/extension-assets/` or the bundle's
+ * `BASE_URL` + `assets/`, that the URL parser leaves as written. Protocol-relative URLs,
+ * other origins, other `/assets/` directories (backend routes among them), backslashes,
+ * `.` and `..` segments, empty segments, queries and fragments fail.
  */
 export function isHostAssetUrl(url: unknown): url is string {
   if (typeof url !== "string" || url.length > 1024 || typeof location === "undefined") {
@@ -218,7 +247,7 @@ export function isHostAssetUrl(url: unknown): url is string {
   if (path.includes("//") || path.split("/").some((part) => part === "." || part === "..")) {
     return false;
   }
-  return HOST_ASSET_PATH.test(path);
+  return isHostAssetPath(path);
 }
 
 const BUNDLED_SYNTAX_THEMES = new Set(bundledThemesInfo.map((theme) => theme.id));

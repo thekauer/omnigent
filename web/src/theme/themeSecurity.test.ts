@@ -89,6 +89,11 @@ describe("F1: a tampered first-paint cache loads nothing off-origin", () => {
       "/__omnigent/extension-assets//evil.example/x.svg",
       "/v1/info",
       "/assets/%2e%2e/x.svg",
+      // Another `assets/` directory is not the bundle's: a backend route, say.
+      "/v1/agents/assets/logo.svg",
+      "/api/assets/logo.svg",
+      "/__omnigent/extension-assets-x/a.svg",
+      `${location.origin}/v1/assets/a.svg`,
     ]) {
       expect(isHostAssetUrl(url), url).toBe(false);
     }
