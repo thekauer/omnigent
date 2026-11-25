@@ -123,8 +123,8 @@ describe("the runtime theme stylesheet's selectors", () => {
 
   it("match only the theme roots and their probes", () => {
     document.body.innerHTML =
-      '<div id="host" class="dark"><div class="omnigent-app" data-omni-theme="t"><div class="dark" data-omni-theme="t"><div data-token-mode="light"></div></div></div></div>';
-    const embed = themeSelectors(".omnigent-app");
+      '<div id="host" class="dark"><div class="omnigent-app" data-omnigent-scope="n" data-omni-theme="t"><div class="dark" data-omnigent-inner data-omni-theme="t"><div data-token-mode="light"></div></div></div><div class="omnigent-app" data-omnigent-scope="guess" data-omni-theme="t"><div class="dark" data-omnigent-inner data-omni-theme="t"></div></div></div>';
+    const embed = themeSelectors('.omnigent-app[data-omnigent-scope="n"]');
     const matches = (selector: string) =>
       [...document.querySelectorAll(selector)].map(
         (element) => element.className || element.getAttribute("data-token-mode"),

@@ -4,6 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { normalizeAppName } from "@/lib/branding";
+import { getThemeScopeSelector, setEmbedRoot, setEmbedScopeRoot } from "@/lib/host";
 import { applyImportedSettings, collectSettings } from "@/lib/settingsPortability";
 import { FIXTURE_CONTRIBUTES, FIXTURE_EXTENSION_ID, fixtureFiles } from "@/test/themeFixtures";
 
@@ -191,7 +192,6 @@ describe("F3: the runtime selectors match the theme roots only", () => {
   });
 
   it("embedded: the scope root and its inner root, not an element deeper inside", () => {
-    const selectors = themeSelectors(".omnigent-app");
     const scope = document.createElement("div");
     scope.className = "omnigent-app";
     scope.setAttribute("data-omni-theme", "");
@@ -203,13 +203,35 @@ describe("F3: the runtime selectors match the theme roots only", () => {
     injected.setAttribute("data-omni-theme", "");
     inner.append(injected);
     scope.append(inner);
-    document.body.append(scope);
+    // Markup that copies the scope root's class and the inner marker, without its nonce.
+    const forged = document.createElement("div");
+    forged.className = "omnigent-app";
+    forged.setAttribute("data-omni-theme", "");
+    forged.setAttribute("data-omnigent-scope", "guess");
+    const forgedInner = document.createElement("div");
+    forgedInner.className = "dark";
+    forgedInner.setAttribute("data-omni-theme", "");
+    forgedInner.setAttribute("data-omnigent-inner", "");
+    forged.append(forgedInner);
+    document.body.append(scope, forged);
+    setEmbedScopeRoot(scope);
+    setEmbedRoot(inner);
     try {
+      const selectors = themeSelectors(getThemeScopeSelector());
       expect(scope.matches(selectors.light)).toBe(true);
       expect(inner.matches(selectors.dark)).toBe(true);
       expect(injected.matches(selectors.dark)).toBe(false);
+      expect(forged.matches(selectors.light)).toBe(false);
+      expect(forgedInner.matches(selectors.dark)).toBe(false);
+      // Not markers an element could guess: the nonce is random per page.
+      expect(scope.getAttribute("data-omnigent-scope")).toMatch(/^[0-9a-f]{16}$/);
     } finally {
+      setEmbedRoot(null);
+      setEmbedScopeRoot(null);
+      expect(scope.hasAttribute("data-omnigent-scope")).toBe(false);
+      expect(inner.hasAttribute("data-omnigent-inner")).toBe(false);
       scope.remove();
+      forged.remove();
     }
   });
 });

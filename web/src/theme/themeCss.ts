@@ -16,6 +16,10 @@ export const THEME_ROOT_ATTRIBUTE = "data-omni-theme";
 export const THEME_SPECIFICITY_ID = "omnigent-theme-runtime-root";
 /** The runtime stylesheet's element id. */
 export const THEME_STYLE_ID = "omnigent-theme-runtime";
+/** The marker on the embed's real scope root; its value is a per-page nonce (`lib/host.ts`). */
+export const EMBED_SCOPE_MARKER = "data-omnigent-scope";
+/** The marker on the embed's inner root, the scope root's direct child. */
+export const EMBED_INNER_MARKER = "data-omnigent-inner";
 
 const ROOT = `:is([${THEME_ROOT_ATTRIBUTE}], #${THEME_SPECIFICITY_ID})`;
 
@@ -31,8 +35,8 @@ export interface ThemeSelectors {
 
 /**
  * The runtime selectors: standalone on the document root (`:root`); embedded, on the
- * embed's scope root (`scope`, `.omnigent-app`) and its direct child, the inner root,
- * never the host page or an element deeper in the app.
+ * embed's scope root (`scope`, `.omnigent-app` with its nonce marker) and its direct child
+ * the inner root (with its marker), never the host page or an element deeper in the app.
  */
 export function themeSelectors(scope: string | null): ThemeSelectors {
   // Anchored to the roots themselves: an element elsewhere that carries the attribute or
@@ -44,7 +48,8 @@ export function themeSelectors(scope: string | null): ThemeSelectors {
       probe: (mode) => `:root${ROOT} [data-token-mode="${mode}"]`,
     };
   }
-  const scoped = (suffix: string) => `${scope}${ROOT}${suffix}, ${scope} > ${ROOT}${suffix}`;
+  const inner = `${scope} > [${EMBED_INNER_MARKER}]${ROOT}`;
+  const scoped = (suffix: string) => `${scope}${ROOT}${suffix}, ${inner}${suffix}`;
   return {
     light: scoped(":not(.dark)"),
     dark: scoped(".dark"),

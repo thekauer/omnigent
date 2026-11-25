@@ -3,6 +3,7 @@ import type { ComponentType, ReactNode, Ref } from "react";
 import { getBasePath, withBasePath } from "./basePath.ts";
 import { updatesRoutingKey } from "./sessionHost.ts";
 import { clientRoutingKey, SLICE_KEY_HEADER, SLICE_KEY_PARAM } from "./routingKey.ts";
+import { EMBED_INNER_MARKER, EMBED_SCOPE_MARKER } from "../theme/themeCss.ts";
 
 /**
  * Embed host integration seam.
@@ -520,7 +521,9 @@ export function getOmnigentThemeSettingsUrl(): OmnigentHostConfig["themeSettings
  */
 export function setEmbedRoot(el: HTMLElement | null): void {
   if (embedRoot === el) return;
+  embedRoot?.removeAttribute(EMBED_INNER_MARKER);
   embedRoot = el;
+  el?.setAttribute(EMBED_INNER_MARKER, "");
   notifyThemeRoots();
 }
 
@@ -539,9 +542,25 @@ export function getEmbedRoot(): HTMLElement | null {
  */
 export function setEmbedScopeRoot(el: HTMLElement | null): void {
   if (embedScopeRoot === el) return;
+  embedScopeRoot?.removeAttribute(EMBED_SCOPE_MARKER);
   embedScopeRoot = el;
+  el?.setAttribute(EMBED_SCOPE_MARKER, embedScopeNonce);
   notifyThemeRoots();
 }
+
+// The scope root's marker value: markup elsewhere (the host page's, or rendered content)
+// can't guess it, so only the real scope root matches the runtime selectors.
+const embedScopeNonce = (() => {
+  const bytes = new Uint8Array(8);
+  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+    crypto.getRandomValues(bytes);
+  } else {
+    for (let index = 0; index < bytes.length; index += 1) {
+      bytes[index] = Math.floor(Math.random() * 256);
+    }
+  }
+  return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+})();
 
 const themeRootListeners = new Set<() => void>();
 
@@ -590,12 +609,14 @@ export function getThemeRoots(): HTMLElement[] {
 
 /**
  * The selector a stylesheet that targets the theme roots scopes itself to: the embed's
- * scope class while embedded (the scoped stylesheet's own prefix), else null (the
+ * scope class and its root's nonce marker while embedded, else null (the
  * document root). The theme service's runtime stylesheet uses it, so an embed's theme
  * never reaches the host page.
  */
 export function getThemeScopeSelector(): string | null {
-  return embedScopeRoot ? EMBED_SCOPE_SELECTOR : null;
+  return embedScopeRoot
+    ? `${EMBED_SCOPE_SELECTOR}[${EMBED_SCOPE_MARKER}="${embedScopeNonce}"]`
+    : null;
 }
 
 /** The embed's scope class as a selector (`vite.embed.config.ts` prefixes every rule with it). */
