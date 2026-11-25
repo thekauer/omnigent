@@ -92,7 +92,7 @@ export function WorkspaceSidebarFrame({
         aria-label="Workspace tabs"
         tabIndex={-1}
         {...stripWidth.pointerHandlers}
-        className="workspace-tab-strip flex shrink-0 items-center gap-1 overflow-x-hidden border-b border-border px-2 py-3"
+        className="workspace-tab-strip flex min-h-(--ui-tabstrip-height) shrink-0 items-center gap-1 overflow-x-hidden border-b-(length:--ui-border-width) [--tw-border-style:var(--ui-divider-style)] border-border px-(--ui-tabstrip-padding-x) py-(--ui-tabstrip-padding-y)"
       >
         {leading}
         {/* The tabs and "+" share this room; "+" follows the last tab until the strip overflows. */}

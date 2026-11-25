@@ -101,7 +101,7 @@ describe("Agents tab", () => {
     await renderPanel();
     const heading = screen.getByRole("heading", { name: "Agents" });
     expect(heading).toHaveClass("pl-1", "font-medium", "text-ui");
-    expect(heading.parentElement).toHaveClass("h-11");
+    expect(heading.parentElement).toHaveClass("h-(--ui-view-title-height)");
     const main = screen.getByTestId("subagent-main-row");
     expect(main).toHaveAttribute("href", "/c/conv_root");
     expect(main).toHaveAttribute("data-root-session-id", "conv_root");

@@ -162,7 +162,7 @@ describe("ChatHeader — deployed Share presentation", () => {
 
     const share = screen.getByRole("button", { name: "Share session" });
     expect(share).toHaveClass(
-      "h-6",
+      "h-(--ui-control-h-xs)",
       "gap-1",
       "rounded-md",
       "px-2",
@@ -186,7 +186,7 @@ describe("ChatHeader — deployed Share presentation", () => {
     expect(share).toBeDisabled();
     expect(share).toHaveAttribute("title", "Sharing is unavailable");
     expect(share).toHaveClass(
-      "h-6",
+      "h-(--ui-control-h-xs)",
       "gap-1",
       "rounded-md",
       "px-2",
@@ -236,7 +236,7 @@ describe("ChatHeader — workspace pane alignment", () => {
 
     expect(header).not.toBeNull();
     expect(header).toHaveClass("inset-x-0", "md:right-[var(--workspace-panel-offset,0px)]");
-    expect(header).toHaveClass("h-[76px]", "px-4", "py-4", "md:h-12", "md:py-3");
+    expect(header).toHaveClass("h-[76px]", "px-4", "py-4", "md:h-(--ui-header-height)", "md:py-3");
   });
 
   it.each([false, true])("adds the backdrop only on desktop sessions (mobile=%s)", (mobile) => {
@@ -785,7 +785,9 @@ describe("ChatHeader — floating mobile controls", () => {
   it("keeps the desktop header free of mobile glass surfaces", () => {
     const view = renderHeader({ sidebarOpen: false, conversationId: "conv-1", canShare: true });
     expect(view.container.querySelector(".glass-surface")).toBeNull();
-    expect(screen.getByRole("button", { name: "Open sidebar" })).toHaveClass("size-6");
+    expect(screen.getByRole("button", { name: "Open sidebar" })).toHaveClass(
+      "size-(--ui-control-h-xs)",
+    );
   });
 
   it("folds the Chat/Terminal switch into the header kebab on mobile", () => {

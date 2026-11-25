@@ -28,18 +28,20 @@ const buttonVariants = cva(
           "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
         link: "text-primary underline-offset-4 hover:underline",
       },
+      // Heights read the density tokens (theme/tokens/density.ts): xs 24px, sm 28px,
+      // default 32px, lg 36px; a caller's own h-*/size-* still wins.
       size: {
         default:
-          "h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
-        xs: "h-6 gap-1 rounded-[var(--radius-sm)] px-2 text-sm in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5",
-        sm: "h-7 gap-1 rounded-[var(--radius-md)] px-2.5 text-ui in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5",
-        lg: "h-9 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
-        icon: "size-10 md:size-8",
+          "h-(--ui-control-h-md) gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
+        xs: "h-(--ui-control-h-xs) gap-1 rounded-[var(--radius-sm)] px-2 text-sm in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5",
+        sm: "h-(--ui-control-h-sm) gap-1 rounded-[var(--radius-md)] px-2.5 text-ui in-data-[slot=button-group]:rounded-lg has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5",
+        lg: "h-(--ui-control-h-lg) gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
+        icon: "size-10 md:size-(--ui-control-h-md)",
         "icon-xxs":
           "size-3.5 rounded-[var(--radius-sm)] bg-transparent hover:bg-transparent aria-expanded:bg-transparent dark:hover:bg-transparent [&_svg]:size-3.5! [&_svg]:p-0!",
-        "icon-xs": "size-6 rounded-[var(--radius-md)] in-data-[slot=button-group]:rounded-lg",
-        "icon-sm": "size-7 rounded-[var(--radius-md)] in-data-[slot=button-group]:rounded-lg",
-        "icon-lg": "size-9",
+        "icon-xs": "size-(--ui-control-h-xs) rounded-[var(--radius-md)] in-data-[slot=button-group]:rounded-lg",
+        "icon-sm": "size-(--ui-control-h-sm) rounded-[var(--radius-md)] in-data-[slot=button-group]:rounded-lg",
+        "icon-lg": "size-(--ui-control-h-lg)",
       },
     },
     compoundVariants: [

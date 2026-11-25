@@ -5,8 +5,11 @@
 //
 // `.ts` imports: the generator loads this module directly in Node.
 
+import { BORDER_TOKENS } from "./border.ts";
 import { CHART_TOKENS } from "./chart.ts";
+import { DENSITY_TOKENS } from "./density.ts";
 import { ELEVATION_TOKENS } from "./elevation.ts";
+import { SCROLLBAR_TOKENS } from "./scrollbar.ts";
 import { SHAPE_TOKENS } from "./shape.ts";
 import { STATUS_TOKENS } from "./status.ts";
 import type { TokenDef } from "./types.ts";
@@ -51,6 +54,9 @@ export const TOKENS: readonly TokenDef[] = [
   ...SHAPE_TOKENS,
   ...TYPOGRAPHY_TOKENS,
   ...ELEVATION_TOKENS,
+  ...DENSITY_TOKENS,
+  ...BORDER_TOKENS,
+  ...SCROLLBAR_TOKENS,
 ];
 
 /** Tokens with host defaults (no palette sets them), in registry order. */

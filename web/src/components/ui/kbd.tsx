@@ -6,7 +6,7 @@ export function CompactKbd({ children }: { children: ReactNode }) {
   return (
     <kbd
       data-slot="kbd"
-      className="inline-flex h-4 min-w-4 items-center justify-center rounded border border-border/80 bg-muted px-1 text-10 font-medium text-muted-foreground"
+      className="inline-flex h-4 min-w-4 items-center justify-center rounded border-(length:--ui-border-width) [--tw-border-style:var(--ui-border-style)] border-border/80 bg-muted px-1 text-10 font-medium text-muted-foreground"
     >
       {children}
     </kbd>

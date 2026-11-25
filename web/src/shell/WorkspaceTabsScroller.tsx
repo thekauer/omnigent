@@ -68,7 +68,7 @@ export function WorkspaceTabsScroller({ children }: { children: ReactNode }) {
     <div
       ref={viewportRef}
       data-workspace-tabs-viewport
-      className="no-drag min-w-0 flex-1 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      className="no-drag min-w-0 flex-1 ui-scroll-hidden overflow-x-auto overflow-y-hidden"
     >
       <div ref={contentRef} className="flex w-max items-center gap-0.5">
         {children}

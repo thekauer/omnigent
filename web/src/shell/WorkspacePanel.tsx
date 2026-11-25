@@ -1480,8 +1480,9 @@ function WorkspacePanelImpl({
           aria-label={presentation.ariaLabel}
           aria-keyshortcuts={presentation.ariaKeyShortcuts}
           data-workspace-tab={tab}
+          data-slot="rail-tab"
           disabled={pending}
-          className="size-6 shrink-0 p-0 hover:border-1 hover:border-muted rounded-md!"
+          className="size-(--ui-control-h-xs) shrink-0 p-0 hover:border-1 hover:border-muted rounded-md!"
         >
           <Icon />
           <span className="sr-only">{label}</span>
@@ -1682,6 +1683,7 @@ function WorkspacePanelImpl({
   const rail = (
     <aside
       aria-label="Workspace"
+      data-slot="workspace-panel"
       ref={railInertRef}
       aria-hidden={!open}
       // The resize hook can starve the rail to width 0 while it stays mounted;
@@ -1747,7 +1749,7 @@ function WorkspacePanelImpl({
           role="toolbar"
           aria-label="Workspace tabs"
           tabIndex={-1}
-          className="workspace-tab-strip shrink-0 flex items-center overflow-x-hidden border-b border-border px-2 py-3"
+          className="workspace-tab-strip shrink-0 flex min-h-(--ui-tabstrip-height) items-center overflow-x-hidden border-b-(length:--ui-border-width) [--tw-border-style:var(--ui-divider-style)] border-border px-(--ui-tabstrip-padding-x) py-(--ui-tabstrip-padding-y)"
         >
           {visiblePermanentTabs.length > 0 && (
             <Tabs

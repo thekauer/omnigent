@@ -56,6 +56,7 @@ export function ComposerWorkspaceBar({
   return (
     <div
       ref={barRef}
+      data-slot="composer-context-strip"
       className={cn(
         "composer-context-bar group/composer-workspace relative z-0 -mb-px flex h-7 mobile-app:h-auto mobile-app:flex-wrap min-w-0 items-center gap-0.5 rounded-t-2xl border border-b-0 border-border py-0.5 md:h-[37px] md:gap-2 md:py-1.5",
         COMPOSER_CONTENT_INSET_CLASS,

@@ -281,9 +281,63 @@
 }
 
 /* Home-sidebar rows use a fixed 20px line box so their shared 4px block padding
- * produces a natural 28px row without scaling layout geometry. */
+ * produces a natural 28px row without scaling layout geometry. The density tokens
+ * (theme/tokens/density.ts) set both; a taller `--ui-row-height` grows the row
+ * around the same line box. */
 .sidebar-row {
-  line-height: 20px;
+  min-height: var(--ui-row-height);
+  line-height: var(--ui-row-line);
+}
+
+/* Public theme hooks (docs/extending/theme_hooks.md). */
+
+/* Labels: the sidebar section labels, view titles and the fold row. Unlayered, so
+ * the label tokens beat the sites' own text utilities; the defaults are what those
+ * utilities set. The Appearance font setting stays a layer above the label font. */
+.ui-label {
+  font-family: var(--ui-font-family, var(--ui-font-label));
+  font-size: var(--ui-label-size);
+  font-weight: var(--ui-label-weight);
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: var(--ui-label-transform);
+}
+.ui-label[data-slot="view-title-label"] {
+  font-size: var(--ui-view-title-size);
+  font-weight: var(--ui-view-title-weight);
+}
+.ui-label[data-slot="fold-label"] {
+  font-size: var(--ui-fold-label-size);
+}
+
+/* Scroll containers. In the components layer, so a site's utilities (the sidebar's
+ * show-while-scrolling colours) still apply over them. The colour tokens are unset by
+ * default: the scrollbar-color declaration is then invalid and inherits, exactly as
+ * if absent, and WebKit's styled bar keeps the border colour. */
+@layer components {
+  .ui-scroll {
+    scrollbar-width: var(--ui-scrollbar-width);
+    scrollbar-color: var(--ui-scrollbar-thumb) var(--ui-scrollbar-track, transparent);
+  }
+  .ui-scroll::-webkit-scrollbar {
+    width: var(--ui-scrollbar-size);
+  }
+  .ui-scroll::-webkit-scrollbar-thumb {
+    border-radius: var(--ui-radius-pill);
+    background-color: var(--ui-scrollbar-thumb, var(--border));
+  }
+  .ui-scroll::-webkit-scrollbar-thumb:hover {
+    background-color: var(--ui-scrollbar-thumb-hover, var(--ui-scrollbar-thumb, var(--border)));
+  }
+  .ui-scroll::-webkit-scrollbar-track {
+    background-color: var(--ui-scrollbar-track, transparent);
+  }
+  /* Scrollers whose bar stays hidden (tab strips, the turn rail). */
+  .ui-scroll-hidden {
+    scrollbar-width: none;
+  }
+  .ui-scroll-hidden::-webkit-scrollbar {
+    display: none;
+  }
 }
 
 .composer-add-menu,
@@ -811,7 +865,11 @@
  * `*` adds no specificity, so each selector in the list keeps its own. */
 * {
   @variant max-md {
+    /* The composer's send button carries its hook slot; a tooltip trigger around it
+     * (data-state) kept it out of this rule before, and still does. */
     &[data-slot="button"][data-size^="icon"],
+    &[data-slot="composer-send"]:not([data-state]),
+    &[data-slot="composer-stop"]:not([data-state]),
     &[data-mobile-icon-button] {
       --mobile-icon-button-background: transparent;
       --mobile-icon-button-foreground: var(--foreground);

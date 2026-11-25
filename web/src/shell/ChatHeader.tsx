@@ -319,9 +319,10 @@ function PendingHeaderActions({ isMobile }: { isMobile: boolean }) {
       <Button
         type="button"
         aria-label="Share session"
+        data-slot="share-button"
         title={PENDING_ACTION_TITLE}
         disabled
-        className="share-button-glassy hidden h-6 gap-1 rounded-md px-2 text-ui font-normal text-white md:inline-flex"
+        className="share-button-glassy hidden h-(--ui-control-h-xs) gap-1 rounded-md px-2 text-ui font-normal text-white md:inline-flex"
       >
         <span className="flex size-4 shrink-0 items-center justify-center">
           <UserPlusIcon />
@@ -603,7 +604,7 @@ export function ChatHeader({
       className={cn(
         // Desktop sessions fade scrolling content behind the header.
         // Mobile keeps only the individual glass button surfaces.
-        "chat-header absolute inset-x-0 top-0 z-30 flex h-[76px] md:h-12 items-center justify-between px-4 py-4 md:py-3 md:right-[var(--workspace-panel-offset,0px)]",
+        "chat-header absolute inset-x-0 top-0 z-30 flex h-[76px] md:h-(--ui-header-height) items-center justify-between px-4 py-4 md:py-3 md:right-[var(--workspace-panel-offset,0px)]",
         (conversationId || hasPageTitle) && !isMobile && "session-header-glass",
         // On desktop a page title gets a taller header, with room above it for hover toolbars.
         hasPageTitle && "md:h-26 md:pt-8 md:pb-0",
@@ -837,11 +838,12 @@ export function ChatHeader({
                 <Button
                   type="button"
                   aria-label="Share session"
+                  data-slot="share-button"
                   disabled
                   title={shareDisabledReason}
                   // share-button-glassy (index.css) paints the pink gradient,
                   // shadow, and white text in both light and dark mode.
-                  className="share-button-glassy h-6 gap-1 rounded-md px-2 text-ui font-normal text-white"
+                  className="share-button-glassy h-(--ui-control-h-xs) gap-1 rounded-md px-2 text-ui font-normal text-white"
                 >
                   <span className="flex size-4 shrink-0 items-center justify-center">
                     <UserPlusIcon />
@@ -856,11 +858,12 @@ export function ChatHeader({
           <Button
             type="button"
             aria-label="Share session"
+            data-slot="share-button"
             onClick={onShare}
             componentId="chat.header.share"
             // share-button-glassy (index.css) paints the pink gradient,
             // shadow, and white text in both light and dark mode.
-            className="share-button-glassy hidden h-6 gap-1 rounded-md px-2 text-ui font-normal text-white md:inline-flex"
+            className="share-button-glassy hidden h-(--ui-control-h-xs) gap-1 rounded-md px-2 text-ui font-normal text-white md:inline-flex"
           >
             <span className="flex size-4 shrink-0 items-center justify-center">
               <UserPlusIcon />
@@ -878,6 +881,8 @@ export function ChatHeader({
                 variant="ghost"
                 size="icon-xs"
                 aria-label={rightPanelOpen ? "Collapse right panel" : "Expand right panel"}
+                data-slot="panel-toggle"
+                data-panel-open={rightPanelOpen ? "" : undefined}
                 aria-keyshortcuts={rightSidebarToggleAriaShortcut()}
                 onClick={onToggleRightPanel}
                 componentId="chat.header.toggle_right_panel"

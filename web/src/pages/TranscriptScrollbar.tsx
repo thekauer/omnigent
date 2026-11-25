@@ -226,12 +226,14 @@ export function TranscriptScrollbar({
     <div
       aria-hidden
       data-testid="transcript-scrollbar"
+      data-slot="transcript-scrollbar"
       data-transcript-scrollbar=""
-      className="pointer-events-none absolute right-1 z-10 w-3"
+      className="pointer-events-none absolute right-1 z-10 w-3 bg-[var(--ui-scrollbar-track,transparent)]"
       style={{ top: topInset, bottom: TRACK_BOTTOM_PX }}
     >
       <div
         data-testid="transcript-scrollbar-thumb"
+        data-slot="transcript-scrollbar-thumb"
         data-transcript-scrollbar=""
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
@@ -242,8 +244,9 @@ export function TranscriptScrollbar({
           // native touch-pan arbitration must not steal the gesture (it fires
           // pointercancel right after pointerdown and the drag dies).
           "pointer-events-auto absolute right-0.5 w-1.5 cursor-default touch-none rounded-full",
-          "bg-foreground/20 transition-[width,background-color] duration-150",
-          "hover:w-2.5 hover:bg-foreground/40",
+          // The scrollbar tokens (theme/tokens/scrollbar.ts) when a theme sets them.
+          "bg-[var(--ui-scrollbar-thumb,color-mix(in_oklab,var(--foreground)_20%,transparent))] transition-[width,background-color] duration-150",
+          "hover:w-2.5 hover:bg-[var(--ui-scrollbar-thumb-hover,color-mix(in_oklab,var(--foreground)_40%,transparent))]",
           dragging && "w-2.5 bg-foreground/50",
         )}
         style={{ height: thumbPx, transform: `translateY(${offset}px)` }}

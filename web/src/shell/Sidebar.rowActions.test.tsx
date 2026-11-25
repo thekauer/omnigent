@@ -342,8 +342,8 @@ describe("quick pin/unpin hover button", () => {
     // offsets like the old right-[30px] / -right-3).
     const pin = screen.getByTestId("quick-pin-conversation");
     const kebab = screen.getByTestId("conversation-actions");
-    expect(pin).toHaveClass("size-6");
-    expect(kebab).toHaveClass("size-6");
+    expect(pin).toHaveClass("size-(--ui-control-h-xs)");
+    expect(kebab).toHaveClass("size-(--ui-control-h-xs)");
     // Both buttons live in the same wrapper, which owns the position + gap.
     const controls = pin.parentElement!;
     expect(controls).toBe(kebab.parentElement);
@@ -374,12 +374,16 @@ describe("quick pin/unpin hover button", () => {
     renderSidebar();
 
     const projectActions = screen.getByTestId("project-actions");
-    expect(projectActions).toHaveClass("size-6", "text-muted-foreground", "hover:text-foreground");
+    expect(projectActions).toHaveClass(
+      "size-(--ui-control-h-xs)",
+      "text-muted-foreground",
+      "hover:text-foreground",
+    );
     expect(projectActions).not.toHaveClass("size-7");
     expect(projectActions.querySelector("svg")).toHaveClass("size-3.5");
     expect(projectActions.querySelector("svg")).toHaveAttribute("data-icon-size", "14");
     // Same compact size as the session-row kebab it aligns with.
-    expect(screen.getByTestId("conversation-actions")).toHaveClass("size-6");
+    expect(screen.getByTestId("conversation-actions")).toHaveClass("size-(--ui-control-h-xs)");
   });
 
   it("sizes the Projects group-header controls to the same compact icon", () => {
@@ -394,7 +398,11 @@ describe("quick pin/unpin hover button", () => {
       screen.getByTestId("new-project"),
       screen.getByTestId("project-list-actions"),
     ]) {
-      expect(button).toHaveClass("size-6", "text-muted-foreground", "hover:text-foreground");
+      expect(button).toHaveClass(
+        "size-(--ui-control-h-xs)",
+        "text-muted-foreground",
+        "hover:text-foreground",
+      );
       expect(button).not.toHaveClass("size-7");
     }
   });

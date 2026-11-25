@@ -725,7 +725,12 @@ export function WorkingIndicator() {
       <span role="status" aria-live="polite" className="sr-only">
         {blockedOn ? label : "Working…"}
       </span>
-      <Message from="assistant" data-testid="working-indicator" aria-hidden="true">
+      <Message
+        from="assistant"
+        data-testid="working-indicator"
+        data-slot="working-indicator"
+        aria-hidden="true"
+      >
         <MessageContent>
           <div className="flex items-center gap-1.5 py-0.5">
             <BrandLogo variant="icon" className="otto-working h-4 w-auto shrink-0" />
@@ -1257,6 +1262,7 @@ function UserBubble({ bubble }: { bubble: Extract<Bubble, { kind: "user" }> }) {
             {(text || fileChips.length > 0) && (
               <MessageContent
                 data-testid="user-message-content"
+                data-slot="user-bubble"
                 className={flashing ? "animate-message-highlight" : undefined}
                 // Another contributor's bubble takes their avatar color at low
                 // alpha instead of the default bg-muted.

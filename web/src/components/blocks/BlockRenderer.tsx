@@ -809,7 +809,9 @@ function TurnWorkedFold({
         {/* The grow-in collapses this wrapper; the trigger's padding would floor it. */}
         <div>
           <CollapsibleTrigger className="flex cursor-pointer items-center gap-2 rounded-sm py-1 text-left text-muted-foreground text-ui outline-none transition-colors hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50">
-            <span className="shrink-0">{label}</span>
+            <span data-slot="fold-label" className="ui-label shrink-0">
+              {label}
+            </span>
             <ChevronRightIcon className="size-2.5 shrink-0 transition-transform group-data-[state=open]/turn-fold:rotate-90" />
           </CollapsibleTrigger>
         </div>

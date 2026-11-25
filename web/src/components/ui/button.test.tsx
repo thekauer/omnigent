@@ -237,3 +237,15 @@ describe("Button analytics (componentId)", () => {
     expect(analytics).not.toHaveBeenCalled();
   });
 });
+
+describe("Button density", () => {
+  // The heights come from the density tokens; a caller's own height still wins.
+  it("reads the control height tokens and yields to a caller's height", () => {
+    expect(buttonVariants({ size: "sm" })).toContain("h-(--ui-control-h-sm)");
+    expect(buttonVariants({ size: "icon-xs" })).toContain("size-(--ui-control-h-xs)");
+    render(<Button className="h-10">Wide</Button>);
+    const button = screen.getByRole("button", { name: "Wide" });
+    expect(button).toHaveClass("h-10");
+    expect(button).not.toHaveClass("h-(--ui-control-h-md)");
+  });
+});

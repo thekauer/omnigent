@@ -158,11 +158,11 @@ describe("theme token registry", () => {
     }
   });
 
-  it("adds only shape, typography and elevation tokens beside the legacy ones", () => {
+  it("adds only the Layer 0 groups' tokens beside the legacy ones", () => {
     const legacyIds = new Set([...Object.keys(legacy[":root"]), ...Object.keys(legacy[".dark"])]);
     const added = DEFAULT_TOKENS.filter((token) => !legacyIds.has(token.id));
     expect(new Set(added.map((token) => token.group))).toEqual(
-      new Set(["shape", "typography", "elevation"]),
+      new Set(["shape", "typography", "elevation", "density", "border", "scrollbar"]),
     );
     expect(
       added.every((token) => token.id.startsWith("ui-")),

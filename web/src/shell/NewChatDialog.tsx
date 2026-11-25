@@ -7447,7 +7447,7 @@ function NewChatLandingContent({
                               Worktrees
                             </span>
                             <div
-                              className="flex min-h-0 max-h-80 flex-1 flex-col gap-px overflow-y-auto [scrollbar-width:thin] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-track]:bg-transparent"
+                              className="flex min-h-0 max-h-80 flex-1 flex-col gap-px ui-scroll overflow-y-auto"
                               data-testid="new-chat-landing-worktree-dropdown"
                             >
                               <TooltipProvider>

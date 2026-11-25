@@ -748,6 +748,8 @@ export const ComposerSendButton = forwardRef<
       aria-busy={busy}
       data-composer-action="send"
       {...props}
+      // After the props: a Radix trigger wrapping the button (asChild) passes its own slot.
+      data-slot={interrupt ? "composer-stop" : "composer-send"}
     >
       {busy ? (
         <Loader2Icon className="size-4 animate-spin" />

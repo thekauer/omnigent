@@ -745,23 +745,30 @@ describe("Sidebar session list", () => {
         "overflow-y-auto",
         "px-2",
         "[scrollbar-gutter:stable]",
-        "[scrollbar-width:thin]",
+        "ui-scroll",
       );
-      expect(scroller.className).toContain("[&::-webkit-scrollbar]:w-2");
       expect(scroller).not.toHaveClass("[scrollbar-width:none]");
       expect(scroller.className).not.toContain("[&::-webkit-scrollbar]:hidden");
 
       expect(scroller).toHaveClass("[scrollbar-color:transparent_transparent]");
       expect(scroller.className).toContain("[&::-webkit-scrollbar-thumb]:bg-transparent");
-      expect(scroller).not.toHaveClass("[scrollbar-color:var(--muted-foreground)_transparent]");
-      expect(scroller.className).not.toContain("[&::-webkit-scrollbar-thumb]:bg-muted-foreground");
+      expect(scroller).not.toHaveClass(
+        "[scrollbar-color:var(--ui-scrollbar-thumb,var(--muted-foreground))_var(--ui-scrollbar-track,transparent)]",
+      );
+      expect(scroller.className).not.toContain(
+        "[&::-webkit-scrollbar-thumb]:bg-[var(--ui-scrollbar-thumb,var(--muted-foreground))]",
+      );
 
       // Scrolling reveals the thumb.
       act(() => {
         fireEvent.scroll(scroller, { target: { scrollTop: 40 } });
       });
-      expect(scroller).toHaveClass("[scrollbar-color:var(--muted-foreground)_transparent]");
-      expect(scroller.className).toContain("[&::-webkit-scrollbar-thumb]:bg-muted-foreground");
+      expect(scroller).toHaveClass(
+        "[scrollbar-color:var(--ui-scrollbar-thumb,var(--muted-foreground))_var(--ui-scrollbar-track,transparent)]",
+      );
+      expect(scroller.className).toContain(
+        "[&::-webkit-scrollbar-thumb]:bg-[var(--ui-scrollbar-thumb,var(--muted-foreground))]",
+      );
 
       // It hides again once scrolling settles.
       act(() => {

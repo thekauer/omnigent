@@ -110,7 +110,10 @@ export function TaskActivityMessage({ activity }: { activity: TaskActivity }) {
       data-status={activity.kind === "task" ? activity.status : undefined}
       data-step-id={activity.kind === "task" ? activity.stepId : undefined}
     >
-      <span aria-hidden="true" className="min-w-0 flex-1 border-t border-dashed border-border" />
+      <span
+        aria-hidden="true"
+        className="min-w-0 flex-1 border-t-(length:--ui-border-width) [--tw-border-style:var(--ui-divider-dashed-style)] border-border"
+      />
       <div
         className={cn(
           "flex min-w-0 max-w-[85%] items-center gap-1.5 rounded-full border border-transparent px-3 py-1 text-center transition-colors hover:border-border focus-within:border-border",
@@ -121,7 +124,10 @@ export function TaskActivityMessage({ activity }: { activity: TaskActivity }) {
         <ListChecksIcon aria-hidden="true" className="size-4 shrink-0" />
         <span className="min-w-0 break-words">{content}</span>
       </div>
-      <span aria-hidden="true" className="min-w-0 flex-1 border-t border-dashed border-border" />
+      <span
+        aria-hidden="true"
+        className="min-w-0 flex-1 border-t-(length:--ui-border-width) [--tw-border-style:var(--ui-divider-dashed-style)] border-border"
+      />
     </div>
   );
 }

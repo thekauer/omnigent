@@ -191,7 +191,7 @@ export function TabStripScroller({
       data-tab-strip-viewport=""
       {...viewportProps}
       className={cn(
-        "min-w-0 overflow-x-auto overflow-y-hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+        "ui-scroll-hidden min-w-0 overflow-x-auto overflow-y-hidden",
         fadeEdges && "[mask-image:var(--tab-strip-mask,none)]",
         className,
       )}

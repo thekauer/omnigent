@@ -1471,7 +1471,8 @@ describe("WorkspacePanel tab-strip layout (regression)", () => {
     >);
 
   // The row containing the fixed nav tabs — the tab strip.
-  const strip = () => screen.getByRole("tab", { name: /files/i }).closest("div.border-b")!;
+  const strip = () =>
+    screen.getByRole("tab", { name: /files/i }).closest("div.workspace-tab-strip")!;
 
   it("keeps exactly one ml-auto in the strip with no open tabs (trailing group pins right)", () => {
     // Two ml-auto siblings split the free space and strand the nav group

@@ -7764,7 +7764,7 @@ describe("NewChatLandingScreen", () => {
         "flex-1",
         "gap-px",
         "overflow-y-auto",
-        "[scrollbar-width:thin]",
+        "ui-scroll",
       );
       expect(worktreeList).not.toHaveClass(
         "max-h-[min(320px,calc(var(--radix-popover-content-available-height)-160px))]",

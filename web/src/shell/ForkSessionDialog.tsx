@@ -1901,7 +1901,7 @@ function SupportedForkSessionForm({
     <>
       <div
         ref={formRef}
-        className="-mr-4 flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto pr-4 [scrollbar-width:thin] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-track]:bg-transparent"
+        className="-mr-4 flex min-h-0 flex-1 flex-col gap-4 ui-scroll overflow-y-auto pr-4"
       >
         {/* Host first: with nothing to run the clone on, the user learns up
               front whether they can proceed. Mirrors NewChatDialog: a picker

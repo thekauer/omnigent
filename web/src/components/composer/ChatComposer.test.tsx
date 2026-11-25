@@ -224,6 +224,17 @@ describe("ChatComposer", () => {
     );
   });
 
+  it("marks the send and interrupt states with their theme hooks, keeping the button's size", () => {
+    const { rerender } = render(<ComposerSendButton label="Send" />);
+    const send = screen.getByRole("button", { name: "Send" });
+    expect(send).toHaveAttribute("data-slot", "composer-send");
+    expect(send).toHaveAttribute("data-size", "icon");
+    rerender(<ComposerSendButton label="Interrupt" interrupt />);
+    const stop = screen.getByRole("button", { name: "Interrupt" });
+    expect(stop).toHaveAttribute("data-slot", "composer-stop");
+    expect(stop).toHaveAttribute("data-variant", "destructive");
+  });
+
   it("keeps an enabled send action independent from the theme accent", () => {
     render(<ComposerSendButton label="Send" />);
     expect(screen.getByRole("button", { name: "Send" })).toHaveClass(

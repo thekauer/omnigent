@@ -209,7 +209,10 @@ function PullRequestListRow({
     </>
   );
   return (
-    <li className="flex min-w-0 items-center gap-2 rounded-md px-1.5 hover:bg-muted/50">
+    <li
+      data-slot="pr-row"
+      className="flex min-w-0 items-center gap-2 rounded-md px-1.5 hover:bg-muted/50"
+    >
       <button
         type="button"
         onClick={onSelect}
@@ -219,6 +222,7 @@ function PullRequestListRow({
       >
         <GitPullRequestIcon
           aria-hidden
+          data-slot="pr-row-icon"
           className={cn(
             "size-4 shrink-0",
             !summary.state || summary.isDraft
@@ -231,11 +235,16 @@ function PullRequestListRow({
           )}
         />
         <span className="truncate">
-          <span className="text-muted-foreground">{row.identity}</span>
+          <span data-slot="pr-row-identity" className="text-muted-foreground">
+            {row.identity}
+          </span>
           {row.title && (
             <>
               {" "}
-              · <span className="font-medium">{row.title}</span>
+              ·{" "}
+              <span data-slot="pr-row-title" className="font-medium">
+                {row.title}
+              </span>
             </>
           )}
         </span>
@@ -503,7 +512,10 @@ export function ViewPullRequests({
           mobileHeaderTarget.title,
         )}
       {bar?.kind === "toolbar" ? (
-        <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border px-2">
+        <div
+          data-slot="view-title"
+          className="flex h-(--ui-view-title-height) shrink-0 items-center gap-2 border-b border-border px-(--ui-view-title-padding-x)"
+        >
           <PanelTitle showTitle={bar.showTitle} />
           <div className="ml-auto flex min-w-0 flex-1 items-center gap-2">
             {shown.back && layout === shown && (
@@ -515,7 +527,10 @@ export function ViewPullRequests({
           </div>
         </div>
       ) : bar?.kind === "refresh" ? (
-        <div className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-border px-2">
+        <div
+          data-slot="view-title"
+          className="flex h-(--ui-view-title-height) shrink-0 items-center justify-between gap-2 border-b border-border px-(--ui-view-title-padding-x)"
+        >
           <PanelTitle showTitle />
           <RefreshButton refresh={bar} run={run} />
         </div>

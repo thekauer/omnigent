@@ -1,5 +1,6 @@
 // Typography tokens: the font families, weights and letter-spacing the host uses, and
-// the section-label style. Tailwind's `font-sans`, `font-mono`, `font-heading` and
+// the label style the `.ui-label` hook class reads (index.css): the sidebar section
+// labels, the right panel's view titles and the transcript's fold row. Tailwind's `font-sans`, `font-mono`, `font-heading` and
 // `font-normal`/`-medium`/`-semibold` read them (index.css).
 //
 // The Appearance font setting (`--ui-font-family`, lib/uiFontPreferences.ts) is a
@@ -38,7 +39,8 @@ export const TYPOGRAPHY_TOKENS = defineTokens("typography", [
   {
     id: "ui-font-label",
     kind: "font",
-    description: "Font of section labels.",
+    description:
+      "Font of section labels and the other `.ui-label` sites, under the Appearance font setting.",
     default: { light: "var(--ui-font-ui)" },
   },
   {
@@ -88,5 +90,27 @@ export const TYPOGRAPHY_TOKENS = defineTokens("typography", [
     kind: "number",
     description: "Section label font weight.",
     default: { light: "var(--ui-weight-normal)" },
+  },
+  // The other `.ui-label` sites share the label font, case and tracking, and keep
+  // their own size and weight; a theme that wants one label style sets these to
+  // `var(--ui-label-size)` and `var(--ui-label-weight)`.
+  {
+    id: "ui-view-title-size",
+    kind: "length",
+    description: "Font size of a right panel view's title (`[data-slot=view-title-label]`).",
+    default: { light: "var(--text-ui)" },
+  },
+  {
+    id: "ui-view-title-weight",
+    kind: "number",
+    description: "Font weight of a right panel view's title.",
+    default: { light: "var(--ui-weight-medium)" },
+  },
+  {
+    id: "ui-fold-label-size",
+    kind: "length",
+    description:
+      "Font size of the transcript's fold row label, `Worked for 5s` (`[data-slot=fold-label]`). Its weight is ui-label-weight.",
+    default: { light: "var(--text-ui)" },
   },
 ]);

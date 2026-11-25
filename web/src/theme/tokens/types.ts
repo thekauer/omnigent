@@ -21,7 +21,16 @@ export type TokenKind =
   | "keyword";
 
 /** The registry module a token belongs to. */
-export type TokenGroup = "workbench" | "status" | "chart" | "shape" | "typography" | "elevation";
+export type TokenGroup =
+  | "workbench"
+  | "status"
+  | "chart"
+  | "shape"
+  | "typography"
+  | "elevation"
+  | "density"
+  | "border"
+  | "scrollbar";
 
 /**
  * An `@property` syntax for a token registered with the browser. A registered token
@@ -44,7 +53,8 @@ export type TokenSyntax = "<length-percentage>" | "<number>" | "<number> | <perc
  *
  * `light` is declared on `:root` (so dark mode inherits it unless `dark` is set) and
  * `dark` on `.dark`. A missing `light` leaves the token unset in light mode; a
- * missing `dark` keeps the light value in dark mode. A value may reference other
+ * missing `dark` keeps the light value in dark mode; `{}` leaves the token unset in
+ * both, so its readers' `var()` fallbacks apply. A value may reference other
  * tokens with `var()`; such a token is derived (see `isDerivedValue`).
  */
 export interface TokenDefaults {

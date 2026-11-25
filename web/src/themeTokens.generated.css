@@ -194,6 +194,9 @@
   --ui-label-transform: none;
   --ui-label-tracking: var(--ui-letter-spacing);
   --ui-label-weight: var(--ui-weight-normal);
+  --ui-view-title-size: var(--text-ui);
+  --ui-view-title-weight: var(--ui-weight-medium);
+  --ui-fold-label-size: var(--text-ui);
   --ui-elevation: 1;
   --ui-shadow-neutral-rgb: 0 0 0;
   --ui-shadow-warm-rgb: 60 40 10;
@@ -232,6 +235,27 @@
   --ui-shadow-onboarding: 0 24px 80px 8px rgb(var(--ui-shadow-neutral-rgb) / var(--ui-shadow-onboarding-alpha));
   /* prettier-ignore */
   --onboarding-modal-shadow: 0 24px 80px 8px #00000012;
+  --ui-row-line: 20px;
+  --ui-row-height: calc(var(--ui-row-line) + calc(var(--spacing) * 2));
+  --ui-control-h-xs: calc(var(--spacing) * 6);
+  --ui-control-h-sm: calc(var(--spacing) * 7);
+  --ui-control-h-md: calc(var(--spacing) * 8);
+  --ui-control-h-lg: calc(var(--spacing) * 9);
+  --ui-header-height: calc(var(--spacing) * 12);
+  --ui-tabstrip-padding-x: calc(var(--spacing) * 2);
+  --ui-tabstrip-padding-y: calc(var(--spacing) * 3);
+  --ui-tabstrip-height: calc(
+    var(--ui-tabstrip-padding-y) * 2 + calc(var(--spacing) * 6) + var(--ui-border-width)
+  );
+  --ui-view-title-height: calc(var(--spacing) * 11);
+  --ui-view-title-padding-x: calc(var(--spacing) * 2);
+  --ui-view-title-gap: 2px;
+  --ui-border-width: 1px;
+  --ui-border-style: solid;
+  --ui-divider-style: solid;
+  --ui-divider-dashed-style: dashed;
+  --ui-scrollbar-width: thin;
+  --ui-scrollbar-size: calc(var(--spacing) * 2);
 }
 
 .dark {
@@ -986,6 +1010,9 @@
   --ui-label-size: var(--text-sm);
   --ui-label-tracking: var(--ui-letter-spacing);
   --ui-label-weight: var(--ui-weight-normal);
+  --ui-view-title-size: var(--text-ui);
+  --ui-view-title-weight: var(--ui-weight-medium);
+  --ui-fold-label-size: var(--text-ui);
   --ui-shadow-xs-alpha: calc(0.08 * var(--ui-elevation));
   /* prettier-ignore */
   --ui-shadow-xs: 0 2px 8px -3px rgb(var(--ui-shadow-neutral-rgb) / var(--ui-shadow-xs-alpha));
@@ -1019,6 +1046,20 @@
   --ui-shadow-onboarding-alpha: calc(18 / 255 * var(--ui-elevation));
   /* prettier-ignore */
   --ui-shadow-onboarding: 0 24px 80px 8px rgb(var(--ui-shadow-neutral-rgb) / var(--ui-shadow-onboarding-alpha));
+  --ui-row-height: calc(var(--ui-row-line) + calc(var(--spacing) * 2));
+  --ui-control-h-xs: calc(var(--spacing) * 6);
+  --ui-control-h-sm: calc(var(--spacing) * 7);
+  --ui-control-h-md: calc(var(--spacing) * 8);
+  --ui-control-h-lg: calc(var(--spacing) * 9);
+  --ui-header-height: calc(var(--spacing) * 12);
+  --ui-tabstrip-padding-x: calc(var(--spacing) * 2);
+  --ui-tabstrip-padding-y: calc(var(--spacing) * 3);
+  --ui-tabstrip-height: calc(
+    var(--ui-tabstrip-padding-y) * 2 + calc(var(--spacing) * 6) + var(--ui-border-width)
+  );
+  --ui-view-title-height: calc(var(--spacing) * 11);
+  --ui-view-title-padding-x: calc(var(--spacing) * 2);
+  --ui-scrollbar-size: calc(var(--spacing) * 2);
 }
 
 :root.dark,
@@ -1058,6 +1099,9 @@
   --ui-label-size: var(--text-sm);
   --ui-label-tracking: var(--ui-letter-spacing);
   --ui-label-weight: var(--ui-weight-normal);
+  --ui-view-title-size: var(--text-ui);
+  --ui-view-title-weight: var(--ui-weight-medium);
+  --ui-fold-label-size: var(--text-ui);
   --ui-shadow-xs-alpha: calc(0.08 * var(--ui-elevation));
   /* prettier-ignore */
   --ui-shadow-xs: 0 2px 8px -3px rgb(var(--ui-shadow-neutral-rgb) / var(--ui-shadow-xs-alpha));
@@ -1091,4 +1135,18 @@
   --ui-shadow-onboarding-alpha: calc(56 / 255 * var(--ui-elevation));
   /* prettier-ignore */
   --ui-shadow-onboarding: 0 24px 80px 8px rgb(var(--ui-shadow-neutral-rgb) / var(--ui-shadow-onboarding-alpha));
+  --ui-row-height: calc(var(--ui-row-line) + calc(var(--spacing) * 2));
+  --ui-control-h-xs: calc(var(--spacing) * 6);
+  --ui-control-h-sm: calc(var(--spacing) * 7);
+  --ui-control-h-md: calc(var(--spacing) * 8);
+  --ui-control-h-lg: calc(var(--spacing) * 9);
+  --ui-header-height: calc(var(--spacing) * 12);
+  --ui-tabstrip-padding-x: calc(var(--spacing) * 2);
+  --ui-tabstrip-padding-y: calc(var(--spacing) * 3);
+  --ui-tabstrip-height: calc(
+    var(--ui-tabstrip-padding-y) * 2 + calc(var(--spacing) * 6) + var(--ui-border-width)
+  );
+  --ui-view-title-height: calc(var(--spacing) * 11);
+  --ui-view-title-padding-x: calc(var(--spacing) * 2);
+  --ui-scrollbar-size: calc(var(--spacing) * 2);
 }

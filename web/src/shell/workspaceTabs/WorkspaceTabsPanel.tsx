@@ -1008,6 +1008,7 @@ function WorkspaceTabsPanelImpl({
   return (
     <aside
       aria-label="Workspace"
+      data-slot="workspace-panel"
       {...commandRegionProps("workspace")}
       ref={railInertRef}
       aria-hidden={!open}

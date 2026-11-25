@@ -129,7 +129,12 @@ function PullRequestEmptyState({
  *  each request, so {@link PullRequestProviderIcon} carries it beside the title. */
 export function PanelTitle({ showTitle = false }: { showTitle?: boolean }) {
   return (
-    <h2 className={cn("shrink-0 font-medium text-ui", !showTitle && "sr-only")}>Pull Requests</h2>
+    <h2
+      data-slot="view-title-label"
+      className={cn("ui-label shrink-0 font-medium text-ui", !showTitle && "sr-only")}
+    >
+      Pull Requests
+    </h2>
   );
 }
 

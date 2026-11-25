@@ -87,7 +87,7 @@ describe("sub-agent activity", () => {
     );
     const activity = screen.getByTestId("subagent-activity");
     expect(activity).toHaveTextContent(`${label} Research public positioning`);
-    expect(activity.querySelectorAll(".border-dashed")).toHaveLength(2);
+    expect(activity.querySelectorAll("[class*=ui-divider-dashed-style]")).toHaveLength(2);
     expect(screen.getByRole("link")).toHaveClass("font-normal");
     expect(screen.getByRole("link")).toHaveAttribute("href", "/c/conv_child?debug=1&panel=agents");
     expect(screen.queryByTestId("message-bubble")).not.toBeInTheDocument();

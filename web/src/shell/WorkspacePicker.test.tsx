@@ -1207,7 +1207,7 @@ describe("WorkspacePicker modal actions", () => {
         "py-[3px]",
       );
       expect(screen.getByTestId("workspace-picker-select")).toHaveClass(
-        "h-8",
+        "h-(--ui-control-h-md)",
         "px-2.5",
         "font-normal",
       );

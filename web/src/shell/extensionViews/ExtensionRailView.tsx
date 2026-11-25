@@ -659,11 +659,16 @@ function ViewTitle({
   // Open In sits last, after the drawer's Close, as in the classic Files header.
   const openIn = navigation.find((action) => action.kind === "openIn");
   return (
-    <div className="flex h-11 shrink-0 items-center gap-[2px] px-2">
+    <div
+      data-slot="view-title"
+      className="flex h-(--ui-view-title-height) shrink-0 items-center gap-(--ui-view-title-gap) px-(--ui-view-title-padding-x)"
+    >
       {view.locationBar ? (
         <ViewLocationBar view={view} conversationId={conversationId} />
       ) : (
-        <h2 className="shrink-0 pl-1 font-medium text-ui">{view.title ?? view.name}</h2>
+        <h2 data-slot="view-title-label" className="ui-label shrink-0 pl-1 font-medium text-ui">
+          {view.title ?? view.name}
+        </h2>
       )}
       {view.description && (
         <span className="min-w-0 truncate pl-1.5 text-muted-foreground text-sm">
