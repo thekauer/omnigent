@@ -13,8 +13,10 @@ the same commit that lands each milestone.
 | M0 | Done | `verify.sh --screens --token-dump --embed` and `--compare` in `my-extensions/dev/verify/screens.py`; baselines of `0c1afd2594` in `my-extensions/dev/verify/baselines/` (96 screens, 16 standalone and 14 embed dumps). Two runs: 0 px, identical dumps. |
 | M1 | Done | `web/src/theme/tokens/` (registry, workbench, status, chart); `PaletteTokens` and `PALETTE_TOKEN_CSS_NAMES` derived from it; `scripts/generate-theme-tokens.mjs` writes `src/themeTokens.generated.css` (`just generate-theme-tokens`, pre-commit `web-theme-token-generation`). 37 non-palette colour tokens (61 declarations) left `index.css`; its remaining `:root`/`.dark` tokens (shadows, radii, insets, motion) are listed in `registry.test.ts` for M2/M3. Against the M0 baselines: identical dumps, 0 px. |
 | M2 | Done | Shape (`ui-radius-base` and its derived scale, `ui-radius-pill`, off-scale `ui-radius-3/10/12/16/20/30`; `--radius` and `radius-otto-*` aliases), typography (`ui-font-ui/title/mono/code/label`, weights, letter-spacing, label tokens) and elevation (`ui-elevation`, every shadow recipe with an elevation-scaled alpha) in `web/src/theme/tokens/`; tokens that alias a plain value are registered with `@property`. `@theme inline` reads `var(--ui-*)`; the `rounded-[Npx]` TSX uses read the scale or the off-scale aliases; the Appearance font setting is a layer over `ui-font-ui`. Derived values re-emit on the theme roots, light formulas included on dark roots. Harness (my-extensions `bc235e1`, 195 screens on `13dbdd5d14`): 0 px; the dump gains only the new tokens, plus 11 embed shadow tokens whose minified literal text became computed text of identical value. `--ui-radius-base: 0` with `--ui-elevation: 0` leaves no radius or cast shadow on the session page. |
-| M3 | Next | |
-| M4 to M11 | Queued | |
+| M2 follow-ups | Done | Radii `<length-percentage>`; every shadow alpha kind `alpha`, `<number> \| <percentage>`; `ui-elevation` a `<number>` with initial 1; the embed drops the token `@property` rules (naming section); Tailwind no longer scans `theme/tokens`. Harness masks come from the baseline only, and it probes the registrations. Dumps refreshed from `f5566ddd93` (my-extensions `a520b89`), screens untouched. |
+| M3 | Done | Density, border, scrollbar and label-site tokens (token groups above), `.ui-label`, `.ui-scroll`, `.ui-scroll-hidden` and the `data-slot` hooks in `theme_hooks.md`; literal radii of AnimatedOmnigentPanel (`ui-radius-24`, `ui-radius-14`) and SuggestionChart (`ui-radius-md`) moved onto tokens. Against the refreshed baselines: 0 px on all screens, dumps gain only additions (standalone and embed). The DevHub preview reads the hooks and tokens instead of DOM shape, aria-labels and class text. |
+| M4 | Next | |
+| M5 to M11 | Queued | |
 
 Resume notes:
 
@@ -25,19 +27,26 @@ Resume notes:
   `OMNI_UI_REPO=<checkout> ./verify/verify.sh --screens --token-dump --embed --compare verify/baselines`
   (about 10 minutes). It needs 0 px per screen and identical `tokens.json` and
   `tokens-embed.json` (added tokens aside), and the baseline's Chrome version. The only
-  tolerance is spot-specific: inside the recorded masks of the dark code blocks' copy
-  buttons (a known one-LSB flake), at most 2 per channel, with both dumps present and
-  no token value changed or removed; 0 px everywhere else. M2 added tokens and changed
-  the text of 11 embed shadow tokens (same values), so refresh the dumps only
-  (`--token-dump --embed --save-baselines --only-screens none`) from M2's commit before
-  comparing M3, or the embed text differences keep the tolerance off.
-- M3 notes: the label tokens (`ui-label-*`) have no consumers yet; the sidebar section
-  label, view title and fold row hooks should read them. Still literal: the glass
-  surfaces' shadows (`components/ui/glass-surface/GlassSurface.css`,
-  `OmniGlassSurface`, the drop-shadow filters in `NewChatDialog` and
-  `SidebarHeaderActions`), the vendored file tree, PDF viewer and CodeMirror radii
-  (M4), and the `border-radius: 100%` circle in index.css. `onboarding-modal-shadow`
-  is deprecated (unscaled); remove it in M6.
+  tolerance is spot-specific: inside the baseline's recorded masks of the dark code
+  blocks' copy buttons (a known one-LSB flake), at most 2 per channel, with both dumps
+  present and no token value changed or removed; 0 px everywhere else. The dumps were
+  refreshed after the M2 follow-ups; M3 only added tokens to them.
+- A worktree needs real `node_modules` (`cp -al` of the main checkout's root and
+  `web/` ones): symlinked ones resolve outside the worktree, and Vite's dev server then
+  refuses the Geist Mono font, which changes every mono glyph.
+- Still literal after M3, for M4/M5: the glass surfaces' shadows
+  (`components/ui/glass-surface/GlassSurface.css`, `OmniGlassSurface`), the drop-shadow
+  filters in `NewChatDialog` and `SidebarHeaderActions`, the vendored file tree, PDF
+  viewer and CodeMirror radii (M4), and the `border-radius: 100%` circle in index.css.
+  `onboarding-modal-shadow` is deprecated (unscaled); remove it in M6. CanvasPage's
+  `[scrollbar-width:thin]` strip is not a `.ui-scroll` (it has no WebKit styling, which
+  `.ui-scroll` would add in Safari). No hook yet (the DevHub preview still matches them
+  by `data-testid` or class text): the sidebar nav and server picker, the header title
+  and items, the view-mode toggle, timestamps, the composer's agent values and the
+  chat column width (layout stage).
+- Buttons wrapped in a Radix trigger (`asChild`) get the trigger's `data-slot`
+  (`tooltip-trigger`) unless they set their own after their props, as
+  ComposerSendButton does; a hook passed as a prop at the call site wins anyway.
 - Refresh the baselines (`--save-baselines`) only on a commit that is meant to change
   the look, and say so in its message.
 - The terminal screen is the transcript's shell output; the xterm panel needs a live
@@ -177,12 +186,25 @@ Defaults must match today exactly.
   - ui-label-size/transform/tracking/weight
 - **Shape:** ui-radius-base 8px. Derived xs/sm/md/lg/xl/2xl/3xl/4xl, plus ui-radius-pill. `--radius` and `radius-otto-*` become aliases.
 - **Elevation:** ui-elevation 1, shadow rgb tokens, all shadow recipes scaled by elevation.
-- **Density:**
-  - ui-row-height 28px, ui-row-line 20px, ui-control-h-xs/sm/md/lg 24/28/32/36px
-  - ui-header-height, ui-tabstrip-height, ui-view-title-height 44px, gaps and padding at the hooked sites
+- **Density** (M3, `density.ts`; defaults in Tailwind spacing steps, so they track `--spacing`):
+  - ui-row-line 20px, ui-row-height 28px (line plus padding; a minimum, `.sidebar-row`)
+  - ui-control-h-xs/sm/md/lg 24/28/32/36px (`button.tsx` sizes, `input.tsx`, the rail tabs)
+  - ui-header-height 48px (session header and sidebar header row, desktop)
+  - ui-tabstrip-height 49px (measured: 12px padding twice, a 24px tab, the 1px rule; a minimum),
+    ui-tabstrip-padding-x/-y 8/12px
+  - ui-view-title-height 44px, ui-view-title-padding-x 8px, ui-view-title-gap 2px
   - Tailwind `--spacing` is not touched.
-- **Borders:** ui-border-width, ui-border-style, ui-divider-style.
-- **Scrollbar:** ui-scrollbar-size, thumb, thumb-hover, track.
+- **Borders** (M3, `border.ts`): ui-border-width 1px, ui-border-style solid (input, textarea,
+  select trigger, dropdown and context menus, kbd), ui-divider-style solid (the tab strips' rule),
+  ui-divider-dashed-style dashed (subagent and task activity dividers). A style token sets
+  Tailwind's `--tw-border-style`, so a caller's `border-dashed` still wins.
+- **Scrollbar** (M3, `scrollbar.ts`, read by `.ui-scroll` and TranscriptScrollbar): ui-scrollbar-width
+  thin, ui-scrollbar-size 8px, and ui-scrollbar-thumb/-thumb-hover/-track unset by default
+  (`default: {}`), so every surface keeps its own colours until a theme sets them.
+- **Label sites** (M3, typography): `.ui-label` reads ui-font-label, ui-label-transform and
+  ui-label-tracking everywhere; size and weight are ui-label-size/-weight (sidebar section
+  labels, the fold row's weight), ui-view-title-size/-weight and ui-fold-label-size, each
+  defaulting to that site's current value. Public hooks: `theme_hooks.md`.
 - **Motion:** ui-duration-fast/base, ui-ease, ui-motion.
 
 ## Theme contribution API (VS Code-shaped)
