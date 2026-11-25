@@ -63,31 +63,31 @@ function notifyRegistry(): void {
  * @returns Unregisters it (if not replaced since).
  */
 export function registerSyntaxTheme(definition: SyntaxThemeDefinition): () => void {
-  if (!SYNTAX_THEME_NAME.test(String(definition.name))) {
-    throw new TypeError(`syntax theme name ${JSON.stringify(definition.name)} is not a keyword`);
+  // Each field read once: a getter can't pass the check with one value and register another.
+  const { name: rawName, type, colors: rawColors, tokenColors: rawTokenColors } = definition;
+  const name = typeof rawName === "string" ? rawName : `<${typeof rawName}>`;
+  if (typeof rawName !== "string" || !SYNTAX_THEME_NAME.test(name)) {
+    throw new TypeError(`syntax theme name ${JSON.stringify(name)} is not a keyword`);
   }
-  if (definition.type !== "light" && definition.type !== "dark") {
-    throw new TypeError(`syntax theme ${definition.name}: type must be "light" or "dark"`);
+  if (type !== "light" && type !== "dark") {
+    throw new TypeError(`syntax theme ${name}: type must be "light" or "dark"`);
   }
-  const { colors, tokenColors, issues } = sanitizeSyntaxTheme(
-    definition.colors,
-    definition.tokenColors,
-  );
+  const { colors, tokenColors, issues } = sanitizeSyntaxTheme(rawColors, rawTokenColors);
   if (issues.length > 0) {
-    console.warn(`[theme] syntax theme ${definition.name}: dropped ${issues.join("; ")}`);
+    console.warn(`[theme] syntax theme ${name}: dropped ${issues.join("; ")}`);
   }
   const theme: ThemeRegistration = {
-    name: registeredThemeName(definition.name, revision + 1),
-    displayName: definition.name,
-    type: definition.type,
+    name: registeredThemeName(name, revision + 1),
+    displayName: name,
+    type,
     colors,
     tokenColors,
   };
-  registered.set(definition.name, theme);
+  registered.set(name, theme);
   notifyRegistry();
   return () => {
-    if (registered.get(definition.name) !== theme) return;
-    registered.delete(definition.name);
+    if (registered.get(name) !== theme) return;
+    registered.delete(name);
     notifyRegistry();
   };
 }

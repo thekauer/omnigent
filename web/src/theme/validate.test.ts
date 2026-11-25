@@ -4,6 +4,7 @@ import {
   isHexColor,
   isSyntaxFontStyle,
   sanitizeSyntaxTheme,
+  snapshotPlainData,
   SYNTAX_THEME_LIMITS,
 } from "./validate";
 
@@ -105,5 +106,109 @@ describe("sanitizeSyntaxTheme", () => {
       "colors: not an object",
       "tokenColors: not an array",
     ]);
+  });
+});
+
+describe("snapshotPlainData", () => {
+  const LIMITS = { chars: 1000, nodes: 100, depth: 8 };
+
+  it("reads each field once and never calls a getter", () => {
+    let reads = 0;
+    const tricky = {
+      get foreground() {
+        reads += 1;
+        return reads === 1 ? "#fff" : "red;}body{x:url(https://example.com)";
+      },
+    };
+    expect(snapshotPlainData(tricky, LIMITS)).toEqual({
+      ok: false,
+      reason: "$.foreground: an accessor",
+    });
+    expect(reads).toBe(0);
+    const proxyReads: string[] = [];
+    const proxy = new Proxy(
+      { a: "#fff" },
+      {
+        getOwnPropertyDescriptor(target, key) {
+          proxyReads.push(String(key));
+          return Reflect.getOwnPropertyDescriptor(target, key);
+        },
+      },
+    );
+    const copied = snapshotPlainData(proxy, LIMITS);
+    expect(copied).toMatchObject({ ok: true, value: { a: "#fff" } });
+    expect(proxyReads).toEqual(["a"]);
+  });
+
+  it("rejects holes, cycles, symbols, class instances and non-finite numbers", () => {
+    // eslint-disable-next-line no-sparse-arrays
+    expect(snapshotPlainData([1, , 3], LIMITS)).toEqual({ ok: false, reason: "$[1]: a hole" });
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    expect(snapshotPlainData(cyclic, LIMITS).ok).toBe(false);
+    expect(snapshotPlainData({ [Symbol("x")]: 1 }, LIMITS).ok).toBe(false);
+    expect(snapshotPlainData(new Date(0), LIMITS).ok).toBe(false);
+    expect(snapshotPlainData({ n: Number.NaN }, LIMITS).ok).toBe(false);
+    // A repeated (not cyclic) reference is fine.
+    const shared = { a: 1 };
+    expect(snapshotPlainData([shared, shared], LIMITS).ok).toBe(true);
+  });
+
+  it("keeps __proto__ a plain key in a prototype-free copy", () => {
+    const parsed = JSON.parse('{"__proto__": {"polluted": "#fff"}, "a": "#000"}') as unknown;
+    const copied = snapshotPlainData(parsed, LIMITS);
+    expect(copied.ok).toBe(true);
+    const value = (copied as { value: Record<string, unknown> }).value;
+    expect(Object.getPrototypeOf(value)).toBeNull();
+    expect(Object.keys(value)).toEqual(["__proto__", "a"]);
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+  });
+
+  it("fails as a whole past the size caps", () => {
+    expect(snapshotPlainData("x".repeat(1001), LIMITS).ok).toBe(false);
+    expect(
+      snapshotPlainData(
+        Array.from({ length: 101 }, () => 0),
+        LIMITS,
+      ).ok,
+    ).toBe(false);
+    let deep: unknown = 0;
+    for (let index = 0; index < 9; index += 1) deep = [deep];
+    expect(snapshotPlainData(deep, LIMITS).ok).toBe(false);
+  });
+});
+
+describe("sanitizeSyntaxTheme's input handling", () => {
+  it("checks a copy, so a getter can't swap a value after the check", () => {
+    let reads = 0;
+    const settings = {
+      get foreground() {
+        reads += 1;
+        return "#fff";
+      },
+    };
+    const { tokenColors, issues } = sanitizeSyntaxTheme({}, [{ scope: "keyword", settings }]);
+    expect(reads).toBe(0);
+    expect(tokenColors).toEqual([]);
+    expect(issues[0]).toMatch(/accessor/);
+  });
+
+  it("rejects sparse rule lists and caps the total size", () => {
+    // eslint-disable-next-line no-sparse-arrays
+    const sparse = [{ settings: { foreground: "#fff" } }, , { settings: { foreground: "#000" } }];
+    expect(sanitizeSyntaxTheme({}, sparse).issues[0]).toMatch(/hole/);
+    const huge = { "editor.background": "#".padEnd(SYNTAX_THEME_LIMITS.chars + 1, "f") };
+    const result = sanitizeSyntaxTheme(huge, []);
+    expect(result.colors).toEqual({});
+    expect(result.issues[0]).toMatch(/characters/);
+  });
+
+  it("returns prototype-free colour maps", () => {
+    const { colors } = sanitizeSyntaxTheme(
+      JSON.parse('{"__proto__": "#fff", "editor.background": "#000"}'),
+      [],
+    );
+    expect(Object.getPrototypeOf(colors)).toBeNull();
+    expect(colors["editor.background"]).toBe("#000");
   });
 });
