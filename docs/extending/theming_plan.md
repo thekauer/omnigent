@@ -15,8 +15,10 @@ the same commit that lands each milestone.
 | M2 | Done | Shape (`ui-radius-base` and its derived scale, `ui-radius-pill`, off-scale `ui-radius-3/10/12/16/20/30`; `--radius` and `radius-otto-*` aliases), typography (`ui-font-ui/title/mono/code/label`, weights, letter-spacing, label tokens) and elevation (`ui-elevation`, every shadow recipe with an elevation-scaled alpha) in `web/src/theme/tokens/`; tokens that alias a plain value are registered with `@property`. `@theme inline` reads `var(--ui-*)`; the `rounded-[Npx]` TSX uses read the scale or the off-scale aliases; the Appearance font setting is a layer over `ui-font-ui`. Derived values re-emit on the theme roots, light formulas included on dark roots. Harness (my-extensions `bc235e1`, 195 screens on `13dbdd5d14`): 0 px; the dump gains only the new tokens, plus 11 embed shadow tokens whose minified literal text became computed text of identical value. `--ui-radius-base: 0` with `--ui-elevation: 0` leaves no radius or cast shadow on the session page. |
 | M2 follow-ups | Done | Radii `<length-percentage>`; every shadow alpha kind `alpha`, `<number> \| <percentage>`; `ui-elevation` a `<number>` with initial 1; the embed drops the token `@property` rules (naming section); Tailwind no longer scans `theme/tokens`. Harness masks come from the baseline only, and it probes the registrations. Dumps refreshed from `f5566ddd93` (my-extensions `a520b89`), screens untouched. |
 | M3 | Done | Density, border, scrollbar and label-site tokens (token groups above), `.ui-label`, `.ui-scroll`, `.ui-scroll-hidden` and the `data-slot` hooks in `theme_hooks.md`; literal radii of AnimatedOmnigentPanel (`ui-radius-24`, `ui-radius-14`) and SuggestionChart (`ui-radius-md`) moved onto tokens. Against the refreshed baselines: 0 px on all screens, dumps gain only additions (standalone and embed). The DevHub preview reads the hooks and tokens instead of DOM shape, aria-labels and class text. |
-| M4 | Next | |
-| M5 to M11 | Queued | |
+| M3 follow-ups | Done | F5: the generator writes every value on one line (Prettier wrapped long ones and the browser kept the breaks in the computed text). F2: tokens without a default and `--ui-font-family` are reset to `initial` on the top root, so in the embed a host page's variables of those names stay out. F1: every shadow scales by `--omnigent-elevation`, registered in both builds (naming section); the M2 follow-ups' "an invalid elevation on the top root keeps full shadows" held standalone only until then, since the embed's unregistered `ui-elevation` made the whole `box-shadow` (rings and insets included) invalid. F3: the harness checks every documented hook on rendered pages (the session as a multi-user server, so Share renders), and probes F1 and F2 on the embed page. Harness: 0 px; the dump gains additions only, and standalone also 112 whitespace-only text changes (`=` in the diff), embed additions only. |
+| M4 | Done | Bridges for the parallel colour systems (token groups above). xterm: `terminalTheme()` and the Codex tones read the `terminal-*` tokens through `theme/tokenValues.ts` (per mode, with `data-token-mode` probes), unset slots left out of the ITheme, re-read when a palette or theme changes them. Diffs: `DIFF_TOKEN_CSS`/`DIFF_PALETTE_CSS` read `diff-*` (the PR diff too). File tree: `FILE_TREE_THEME` maps `file-tree-*` onto the vendored `--trees-*-override` variables, the vendored CSS untouched. CodeMirror: `viewer-active-line` and the find washes are tokens, its radii `ui-radius-sm`/`-xs`. Syntax: `syntax-theme-light`/`-dark` drive Streamdown's and the code block's Shiki, CodeMirror (`refreshHighlighting`), Monaco (`useMonacoTheme`, `shell/monacoTheme.ts`) and diffs (`useDiffSyntaxTheme`); `registerSyntaxTheme` turns `tokenColors` into a Shiki theme (Monaco-safe name `registered-<n>-<name>`, loaded with `highlighter.loadTheme`, `shikiToMonaco`, diffs' `registerCustomTheme`); not wired to `contributes.themes` (M6). Glass shadows, `ui-shadow-none`, the PDF radius, the composer circle (`ui-radius-pill`) and CanvasPage's strip are on tokens. Harness (my-extensions): new `terminal-xterm`, `file-viewer` and `file-diff` screens (baselines from the Part A commit); against the baselines 0 px on all 219 screens, dumps additions only in both builds (plus Part A's whitespace-only text). A fixture theme with `tokenColors` and `terminal-*`, `diff-*`, `file-tree-*` and viewer overrides, applied live, recoloured the chat code blocks (both modes), Monaco and its diff, CodeMirror, the xterm, the PR diff and the vendored tree's git status colours (the last two only mount in workspace tabs v2, so a scratch page mounted them). The Files tab's own rows still colour status letters with raw palette classes (M5). |
+| M5 | Next | |
+| M6 to M11 | Queued | |
 
 Resume notes:
 
@@ -34,13 +36,16 @@ Resume notes:
 - A worktree needs real `node_modules` (`cp -al` of the main checkout's root and
   `web/` ones): symlinked ones resolve outside the worktree, and Vite's dev server then
   refuses the Geist Mono font, which changes every mono glyph.
-- Still literal after M3, for M4/M5: the glass surfaces' shadows
-  (`components/ui/glass-surface/GlassSurface.css`, `OmniGlassSurface`), the drop-shadow
-  filters in `NewChatDialog` and `SidebarHeaderActions`, the vendored file tree, PDF
-  viewer and CodeMirror radii (M4), and the `border-radius: 100%` circle in index.css.
+- Still literal after M4, for M5: the glass surfaces' rim highlights (light-dark
+  `color-mix` of black and white, and OmniGlassSurface's `rgba(212, 212, 216, 0.08)`
+  ring), the PDF viewer's highlight yellows, the chat's terminal-styled shell blocks
+  (`lib/terminalPalette.ts` `terminalSurfaceStyle`, used when the terminal's mode
+  differs from the app's; its colours equal the `terminal-*` defaults but are not read
+  from them), the Changes review tree's added and deleted colours (`success` and
+  `destructive`, not `file-tree-git-*`), and the 3D model viewer's colours.
   `onboarding-modal-shadow` is deprecated (unscaled); remove it in M6. CanvasPage's
-  `[scrollbar-width:thin]` strip is not a `.ui-scroll` (it has no WebKit styling, which
-  `.ui-scroll` would add in Safari). No hook yet (the DevHub preview still matches them
+  thin strip reads `ui-scrollbar-width` but is not a `.ui-scroll` (it has no WebKit
+  styling, which `.ui-scroll` would add in Safari). No hook yet (the DevHub preview still matches them
   by `data-testid` or class text): the sidebar nav and server picker, the header title
   and items, the view-mode toggle, timestamps, the composer's agent values and the
   chat column width (layout stage).
@@ -49,10 +54,21 @@ Resume notes:
   ComposerSendButton does; a hook passed as a prop at the call site wins anyway.
 - Refresh the baselines (`--save-baselines`) only on a commit that is meant to change
   the look, and say so in its message.
-- The terminal screen is the transcript's shell output; the xterm panel needs a live
-  terminal socket the mock does not serve (M4 can add one). The embed dump uses the
+- Screens: `terminal-command` is the transcript's shell output; `terminal-xterm` is the
+  right panel's real xterm, whose terminals list and attach WebSocket the page answers
+  (Playwright `route_web_socket`); `file-viewer` and `file-diff` are Monaco (the Files
+  tab and a Changes file's diff); `diff` is the pull request diff (@pierre/diffs). The
+  CodeMirror viewer only mounts in the workspace tabs v2 (not routed yet), so no screen
+  shows it; the M4 fixture proof mounted it on a scratch page. The embed dump uses the
   embed build's scoped stylesheet on a harness page with the embed's two roots, not a
   mounted `OmnigentApp`.
+- Scripts read tokens through `theme/tokenValues.ts`: on the innermost theme root, or
+  on a `data-token-mode` probe for a `perMode` token (the terminal) in the mode the
+  root isn't in. M6's runtime theme CSS must also write `perMode` tokens onto the
+  `[data-token-mode="light"|"dark"]` probes, or a terminal set to the other mode keeps
+  the defaults. `syntax-theme-*` names are passed to Shiki as written; M6 validates them
+  against Shiki's bundled themes and the registered ones (`registerSyntaxTheme`), and
+  wires a theme's `tokenColors` to `registerSyntaxTheme`.
 
 Paths are relative to the omnigent repo root unless they start with `my-extensions/`.
 
@@ -185,17 +201,28 @@ Defaults must match today exactly.
   - composer, menu and card surfaces; segmented-*; app-shell-bg; selection-native
 - **Status:** success, warning, info, status-{blue,green,yellow,red,gray}.
 - **Chart:** chart-1..5.
-- **Code and syntax:** code-bg, code-selection, viewer-active-line, code-inline-bg, code-inline-border, syntax-theme-light, syntax-theme-dark.
-- **Terminal:** terminal-{background,foreground,cursor,cursor-accent,selection} and terminal-ansi-* (16). An "unset" default keeps the xterm default.
-- **Diff:** diff-addition/deletion text and base, plus the mix percentages.
-- **File tree:** file-tree-* (hover, selected, guide, git status).
+- **Code and syntax** (M4, `code.ts`): code-bg, code-selection (palette), viewer-active-line,
+  viewer-search-match(-selected), viewer-selection-match, code-selected-line (unset: `sidebar-active`),
+  syntax-theme-light/-dark (`github-light`/`github-dark`, a bundled Shiki theme or one
+  registered with `registerSyntaxTheme`, `lib/syntaxTheme.ts`). code-inline-bg and
+  code-inline-border come with the DevHub themes (M11).
+- **Terminal** (M4, `terminal.ts`, `perMode`): terminal-{background,foreground,cursor,cursor-accent,selection},
+  terminal-ansi-* (16, `black` to `bright-white`) and terminal-tone-{subtle,input,emphasis}
+  (Codex's input box). An unset slot is left out of xterm's theme, so xterm's default applies.
+- **Diff** (M4, `diff.ts`): diff-addition/deletion-base and -text, diff-number-text, diff-word-mix
+  (unset: the diff's own), and diff-{line,gutter,hover}-mix with per-scheme -light/-dark defaults.
+- **File tree** (M4, `fileTree.ts`): file-tree-hover, -selected(-foreground), -guide, -focus-ring,
+  -radius and -git-{added,deleted,ignored,modified,renamed,untracked} (the vendored `light-dark()` pairs),
+  bridged in `fileTreeStyle.ts`.
 - **Brand (decision 7):** brand-* colours used by OttoIcon/NessieIcon and the logo accents.
 - **Typography:**
   - ui-font-ui, ui-font-title, ui-font-mono, ui-font-code, ui-font-label
   - ui-weight-normal/medium/strong, ui-letter-spacing
   - ui-label-size/transform/tracking/weight
 - **Shape:** ui-radius-base 8px. Derived xs/sm/md/lg/xl/2xl/3xl/4xl, plus ui-radius-pill. `--radius` and `radius-otto-*` become aliases.
-- **Elevation:** ui-elevation 1, shadow rgb tokens, all shadow recipes scaled by elevation.
+- **Elevation:** ui-elevation 1, shadow rgb tokens, all shadow recipes scaled by elevation
+  (through the internal `omnigent-elevation` guard), the glass recipes (ui-shadow-glass,
+  -glass-inset, -glass-fallback, -glass-drop on ui-shadow-glass-rgb) and ui-shadow-none.
 - **Density** (M3, `density.ts`; defaults in Tailwind spacing steps, so they track `--spacing`):
   - ui-row-line 20px, ui-row-height 28px (line plus padding; a minimum, `.sidebar-row`)
   - ui-control-h-xs/sm/md/lg 24/28/32/36px (`button.tsx` sizes, `input.tsx`, the rail tabs)
