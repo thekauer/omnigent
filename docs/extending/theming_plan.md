@@ -440,6 +440,27 @@ Defaults must match today exactly.
 - The `ThemeColor` class, accepted in `SessionHeaderItem.color` now and in more plain-data fields later.
 - The vendored typings check stays.
 
+As built (M8, `theme/colorThemes.ts`):
+
+- `activeColorTheme` is plain data: `id` the member theme on screen (a family's member
+  for the mode, `omnigent.themes/<palette>-<mode>` for a built-in, the default's while
+  the chosen theme's extension is missing), its `label`, `kind` (`ColorThemeKind`,
+  VS Code's values `Light=1, Dark=2, HighContrast=3, HighContrastLight=4`; only 1 and 2
+  are used) and the resolved `variants`. While the picker previews, it reads the preview.
+- `onDidChangeActiveColorTheme` fires after a committed change is applied (the theme,
+  an option or variant, the mode): the theme service's changes and the roots' `.dark`
+  class, compared with the last state it fired; never while the picker previews a theme
+  or a mode, and not when a preview ends where it began.
+- `getThemeToken(id)` takes registry ids (not internal ones) and the caller's own
+  `contributes.colors` (by id or `<extension id>.<id>`); others are undefined with a
+  warning. It reads the innermost theme root, as `tokenValues.ts` does, and returns a
+  string, so a Worker host can carry it.
+- `ThemeColor(id)` takes the same ids; `SessionHeaderItem.color` draws it as
+  `var(--<token>)` and drops an unknown one with a warning. A colour string there must
+  pass the validator (registry `var()`s only).
+- `contributes.colors` also takes VS Code's `<extension id>.<camelCaseName>` ids
+  (`thekauer.dev.costBadge` is `--x-thekauer__dev-cost-badge`).
+
 ## Variants
 
 Host enums live in `web/src/theme/variants.ts`, with a store and a `useVariant` hook.

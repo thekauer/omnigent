@@ -852,6 +852,19 @@ export class ThemeService implements ThemeContributionSink {
     };
   }
 
+  /**
+   * The CSS variable (without `--`) a colour id names for `extensionId`: a registry
+   * token that themes may set, or one of that extension's own `contributes.colors` (by
+   * its id, or `<extension id>.<id>`). Undefined for anything else: another extension's
+   * colours and internal tokens included.
+   */
+  colorToken(extensionId: string, id: unknown): string | undefined {
+    if (typeof id !== "string" || id.length > 200) return undefined;
+    if (getToken(id) !== undefined && !TOKEN_CONSTRAINTS[id]?.internal) return id;
+    const own = this.extensions.get(extensionId)?.contributions.colors ?? [];
+    return own.find((color) => color.fullId === id || color.id === id)?.token;
+  }
+
   /** The mode the chosen theme forces, if any (next-themes' `forcedTheme`). */
   getForcedMode(): UiTheme | null {
     return this.forcedMode;
@@ -1043,6 +1056,7 @@ export class ThemeService implements ThemeContributionSink {
     const extensionColors = new Map<string, string>(
       extension.contributions.colors.flatMap((color: ColorContribution) => [
         [color.id, color.token],
+        [color.fullId, color.token],
         [color.token, color.token],
       ]),
     );

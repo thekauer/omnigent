@@ -2,6 +2,12 @@
 // like VS Code's per-extension `vscode` module, so every call is attributable.
 import type * as omnigent from "omnigent";
 import type { ThemeContributionSink } from "@/theme/themeService";
+import {
+  ColorThemeKind,
+  type ColorThemes,
+  colorThemes as windowColorThemes,
+  ThemeColor,
+} from "@/theme/colorThemes";
 import type { GitHostProviderRegistry } from "@/lib/gitHostProviders";
 import type { HostProgressLocations } from "@/lib/hostProgress";
 import {
@@ -59,6 +65,8 @@ export const OMNIGENT_API_EXPORT_NAMES = [
   "pullRequests",
   "TreeItemCollapsibleState",
   "CancellationTokenSource",
+  "ThemeColor",
+  "ColorThemeKind",
 ] as const;
 
 /** As `vscode.TreeItemCollapsibleState`. */
@@ -86,6 +94,8 @@ export interface HostServices {
   keybindings?: KeybindingService;
   /** Contributed themes, colours and fonts; without it, they are ignored. */
   themes?: ThemeContributionSink;
+  /** The colour theme extensions read (`window.activeColorTheme`); the window's by default. */
+  colorThemes?: ColorThemes;
 }
 
 export type ExtensionLogger = (message: string, error?: unknown) => void;
@@ -111,6 +121,7 @@ function inertSessionHeaderItem(
     priority: typeof priority === "number" && Number.isFinite(priority) ? priority : undefined,
     text: "",
     tooltip: undefined,
+    color: undefined,
     show: () => {},
     hide: () => {},
     dispose: () => {},
@@ -181,7 +192,9 @@ export function createExtensionApi(
       refuse("createSessionHeaderItem");
       return inertSessionHeaderItem(extensionId, id, alignment, itemPriority);
     }
-    const item = services.headerItems.create(extensionId, id, alignment, itemPriority);
+    const item = services.headerItems.create(extensionId, id, alignment, itemPriority, (value) =>
+      colors.cssColor(extensionId, value, "SessionHeaderItem.color"),
+    );
     const dispose = item.dispose;
     item.dispose = () => {
       resources.delete(item);
@@ -189,6 +202,19 @@ export function createExtensionApi(
     };
     return track(item);
   }
+
+  const colors = services.colorThemes ?? windowColorThemes;
+  const onDidChangeActiveColorTheme = guard<omnigent.ColorTheme>(
+    (listener, thisArgs, disposables) => {
+      const remove = colors.onDidChange((theme) =>
+        listener.call(thisArgs, theme as omnigent.ColorTheme),
+      );
+      const subscription = new Disposable(remove);
+      if (Array.isArray(disposables)) disposables.push(subscription);
+      return subscription;
+    },
+    "onDidChangeActiveColorTheme",
+  );
 
   const onDidChangeActiveSession = guard(
     services.sessions.onDidChangeActiveSession,
@@ -593,7 +619,14 @@ export function createExtensionApi(
     SessionHeaderItemAlignment,
     TreeItemCollapsibleState:
       TreeItemCollapsibleState as unknown as typeof omnigent.TreeItemCollapsibleState,
+    ThemeColor: ThemeColor as unknown as typeof omnigent.ThemeColor,
+    ColorThemeKind: ColorThemeKind as unknown as typeof omnigent.ColorThemeKind,
     window: Object.freeze({
+      get activeColorTheme() {
+        return colors.active as omnigent.ColorTheme;
+      },
+      onDidChangeActiveColorTheme,
+      getThemeToken: (id: string) => colors.getToken(extensionId, id),
       createSessionHeaderItem,
       createTreeView,
       createPlanView,

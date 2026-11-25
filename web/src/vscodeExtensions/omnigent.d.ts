@@ -151,11 +151,45 @@ declare module "omnigent" {
     text: string;
     /** Plain text tooltip. The host truncates it to 200 characters. */
     tooltip: string | undefined;
+    /**
+     * The text's colour: a {@link ThemeColor} (drawn as its token, so it follows the
+     * theme), or a CSS colour that reads registry tokens only. Unknown theme colours
+     * and other values are dropped with a warning; undefined is the host's own colour.
+     */
+    color: string | ThemeColor | undefined;
     /** Show the item. New items are hidden until shown. */
     show: () => void;
     hide: () => void;
     /** Remove the item for good. */
     dispose: () => void;
+  }
+
+  /**
+   * A colour of the theme by id, as `vscode.ThemeColor`: a registry token id
+   * (`muted-foreground`, `primary`, ...) or one of this extension's own
+   * `contributes.colors` (`<extension id>.<name>`, or its short id).
+   */
+  export class ThemeColor {
+    readonly id: string;
+    constructor(id: string);
+  }
+
+  /** A theme's kind, as `vscode.ColorThemeKind`. Omnigent's themes are Light or Dark for now. */
+  export enum ColorThemeKind {
+    Light = 1,
+    Dark = 2,
+    HighContrast = 3,
+    HighContrastLight = 4,
+  }
+
+  /** The colour theme on screen, as plain data. */
+  export interface ColorTheme {
+    /** The theme on screen: `<extension id>/<theme id>` (a family's member for the mode). */
+    readonly id: string;
+    readonly label: string;
+    readonly kind: ColorThemeKind;
+    /** The style variants that apply (the theme's, the user's over them), by name. */
+    readonly variants: Readonly<Record<string, string>>;
   }
 
   /** How a tree item shows its children, as `vscode.TreeItemCollapsibleState`. */
@@ -673,6 +707,26 @@ declare module "omnigent" {
   }
 
   export namespace window {
+    /**
+     * The colour theme on screen. While the theme picker previews another theme, this
+     * reads the preview; {@link onDidChangeActiveColorTheme} fires for committed changes only.
+     */
+    export const activeColorTheme: ColorTheme;
+
+    /**
+     * Fires after a committed change of {@link activeColorTheme} is applied: another
+     * theme chosen, its option or a variant changed, or the mode switched. Never for a
+     * picker's preview of a theme or a mode.
+     */
+    export const onDidChangeActiveColorTheme: Event<ColorTheme>;
+
+    /**
+     * A theme token's resolved value (`getComputedStyle` on the innermost theme root),
+     * `""` when unset: a registry token id, or one of this extension's own colours.
+     * Undefined, with a warning, for any other id.
+     */
+    export function getThemeToken(id: string): string | undefined;
+
     /**
      * Show progress while `task` runs, as a notification with `title` and the
      * latest reported message. It closes when the task resolves; when the task

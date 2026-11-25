@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { FIXTURE_CONTRIBUTES, FIXTURE_EXTENSION_ID } from "@/test/themeFixtures";
 
 import {
+  extensionColorToken,
   namespacedFontFamily,
   normalizeExtensionPath,
   parseThemeContributions,
@@ -30,6 +31,7 @@ describe("parseThemeContributions", () => {
     expect(contributions.colors).toEqual([
       {
         id: "glow",
+        fullId: "acme.fixture-themes.glow",
         token: "x-acme__fixture_2dthemes-glow",
         description: "The fixture's glow.",
         defaults: { light: "#ffcc00", dark: "color-mix(in srgb, var(--primary) 40%, transparent)" },
@@ -79,7 +81,13 @@ describe("parseThemeContributions", () => {
     expect(contributions.themes.map((theme) => theme.id)).toEqual(["ok", "fam1", "fam2"]);
     expect(contributions.themes[2]!.family).toBeUndefined();
     expect(contributions.colors).toEqual([
-      { id: "x", token: "x-acme__x-x", description: "", defaults: { dark: "#000" } },
+      {
+        id: "x",
+        fullId: "acme.x.x",
+        token: "x-acme__x-x",
+        description: "",
+        defaults: { dark: "#000" },
+      },
     ]);
     expect(contributions.fonts.map((font) => font.family)).toEqual(["Ok"]);
     expect(warnings).toHaveLength(14);
@@ -121,5 +129,37 @@ describe("normalizeExtensionPath", () => {
 
   it("namespaces font families by extension", () => {
     expect(namespacedFontFamily("thekauer.dev", "Geist Mono")).toBe("x-thekauer__dev-geist-mono");
+  });
+});
+
+describe("VS Code-style colour ids", () => {
+  it("takes <extension id>.<camelCase name> as well as a short id", () => {
+    const { contributions, warnings } = parseThemeContributions(
+      "thekauer.dev",
+      {
+        colors: [
+          { id: "thekauer.dev.costBadge", defaults: { dark: "var(--muted-foreground)" } },
+          { id: "cost-badge" },
+          { id: "acme.other.costBadge" },
+          { id: "thekauer.dev.cost.badge" },
+        ],
+      },
+      { isKnownToken: (id) => getToken(id) !== undefined },
+    );
+    expect(contributions.colors).toEqual([
+      {
+        id: "thekauer.dev.costBadge",
+        fullId: "thekauer.dev.costBadge",
+        token: "x-thekauer__dev-cost-badge",
+        description: "",
+        defaults: { dark: "var(--muted-foreground)" },
+      },
+    ]);
+    // The short id maps to the same variable: a duplicate. Others' prefixes and dotted names fail.
+    expect(warnings).toHaveLength(3);
+    expect(extensionColorToken("thekauer.dev", "thekauer.dev.costBadge")).toBe(
+      "x-thekauer__dev-cost-badge",
+    );
+    expect(extensionColorToken("thekauer.dev", "glow")).toBe("x-thekauer__dev-glow");
   });
 });

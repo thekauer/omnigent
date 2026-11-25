@@ -25,7 +25,10 @@ export interface ThemeContribution {
 }
 
 export interface ColorContribution {
+  /** The id as the manifest writes it: `cost-badge`, or VS Code's `<extension id>.costBadge`. */
   readonly id: string;
+  /** The id a `ThemeColor` names it by: `<extension id>.<id>` for a short id. */
+  readonly fullId: string;
   /** The CSS variable name without `--`: `x-<publisher>-<name>-<id>`. */
   readonly token: string;
   readonly description: string;
@@ -70,6 +73,8 @@ export const THEME_CONTRIBUTION_LIMITS = {
 const THEME_ID = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 const FAMILY_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const COLOR_ID = /^[a-z][a-z0-9-]{0,47}$/;
+/** The name after `<extension id>.` in a VS Code-style colour id (`costBadge`). */
+const QUALIFIED_COLOR_NAME = /^[a-z][A-Za-z0-9]{0,47}$/;
 const FONT_FAMILY = /^[A-Za-z0-9 _-]{1,64}$/;
 const FONT_WEIGHT = /^(?:normal|bold|[1-9]\d{0,2}|1000)(?: (?:[1-9]\d{0,2}|1000))?$/;
 const MAX_LABEL_LENGTH = 80;
@@ -123,6 +128,20 @@ export function extensionCssPrefix(extensionId: string): string {
     })
     .join("");
   return `x-${encoded}`;
+}
+
+/**
+ * The CSS variable (without `--`) of an extension's colour `id`: a short id as written,
+ * or the camelCase name of a `<extension id>.<name>` id in kebab case
+ * (`acme.x.costBadge` is `x-acme__x-cost-badge`); undefined for an id it can't take.
+ */
+export function extensionColorToken(extensionId: string, id: unknown): string | undefined {
+  if (typeof id !== "string") return undefined;
+  const prefix = extensionCssPrefix(extensionId);
+  if (COLOR_ID.test(id)) return `${prefix}-${id}`;
+  const name = id.startsWith(`${extensionId}.`) ? id.slice(extensionId.length + 1) : undefined;
+  if (name === undefined || !QUALIFIED_COLOR_NAME.test(name)) return undefined;
+  return `${prefix}-${name.replace(/[A-Z]/g, (char) => `-${char.toLowerCase()}`)}`;
 }
 
 /** The namespaced family an extension's font loads as. */
@@ -191,14 +210,12 @@ export function parseThemeContributions(
     });
   });
 
-  const prefix = extensionCssPrefix(extensionId);
   const rawColors = list("colors", THEME_CONTRIBUTION_LIMITS.colors);
   const ownTokens = new Set(
-    rawColors.flatMap((entry) =>
-      isRecord(entry) && typeof entry.id === "string" && COLOR_ID.test(entry.id)
-        ? [`${prefix}-${entry.id}`]
-        : [],
-    ),
+    rawColors.flatMap((entry) => {
+      const token = isRecord(entry) ? extensionColorToken(extensionId, entry.id) : undefined;
+      return token ? [token] : [];
+    }),
   );
   const colorContext: ValueContext = {
     isKnownToken: (id) => ownTokens.has(id) || context.isKnownToken(id),
@@ -208,10 +225,13 @@ export function parseThemeContributions(
     const where = `contributes.colors[${index}]`;
     if (!isRecord(entry)) return void warnings.push(`${where} must be an object`);
     const { id, description, defaults } = entry;
-    if (typeof id !== "string" || !COLOR_ID.test(id)) {
-      return void warnings.push(`${where}: "id" must match ${COLOR_ID.source}`);
+    const token = extensionColorToken(extensionId, id);
+    if (typeof id !== "string" || token === undefined) {
+      return void warnings.push(
+        `${where}: "id" must match ${COLOR_ID.source}, or be ${extensionId}.<camelCaseName>`,
+      );
     }
-    if (colors.some((color) => color.id === id)) {
+    if (colors.some((color) => color.id === id || color.token === token)) {
       return void warnings.push(`${where}: duplicate colour id ${id}`);
     }
     const checked: { light?: string; dark?: string } = {};
@@ -227,7 +247,8 @@ export function parseThemeContributions(
     }
     colors.push({
       id,
-      token: `${prefix}-${id}`,
+      fullId: id.startsWith(`${extensionId}.`) ? id : `${extensionId}.${id}`,
+      token,
       description: labelOf(description, MAX_DESCRIPTION_LENGTH) ?? "",
       defaults: checked,
     });

@@ -97,5 +97,6 @@ export function hostServices(overrides: Partial<HostServices> = {}): HostService
     gitHosts: overrides.gitHosts ?? new GitHostProviderRegistry(),
     ...(overrides.keybindings ? { keybindings: overrides.keybindings } : {}),
     ...(overrides.themes ? { themes: overrides.themes } : {}),
+    ...(overrides.colorThemes ? { colorThemes: overrides.colorThemes } : {}),
   };
 }

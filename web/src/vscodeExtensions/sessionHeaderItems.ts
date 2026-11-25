@@ -17,7 +17,12 @@ export interface SessionHeaderItemSnapshot {
   readonly priority: number | undefined;
   readonly text: string;
   readonly tooltip: string | undefined;
+  /** The text's CSS colour, checked (`var(--token)` for a theme colour); undefined: the host's. */
+  readonly color: string | undefined;
 }
+
+/** Turns an item's `color` into checked CSS, or undefined (dropping what it can't take). */
+export type HeaderItemColorResolver = (value: unknown) => string | undefined;
 
 /** Collapse to one line and cap the length, counting code points. */
 export function boundText(value: unknown, maxLength: number): string {
@@ -76,6 +81,7 @@ export class SessionHeaderItemRegistry {
     id: string | undefined,
     alignment: number | undefined,
     priority: number | undefined,
+    colorOf?: HeaderItemColorResolver,
   ): omnigent.SessionHeaderItem {
     let key = `${extensionId}.${id ?? `item${++this.generatedIds}`}`;
     if (this.items.has(key)) {
@@ -95,15 +101,20 @@ export class SessionHeaderItemRegistry {
         priority: typeof priority === "number" && Number.isFinite(priority) ? priority : undefined,
         text: "",
         tooltip: undefined,
+        color: undefined,
       },
       visible: false,
     };
     this.items.set(key, state);
-    return this.createHandle(state);
+    return this.createHandle(state, colorOf);
   }
 
-  private createHandle(state: ItemState): omnigent.SessionHeaderItem {
+  private createHandle(
+    state: ItemState,
+    colorOf: HeaderItemColorResolver | undefined,
+  ): omnigent.SessionHeaderItem {
     let disposed = false;
+    let color: string | omnigent.ThemeColor | undefined;
     const update = (patch: Partial<SessionHeaderItemSnapshot>, visible = state.visible) => {
       if (disposed) return;
       const changed =
@@ -137,6 +148,13 @@ export class SessionHeaderItemRegistry {
             ? undefined
             : boundText(value, MAX_HEADER_ITEM_TOOLTIP_LENGTH) || undefined;
         update({ tooltip });
+      },
+      get color() {
+        return color;
+      },
+      set color(value: string | omnigent.ThemeColor | undefined) {
+        color = value ?? undefined;
+        update({ color: colorOf && color !== undefined ? colorOf(color) : undefined });
       },
       show: () => update({}, true),
       hide: () => update({}, false),

@@ -680,7 +680,9 @@ limitHit, message }`; a cancelled token aborts the request and rejects
       `{ id, description, defaults: { light, dark } }` registered as
       `--x-<encoded extension id>-<id>` (an injective encoding without `-`:
       `a`-`z` and `0`-`9` stay, `.` is `__`, any other character `_` and two hex
-      digits, so `acme.theme-fixture`'s `glow` is `--x-acme__theme_2dfixture-glow`),
+      digits, so `acme.theme-fixture`'s `glow` is `--x-acme__theme_2dfixture-glow`;
+      a VS Code-style id `<extension id>.<camelCaseName>` is taken too, its name in
+      kebab case: `thekauer.dev.costBadge` is `--x-thekauer__dev-cost-badge`),
       and `contributes.fonts` `{ family, src, weight?, style? }` (`.woff2` only),
       loaded with the FontFace API as `x-<encoded extension id>-<family>` while a theme of the
       extension is active. Problems are warnings (`theme/themeContributions.ts`).
@@ -716,8 +718,27 @@ limitHit, message }`; a cancelled token aborts the request and rejects
       `lib/themePalette.ts`); their files name `omnigent.palette`, which only a
       built-in's theme may: the service applies that palette's precompiled CSS
       (`data-theme`) instead of a runtime stylesheet, and stores its id
-      (`nord`) as before. A product's policy (`setProductPolicy`, filled by M10)
-      limits the list and can hide the picker. The dev plugin reads the
+      (`nord`) as before. A product's policy (`setProductPolicy`, filled by M10):
+      `allowed` limits the list, `select()`, `preview()` and
+      `omnigent.selectColorTheme` (by entry or member id, the chosen theme
+      always kept); `hidePicker` hides the picker command and Settings' picker
+      row (and the built-in palette editor, which chooses Custom), keeping the
+      chosen theme's options and Advanced; `hideCustomizations` hides those two.
+      A non-built-in extension under the `omnigent` publisher, or with the id of
+      one already loaded, is skipped with a warning.
+    - The plugin read API (theming plan M8): `window.activeColorTheme`
+      (`{ id, label, kind, variants }`, plain data: the member theme on screen,
+      `omnigent.themes/<palette>-<mode>` for a built-in, the default's while the
+      chosen theme's extension is missing; `kind` a `ColorThemeKind`, VS Code's
+      values, Light or Dark for now), `window.onDidChangeActiveColorTheme`
+      (after a committed change is applied: a theme chosen, an option or variant,
+      the mode; never for the picker's preview of a theme or a mode),
+      `window.getThemeToken(id)` (the computed value on the innermost theme root,
+      `""` when unset; registry ids and the caller's own colours only, else
+      undefined with a warning) and `ThemeColor` (`new ThemeColor(id)`, the same
+      ids), taken by `SessionHeaderItem.color` and drawn as `var(--<token>)`;
+      a colour string there must pass the theme validator (registry `var()`s
+      only). Unknown colours are dropped with a warning (`theme/colorThemes.ts`). The dev plugin reads the
       theme files at scan time and inlines them into the virtual module
       (`ExtensionDescription.files`; built-ins import them statically), hands an
       edited file to the page without a reload, and serves the fonts and brand
@@ -1193,6 +1214,9 @@ Plain ESM with `// @ts-check`; no build step.
 | `CancellationTokenSource`                                            | same                                                          |                                                     |
 | `contributes.keybindings`                                            | same, a subset                                                | One chord; letters, digits, F-keys                  |
 | `contributes.themes`, `contributes.colors`                           | same, plus `family` and `brand`; colours as `--x-*` variables  | Tokens, not workbench colours; VS Code ids aliased  |
+| `window.activeColorTheme`, `onDidChangeActiveColorTheme`, `ColorThemeKind` | same, plus `id`, `label` and `variants`                    | Not fired for the picker's previews                 |
+| `ThemeColor`, `StatusBarItem.color`                                  | `ThemeColor`, `SessionHeaderItem.color`                       | Registry tokens and the extension's own colours     |
+| (none; webviews read `--vscode-*`)                                   | `window.getThemeToken(id)`                                    | A computed value as a string                        |
 | (none; product icon and font themes are separate in VS Code)         | `contributes.fonts`                                           | `.woff2` only, namespaced families                  |
 | `<view>.focus` and `view.<id>.visible` context keys                  | `<view>.focus` and `view.<id>.available`                      | Available: the tab is in the strip                  |
 | `withProgress({ location: { viewId } })`                             | same                                                          | Per chat session                                    |

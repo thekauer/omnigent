@@ -1,9 +1,10 @@
 import { useSyncExternalStore } from "react";
+import { cn } from "@/lib/utils";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { sessionHeaderItems, type SessionHeaderItemRegistry } from "./sessionHeaderItems";
 
 const ITEM_CLASS =
-  "hidden h-6 shrink-0 items-center whitespace-nowrap px-1 text-sm tabular-nums text-muted-foreground md:inline-flex";
+  "hidden h-6 shrink-0 items-center whitespace-nowrap px-1 text-sm tabular-nums md:inline-flex";
 
 /**
  * Extension-contributed header items, in display order. Desktop only, like the
@@ -21,7 +22,8 @@ export function SessionHeaderItems({
         key={item.key}
         data-testid={`session-header-item-${item.key}`}
         data-extension-id={item.extensionId}
-        className={ITEM_CLASS}
+        className={cn(ITEM_CLASS, item.color === undefined && "text-muted-foreground")}
+        style={item.color === undefined ? undefined : { color: item.color }}
         // Focusable only when there is a tooltip to reveal from the keyboard.
         tabIndex={item.tooltip ? 0 : undefined}
       >
