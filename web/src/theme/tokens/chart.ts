@@ -2,6 +2,7 @@
 
 import { defineTokens } from "./types.ts";
 
+// raw-colors-data: the chart series' default colours
 export const CHART_TOKENS = defineTokens(
   "chart",
   [
@@ -16,3 +17,4 @@ export const CHART_TOKENS = defineTokens(
     default: { light, dark },
   })),
 );
+// raw-colors-data-end

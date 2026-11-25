@@ -4,6 +4,7 @@
 import { tw } from "./tailwindPalette.ts";
 import { defineTokens } from "./types.ts";
 
+// raw-colors-data: the code surfaces' default colours
 export const CODE_TOKENS = defineTokens("code", [
   {
     id: "viewer-active-line",
@@ -137,3 +138,4 @@ export const CODE_TOKENS = defineTokens("code", [
     },
   },
 ]);
+// raw-colors-data-end

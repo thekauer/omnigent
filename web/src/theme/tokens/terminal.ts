@@ -16,6 +16,7 @@ function terminal(id: string, description: string, light?: string, dark?: string
   return { id, description, default: value, perMode: true };
 }
 
+// raw-colors-data: the terminal's default colours
 const ANSI = [
   ["black", "#18181b", "#09090b"],
   ["red"],
@@ -96,6 +97,7 @@ export const TERMINAL_TOKENS = defineTokens("terminal", [
     "#464849",
   ),
 ]);
+// raw-colors-data-end
 
 /** The ANSI slot names, in palette order (0 to 15). */
 export const TERMINAL_ANSI_NAMES: readonly string[] = ANSI.map(([name]) => name);

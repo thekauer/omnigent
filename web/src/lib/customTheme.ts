@@ -22,6 +22,7 @@ export interface CustomTheme {
   translucentSidebar: boolean;
 }
 
+// raw-colors-data: the seed colours the user edits
 export const DEFAULT_CUSTOM_THEME: CustomTheme = {
   basePalette: "omni",
   accent: "#df3c85",
@@ -31,6 +32,7 @@ export const DEFAULT_CUSTOM_THEME: CustomTheme = {
   contrast: 50,
   translucentSidebar: false,
 };
+// raw-colors-data-end
 
 interface Rgb {
   r: number;
@@ -181,12 +183,14 @@ function ensureContrast(color: string, backgrounds: string[], toward: string): s
   return passes(result) ? result : toward;
 }
 
+// raw-colors-data: the contrast pair a readable foreground picks from
 function readableForeground(background: string): "#111318" | "#ffffff" {
   const value = luminance(background);
   const darkContrast = (value + 0.05) / (luminance("#111318") + 0.05);
   const lightContrast = (luminance("#ffffff") + 0.05) / (value + 0.05);
   return darkContrast >= lightContrast ? "#111318" : "#ffffff";
 }
+// raw-colors-data-end
 
 type GeneratedThemeVariant = Pick<
   PaletteTokens,
@@ -244,7 +248,9 @@ function formatCssColor(color: CssColor, template: string): string {
       .padStart(2, "0");
     return `${rgb}${alpha}`;
   }
+  // raw-colors-data: serializes a computed colour
   return `rgba(${Math.round(clamp(color.r, 0, 255))}, ${Math.round(clamp(color.g, 0, 255))}, ${Math.round(clamp(color.b, 0, 255))}, ${Math.round(clamp(color.alpha, 0, 1) * 1000) / 1000})`;
+  // raw-colors-data-end
 }
 
 function rebaseColor(base: string, reference: string, current: string): string {
@@ -269,6 +275,7 @@ function setAlpha(color: string, alpha: number): string {
   return parsed ? formatCssColor({ ...parsed, alpha }, "rgba") : color;
 }
 
+// raw-colors-data: the derivation's fixed mixing colours
 function generateCustomTheme(theme: CustomTheme): GeneratedCustomTheme {
   const normalized = normalizeTheme(theme) ?? DEFAULT_CUSTOM_THEME;
   const contrast = normalized.contrast / 100;
@@ -331,6 +338,7 @@ function generateCustomTheme(theme: CustomTheme): GeneratedCustomTheme {
     },
   };
 }
+// raw-colors-data-end
 
 /**
  * A custom accent tints the selection the way it tints the sidebar's active

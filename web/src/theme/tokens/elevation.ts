@@ -2,7 +2,7 @@
 // 0 removes every shadow). Tailwind's `shadow-*` utilities read the recipes.
 //
 // A recipe's alpha is its own registered token, so the recipe reads the same plain
-// colour (`rgb(0 0 0 / 0.08)`) it had as a literal.
+// colour (black at 0.08) it had as a literal.
 //
 // Readers scale by `omnigent-elevation`, not `ui-elevation` itself: the embed leaves
 // `ui-elevation` unregistered, where an invalid value would make every shadow alpha,
@@ -12,6 +12,7 @@
 import { tw } from "./tailwindPalette.ts";
 import { defineTokens, type TokenInput } from "./types.ts";
 
+// raw-colors-data: the shadow recipes' default colours
 const NEUTRAL = "var(--ui-shadow-neutral-rgb)";
 const GLASS = "var(--ui-shadow-glass-rgb)";
 
@@ -275,3 +276,4 @@ export const ELEVATION_TOKENS = defineTokens("elevation", [
     default: { light: `color-mix(in oklab, ${tw("black")} 8%, transparent)` },
   },
 ]);
+// raw-colors-data-end

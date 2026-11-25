@@ -8,6 +8,7 @@ import { defineTokens, type TokenDef } from "./types.ts";
  * Tokens every palette sets, in the generated stylesheet's order. `palette` is the
  * `PaletteTokens` key; the default is the default palette's value.
  */
+// raw-colors-data: the workbench colours' defaults
 export const PALETTE_TOKENS = [
   { id: "background", palette: "background", description: "Page canvas." },
   { id: "foreground", palette: "foreground", description: "Body text." },
@@ -258,3 +259,4 @@ export const WORKBENCH_TOKENS = defineTokens("workbench", [
     default: { light: tw("white") },
   },
 ]);
+// raw-colors-data-end

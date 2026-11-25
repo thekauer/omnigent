@@ -3,24 +3,36 @@
 // some (the test says which), and never add a file. Regenerate the list with
 // `UPDATE_RAW_COLOR_ALLOWLIST=1 vitest run src/theme/noRawColors.test.ts`.
 
-/** Counts per category: hex, palette classes, `rounded-[…]`, `text-[Npx]`, colour functions. */
+/**
+ * Counts per category: hex, palette classes and variables, `rounded-[…]`, `text-[Npx]`,
+ * colour functions, and named colours used as colours.
+ */
 export type RawCounts = Partial<
-  Record<"hex" | "palette" | "rounded" | "textPx" | "colorFunction", number>
+  Record<"hex" | "palette" | "rounded" | "textPx" | "colorFunction" | "named", number>
 >;
 
 /**
+ * Directories of test support only (fixtures and helpers that only tests import; the
+ * guard checks that), which it skips. A folder is not skipped for its name alone.
+ */
+export const RAW_COLOR_TEST_DIRECTORIES: readonly string[] = [
+  "test/",
+  "components/composer/engine/testing/",
+];
+
+/**
  * Files (or directories, ending in `/`) whose raw colours are data, not styling: the
- * definitions themes start from, or colours keyed by data. Each says why.
+ * definitions themes start from, or colours keyed by data. Each says why. A file that
+ * also holds logic or UI code marks its data instead, between `raw-colors-data: <why>`
+ * and `raw-colors-data-end` comments, so the rest of it is still checked.
  */
 export const RAW_COLOR_EXEMPT: Readonly<Record<string, string>> = {
   // The token defaults themselves, generated from theme/tokens/.
   "themeTokens.generated.css": "generated token defaults",
+  // Tailwind's palette names, for the token defaults that read its steps (tw()).
+  "theme/tokens/tailwindPalette.ts": "Tailwind palette names",
   // The built-in palettes: the colours every palette token takes per palette.
   "lib/themePalette.ts": "palette definitions",
-  // The registry's defaults, and Tailwind's palette steps they keep (a directory).
-  "theme/tokens/": "token defaults",
-  // The custom theme builder's seed colours, which the user edits.
-  "lib/customTheme.ts": "custom theme seed colours",
   // The vendored file tree's own stylesheet, bridged by fileTreeStyle.ts.
   "components/file-tree/vendored/file-tree.css": "vendored stylesheet",
   // File-type icon colours keyed by file type, a copy of the vendored tree's palette.
@@ -33,6 +45,7 @@ export const RAW_COLOR_ALLOWLIST: Readonly<Record<string, RawCounts>> = {
   "components/ai-elements/conversation.tsx": { hex: 1 },
   "components/ai-elements/MermaidError.tsx": { hex: 1 },
   "components/ai-elements/pullRequestRefs.ts": { hex: 3 },
+  "components/ai-elements/shimmer.tsx": { hex: 2 },
   "components/blocks/ApprovalCard.tsx": { palette: 6 },
   "components/blocks/ChatMarkdown.tsx": { hex: 1 },
   "components/blocks/SlashCommandCard.tsx": { palette: 2 },
@@ -59,6 +72,7 @@ export const RAW_COLOR_ALLOWLIST: Readonly<Record<string, RawCounts>> = {
   "components/OmniGlassSurface.tsx": { colorFunction: 2 },
   "components/onboarding/AnimatedOmnigentPanel.css": { hex: 1 },
   "components/onboarding/BlobGraphic.css": { hex: 1, colorFunction: 3 },
+  "components/onboarding/BlobGraphic.tsx": { colorFunction: 3 },
   "components/onboarding/ImportContextModal.tsx": { rounded: 1, textPx: 1 },
   "components/PermissionsModal.tsx": { hex: 2, rounded: 1 },
   "components/PresenceAvatars.tsx": { palette: 1 },
@@ -69,12 +83,13 @@ export const RAW_COLOR_ALLOWLIST: Readonly<Record<string, RawCounts>> = {
   "components/scheduled/TriggerTemplateFields.tsx": { palette: 9 },
   "components/scheduled/triggerTemplates.ts": { palette: 8 },
   "components/SlashCommandMenu.tsx": { palette: 5, rounded: 2 },
-  "components/theme/ThemeColorPicker.tsx": { hex: 10 },
+  "components/theme/ThemeColorPicker.tsx": { hex: 10, colorFunction: 1 },
   "components/ui/button.tsx": { rounded: 5 },
   "components/ui/context-menu.tsx": { rounded: 2 },
   "components/ui/dialog.tsx": { hex: 1, rounded: 1 },
   "components/ui/dropdown-menu.tsx": { rounded: 2 },
-  "components/ui/glass-surface/GlassSurface.css": { hex: 6, colorFunction: 8 },
+  "components/ui/glass-surface/GlassSurface.css": { hex: 6, colorFunction: 8, named: 8 },
+  "components/ui/glass-surface/GlassSurface.jsx": { hex: 2, colorFunction: 1, named: 3 },
   "components/ui/input-group.tsx": { rounded: 3 },
   "components/ui/quick-pick/match.ts": { hex: 1 },
   "components/ui/scroll-area.tsx": { rounded: 1 },
@@ -86,7 +101,7 @@ export const RAW_COLOR_ALLOWLIST: Readonly<Record<string, RawCounts>> = {
   "components/workflows/WorkflowRow.tsx": { textPx: 1 },
   "hooks/useCommandPaletteHotkey.ts": { hex: 3 },
   "hooks/useSuppressBrowserView.ts": { hex: 1 },
-  "index.css": { hex: 38, colorFunction: 16 },
+  "index.css": { hex: 38, colorFunction: 20, named: 1 },
   "lib/gitProviders.ts": { hex: 1 },
   "lib/pullRequestReference.ts": { hex: 1 },
   "lib/workflow.ts": { hex: 1 },
@@ -112,7 +127,7 @@ export const RAW_COLOR_ALLOWLIST: Readonly<Record<string, RawCounts>> = {
   "shell/CodeViewer.tsx": { colorFunction: 4 },
   "shell/codeViewerHelpers.ts": { hex: 3 },
   "shell/codeViewerRendering.tsx": { palette: 3 },
-  "shell/CommentsPanel.tsx": { textPx: 7 },
+  "shell/CommentsPanel.tsx": { textPx: 7, colorFunction: 1, named: 1 },
   "shell/ConversationBreadcrumb.tsx": { textPx: 2 },
   "shell/CopyPathButton.tsx": { palette: 2 },
   "shell/extensionViews/ExtensionRailView.tsx": { textPx: 3 },

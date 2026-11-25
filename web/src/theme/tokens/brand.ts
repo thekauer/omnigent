@@ -5,6 +5,7 @@
 
 import { defineTokens } from "./types.ts";
 
+// raw-colors-data: the brand art's default colours
 const SAME_IN_BOTH = (value: string) => ({ light: value, dark: value });
 
 export const BRAND_TOKENS = defineTokens("brand", [
@@ -31,3 +32,4 @@ export const BRAND_TOKENS = defineTokens("brand", [
   },
   { id: "brand-otto-pupil", description: "The pupils.", default: SAME_IN_BOTH("black") },
 ]);
+// raw-colors-data-end

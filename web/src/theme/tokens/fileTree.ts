@@ -9,6 +9,7 @@ import { defineTokens } from "./types.ts";
 
 const UNSET = {};
 
+// raw-colors-data: the file tree's default colours
 export const FILE_TREE_TOKENS = defineTokens("fileTree", [
   {
     id: "file-tree-hover",
@@ -103,3 +104,4 @@ export const FILE_TREE_TOKENS = defineTokens("fileTree", [
     default: { light: tw(light), dark: tw(dark) },
   })),
 ]);
+// raw-colors-data-end

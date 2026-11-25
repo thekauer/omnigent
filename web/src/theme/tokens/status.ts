@@ -4,6 +4,7 @@
 import { type TailwindColor, tw } from "./tailwindPalette.ts";
 import { defineTokens } from "./types.ts";
 
+// raw-colors-data: the status tones' default colours
 const SAME_IN_BOTH = (value: string) => ({ light: value, dark: value });
 
 // Status tones taken over from raw palette classes (`text-amber-600 dark:text-amber-500`),
@@ -115,3 +116,4 @@ export const STATUS_TOKENS = defineTokens("status", [
   pair("ui-merge-button-hover", "green-700", "green-500", "The merge button under the pointer."),
   tone("ui-merge-button-foreground", "white", "The merge button's text."),
 ]);
+// raw-colors-data-end
