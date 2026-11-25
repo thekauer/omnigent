@@ -1,6 +1,12 @@
-import { PALETTES } from "@/lib/themePalette";
+import { builtInThemeContributions } from "@/builtinExtensions/builtInThemes";
 
 import { settingsEntry } from "./types";
+
+// The built-in themes' names, as the colour theme select lists them (one per family),
+// from the built-in theme extension's contributions: they follow its list.
+const BUILT_IN_THEME_LABELS = [
+  ...new Set(builtInThemeContributions().map((theme) => String(theme.label))),
+];
 
 export const THEME_MODE_ENTRY = settingsEntry({
   id: "theme-mode",
@@ -30,8 +36,8 @@ export const COLOR_THEME_ENTRY = settingsEntry({
   label: "Color theme",
   description: "Choose a preset, then tune it across light and dark mode.",
   keywords: ["theme", "palette", "colors", "accent", "tint", "contrast", "translucent"],
-  // The palette select's choices, as it lists them.
-  choices: [...PALETTES.map((palette) => palette.label), "Custom"],
+  // The select's built-in choices, as it lists them; extensions' themes are runtime choices.
+  choices: BUILT_IN_THEME_LABELS,
   parts: {
     accent: "Accent",
     tint: "Background tint",
@@ -45,6 +51,46 @@ export const COLOR_THEME_ENTRY = settingsEntry({
   },
   // The sub-labels the palette select and the contrast slider show beside them.
   partLabels: { "": "Theme palette", contrast: "Contrast" },
+  // The editable colours show for a built-in theme only.
+  presence: {
+    accent: { states: ["built-in theme"] },
+    tint: { states: ["built-in theme"] },
+    contrast: { states: ["built-in theme"] },
+    translucentSidebars: { states: ["built-in theme"] },
+  },
+  // Extensions' themes, named by their contributions.
+  overlays: { "": { runtimeChoices: {} } },
+});
+
+export const THEME_OPTIONS_ENTRY = settingsEntry({
+  id: "theme-options",
+  section: "appearance",
+  label: "Theme options",
+  description: "Choices the color theme offers, such as its accent and corners.",
+  keywords: ["theme", "options", "accent", "corners", "style"],
+  // One control per option the theme declares, named after it.
+  parts: { option: "Theme option" },
+  nameTemplates: { option: { before: "Theme option: " } },
+  overlays: { option: { runtimeChoices: {} } },
+  // Shown only for a theme with options, under the color theme picker.
+  revealedBy: "color-theme",
+});
+
+export const COLOR_CUSTOMIZATIONS_ENTRY = settingsEntry({
+  id: "color-customizations",
+  section: "appearance",
+  label: "Advanced",
+  description: "Color customizations as JSON, over every theme or one theme by its id.",
+  keywords: [
+    "color customizations",
+    "colorCustomizations",
+    "tokens",
+    "json",
+    "override",
+    "advanced",
+  ],
+  parts: { editor: "Color customizations JSON", apply: "Apply color customizations" },
+  presence: { editor: { states: ["expanded"] }, apply: { states: ["expanded"] } },
 });
 
 export const UI_FONT_SIZE_ENTRY = settingsEntry({
@@ -259,6 +305,8 @@ export const APPEARANCE_SETTINGS = [
   THEME_MODE_ENTRY,
   TERMINAL_THEME_ENTRY,
   COLOR_THEME_ENTRY,
+  THEME_OPTIONS_ENTRY,
+  COLOR_CUSTOMIZATIONS_ENTRY,
   UI_FONT_SIZE_ENTRY,
   UI_FONT_FAMILY_ENTRY,
   CODE_FONT_SIZE_ENTRY,

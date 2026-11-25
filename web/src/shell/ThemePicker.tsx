@@ -1,6 +1,7 @@
-// The "Select theme" picker, opened from ⌘K. The
-// highlighted palette, or appearance on its page, previews across the app;
-// Escape, Back or a click outside restores the committed one, and Enter keeps it.
+// The "Select theme" picker, opened from ⌘K: the theme service's list (built-in themes,
+// then each extension's). The highlighted theme, or appearance on its page, previews
+// across the app; Escape, Back or a click outside restores the committed one, and Enter
+// keeps it.
 
 import { useTheme } from "next-themes";
 import { useEffect, useMemo } from "react";
@@ -11,10 +12,10 @@ import { type QuickPickItem, QuickPickDialog, useQuickPickPages } from "@/compon
 import { useLivePreview } from "@/hooks/useLivePreview";
 import { customThemeSwatches, readCustomTheme } from "@/lib/customTheme";
 import { useHostTheme } from "@/lib/embedded";
-import { applyThemePalette, type ThemeSelection } from "@/lib/themePalette";
 import { setThemeModePreview } from "@/store/themeModePreview";
-import { commitThemePalette, useThemePaletteStore } from "@/store/themePalette";
+import { useThemeChoice, useThemeEntries } from "@/store/themePalette";
 import { closeThemePicker, useThemePickerStore } from "@/store/themePicker";
+import { themeService } from "@/theme/themeService";
 
 import {
   appearancePageItems,
@@ -28,7 +29,8 @@ import {
 export function ThemePicker() {
   const open = useThemePickerStore((state) => state.open);
   const replaced = useThemePickerStore((state) => state.replaced);
-  const selection = useThemePaletteStore((state) => state.selection);
+  const choice = useThemeChoice();
+  const entries = useThemeEntries();
   const { theme, setTheme } = useTheme();
   const mode = normalizeThemeMode(theme);
   const isDark = useResolvedThemeMode() === "dark";
@@ -40,13 +42,17 @@ export function ThemePicker() {
     if (!open) reset();
   }, [open, reset]);
 
-  // One palette preview per opening, and one appearance preview per visit to
+  // One theme preview per opening, and one appearance preview per visit to
   // its page, so Back reverts the appearance and leaving any way reverts both.
-  const palettePreview = useLivePreview<ThemeSelection>({
+  const themePreview = useLivePreview<string | null>({
     active: open,
-    readCommitted: () => useThemePaletteStore.getState().selection,
-    apply: applyThemePalette,
-    commit: commitThemePalette,
+    // The committed theme shows as "no preview", so a revert shows what is stored now.
+    readCommitted: () => null,
+    apply: (id) => themeService.preview(id ?? undefined),
+    commit: (id) => {
+      if (id !== null) themeService.select(id);
+      else themeService.preview(undefined);
+    },
   });
   const onAppearancePage = pages.page.id === "appearance";
   // The appearance baseline is "no override", so reverting always shows the
@@ -65,25 +71,29 @@ export function ThemePicker() {
     if (!open) return [];
     if (onAppearancePage) return appearancePageItems({ mode, followsHost });
     return themePageItems({
-      selection,
+      entries,
+      choice,
       mode,
       isDark,
       followsHost,
       customSwatches: customThemeSwatches(readCustomTheme()),
     });
-  }, [open, onAppearancePage, selection, mode, isDark, followsHost]);
+  }, [open, onAppearancePage, entries, choice, mode, isDark, followsHost]);
 
   const valueById = useMemo(() => new Map(items.map((item) => [item.id, item.value])), [items]);
   // The active row previews, whether the keys, the pointer or a filter made it active.
   const previewRow = (id: string) => {
     const value = valueById.get(id);
-    palettePreview.preview(value?.kind === "palette" ? value.selection : null);
+    const entry =
+      value?.kind === "theme" ? entries.find((item) => item.id === value.id) : undefined;
+    // An unavailable theme has nothing to show: the committed one stays.
+    themePreview.preview(value?.kind === "theme" && entry?.available !== false ? value.id : null);
     modePreview.preview(value?.kind === "mode" ? value.mode : null);
   };
 
   const cancelPreviews = () => {
     modePreview.cancel();
-    palettePreview.cancel();
+    themePreview.cancel();
   };
   const handleAccept = (item: QuickPickItem<ThemePickerValue>) => {
     const value = item.value;
@@ -96,7 +106,7 @@ export function ThemePicker() {
       pages.pop();
       return "keepOpen" as const;
     }
-    palettePreview.commit(value.selection);
+    themePreview.commit(value.id);
     return undefined;
   };
 

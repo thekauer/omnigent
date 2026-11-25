@@ -18,6 +18,8 @@ import {
 import { MemoryRouter, useLocation } from "react-router-dom";
 import type * as IdentityApi from "@/lib/identity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { FIXTURE_EXTENSION_ID, fixtureThemeExtension } from "@/test/themeFixtures";
+import { themeService } from "@/theme/themeService";
 import { toast } from "sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -265,9 +267,21 @@ vi.mock("@/components/ui/select", async () => {
     SelectTrigger,
     SelectValue: () => null,
     SelectContent: ({ children }: { children: ReactNode }) => children,
-    SelectItem: ({ value, children }: { value: string; children: ReactNode }) => (
-      <option value={value}>{children}</option>
+    SelectItem: ({
+      value,
+      children,
+      disabled,
+    }: {
+      value: string;
+      children: ReactNode;
+      disabled?: boolean;
+    }) => (
+      <option value={value} disabled={disabled}>
+        {children}
+      </option>
     ),
+    SelectGroup: ({ children }: { children: ReactNode }) => children,
+    SelectLabel: () => null,
   };
 });
 // The admin management surfaces are lazy-loaded and own heavy data layers of
@@ -2517,5 +2531,138 @@ describe("SettingsPage", () => {
     renderPage("/settings/archived");
 
     expect(screen.queryByTestId("archived-toggle-selection")).toBeNull();
+  });
+});
+
+describe("Color theme with contributed themes", () => {
+  let removeFixture: () => void = () => {};
+  let warn: ReturnType<typeof vi.spyOn>;
+  beforeEach(() => {
+    warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    removeFixture = themeService.addExtension(fixtureThemeExtension());
+  });
+  afterEach(() => {
+    themeService.select(null);
+    removeFixture();
+    themeService.setProductPolicy(null);
+    warn.mockRestore();
+  });
+
+  const themeSelect = () => screen.getByTestId("color-theme-select") as HTMLSelectElement;
+  const optionValues = () => [...themeSelect().options].map((option) => option.value);
+
+  it("lists the built-in themes, then the extension's, and chooses one", () => {
+    renderPage("/settings/appearance");
+    expect(optionValues()).toEqual([
+      "omni",
+      "dracula",
+      "github",
+      "catppuccin",
+      "gruvbox",
+      "solarized",
+      "nord",
+      "custom",
+      `${FIXTURE_EXTENSION_ID}/full-dark`,
+      `${FIXTURE_EXTENSION_ID}/invalid`,
+      `${FIXTURE_EXTENSION_ID}/vscode-dark`,
+    ]);
+    expect(themeSelect().options[8]).toHaveTextContent("Fixture Light / Fixture Dark");
+    expect(themeSelect().options[10]).toHaveTextContent("Dark only");
+    act(() => {
+      fireEvent.change(themeSelect(), { target: { value: `${FIXTURE_EXTENSION_ID}/vscode-dark` } });
+    });
+    expect(localStorage.getItem("omnigent:ui-theme-palette")).toBe(
+      JSON.stringify(`${FIXTURE_EXTENSION_ID}/vscode-dark`),
+    );
+    // The palette's own editor is for the built-in themes.
+    expect(screen.queryByTestId("custom-theme-accent-trigger")).toBeNull();
+  });
+
+  it("locks the mode while a single-mode theme sets it", () => {
+    act(() => themeService.select(`${FIXTURE_EXTENSION_ID}/vscode-dark`));
+    renderPage("/settings/appearance");
+    expect(screen.getByText(/Set by theme: dark/)).toBeInTheDocument();
+    expect(screen.getByTestId("theme-dark")).toBeDisabled();
+    expect(screen.getByTestId("theme-dark")).toHaveAttribute("aria-checked", "true");
+    expect(screen.getByTestId("theme-light")).toBeDisabled();
+    act(() => themeService.select("nord"));
+    expect(screen.getByTestId("theme-light")).not.toBeDisabled();
+    expect(screen.queryByText(/Set by theme/)).toBeNull();
+  });
+
+  it("shows the chosen theme's options under the picker and switches them", () => {
+    act(() => themeService.select(`${FIXTURE_EXTENSION_ID}/full-dark`));
+    renderPage("/settings/appearance");
+    const options = screen.getByTestId("theme-options");
+    expect(options).toHaveTextContent("Theme options");
+    const accent = screen.getByTestId("theme-option-accent") as HTMLSelectElement;
+    expect(accent).toHaveAttribute("aria-label", "Theme option: Accent");
+    expect(accent.value).toBe("orange");
+    act(() => {
+      fireEvent.change(accent, { target: { value: "lava" } });
+    });
+    expect(JSON.parse(localStorage.getItem("omnigent:ui-theme-options")!)).toEqual({
+      [`${FIXTURE_EXTENSION_ID}/fixture`]: { accent: "lava" },
+    });
+    expect((screen.getByTestId("theme-option-accent") as HTMLSelectElement).value).toBe("lava");
+    // A theme without options shows none.
+    act(() => themeService.select("nord"));
+    expect(screen.queryByTestId("theme-options")).toBeNull();
+  });
+
+  it("shows a chosen theme whose extension is missing as unavailable, keeping the choice", () => {
+    act(() => {
+      themeService.select(`${FIXTURE_EXTENSION_ID}/full-dark`);
+      themeService.markStarted();
+      removeFixture();
+    });
+    removeFixture = () => {};
+    renderPage("/settings/appearance");
+    expect(themeSelect().value).toBe(`${FIXTURE_EXTENSION_ID}/full-dark`);
+    const unavailable = [...themeSelect().options].find(
+      (option) => option.value === `${FIXTURE_EXTENSION_ID}/full-dark`,
+    )!;
+    expect(unavailable).toBeDisabled();
+    expect(unavailable).toHaveTextContent("Unavailable");
+    expect(screen.getByText(/its extension isn't installed/)).toBeInTheDocument();
+    expect(screen.queryByTestId("theme-options")).toBeNull();
+  });
+
+  it("hides the picker when the product does", () => {
+    act(() => themeService.setProductPolicy({ hidePicker: true }));
+    renderPage("/settings/appearance");
+    expect(screen.queryByTestId("color-theme-select")).toBeNull();
+  });
+
+  it("edits the colour customizations as JSON under Advanced, with inline errors", () => {
+    renderPage("/settings/appearance");
+    expect(screen.queryByTestId("color-customizations-editor")).toBeNull();
+    const toggle = screen.getByTestId("color-customizations-toggle");
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    const editor = screen.getByTestId("color-customizations-editor") as HTMLTextAreaElement;
+    expect(editor.value).toBe("{}");
+    fireEvent.change(editor, {
+      target: { value: '{"background": "url(x)", "[nord]": {"primary": "#123456"}}' },
+    });
+    expect(screen.getByTestId("color-customizations-errors")).toHaveTextContent(
+      'background: "url(" is not allowed',
+    );
+    expect(screen.getByTestId("color-customizations-apply")).toBeDisabled();
+    fireEvent.change(editor, {
+      target: { value: '{"background": "#101010", "[nord]": {"primary": "#123456"}}' },
+    });
+    expect(screen.queryByTestId("color-customizations-errors")).toBeNull();
+    fireEvent.click(screen.getByTestId("color-customizations-apply"));
+    expect(JSON.parse(localStorage.getItem("omnigent:ui-color-customizations")!)).toEqual({
+      background: "#101010",
+      "[nord]": { primary: "#123456" },
+    });
+    expect(screen.getByText("Applied")).toBeInTheDocument();
+    expect(document.getElementById("omnigent-theme-runtime")?.textContent).toContain(
+      "--background: #101010;",
+    );
+    act(() => themeService.setCustomizations("{}"));
   });
 });

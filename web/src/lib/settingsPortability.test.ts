@@ -128,6 +128,28 @@ it.each([
   expect(readSessionWorkspaceState("browser")).toEqual({ openBrowsers: ["one"] });
 });
 
+describe("theme settings portability", () => {
+  it("round-trips the theme, its options, variants and customizations, never the cache", () => {
+    const stored = {
+      "omnigent:ui-theme-palette": JSON.stringify("acme.x/dark"),
+      "omnigent:ui-theme-options": JSON.stringify({ "acme.x/family": { accent: "lava" } }),
+      "omnigent:ui-variants": JSON.stringify({ density: "compact" }),
+      "omnigent:ui-color-customizations": JSON.stringify({ "[acme.x/dark]": { primary: "#123" } }),
+    };
+    for (const [key, value] of Object.entries(stored)) localStorage.setItem(key, value);
+    localStorage.setItem("omnigent:ui-theme-cache", JSON.stringify({ version: 1 }));
+    const exported = collectSettings()!;
+    expect(exported.settings).toMatchObject(stored);
+    expect(exported.settings).not.toHaveProperty("omnigent:ui-theme-cache");
+    localStorage.clear();
+    applyImportedSettings(JSON.parse(JSON.stringify(exported)) as typeof exported);
+    for (const [key, value] of Object.entries(stored)) {
+      expect(localStorage.getItem(key), key).toBe(value);
+    }
+    expect(localStorage.getItem("omnigent:ui-theme-cache")).toBeNull();
+  });
+});
+
 describe.each([
   ["composer shortcut", COMPOSER_SEND_SHORTCUT_STORAGE_KEY, "true"],
   ["final-answer fold", FOLD_ASSISTANT_NARRATION_STORAGE_KEY, "true"],

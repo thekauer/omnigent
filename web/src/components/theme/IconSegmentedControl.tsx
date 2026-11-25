@@ -19,12 +19,15 @@ export function IconSegmentedControl<T extends string>({
   onSelect,
   componentId,
   items,
+  disabled = false,
 }: {
   labelledBy: string;
   value: T;
   onSelect: (value: T) => void;
   componentId?: string;
   items: readonly IconSegmentedOption<T>[];
+  /** Shows the value but takes no choice (a theme that sets it). */
+  disabled?: boolean;
 }) {
   const { trackValueChange } = useOmnigentAnalytics();
   const refs = useRef(new Map<T, HTMLButtonElement | null>());
@@ -42,7 +45,11 @@ export function IconSegmentedControl<T extends string>({
       <div
         role="radiogroup"
         {...owned.control({ outside: { "aria-labelledby": labelledBy } })}
-        className="inline-flex shrink-0 gap-0.5 rounded-lg bg-muted p-0.5"
+        aria-disabled={disabled || undefined}
+        className={cn(
+          "inline-flex shrink-0 gap-0.5 rounded-lg bg-muted p-0.5",
+          disabled && "opacity-60",
+        )}
       >
         {items.map((item, index) => {
           const selected = item.value === value;
@@ -60,6 +67,7 @@ export function IconSegmentedControl<T extends string>({
                   aria-checked={selected}
                   tabIndex={selected ? 0 : -1}
                   data-testid={item.testId}
+                  disabled={disabled}
                   onClick={() => select(item.value)}
                   onKeyDown={(event) => {
                     const forward = event.key === "ArrowRight" || event.key === "ArrowDown";

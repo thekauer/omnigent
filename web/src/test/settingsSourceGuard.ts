@@ -1436,11 +1436,12 @@ class SettingsSourceGuard {
       const part =
         partArgument && ts.isStringLiteralLike(partArgument) ? partArgument.text : undefined;
       const overlay = context.overlay;
+      // An overlay linked without a part opens from the row's main control, part "".
       const valid =
         owner?.entry !== undefined &&
         part !== undefined &&
         sameRuntimeEntry(owner, overlay) &&
-        overlay?.part === part &&
+        (overlay?.part ?? "") === part &&
         ownerEntries(owner).every(
           (member) => member.overlays?.[part]?.runtimeChoices !== undefined,
         ) &&

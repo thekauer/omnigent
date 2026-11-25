@@ -9,6 +9,7 @@ import { openKeyboardShortcuts } from "@/components/KeyboardShortcutsDialog";
 import { openFindFromCommand, useCanOpenFindFromCommand } from "@/lib/findRouting";
 import { AVAILABLE, HIDDEN, type PaletteCommand } from "@/store/paletteCommands";
 import { openThemePicker, SELECT_THEME_COMMAND } from "@/store/themePicker";
+import { useThemePickerHidden } from "@/theme/themeService";
 
 import { useSettingsCommands } from "./settingsCommands";
 
@@ -25,6 +26,7 @@ export function useQuickPickAppCommands({
 }: QuickPickAppCommandOptions = {}): PaletteCommand[] {
   const canOpenFind = useCanOpenFindFromCommand();
   const settingsCommands = useSettingsCommands();
+  const themePickerHidden = useThemePickerHidden();
   return useMemo<PaletteCommand[]>(
     () => [
       ...(onGoToSession
@@ -68,10 +70,12 @@ export function useQuickPickAppCommands({
         icon: PaletteIcon,
         // Opens the picker once the palette has closed, so it keeps focus.
         movesFocus: true,
+        // A product may hide the picker (its theme policy).
+        availability: themePickerHidden ? HIDDEN : AVAILABLE,
         run: openThemePicker,
       },
       ...settingsCommands,
     ],
-    [canOpenFind, onGoToSession, settingsCommands],
+    [canOpenFind, onGoToSession, settingsCommands, themePickerHidden],
   );
 }

@@ -1,5 +1,6 @@
 // Rows of the "Select theme" picker: the current theme, the Appearance page,
-// Omnigent Default, then the other palettes and Custom.
+// Omnigent Default, then the built-in themes and Custom, then each extension's themes
+// under its name (the theme service's list, shared with Settings > Appearance).
 
 import { ContrastIcon } from "lucide-react";
 
@@ -7,40 +8,38 @@ import { PaletteChip } from "@/components/theme/AppearancePreviews";
 import type { ThemeMode } from "@/components/theme/themeMode";
 import { THEME_MODE_OPTIONS, themeModeLabel } from "@/components/theme/themeModeOptions";
 import type { QuickPickItem } from "@/components/ui/quick-pick";
-import {
-  DEFAULT_PALETTE,
-  PALETTES,
-  type PaletteSwatch,
-  type ThemeSelection,
-} from "@/lib/themePalette";
+import { DEFAULT_PALETTE, PALETTES, type PaletteSwatch } from "@/lib/themePalette";
+import type { ThemeListEntry } from "@/theme/themeService";
 
 export type ThemePickerPageId = "themes" | "appearance";
 
 export type ThemePickerValue =
-  | { kind: "palette"; selection: ThemeSelection }
-  | { kind: "appearance" }
-  | { kind: "mode"; mode: ThemeMode };
+  { kind: "theme"; id: string } | { kind: "appearance" } | { kind: "mode"; mode: ThemeMode };
 
 export const CURRENT_THEME_ITEM_ID = "theme:current";
 export const APPEARANCE_ITEM_ID = "theme:appearance";
 export const DEFAULT_THEME_ITEM_ID = "theme:default";
 
+/** The built-in themes' group; an extension's themes are grouped under its name. */
 export const THEMES_GROUP = "Themes";
 
-export function paletteItemId(selection: ThemeSelection): string {
-  return `theme:palette:${selection}`;
+/** A theme row's id: `theme:palette:<id>` for a built-in, `theme:<id>` for an extension's. */
+export function themeItemId(entry: Pick<ThemeListEntry, "id" | "builtIn">): string {
+  return entry.builtIn ? `theme:palette:${entry.id}` : `theme:${entry.id}`;
 }
 
 export function modeItemId(mode: ThemeMode): string {
   return `appearance:${mode}`;
 }
 
-const DEFAULT_THEME_LABEL = "Omnigent Default";
-const CUSTOM_LABEL = "Custom";
+export const DEFAULT_THEME_LABEL = "Omnigent Default";
+export const UNAVAILABLE_LABEL = "Unavailable";
 
 export interface ThemePickerContext {
-  /** The committed palette. */
-  selection: ThemeSelection;
+  /** The theme list (`themeService.entries()`). */
+  entries: readonly ThemeListEntry[];
+  /** The committed theme's list id. */
+  choice: string;
   mode: ThemeMode;
   /** Chips render in the mode the app shows now. */
   isDark: boolean;
@@ -49,56 +48,82 @@ export interface ThemePickerContext {
   customSwatches: { light: PaletteSwatch; dark: PaletteSwatch };
 }
 
-function swatchesFor(
-  selection: ThemeSelection,
+const FALLBACK_SWATCH = PALETTES[0]!;
+
+/** The swatch an entry shows in a mode: its own, the other mode's, or the default's. */
+export function entrySwatch(
+  entry: ThemeListEntry | undefined,
+  isDark: boolean,
+  customSwatches: { light: PaletteSwatch; dark: PaletteSwatch },
+): PaletteSwatch {
+  const mode = isDark ? "dark" : "light";
+  if (entry?.custom) return customSwatches[mode];
+  return (
+    entry?.swatches[mode] ?? entry?.swatches[isDark ? "light" : "dark"] ?? FALLBACK_SWATCH[mode]
+  );
+}
+
+/** An entry's name: "Omnigent Default" for the default palette, else its label. */
+export function themeEntryLabel(entry: ThemeListEntry | undefined): string {
+  if (!entry || entry.id === DEFAULT_PALETTE) return DEFAULT_THEME_LABEL;
+  return entry.label;
+}
+
+/** "Dark only" for a theme that forces its mode, else nothing. */
+export function forcedModeLabel(entry: ThemeListEntry | undefined): string | undefined {
+  if (!entry?.forcedMode) return undefined;
+  return entry.forcedMode === "dark" ? "Dark only" : "Light only";
+}
+
+function chip(entry: ThemeListEntry | undefined, context: ThemePickerContext) {
+  return <PaletteChip swatch={entrySwatch(entry, context.isDark, context.customSwatches)} />;
+}
+
+function themeItem(
+  entry: ThemeListEntry,
   context: ThemePickerContext,
-): { light: PaletteSwatch; dark: PaletteSwatch } {
-  if (selection === "custom") return context.customSwatches;
-  return PALETTES.find((palette) => palette.id === selection) ?? PALETTES[0]!;
-}
-
-export function themeSelectionLabel(selection: ThemeSelection): string {
-  if (selection === "custom") return CUSTOM_LABEL;
-  if (selection === DEFAULT_PALETTE) return DEFAULT_THEME_LABEL;
-  return PALETTES.find((palette) => palette.id === selection)?.label ?? DEFAULT_THEME_LABEL;
-}
-
-function chip(selection: ThemeSelection, context: ThemePickerContext) {
-  const swatches = swatchesFor(selection, context);
-  return <PaletteChip swatch={context.isDark ? swatches.dark : swatches.light} />;
-}
-
-function paletteItem(
-  selection: ThemeSelection,
-  context: ThemePickerContext,
-  group: string,
 ): QuickPickItem<ThemePickerValue> {
-  const palette = PALETTES.find((candidate) => candidate.id === selection);
+  const current = entry.id === context.choice;
   return {
-    id: paletteItemId(selection),
-    label: themeSelectionLabel(selection),
-    keywords: palette ? [palette.blurb] : ["your colors", "edit in settings"],
-    group,
-    icon: chip(selection, context),
-    detail: selection === context.selection ? "Current" : undefined,
+    id: themeItemId(entry),
+    label: themeEntryLabel(entry),
+    description: forcedModeLabel(entry),
+    keywords: [
+      ...(entry.description ? [entry.description] : []),
+      ...(entry.custom ? ["your colors", "edit in settings"] : []),
+      ...(entry.builtIn ? [] : [entry.groupLabel]),
+    ],
+    group: entry.builtIn ? THEMES_GROUP : entry.groupLabel,
+    icon: chip(entry, context),
+    detail: !entry.available ? UNAVAILABLE_LABEL : current ? "Current" : undefined,
+    ...(entry.available
+      ? {}
+      : { disabledReason: `${UNAVAILABLE_LABEL}: its extension isn't installed` }),
     rememberInHistory: false,
-    value: { kind: "palette", selection },
+    value: { kind: "theme", id: entry.id },
   };
 }
 
 /** The root page. */
 export function themePageItems(context: ThemePickerContext): QuickPickItem<ThemePickerValue>[] {
   const modeLabel = themeModeLabel(context.mode, context.followsHost);
-  const isDefault = context.selection === DEFAULT_PALETTE;
+  const isDefault = context.choice === DEFAULT_PALETTE;
+  const current = context.entries.find((entry) => entry.id === context.choice);
+  const defaultEntry = context.entries.find((entry) => entry.id === DEFAULT_PALETTE);
+  const currentDetail = [
+    themeEntryLabel(current),
+    ...(current && !current.available ? [UNAVAILABLE_LABEL] : []),
+    forcedModeLabel(current) ?? modeLabel,
+  ].join(" · ");
   const items: QuickPickItem<ThemePickerValue>[] = [
     {
       id: CURRENT_THEME_ITEM_ID,
       label: isDefault ? DEFAULT_THEME_LABEL : "Current theme",
-      detail: isDefault ? modeLabel : `${themeSelectionLabel(context.selection)} · ${modeLabel}`,
+      detail: isDefault ? modeLabel : currentDetail,
       keywords: ["current", "keep"],
-      icon: chip(context.selection, context),
+      icon: chip(current, context),
       rememberInHistory: false,
-      value: { kind: "palette", selection: context.selection },
+      value: { kind: "theme", id: context.choice },
     },
     {
       id: APPEARANCE_ITEM_ID,
@@ -111,21 +136,20 @@ export function themePageItems(context: ThemePickerContext): QuickPickItem<Theme
       value: { kind: "appearance" },
     },
   ];
-  if (!isDefault) {
+  if (!isDefault && defaultEntry) {
     items.push({
       id: DEFAULT_THEME_ITEM_ID,
       label: DEFAULT_THEME_LABEL,
       keywords: ["default", "reset", "omnigent", "pink"],
-      icon: chip(DEFAULT_PALETTE, context),
+      icon: chip(defaultEntry, context),
       rememberInHistory: false,
-      value: { kind: "palette", selection: DEFAULT_PALETTE },
+      value: { kind: "theme", id: DEFAULT_PALETTE },
     });
   }
-  for (const palette of PALETTES) {
-    if (palette.id === DEFAULT_PALETTE) continue;
-    items.push(paletteItem(palette.id, context, THEMES_GROUP));
+  for (const entry of context.entries) {
+    if (entry.id === DEFAULT_PALETTE) continue;
+    items.push(themeItem(entry, context));
   }
-  items.push(paletteItem("custom", context, THEMES_GROUP));
   return items;
 }
 

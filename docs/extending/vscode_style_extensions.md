@@ -688,10 +688,29 @@ limitHit, message }`; a cancelled token aborts the request and rejects
       curated VS Code aliases of `theme/vscodeColorAliases.ts`), `tokenColors`
       (registered as a syntax theme the `syntax-theme-*` tokens name),
       `terminal`, `brand` (`logo`, `wordmark`, `favicon`, `appName`) and
-      `omnigent.tokens`/`.options`/`.variants` are checked by
+      `omnigent.tokens`/`.options`/`.variants`/`.swatch` (the picker's preview
+      colours `bg`, `card`, `accent`, `border`, `text`; else resolved from the
+      theme's colours and option choices) are checked by
       `theme/themeFile.ts` and `theme/validate.ts`; `theme/themeService.ts`
       applies them (`list()`, `select()`, `getActive()`, `setOption()`, and the
-      built-in `omnigent.selectColorTheme` command). The dev plugin reads the
+      built-in `omnigent.selectColorTheme` command). A theme entry may also give
+      a `description` and, on a family's member, a `familyLabel`. The theme
+      picker (⌘K, Select theme) and Settings > Appearance > Color theme show one
+      list, `themeService.entries()`: the built-in themes, then each extension's
+      under its `displayName`, a family as one entry, a single-mode theme marked
+      "Dark only"/"Light only", a chosen theme whose extension is missing as
+      "Unavailable" (the choice kept, the default shown). The picker previews the
+      highlighted theme live (`preview()`), and Escape reverts it. Under the
+      picker, Settings shows the chosen theme's options and an Advanced editor
+      for colour customizations (JSON, global and `[<theme id>]`, checked with
+      inline errors); a single-mode theme locks the mode control ("Set by
+      theme"). The built-in palettes are the `omnigent.themes` built-in
+      extension (`builtinExtensions/builtInThemes.ts` generates its themes from
+      `lib/themePalette.ts`); their files name `omnigent.palette`, which only a
+      built-in's theme may: the service applies that palette's precompiled CSS
+      (`data-theme`) instead of a runtime stylesheet, and stores its id
+      (`nord`) as before. A product's policy (`setProductPolicy`, filled by M10)
+      limits the list and can hide the picker. The dev plugin reads the
       theme files at scan time and inlines them into the virtual module
       (`ExtensionDescription.files`; built-ins import them statically), hands an
       edited file to the page without a reload, and serves the fonts and brand

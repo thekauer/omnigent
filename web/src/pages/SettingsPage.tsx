@@ -41,12 +41,15 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import { useViewerId } from "@/hooks/useViewerId";
 import { useProactiveAgentSettings } from "@/hooks/useProactiveAgentSettings";
 import {
   ArchiveRestoreIcon,
   AlertTriangleIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
   BotIcon,
   DownloadIcon,
   FileDiffIcon,
@@ -120,8 +123,10 @@ import {
   CODE_FONT_FAMILY_ENTRY,
   CODE_FONT_SIZE_ENTRY,
   CODE_FONT_WEIGHT_ENTRY,
+  COLOR_CUSTOMIZATIONS_ENTRY,
   COLOR_THEME_ENTRY,
   HIDE_UNCONFIGURED_HARNESSES_ENTRY,
+  THEME_OPTIONS_ENTRY,
   PEER_SESSION_MESSAGES_ENTRY,
   SHOW_FINAL_ANSWER_ENTRY,
   TERMINAL_THEME_ENTRY,
@@ -162,10 +167,13 @@ import { BrowserAgentToolsSettingsGroup } from "@/components/BrowserPane/agentTo
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogClose,
@@ -360,17 +368,21 @@ import {
   HIDDEN_PICKER_AGENTS_STORAGE_KEY,
   notifyHiddenPickerAgentsChanged,
 } from "@/lib/pickerEntryVisibility";
-import {
-  DEFAULT_PALETTE,
-  isThemeSelection,
-  PALETTES,
-  type ThemeSelection,
-} from "@/lib/themePalette";
+import { isThemeSelection, PALETTES } from "@/lib/themePalette";
 import {
   commitThemePalette,
   reloadThemePalette,
-  useThemePaletteSelection,
+  useThemeChoice,
+  useThemeEntries,
 } from "@/store/themePalette";
+import {
+  type CustomizationProblem,
+  type ThemeListEntry,
+  themeService,
+  useThemeForcedMode,
+  useThemePickerHidden,
+} from "@/theme/themeService";
+import { entrySwatch, forcedModeLabel, UNAVAILABLE_LABEL } from "@/shell/themePickerItems";
 import {
   applyCustomTheme,
   createCustomThemeFromPalette,
@@ -631,12 +643,20 @@ function ModeControl() {
   const mode = normalizeThemeMode(theme);
   const followsHost = useHostTheme() !== undefined;
   const themeSettingsUrl = followsHost ? getOmnigentThemeSettingsUrl() : undefined;
+  // A single-mode theme sets the mode while it's chosen: shown, not changeable.
+  const forcedMode = useThemeForcedMode();
   return (
     <SettingsItem entry={THEME_MODE_ENTRY} className="flex items-center justify-between gap-4">
       <div className="flex-1">
         <SettingsEntryLabel
           entry={THEME_MODE_ENTRY}
-          description={followsHost ? "Follow Databricks, or force light or dark." : undefined}
+          description={
+            forcedMode
+              ? `Set by theme: ${forcedMode === "dark" ? "dark" : "light"} while it's chosen.`
+              : followsHost
+                ? "Follow Databricks, or force light or dark."
+                : undefined
+          }
         />
         {themeSettingsUrl && (
           <a
@@ -653,8 +673,9 @@ function ModeControl() {
       <SettingsOwner entry={THEME_MODE_ENTRY}>
         <IconSegmentedControl<ThemeMode>
           labelledBy={settingsLabelId(THEME_MODE_ENTRY)}
-          value={mode}
+          value={forcedMode ?? mode}
           onSelect={(next) => setTheme(next)}
+          disabled={forcedMode !== null}
           componentId="settings.appearance.theme_mode"
           items={THEME_MODE_OPTIONS.map((option) => ({
             value: option.mode,
@@ -891,12 +912,17 @@ function ColorThemeControl() {
   // Render each chip in the currently-resolved mode so it matches the app now
   // (honoring the embed's forced theme, not just next-themes' resolvedTheme).
   const isDark = useResolvedThemeMode() === "dark";
-  // Shared with the theme picker, so a palette chosen there shows here.
-  const selection = useThemePaletteSelection();
+  // The theme service's list and choice, shared with the theme picker.
+  const choice = useThemeChoice();
+  const entries = useThemeEntries();
+  const pickerHidden = useThemePickerHidden();
   const [customTheme, setCustomTheme] = useState<CustomTheme>(() => readCustomTheme());
+  const current = entries.find((entry) => entry.id === choice);
+  // A built-in palette (or Custom) is chosen: its colours are editable as a Custom theme.
+  const palette = isThemeSelection(choice) ? choice : null;
 
   const choose = useCallback(
-    (next: ThemeSelection) => {
+    (next: string) => {
       if (next === "custom") applyCustomTheme(customTheme);
       commitThemePalette(next);
     },
@@ -904,9 +930,9 @@ function ColorThemeControl() {
   );
 
   const selectedPalette =
-    selection === "custom"
+    palette === null || palette === "custom"
       ? null
-      : (PALETTES.find((palette) => palette.id === selection) ?? PALETTES[0]);
+      : (PALETTES.find((entry) => entry.id === palette) ?? PALETTES[0]);
   const editableTheme = selectedPalette
     ? createCustomThemeFromPalette(selectedPalette)
     : customTheme;
@@ -915,10 +941,10 @@ function ColorThemeControl() {
   const updateCustomTheme = useCallback(
     (patch: Partial<CustomTheme>) => {
       const source =
-        selection === "custom"
+        palette === "custom"
           ? customTheme
           : createCustomThemeFromPalette(
-              PALETTES.find((palette) => palette.id === selection) ?? PALETTES[0],
+              PALETTES.find((entry) => entry.id === palette) ?? PALETTES[0],
             );
       const next = { ...source, ...patch };
       setCustomTheme(next);
@@ -926,22 +952,20 @@ function ColorThemeControl() {
       applyCustomTheme(next);
       commitThemePalette("custom");
     },
-    [customTheme, selection],
+    [customTheme, palette],
   );
 
-  const selected =
-    selection === "custom"
-      ? {
-          label: "Custom",
-          light: customSwatches.light,
-          dark: customSwatches.dark,
-        }
-      : selectedPalette!;
-  const paletteDescription =
-    selection === "custom"
-      ? `Based on ${PALETTES.find((palette) => palette.id === customTheme.basePalette)?.label ?? "Omnigent"}`
-      : selectedPalette?.blurb;
+  const swatch = entrySwatch(current, isDark, customSwatches);
+  const description =
+    palette === "custom"
+      ? `Based on ${PALETTES.find((entry) => entry.id === customTheme.basePalette)?.label ?? "Omnigent"}`
+      : current && !current.available
+        ? `${UNAVAILABLE_LABEL}: its extension isn't installed. The default theme shows until it is.`
+        : current?.description;
+  const groups = groupThemeEntries(entries);
+  const itemSwatch = (entry: ThemeListEntry) => entrySwatch(entry, isDark, customSwatches);
 
+  if (pickerHidden) return null;
   return (
     <SettingsItem entry={COLOR_THEME_ENTRY}>
       <ThemeSubsection
@@ -957,18 +981,18 @@ function ColorThemeControl() {
           <div className="flex flex-col gap-3 border-b bg-muted/30 p-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 items-center gap-3">
               <div className="w-28 shrink-0 overflow-hidden rounded-lg shadow-sm">
-                <PaletteSwatchPreview swatch={isDark ? selected.dark : selected.light} />
+                <PaletteSwatchPreview swatch={swatch} />
               </div>
               <SettingsLabel
                 label="Theme palette"
-                description={paletteDescription}
+                description={description}
                 descriptionClassName="truncate"
               />
             </div>
             <Select
-              value={selection}
+              value={choice}
               onValueChange={(next) => {
-                if (isThemeSelection(next)) choose(next);
+                if (entries.some((entry) => entry.id === next && entry.available)) choose(next);
               }}
               componentId="settings.appearance.color_theme"
               valueHasNoPii
@@ -979,91 +1003,291 @@ function ColorThemeControl() {
                 className="w-full gap-2 sm:w-48"
               >
                 <SelectValue>
-                  <PaletteChip swatch={isDark ? selected.dark : selected.light} />
-                  <span>{selected.label}</span>
+                  <PaletteChip swatch={swatch} />
+                  <span className="truncate">{current?.label ?? "Omnigent"}</span>
                 </SelectValue>
               </SelectTrigger>
               <SelectContent {...settingsOverlayProps(COLOR_THEME_ENTRY)}>
-                {PALETTES.map((palette) => (
-                  <SelectItem
-                    key={palette.id}
-                    value={palette.id}
-                    data-testid={`palette-${palette.id}`}
-                  >
-                    <PaletteChip swatch={isDark ? palette.dark : palette.light} />
-                    <span>{palette.label}</span>
-                  </SelectItem>
-                ))}
-                <SelectItem value="custom" data-testid="palette-custom">
-                  <PaletteChip swatch={isDark ? customSwatches.dark : customSwatches.light} />
-                  <span>Custom</span>
-                </SelectItem>
+                {groups.map((group) =>
+                  group.builtIn ? (
+                    group.entries.map((entry) => (
+                      <SelectItem
+                        key={entry.id}
+                        value={entry.id}
+                        data-testid={`palette-${entry.id}`}
+                      >
+                        <PaletteChip swatch={itemSwatch(entry)} />
+                        <span>{entry.label}</span>
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <SelectGroup key={group.extensionId}>
+                      <SelectLabel>{group.label}</SelectLabel>
+                      {group.entries.map((entry) => (
+                        <SelectItem
+                          {...settingsRuntimeChoiceProps(COLOR_THEME_ENTRY, "")}
+                          key={entry.id}
+                          value={entry.id}
+                          disabled={!entry.available}
+                          data-testid={`theme-${entry.id}`}
+                        >
+                          <PaletteChip swatch={itemSwatch(entry)} />
+                          <span>{entry.label}</span>
+                          {(!entry.available || entry.forcedMode) && (
+                            <span className="text-muted-foreground text-xs">
+                              {entry.available ? forcedModeLabel(entry) : UNAVAILABLE_LABEL}
+                            </span>
+                          )}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  ),
+                )}
               </SelectContent>
             </Select>
           </div>
 
-          <div className="px-4">
-            <SettingsOwner entry={COLOR_THEME_ENTRY} part="accent">
-              <ThemeColorPicker
-                label="Accent"
-                value={isDark ? editableTheme.darkAccent : editableTheme.accent}
-                testId="custom-theme-accent"
-                onChange={(accent) =>
-                  updateCustomTheme(isDark ? { darkAccent: accent } : { accent })
-                }
-              />
-            </SettingsOwner>
-            <SettingsOwner entry={COLOR_THEME_ENTRY} part="tint">
-              <ThemeColorPicker
-                label="Background tint"
-                value={isDark ? editableTheme.darkTint : editableTheme.tint}
-                testId="custom-theme-tint"
-                onChange={(tint) => updateCustomTheme(isDark ? { darkTint: tint } : { tint })}
-              />
-            </SettingsOwner>
-            <div className="flex items-center justify-between gap-4 border-b border-border/70 py-4">
-              <SettingsLabel
-                label="Contrast"
-                description="Separates text, borders, and surfaces."
-              />
-              <div className="flex w-52 items-center gap-3">
-                <input
-                  id="custom-theme-contrast"
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={editableTheme.contrast}
-                  {...settingsControlProps(COLOR_THEME_ENTRY, "contrast")}
-                  data-testid="custom-theme-contrast"
-                  onChange={(event) => updateCustomTheme({ contrast: Number(event.target.value) })}
-                  className="theme-contrast-range min-w-0 flex-1 cursor-pointer"
-                  style={{ "--range-progress": `${editableTheme.contrast}%` } as CSSProperties}
+          <ThemeOptionsControl />
+
+          {palette !== null && (
+            <div className="border-b border-border/70 px-4">
+              <SettingsOwner entry={COLOR_THEME_ENTRY} part="accent">
+                <ThemeColorPicker
+                  label="Accent"
+                  value={isDark ? editableTheme.darkAccent : editableTheme.accent}
+                  testId="custom-theme-accent"
+                  onChange={(accent) =>
+                    updateCustomTheme(isDark ? { darkAccent: accent } : { accent })
+                  }
                 />
-                <output
-                  htmlFor="custom-theme-contrast"
-                  data-testid="custom-theme-contrast-value"
-                  className="w-7 text-right text-sm font-medium tabular-nums"
-                >
-                  {editableTheme.contrast}
-                </output>
+              </SettingsOwner>
+              <SettingsOwner entry={COLOR_THEME_ENTRY} part="tint">
+                <ThemeColorPicker
+                  label="Background tint"
+                  value={isDark ? editableTheme.darkTint : editableTheme.tint}
+                  testId="custom-theme-tint"
+                  onChange={(tint) => updateCustomTheme(isDark ? { darkTint: tint } : { tint })}
+                />
+              </SettingsOwner>
+              <div className="flex items-center justify-between gap-4 border-b border-border/70 py-4">
+                <SettingsLabel
+                  label="Contrast"
+                  description="Separates text, borders, and surfaces."
+                />
+                <div className="flex w-52 items-center gap-3">
+                  <input
+                    id="custom-theme-contrast"
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={editableTheme.contrast}
+                    {...settingsControlProps(COLOR_THEME_ENTRY, "contrast")}
+                    data-testid="custom-theme-contrast"
+                    onChange={(event) =>
+                      updateCustomTheme({ contrast: Number(event.target.value) })
+                    }
+                    className="theme-contrast-range min-w-0 flex-1 cursor-pointer"
+                    style={{ "--range-progress": `${editableTheme.contrast}%` } as CSSProperties}
+                  />
+                  <output
+                    htmlFor="custom-theme-contrast"
+                    data-testid="custom-theme-contrast-value"
+                    className="w-7 text-right text-sm font-medium tabular-nums"
+                  >
+                    {editableTheme.contrast}
+                  </output>
+                </div>
+              </div>
+              <div className="flex items-center justify-between gap-4 py-4">
+                <SettingsLabel
+                  label="Translucent sidebars"
+                  description="Show the canvas through the conversation and Workspace sidebars."
+                />
+                <Switch
+                  {...settingsControlProps(COLOR_THEME_ENTRY, "translucentSidebars")}
+                  checked={editableTheme.translucentSidebar}
+                  onCheckedChange={(translucentSidebar) =>
+                    updateCustomTheme({ translucentSidebar })
+                  }
+                  data-testid="custom-theme-translucent-sidebar"
+                  componentId="settings.appearance.translucent_sidebar"
+                />
               </div>
             </div>
-            <div className="flex items-center justify-between gap-4 py-4">
-              <SettingsLabel
-                label="Translucent sidebars"
-                description="Show the canvas through the conversation and Workspace sidebars."
-              />
-              <Switch
-                {...settingsControlProps(COLOR_THEME_ENTRY, "translucentSidebars")}
-                checked={editableTheme.translucentSidebar}
-                onCheckedChange={(translucentSidebar) => updateCustomTheme({ translucentSidebar })}
-                data-testid="custom-theme-translucent-sidebar"
-                componentId="settings.appearance.translucent_sidebar"
-              />
-            </div>
-          </div>
+          )}
+
+          <ColorCustomizationsControl />
         </div>
       </ThemeSubsection>
+    </SettingsItem>
+  );
+}
+
+/** The list's entries by group: the built-in themes, then each extension's. */
+function groupThemeEntries(entries: readonly ThemeListEntry[]) {
+  const groups: {
+    extensionId: string;
+    label: string;
+    builtIn: boolean;
+    entries: ThemeListEntry[];
+  }[] = [];
+  for (const entry of entries) {
+    let group = groups.find((candidate) => candidate.extensionId === entry.extensionId);
+    if (!group) {
+      group = {
+        extensionId: entry.extensionId,
+        label: entry.groupLabel,
+        builtIn: entry.builtIn,
+        entries: [],
+      };
+      groups.push(group);
+    }
+    group.entries.push(entry);
+  }
+  return groups;
+}
+
+/** The chosen theme's options (accent, corners, ...), when it declares any. */
+function ThemeOptionsControl() {
+  const version = useThemeServiceVersion();
+  const active = useMemo(() => (version >= 0 ? themeService.getActive() : null), [version]);
+  const options = active?.available ? active.options : [];
+  if (options.length === 0) return null;
+  return (
+    <SettingsItem
+      entry={THEME_OPTIONS_ENTRY}
+      data-testid="theme-options"
+      className="flex flex-col border-b border-border/70 px-4 py-3"
+    >
+      <SettingsEntryLabel entry={THEME_OPTIONS_ENTRY} className="py-1" />
+      {options.map((option) => (
+        <div key={option.id} className="flex items-center justify-between gap-4 py-2">
+          <span aria-hidden="true" className="text-sm">
+            {option.label}
+          </span>
+          <Select
+            value={option.value}
+            onValueChange={(next) => themeService.setOption(option.id, next)}
+            componentId="settings.appearance.theme_option"
+            valueHasNoPii
+          >
+            <SelectTrigger
+              {...settingsControlProps(THEME_OPTIONS_ENTRY, "option", { runtime: option.label })}
+              data-testid={`theme-option-${option.id}`}
+              className="w-full sm:w-48"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent {...settingsOverlayProps(THEME_OPTIONS_ENTRY, "option")}>
+              {option.choices.map((choice) => (
+                <SelectItem
+                  {...settingsRuntimeChoiceProps(THEME_OPTIONS_ENTRY, "option")}
+                  key={choice.id}
+                  value={choice.id}
+                >
+                  {choice.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      ))}
+    </SettingsItem>
+  );
+}
+
+/** The theme service's change counter, for components that read it. */
+function useThemeServiceVersion(): number {
+  return useSyncExternalStore(
+    (listener) => themeService.onDidChange(listener),
+    () => themeService.getVersion(),
+    () => 0,
+  );
+}
+
+/** Advanced: colour customizations as JSON, global and per theme, checked as typed. */
+function ColorCustomizationsControl() {
+  const [open, setOpen] = useState(false);
+  const [text, setText] = useState("");
+  const [problems, setProblems] = useState<CustomizationProblem[]>([]);
+  const [saved, setSaved] = useState(false);
+  const toggle = () => {
+    if (!open) {
+      setText(themeService.getCustomizationsText());
+      setProblems([]);
+      setSaved(false);
+    }
+    setOpen(!open);
+  };
+  const apply = () => {
+    const found = themeService.setCustomizations(text);
+    setProblems(found);
+    setSaved(found.length === 0);
+  };
+  return (
+    <SettingsItem entry={COLOR_CUSTOMIZATIONS_ENTRY} className="px-4 py-4">
+      <div className="flex items-center justify-between gap-4">
+        <SettingsEntryLabel entry={COLOR_CUSTOMIZATIONS_ENTRY} />
+        <Button
+          {...settingsControlProps(COLOR_CUSTOMIZATIONS_ENTRY)}
+          variant="outline"
+          size="sm"
+          aria-expanded={open}
+          aria-controls="color-customizations-panel"
+          data-testid="color-customizations-toggle"
+          onClick={toggle}
+          componentId="settings.appearance.color_customizations_toggle"
+        >
+          {open ? <ChevronDownIcon aria-hidden="true" /> : <ChevronRightIcon aria-hidden="true" />}
+          {open ? "Hide" : "Edit"}
+        </Button>
+      </div>
+      {open && (
+        <div id="color-customizations-panel" className="mt-3 flex flex-col gap-2">
+          <Textarea
+            {...settingsControlProps(COLOR_CUSTOMIZATIONS_ENTRY, "editor")}
+            data-testid="color-customizations-editor"
+            value={text}
+            spellCheck={false}
+            rows={8}
+            aria-invalid={problems.length > 0 || undefined}
+            aria-errormessage={problems.length > 0 ? "color-customizations-errors" : undefined}
+            onChange={(event) => {
+              setText(event.target.value);
+              setSaved(false);
+              setProblems(themeService.checkCustomizations(event.target.value));
+            }}
+            className="font-mono text-xs"
+          />
+          {problems.length > 0 && (
+            <ul
+              id="color-customizations-errors"
+              data-testid="color-customizations-errors"
+              className="text-destructive text-xs"
+            >
+              {problems.slice(0, 20).map((problem) => (
+                <li key={`${problem.key}:${problem.message}`}>
+                  {problem.key ? `${problem.key}: ` : ""}
+                  {problem.message}
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="flex items-center gap-3">
+            <Button
+              {...settingsControlProps(COLOR_CUSTOMIZATIONS_ENTRY, "apply")}
+              size="sm"
+              disabled={problems.length > 0}
+              onClick={apply}
+              data-testid="color-customizations-apply"
+              componentId="settings.appearance.color_customizations_apply"
+            >
+              Apply
+            </Button>
+            {saved && <span className="text-muted-foreground text-xs">Applied</span>}
+          </div>
+        </div>
+      )}
     </SettingsItem>
   );
 }
@@ -1236,7 +1460,7 @@ function AppearanceSection() {
 
     writeTerminalThemeMode(TERMINAL_THEME_DEFAULT);
 
-    commitThemePalette(DEFAULT_PALETTE);
+    themeService.resetAppearance();
     writeCustomTheme(DEFAULT_CUSTOM_THEME);
     applyCustomTheme(DEFAULT_CUSTOM_THEME);
 

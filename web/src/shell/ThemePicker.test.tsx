@@ -1,11 +1,13 @@
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ThemeProvider } from "@/components/theme/ThemeProvider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { readThemePalette } from "@/lib/themePalette";
-import { commitThemePalette, useThemePaletteStore } from "@/store/themePalette";
+import { commitThemePalette } from "@/store/themePalette";
+import { FIXTURE_EXTENSION_ID, fixtureThemeExtension } from "@/test/themeFixtures";
+import { themeService } from "@/theme/themeService";
 import { useThemeModePreviewStore } from "@/store/themeModePreview";
 import {
   closeThemePicker,
@@ -67,9 +69,25 @@ function optionLabels(): string[] {
     });
 }
 
+const FIXTURE_DARK = `${FIXTURE_EXTENSION_ID}/full-dark`;
+const FIXTURE_STOCK = `${FIXTURE_EXTENSION_ID}/vscode-dark`;
+
+/** The fixture extension's themes in the window's theme service; returns their removal. */
+function addFixtureThemes(): () => void {
+  let remove: () => void = () => {};
+  act(() => {
+    remove = themeService.addExtension(fixtureThemeExtension());
+  });
+  return () => act(() => remove());
+}
+
+function runtimeStyle(): string {
+  return document.getElementById("omnigent-theme-runtime")?.textContent ?? "";
+}
+
 beforeEach(() => {
   localStorage.clear();
-  useThemePaletteStore.setState({ selection: "omni" });
+  themeService.select(null);
   document.documentElement.removeAttribute("data-theme");
 });
 
@@ -125,7 +143,7 @@ describe("ThemePicker", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(dataTheme()).toBeNull();
     expect(readThemePalette()).toBe("omni");
-    expect(useThemePaletteStore.getState().selection).toBe("omni");
+    expect(themeService.getChoice()).toBe("omni");
   });
 
   it("keeps the previewed palette after a filter moves the highlight", async () => {
@@ -137,7 +155,91 @@ describe("ThemePicker", () => {
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(dataTheme()).toBe("catppuccin");
     expect(readThemePalette()).toBe("catppuccin");
-    expect(useThemePaletteStore.getState().selection).toBe("catppuccin");
+    expect(themeService.getChoice()).toBe("catppuccin");
+  });
+
+  describe("contributed themes", () => {
+    let removeFixture: () => void;
+    let warn: ReturnType<typeof vi.spyOn>;
+    beforeEach(() => {
+      warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      removeFixture = addFixtureThemes();
+    });
+    afterEach(() => {
+      act(() => themeService.select(null));
+      removeFixture();
+      warn.mockRestore();
+    });
+
+    it("lists them after the built-in themes, grouped under their extension, a family as one", () => {
+      renderPicker();
+      expect(optionLabels()).toEqual([
+        "Omnigent Default",
+        "Appearance",
+        "Dracula",
+        "GitHub",
+        "Catppuccin",
+        "Gruvbox",
+        "Solarized",
+        "Nord",
+        "Custom",
+        "Fixture Light / Fixture Dark",
+        "Fixture Invalid",
+        "Stock Dark (VS Code)",
+      ]);
+      expect(screen.getByText("Fixture themes")).toBeVisible();
+      // A single-mode theme says which mode it forces.
+      expect(screen.getByRole("option", { name: /Stock Dark/ })).toHaveTextContent("Dark only");
+      expect(screen.getByRole("option", { name: /Fixture Light/ })).not.toHaveTextContent("only");
+    });
+
+    it("shows each theme's swatch from its resolved colours", () => {
+      renderPicker();
+      const family = screen.getByRole("option", { name: /Fixture Light/ });
+      // Light mode: the light member's background, and its accent option's default primary.
+      const chip = family.querySelector("span[style]") as HTMLElement;
+      expect(chip.style.backgroundColor).toBe("rgb(255, 255, 255)");
+      expect((chip.querySelector("span[style]") as HTMLElement).style.backgroundColor).toBe(
+        "rgb(211, 84, 0)",
+      );
+    });
+
+    it("previews a contributed theme live, reverts it on Escape and keeps it on Enter", async () => {
+      const input = renderPicker();
+      await userEvent.type(input, "Fixture Light");
+      expect(activeOption(input)).toHaveTextContent("Fixture Light / Fixture Dark");
+      await waitFor(() => expect(runtimeStyle()).toContain("#ffffff"));
+      expect(document.documentElement.getAttribute("data-omni-theme")).toBe(FIXTURE_DARK);
+      // Nothing stored while previewing.
+      expect(localStorage.getItem("omnigent:ui-theme-palette")).toBeNull();
+      await userEvent.keyboard("{Escape}");
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      expect(runtimeStyle()).not.toContain("#ffffff");
+      expect(themeService.getChoice()).toBe("omni");
+
+      const again = renderPicker();
+      await userEvent.type(again, "Stock Dark");
+      await waitFor(() => expect(runtimeStyle()).toContain("#1f1f1f"));
+      await userEvent.keyboard("{Enter}");
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      expect(themeService.getChoice()).toBe(FIXTURE_STOCK);
+      expect(localStorage.getItem("omnigent:ui-theme-palette")).toBe(JSON.stringify(FIXTURE_STOCK));
+    });
+
+    it("lists a chosen theme whose extension is missing as unavailable, and keeps the choice", () => {
+      act(() => themeService.select(FIXTURE_DARK));
+      removeFixture();
+      removeFixture = () => {};
+      themeService.markStarted();
+      renderPicker();
+      const row = screen.getByRole("option", { name: /^Fixture Dark/ });
+      expect(row).toHaveTextContent("Unavailable");
+      expect(row).toHaveAttribute("aria-disabled", "true");
+      expect(screen.getByRole("option", { name: /Current theme/ })).toHaveTextContent(
+        "Unavailable",
+      );
+      expect(themeService.getChoice()).toBe(FIXTURE_DARK);
+    });
   });
 
   it("changes the mode from the Appearance page and returns to the themes", async () => {

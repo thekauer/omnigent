@@ -394,8 +394,12 @@ Defaults must match today exactly.
   - All are added to settingsPortability.
 - **First paint:** the cached last-applied CSS is applied in main and embed. The live version replaces it once the extension registers. If the extension is missing, fall back to the default, keep the choice, and show it as "Unavailable".
 - **Picker and settings:**
-  - `themePickerItems` comes from `themeService.list()`.
-  - Appearance gets theme options, variants (with a "Theme default" choice) and colour customizations as JSON.
+  - `themePickerItems` comes from `themeService.entries()` (built on `list()`), as does
+    Settings > Appearance > Color theme (M7).
+  - Appearance gets theme options, variants (with a "Theme default" choice) and colour
+    customizations as JSON. M7 ships the options and the customizations; the variants
+    are stored (`setVariant`, `getVariants`, `useThemeVariants`) but their control stays
+    hidden until M9 applies them.
   - The font setting becomes a layer.
 
 ### Plugin read API

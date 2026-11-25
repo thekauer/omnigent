@@ -6,6 +6,8 @@
 import { writeRetentionDays } from "@/lib/retentionPreferences";
 import { EmbeddedProvider } from "@/lib/embedded";
 import { writeThemePalette } from "@/lib/themePalette";
+import { FIXTURE_EXTENSION_ID, fixtureThemeExtension } from "@/test/themeFixtures";
+import { themeService } from "@/theme/themeService";
 import { PROJECT_LABEL_KEY } from "@/lib/sessionListCache";
 import { cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -312,10 +314,16 @@ interface InlineAction {
   close: () => Promise<void>;
 }
 
+// The fixture extension's themes, while a scenario has them installed.
+let removeFixtureThemes: (() => void) | null = null;
+
 /** No Electron shell: the page's own starting state, before a scenario installs one. */
 function resetScenario() {
   localStorage.clear();
   setOmnigentHostConfig({});
+  removeFixtureThemes?.();
+  removeFixtureThemes = null;
+  themeService.reload();
 }
 
 interface SettingsAuditScenario {
@@ -877,7 +885,7 @@ const SCENARIOS: readonly SettingsAuditScenario[] = [
     scenario: "web",
     ready: ["Settings data"],
     // Collapsing project sessions is on by default, so its page size shows.
-    states: { "project-folder-pagination": ["collapsed"] },
+    states: { "project-folder-pagination": ["collapsed"], "color-theme": ["built-in theme"] },
     actions: [
       {
         name: "settings import dialog",
@@ -901,7 +909,7 @@ const SCENARIOS: readonly SettingsAuditScenario[] = [
     scenario: "web › custom palette",
     setup: () => writeThemePalette("custom"),
     ready: ["Background tint"],
-    states: { "project-folder-pagination": ["collapsed"] },
+    states: { "project-folder-pagination": ["collapsed"], "color-theme": ["built-in theme"] },
     actions: [
       {
         name: "accent picker",
@@ -920,7 +928,11 @@ const SCENARIOS: readonly SettingsAuditScenario[] = [
     scenario: "web › agents failed to load",
     routes: [{ url: "/v1/agents", status: 500, body: {} }],
     ready: ["Couldn't load this server's harnesses and agents."],
-    states: { "picker-visibility": ["load failed"], "project-folder-pagination": ["collapsed"] },
+    states: {
+      "picker-visibility": ["load failed"],
+      "project-folder-pagination": ["collapsed"],
+      "color-theme": ["built-in theme"],
+    },
   },
   {
     section: "appearance",
@@ -931,7 +943,31 @@ const SCENARIOS: readonly SettingsAuditScenario[] = [
         themeSettingsUrl: "https://workspace.example.com/settings/appearance",
       }),
     ready: ["Databricks appearance settings"],
-    states: { "theme-mode": ["follows Databricks"], "project-folder-pagination": ["collapsed"] },
+    states: {
+      "theme-mode": ["follows Databricks"],
+      "project-folder-pagination": ["collapsed"],
+      "color-theme": ["built-in theme"],
+    },
+  },
+  {
+    section: "appearance",
+    scenario: "web › contributed theme",
+    // An extension's theme with options: its options show, the palette editor doesn't.
+    setup: () => {
+      removeFixtureThemes = themeService.addExtension(fixtureThemeExtension());
+      themeService.select(`${FIXTURE_EXTENSION_ID}/full-dark`);
+    },
+    ready: ["Theme options"],
+    states: { "project-folder-pagination": ["collapsed"] },
+    inlineActions: [
+      {
+        name: "color customizations editor",
+        open: () => userEvent.click(rowButton("color-customizations", "Advanced")),
+        witness: { label: "Color customizations JSON" },
+        states: { "color-customizations": ["expanded"] },
+        close: () => userEvent.click(rowButton("color-customizations", "Advanced")),
+      },
+    ],
   },
   {
     section: "members",
