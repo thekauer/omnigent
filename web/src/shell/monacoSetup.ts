@@ -172,7 +172,9 @@ export function resolvedThemeToMonaco(
  */
 export async function ensureMonacoThemes(names: SyntaxThemeNames): Promise<SyntaxThemeNames> {
   const hl = await ensureMonacoReady();
-  const { shikiNames, loadedAny } = await loadSyntaxThemes(hl, names);
-  if (loadedAny) bridge?.sync();
+  const { shikiNames } = await loadSyntaxThemes(hl, names);
+  // Every time, not only when this call loaded a theme: a concurrent call may have loaded
+  // it first and not synced yet, and a re-registered name needs its new definition.
+  bridge?.sync();
   return shikiNames;
 }

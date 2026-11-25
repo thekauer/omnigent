@@ -12,17 +12,19 @@ import { registerSyntaxTheme, type SyntaxThemeDefinition } from "@/lib/syntaxThe
 
 const h = vi.hoisted(() => ({
   highlighter: null as Awaited<ReturnType<typeof createHighlighter>> | null,
+  creating: null as Promise<Awaited<ReturnType<typeof createHighlighter>>> | null,
 }));
 
 vi.mock("./monacoSetup", async () => {
   const { loadSyntaxThemes, SYNTAX_THEME_NAMES } = await import("@/lib/syntaxTheme");
   const { createHighlighter: create } = await import("shiki");
-  const ready = async () => {
-    h.highlighter ??= await create({
+  // One highlighter, however many callers race for it (as monacoSetup's readyPromise).
+  const ready = () => {
+    h.creating ??= create({
       themes: [SYNTAX_THEME_NAMES.light, SYNTAX_THEME_NAMES.dark],
       langs: [],
-    });
-    return h.highlighter;
+    }).then((highlighter) => (h.highlighter = highlighter));
+    return h.creating;
   };
   return {
     resolvedThemeToMonaco: (mode: string, names: { light: string; dark: string }) =>
