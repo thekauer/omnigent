@@ -519,7 +519,9 @@ export function getOmnigentThemeSettingsUrl(): OmnigentHostConfig["themeSettings
  * Returns null in standalone mode, where Radix falls back to `document.body`.
  */
 export function setEmbedRoot(el: HTMLElement | null): void {
+  if (embedRoot === el) return;
   embedRoot = el;
+  notifyThemeRoots();
 }
 
 export function getEmbedRoot(): HTMLElement | null {
@@ -536,7 +538,26 @@ export function getEmbedRoot(): HTMLElement | null {
  * root), where the scoped stylesheet isn't in play.
  */
 export function setEmbedScopeRoot(el: HTMLElement | null): void {
+  if (embedScopeRoot === el) return;
   embedScopeRoot = el;
+  notifyThemeRoots();
+}
+
+const themeRootListeners = new Set<() => void>();
+
+function notifyThemeRoots(): void {
+  for (const listener of themeRootListeners) listener();
+}
+
+/**
+ * Calls `listener` when {@link getThemeRoots} may return other elements (the embed
+ * mounted, remounted or unmounted); returns the unsubscribe.
+ */
+export function subscribeThemeRoots(listener: () => void): () => void {
+  themeRootListeners.add(listener);
+  return () => {
+    themeRootListeners.delete(listener);
+  };
 }
 
 export function getEmbedScopeRoot(): HTMLElement | null {

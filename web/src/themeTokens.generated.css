@@ -329,6 +329,10 @@
   --terminal-cursor: #0891b2;
   --terminal-cursor-accent: var(--terminal-background);
   --terminal-selection: #0891b233;
+  --terminal-muted: #f4f4f5;
+  --terminal-muted-foreground: #71717a;
+  --terminal-border: #e4e4e7;
+  --terminal-destructive: #c8324c;
   --terminal-ansi-black: #18181b;
   --terminal-ansi-red: initial;
   --terminal-ansi-green: initial;
@@ -426,6 +430,10 @@
   --terminal-cursor: #22d3ee;
   --terminal-cursor-accent: var(--terminal-background);
   --terminal-selection: #22d3ee33;
+  --terminal-muted: #27272a;
+  --terminal-muted-foreground: #a1a1aa;
+  --terminal-border: #27272a;
+  --terminal-destructive: #e65b77;
   --terminal-ansi-black: #09090b;
   --terminal-ansi-white: initial;
   --terminal-ansi-bright-black: #71717a;
@@ -1326,6 +1334,10 @@
   --terminal-cursor: #0891b2;
   --terminal-cursor-accent: var(--terminal-background);
   --terminal-selection: #0891b233;
+  --terminal-muted: #f4f4f5;
+  --terminal-muted-foreground: #71717a;
+  --terminal-border: #e4e4e7;
+  --terminal-destructive: #c8324c;
   --terminal-ansi-black: #18181b;
   --terminal-ansi-red: initial;
   --terminal-ansi-green: initial;
@@ -1353,6 +1365,10 @@
   --terminal-cursor: #22d3ee;
   --terminal-cursor-accent: var(--terminal-background);
   --terminal-selection: #22d3ee33;
+  --terminal-muted: #27272a;
+  --terminal-muted-foreground: #a1a1aa;
+  --terminal-border: #27272a;
+  --terminal-destructive: #e65b77;
   --terminal-ansi-black: #09090b;
   --terminal-ansi-red: initial;
   --terminal-ansi-green: initial;

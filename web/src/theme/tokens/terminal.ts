@@ -53,6 +53,22 @@ export const TERMINAL_TOKENS = defineTokens("terminal", [
     "var(--terminal-background)",
   ),
   terminal("terminal-selection", "Terminal selection, under the text.", "#0891b233", "#22d3ee33"),
+  // The frame around the xterm and the chat's terminal-styled shell blocks, which
+  // repaint the app's surface tokens with these (lib/terminalPalette.ts).
+  terminal(
+    "terminal-muted",
+    "Muted surfaces around the terminal (its tab row).",
+    "#f4f4f5",
+    "#27272a",
+  ),
+  terminal(
+    "terminal-muted-foreground",
+    "Secondary text around the terminal.",
+    "#71717a",
+    "#a1a1aa",
+  ),
+  terminal("terminal-border", "Borders around the terminal.", "#e4e4e7", "#27272a"),
+  terminal("terminal-destructive", "Errors around the terminal.", "#c8324c", "#e65b77"),
   ...ANSI.map(([name, light, dark]) =>
     terminal(
       `terminal-ansi-${name}`,

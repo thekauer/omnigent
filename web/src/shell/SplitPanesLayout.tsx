@@ -11,9 +11,10 @@ import {
   useState,
 } from "react";
 
+import { useResolvedThemeMode } from "@/components/theme/useResolvedThemeMode";
 import { useTerminalIsDark } from "@/components/theme/useTerminalIsDark";
 import { APP_PANE_HOST, CHAT_PANE_BODY, TERMINAL_SURFACE } from "@/lib/paneSurfaces";
-import { terminalSurfaceStyle } from "@/lib/terminalPalette";
+import { terminalSurfaceProps } from "@/lib/terminalPalette";
 import {
   resizeTerminalSplit,
   type TerminalLayout,
@@ -207,7 +208,7 @@ export function SplitPanesLayout({
     })),
   });
   // The row and card take the terminal's colors, whatever the app's appearance.
-  const surfaceStyle = terminalSurfaceStyle(useTerminalIsDark());
+  const surfaceProps = terminalSurfaceProps(useTerminalIsDark(), useResolvedThemeMode() === "dark");
   const rowed = strip !== undefined;
   const carded = rowed && cards;
   const splitShown = split !== undefined && geometry.panes.length > 1;
@@ -330,7 +331,7 @@ export function SplitPanesLayout({
             }
           >
             <div
-              style={rowed ? surfaceStyle : undefined}
+              {...(rowed ? surfaceProps : {})}
               className={cn(
                 "relative flex min-h-0 min-w-0 flex-1 flex-col",
                 rowed && "overflow-hidden bg-background",

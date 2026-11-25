@@ -22,7 +22,7 @@ import { cn } from "@/lib/utils";
 import type { RenderItem, ToolState } from "@/lib/renderItems";
 import { dropTrailingPartialEscape, showControlCharacters, stripAnsi } from "@/lib/ansi";
 import { type ShellOutputFormat, parseShellToolOutput } from "@/lib/shellToolOutput";
-import { terminalSurfaceStyle } from "@/lib/terminalPalette";
+import { terminalSurfaceProps } from "@/lib/terminalPalette";
 import { toggleCodeBlockWordWrap, useCodeBlockWordWrap } from "@/lib/codeWrapPreferences";
 import { iconForTool } from "@/lib/toolIcon";
 import { mcpServerDisplayName } from "@/lib/mcpServerName";
@@ -668,7 +668,7 @@ function ShellTerminalPanel({
         data-testid="shell-tool-terminal"
         data-terminal-theme={terminalIsDark ? "dark" : "light"}
         className="@container/shell"
-        style={pinnedScheme === undefined ? undefined : terminalSurfaceStyle(terminalIsDark)}
+        {...(pinnedScheme === undefined ? {} : terminalSurfaceProps(terminalIsDark, appIsDark))}
       >
         {cwd !== null && (
           // On a narrow card the folder takes its own line and the actions wrap below

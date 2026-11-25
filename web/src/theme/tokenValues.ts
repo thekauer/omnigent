@@ -2,7 +2,7 @@
 // than CSS: xterm's theme, the syntax theme names. Values come from the innermost theme
 // root (`getThemeRoots()`), where the palette, the theme and the derived tokens resolve.
 
-import { getThemeRoots } from "@/lib/host";
+import { getThemeRoots, subscribeThemeRoots } from "@/lib/host";
 import { TOKEN_MODE_PROBE_ATTRIBUTE } from "./tokenModeProbe";
 
 export { TOKEN_MODE_PROBE_ATTRIBUTE };
@@ -14,13 +14,35 @@ function innermostThemeRoot(): HTMLElement | null {
   return roots[roots.length - 1] ?? null;
 }
 
+// Reads cached for the current task while something subscribes (so the observer sees
+// every change): a terminal opening reads the same tokens many times over while
+// rendering, and each read forces a style recalculation (a probe's twice). Dropped
+// after the task, and as soon as an observed mutation is pending.
+let batch: { root: HTMLElement; values: Map<string, string> } | null = null;
+
+function batchFor(root: HTMLElement): Map<string, string> {
+  if (!observer) return new Map();
+  if (observer.takeRecords().length > 0) {
+    batch = null;
+    // The records taken here never reach the observer's callback.
+    queueMicrotask(notify);
+  }
+  if (batch?.root !== root) {
+    batch = { root, values: new Map() };
+    queueMicrotask(() => {
+      batch = null;
+    });
+  }
+  return batch.values;
+}
+
 /**
  * The computed values of `ids` (token ids, without `--`), `""` for an unset token.
  *
  * `mode` reads them as that mode would: on the theme root when it is in that mode,
  * else on a probe element inside it, which the generated stylesheet gives the per-mode
  * defaults of the tokens marked `perMode` (a surface with its own light or dark
- * setting, such as the terminal).
+ * setting, such as the terminal). Reads within one task share one lookup per token.
  */
 export function readThemeTokens<Id extends string>(
   ids: readonly Id[],
@@ -30,9 +52,18 @@ export function readThemeTokens<Id extends string>(
   const root = innermostThemeRoot();
   if (!root || typeof getComputedStyle !== "function") return values;
   const rootMode: TokenMode = root.classList.contains("dark") ? "dark" : "light";
+  const onProbe = mode !== undefined && mode !== rootMode;
+  const cache = batchFor(root);
+  const cacheKey = (id: string) => `${onProbe ? mode : ""}:${id}`;
+  const missing = ids.filter((id) => {
+    const cached = cache.get(cacheKey(id));
+    if (cached !== undefined) values[id] = cached;
+    return cached === undefined;
+  });
+  if (missing.length === 0) return values;
   let target: HTMLElement = root;
   let probe: HTMLElement | null = null;
-  if (mode && mode !== rootMode) {
+  if (onProbe) {
     probe = root.ownerDocument.createElement("div");
     probe.setAttribute(TOKEN_MODE_PROBE_ATTRIBUTE, mode);
     probe.hidden = true;
@@ -41,7 +72,10 @@ export function readThemeTokens<Id extends string>(
   }
   try {
     const style = getComputedStyle(target);
-    for (const id of ids) values[id] = style.getPropertyValue(`--${id}`).trim();
+    for (const id of missing) {
+      values[id] = style.getPropertyValue(`--${id}`).trim();
+      cache.set(cacheKey(id), values[id]);
+    }
   } finally {
     probe?.remove();
   }
@@ -52,8 +86,10 @@ export function readThemeTokens<Id extends string>(
 // variables, and the stylesheets in <head> (a theme's runtime CSS, a dev reload).
 const listeners = new Set<() => void>();
 let observer: MutationObserver | null = null;
+let unsubscribeRoots: (() => void) | null = null;
 
 function notify(): void {
+  batch = null;
   for (const listener of listeners) listener();
 }
 
@@ -66,15 +102,27 @@ function observe(): void {
   observer.observe(document.head, { childList: true, subtree: true, characterData: true });
 }
 
+// The embed remounted: observe its new roots, whose tokens may differ.
+function onThemeRootsChange(): void {
+  observer?.disconnect();
+  observe();
+  notify();
+}
+
 /** Calls `listener` after anything that may change a token's value; returns the unsubscribe. */
 export function subscribeThemeTokens(listener: () => void): () => void {
   listeners.add(listener);
-  if (!observer) observe();
+  if (!observer) {
+    observe();
+    unsubscribeRoots = subscribeThemeRoots(onThemeRootsChange);
+  }
   return () => {
     listeners.delete(listener);
     if (listeners.size === 0) {
       observer?.disconnect();
       observer = null;
+      unsubscribeRoots?.();
+      unsubscribeRoots = null;
     }
   };
 }

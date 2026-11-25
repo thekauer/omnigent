@@ -1,4 +1,6 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+import { setEmbedScopeRoot } from "@/lib/host";
 
 import { readThemeTokens, subscribeThemeTokens, TOKEN_MODE_PROBE_ATTRIBUTE } from "./tokenValues";
 
@@ -58,5 +60,49 @@ describe("subscribeThemeTokens", () => {
     document.documentElement.removeAttribute("data-theme");
     await Promise.resolve();
     expect(calls).toBe(3);
+  });
+});
+
+describe("token reads while subscribed", () => {
+  it("reads each token once per task, and again after a change", async () => {
+    const unsubscribe = subscribeThemeTokens(() => {});
+    const spy = vi.spyOn(window, "getComputedStyle");
+    document.documentElement.style.setProperty("--terminal-background", "#111111");
+    await Promise.resolve();
+    readThemeTokens(["terminal-background"]);
+    readThemeTokens(["terminal-background"], "dark");
+    readThemeTokens(["terminal-background"], "dark");
+    // The root's own mode and one probe.
+    expect(spy).toHaveBeenCalledTimes(2);
+    // A change in the same task is seen at once.
+    document.documentElement.style.setProperty("--terminal-background", "#222222");
+    expect(readThemeTokens(["terminal-background"])["terminal-background"]).toBe("#222222");
+    await Promise.resolve();
+    readThemeTokens(["terminal-background"]);
+    expect(spy).toHaveBeenCalledTimes(4);
+    spy.mockRestore();
+    unsubscribe();
+  });
+
+  it("observes the embed's roots again when it remounts", async () => {
+    let calls = 0;
+    const unsubscribe = subscribeThemeTokens(() => {
+      calls += 1;
+    });
+    const first = document.createElement("div");
+    setEmbedScopeRoot(first);
+    await Promise.resolve();
+    const remounted = document.createElement("div");
+    setEmbedScopeRoot(remounted);
+    await Promise.resolve();
+    const before = calls;
+    remounted.classList.add("dark");
+    await Promise.resolve();
+    expect(calls).toBe(before + 1);
+    first.classList.add("dark");
+    await Promise.resolve();
+    expect(calls).toBe(before + 1);
+    setEmbedScopeRoot(null);
+    unsubscribe();
   });
 });

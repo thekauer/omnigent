@@ -1018,6 +1018,7 @@ describe("ToolCard shell terminal theme", () => {
     const terminal = renderExpandedShell();
     expect(terminal).toHaveAttribute("data-terminal-theme", "light");
     expect(terminal.style.getPropertyValue("--background")).toBe("");
+    expect(terminal).not.toHaveAttribute("data-token-mode");
   });
 
   it("repaints the block when the terminal theme pins the other scheme", () => {
@@ -1026,13 +1027,18 @@ describe("ToolCard shell terminal theme", () => {
     writeTerminalThemeMode("dark");
     const terminal = renderExpandedShell();
     expect(terminal).toHaveAttribute("data-terminal-theme", "dark");
-    expect(terminal.style.getPropertyValue("--background")).toBe("#0a0a0a");
+    // The terminal tokens, read in the terminal's mode (a probe of the mode the app isn't in).
+    expect(terminal.style.getPropertyValue("--background")).toBe("var(--terminal-background)");
+    expect(terminal).toHaveAttribute("data-token-mode", "dark");
     // Selected text keeps the terminal's light text, not the light app's dark one.
-    expect(terminal.style.getPropertyValue("--selection-foreground")).toBe("#e4e4e7");
+    expect(terminal.style.getPropertyValue("--selection-foreground")).toBe(
+      "var(--terminal-foreground)",
+    );
 
     act(() => writeTerminalThemeMode("light"));
     expect(terminal).toHaveAttribute("data-terminal-theme", "light");
     expect(terminal.style.getPropertyValue("--background")).toBe("");
+    expect(terminal).not.toHaveAttribute("data-token-mode");
   });
 });
 
