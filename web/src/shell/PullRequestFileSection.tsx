@@ -96,10 +96,10 @@ export function DiffStat({ file }: { file: PullRequestChangedFile }) {
   return (
     <span className="shrink-0 font-mono text-xs tabular-nums">
       {file.lines_added !== null && (
-        <span className="text-green-600 dark:text-green-400">+{file.lines_added}</span>
+        <span className="text-(--diff-stat-added)">+{file.lines_added}</span>
       )}{" "}
       {file.lines_removed !== null && (
-        <span className="text-red-600 dark:text-red-400">−{file.lines_removed}</span>
+        <span className="text-(--diff-stat-deleted)">−{file.lines_removed}</span>
       )}
     </span>
   );

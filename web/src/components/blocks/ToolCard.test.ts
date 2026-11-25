@@ -506,8 +506,8 @@ describe("ToolCard registered views", () => {
     const trigger = container.querySelector<HTMLElement>('[data-slot="collapsible-trigger"]')!;
     const counts = screen.getByTestId("tool-line-counts");
     expect(trigger.textContent).toBe("Edit /repo/config.py+1 -2");
-    expect(within(counts).getByText("+1")).toHaveClass("text-green-600");
-    expect(within(counts).getByText("-2")).toHaveClass("text-red-600");
+    expect(within(counts).getByText("+1")).toHaveClass("text-(--diff-stat-added)");
+    expect(within(counts).getByText("-2")).toHaveClass("text-(--diff-stat-deleted)");
 
     fireEvent.click(trigger);
     const body = container.querySelector<HTMLElement>('[data-slot="collapsible-content"]')!;
@@ -515,8 +515,8 @@ describe("ToolCard registered views", () => {
     // The Diff tab names the view; the panel is titled with the file and its counts instead.
     expect(screen.getAllByText("Diff")).toHaveLength(1);
     const added = within(body).getByText("+1");
-    expect(added).toHaveClass("text-green-600");
-    expect(within(body).getByText("-2")).toHaveClass("text-red-600");
+    expect(added).toHaveClass("text-(--diff-stat-added)");
+    expect(within(body).getByText("-2")).toHaveClass("text-(--diff-stat-deleted)");
     expect(added.parentElement?.textContent).toBe("/repo/config.py+1-2");
     expect(container.textContent).toContain("-TIMEOUT = 30");
     expect(container.textContent).toContain("+TIMEOUT = 60");
@@ -552,7 +552,7 @@ describe("ToolCard registered views", () => {
     const trigger = container.querySelector<HTMLElement>('[data-slot="collapsible-trigger"]')!;
     expect(trigger.textContent).toBe("Write /repo/notes.md+3");
     expect(within(screen.getByTestId("tool-line-counts")).getByText("+3")).toHaveClass(
-      "text-green-600",
+      "text-(--diff-stat-added)",
     );
     fireEvent.click(trigger);
     expect(screen.getByRole("tab", { name: "Diff" })).toHaveAttribute("aria-selected", "true");

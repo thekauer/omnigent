@@ -38,9 +38,7 @@ export function ChangedFileDiffstat({
         .filter(Boolean)
         .join(", ")}
     >
-      {linesAdded !== null && (
-        <span className="text-green-600 dark:text-green-400">+{linesAdded}</span>
-      )}
+      {linesAdded !== null && <span className="text-(--diff-stat-added)">+{linesAdded}</span>}
       {linesAdded !== null && linesRemoved !== null && " "}
       {linesRemoved !== null && <span className="text-destructive">&minus;{linesRemoved}</span>}
     </span>

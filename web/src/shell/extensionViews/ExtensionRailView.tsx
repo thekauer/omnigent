@@ -90,7 +90,7 @@ const REVEAL_FLASH_MS = 800;
 const REVEAL_TIMEOUT_MS = 30_000;
 
 const TONE_CLASS: Record<RailTreeDecorationTone, string> = {
-  added: "text-green-600 dark:text-green-400",
+  added: "text-(--diff-stat-added)",
   removed: "text-destructive",
   muted: "text-muted-foreground",
 };

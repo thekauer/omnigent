@@ -52,8 +52,8 @@ const TREE_THEME: CSSProperties = {
   ...FILE_TREE_THEME,
   // The rows sit on the panel's muted surface, as the Files tree's do.
   "--trees-bg-override": "transparent",
-  "--trees-git-added-color-override": "var(--success)",
-  "--trees-git-deleted-color-override": "var(--destructive)",
+  "--trees-git-added-color-override": "var(--file-tree-review-added)",
+  "--trees-git-deleted-color-override": "var(--file-tree-review-deleted)",
 } as CSSProperties;
 
 /** How the review names a file the reader owns. */
@@ -71,8 +71,10 @@ export function treeGitStatus(change: DiffReviewChange): "added" | "deleted" | n
 export function treeRowDecoration(file: DiffReviewFile): FileTreeRowDecoration | null {
   const parts: { text: string; color: string }[] = [];
   if (file.ownedByViewer) parts.push({ text: "●", color: "var(--primary)" });
-  if (file.additions) parts.push({ text: `+${file.additions}`, color: "var(--success)" });
-  if (file.deletions) parts.push({ text: `−${file.deletions}`, color: "var(--destructive)" });
+  if (file.additions)
+    parts.push({ text: `+${file.additions}`, color: "var(--file-tree-review-added)" });
+  if (file.deletions)
+    parts.push({ text: `−${file.deletions}`, color: "var(--file-tree-review-deleted)" });
   if (parts.length === 0) return null;
   const counted = [
     file.ownedByViewer ? OWNED_BY_YOU : null,

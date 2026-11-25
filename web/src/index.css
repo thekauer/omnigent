@@ -1979,6 +1979,12 @@ body {
   font-size: 1em;
 }
 
+/* The frame around a chat code block, Streamdown's `bg-sidebar` unless a theme sets
+ * code-block-background. */
+.chat-code-block > [data-streamdown="code-block"] {
+  background-color: var(--code-block-background, var(--sidebar));
+}
+
 /* Keep Streamdown's actions aligned with our header overlays; sticky controls
  * otherwise drift into the block body when the transcript scrolls. */
 .chat-code-block > [data-streamdown="code-block"] > .sticky,

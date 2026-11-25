@@ -27,12 +27,16 @@
 
 /* Paint Monaco surfaces with the active Omnigent card tone so the file editor
    follows both the app mode and palette instead of the syntax theme's fixed
-   background. The gutter uses a separate Monaco variable. */
+   background, unless a theme sets viewer-background. The gutter uses a separate
+   Monaco variable. Line numbers and diff washes: monacoTokenColors.ts. */
 html .monaco-editor,
 html .monaco-diff-editor,
 html .monaco-component {
-  --vscode-editor-background: var(--card);
-  --vscode-editorGutter-background: var(--card);
+  --vscode-editor-background: var(--viewer-background, var(--card));
+  --vscode-editorGutter-background: var(
+    --viewer-gutter-background,
+    var(--viewer-background, var(--card))
+  );
 }
 
 /* Suppress the keyboard-hint tooltips Monaco attaches to its widget buttons

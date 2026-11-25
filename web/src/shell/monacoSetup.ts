@@ -35,6 +35,7 @@ import "monaco-editor/esm/vs/editor/edcore.main.js";
 import type { ResolvedThemeMode } from "@/components/theme/themeMode";
 import { loadSyntaxThemes, SYNTAX_THEME_NAMES, type SyntaxThemeNames } from "@/lib/syntaxTheme";
 import { createShikiMonacoBridge, type ShikiMonacoBridge } from "./monacoShikiBridge";
+import { installMonacoTokenColors } from "./monacoTokenColors";
 
 // The Shiki themes registered into Monaco first: the default syntax theme pair.
 const LIGHT_THEME = SYNTAX_THEME_NAMES.light;
@@ -96,6 +97,7 @@ export function ensureMonacoReady(): Promise<ShikiHighlighter> {
         // Registers the github themes under their ids so the editor's `theme`
         // option and monaco.editor.setTheme resolve them.
         bridge ??= createShikiMonacoBridge(hl, monaco);
+        installMonacoTokenColors();
         return hl;
       })
       .catch((err: unknown) => {

@@ -26,6 +26,35 @@ export const CODE_TOKENS = defineTokens("code", [
     default: { light: "color-mix(in oklch, var(--primary) 16%, transparent)" },
   },
   {
+    id: "viewer-background",
+    default: {},
+    description:
+      "The file viewers' and Monaco's background. Unset: each surface's own (`card` in Monaco, `background` in the file viewer).",
+  },
+  {
+    id: "viewer-gutter-background",
+    default: {},
+    description: "The line number gutter's background. Unset: viewer-background.",
+  },
+  {
+    id: "viewer-gutter-foreground",
+    default: {},
+    description:
+      "Line numbers. Unset: the surface's own (`muted-foreground` in the file viewer, the syntax theme's in Monaco).",
+  },
+  {
+    id: "viewer-gutter-active-foreground",
+    default: {},
+    description:
+      "The active line's number. Unset: the surface's own (`foreground` in the file viewer, the syntax theme's in Monaco).",
+  },
+  {
+    id: "code-block-background",
+    default: {},
+    description:
+      "The frame around chat code blocks and the terminal-styled shell blocks. Unset: `sidebar` around chat code blocks, `background` around shell blocks.",
+  },
+  {
     id: "code-selected-line",
     default: {},
     description:

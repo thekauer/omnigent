@@ -203,8 +203,8 @@ function SidebarNode({
         title={node.file.path}
         style={{ paddingLeft: `${treeIndent(depth)}px` }}
         className={cn(
-          "flex w-full items-center gap-1.5 py-1 pr-2 text-left text-ui hover:bg-muted/60",
-          node.file.path === activePath && "bg-muted",
+          "flex w-full items-center gap-1.5 py-1 pr-2 text-left text-ui hover:bg-(--file-tree-hover)/60",
+          node.file.path === activePath && "bg-(--file-tree-row-active)",
         )}
       >
         {/* The chevron column shows a check for viewed files and stays
@@ -233,7 +233,7 @@ function SidebarNode({
         aria-expanded={open}
         title={node.path}
         style={{ paddingLeft: `${treeIndent(depth)}px` }}
-        className="flex w-full items-center gap-1.5 py-1 pr-2 text-left text-ui hover:bg-muted/60"
+        className="flex w-full items-center gap-1.5 py-1 pr-2 text-left text-ui hover:bg-(--file-tree-hover)/60"
       >
         <ChevronRightIcon
           aria-hidden

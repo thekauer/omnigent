@@ -154,6 +154,11 @@ Paths are relative to the omnigent repo root unless they start with `my-extensio
   its webviews receive the workbench colours under a separate namespace, while here
   the names are the host's own variables, and the collision risk is confined by the two
   rules below.
+- A host token added by this plan starts with its group's prefix (`registry.test.ts`
+  checks it): `ui-` (shape, typography, elevation, density, border, scrollbar and the
+  status tones), `terminal-`, `diff-`, `file-tree-`, `viewer-`, `syntax-theme-` and
+  `code-` (the code surfaces) and `brand-` (brand art). The one exception is the
+  internal `omnigent-elevation` (below). The tokens that predate the plan keep their names.
 - Namespaces never overlap: extension tokens are `--x-<publisher>-<name>-<id>`, so no
   host token may start with `x-`. Themes address tokens by id (and by the VS Code
   aliases, decision 4); plugins read them through `getThemeToken(id)` or `var(--id)`.

@@ -36,7 +36,7 @@ export function SessionOverviewChanges({ sessionId }: { sessionId: string }) {
       <Row label="Files changed">{files.length}</Row>
       {counted.length > 0 && (
         <Row label="Lines">
-          <span className="text-green-600 dark:text-green-400">+{added}</span>{" "}
+          <span className="text-(--diff-stat-added)">+{added}</span>{" "}
           <span className="text-destructive">−{removed}</span>
         </Row>
       )}

@@ -2,9 +2,10 @@
 // inside the diff component's shadow root.
 //
 // The colours have no default: unset, the diff component keeps its own (and the syntax
-// theme's). The mix percentages are per scheme, because a diff picks its light or dark
+// theme's); added and deleted base colours also tint Monaco's diff (shell/monacoTokenColors.ts). The mix percentages are per scheme, because a diff picks its light or dark
 // tint with `light-dark()` from its own colour scheme; `diff-*-mix` overrides both.
 
+import { tw } from "./tailwindPalette.ts";
 import { defineTokens, type TokenInput } from "./types.ts";
 
 const UNSET = {};
@@ -63,6 +64,16 @@ export const DIFF_TOKENS = defineTokens("diff", [
     kind: "alpha",
     default: UNSET,
     description: "Alpha of changed words' tint over the base colour. Unset: the diff's own.",
+  },
+  {
+    id: "diff-stat-added",
+    default: { light: tw("green-600"), dark: tw("green-400") },
+    description: "The added line count of a diffstat (`+12`), in file lists and tool cards.",
+  },
+  {
+    id: "diff-stat-deleted",
+    default: { light: tw("red-600"), dark: tw("red-400") },
+    description: "The deleted line count of a diffstat (`−3`).",
   },
   ...mix("line", "12%", "20%", "How far a changed line's background mixes towards its base colour"),
   ...mix("gutter", "9%", "15%", "How far a changed line's gutter mixes towards its base colour"),

@@ -21,7 +21,7 @@ export const codeMirrorViewerTheme: Extension = EditorView.theme({
     "--cm-line-inset-start": "8px",
     "--cm-line-inset-end": "14px",
     height: "100%",
-    backgroundColor: "var(--background)",
+    backgroundColor: "var(--viewer-background, var(--background))",
     color: "var(--foreground)",
   },
   "&.cm-focused": { outline: "none" },
@@ -40,8 +40,8 @@ export const codeMirrorViewerTheme: Extension = EditorView.theme({
   },
   ".cm-line": { padding: "0" },
   ".cm-gutters": {
-    backgroundColor: "var(--background)",
-    color: "var(--muted-foreground)",
+    backgroundColor: "var(--viewer-gutter-background, var(--viewer-background, var(--background)))",
+    color: "var(--viewer-gutter-foreground, var(--muted-foreground))",
     border: "none",
     paddingLeft: "6px",
   },
@@ -51,7 +51,7 @@ export const codeMirrorViewerTheme: Extension = EditorView.theme({
   },
   ".cm-activeLine, .cm-line.cm-cited-line": { boxShadow: LINE_BACKGROUND_ACROSS_INSETS },
   // The current line's number reads as text, so it stays clear on the active-line wash.
-  ".cm-activeLineGutter": { color: "var(--foreground)" },
+  ".cm-activeLineGutter": { color: "var(--viewer-gutter-active-foreground, var(--foreground))" },
   // The code selection is the palette's, faded where syntax colours need it.
   ".cm-selectionLayer .cm-selectionBackground": {
     backgroundColor: `color-mix(in oklch, var(--code-selection) ${UNFOCUSED_SELECTION_STRENGTH * 100}%, transparent)`,

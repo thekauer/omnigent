@@ -57,8 +57,8 @@ describe("treeRowDecoration", () => {
       text: "+3 −1",
       title: "3 added, 1 deleted",
       parts: [
-        { text: "+3", color: "var(--success)" },
-        { text: "−1", color: "var(--destructive)" },
+        { text: "+3", color: "var(--file-tree-review-added)" },
+        { text: "−1", color: "var(--file-tree-review-deleted)" },
       ],
     });
   });
@@ -79,7 +79,7 @@ describe("treeRowDecoration", () => {
       title: "Owned by you, 3 added",
       parts: [
         { text: "●", color: "var(--primary)" },
-        { text: "+3", color: "var(--success)" },
+        { text: "+3", color: "var(--file-tree-review-added)" },
       ],
     });
     expect(treeRowDecoration({ ...reviewFile("a.png", "modified"), ownedByViewer: true })).toEqual(

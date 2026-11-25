@@ -16,8 +16,8 @@ import { cn } from "@/lib/utils";
 
 /** Diff colors for added and removed line counts, as in the changed-files diffstat. */
 export const DIFF_TONE_CLASS = {
-  added: "text-green-600 dark:text-green-400",
-  removed: "text-red-600 dark:text-red-400",
+  added: "text-(--diff-stat-added)",
+  removed: "text-(--diff-stat-deleted)",
 } as const;
 
 /** A tool call's failure message. */

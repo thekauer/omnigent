@@ -20,6 +20,24 @@ export const FILE_TREE_TOKENS = defineTokens("fileTree", [
     default: { light: "var(--sidebar-active, var(--accent))" },
   },
   {
+    id: "file-tree-row-active",
+    description:
+      "The open file's row in the list-style file trees (the pull request's changed files).",
+    default: { light: "var(--muted)" },
+  },
+  {
+    id: "file-tree-review-added",
+    description:
+      "Added files' names and added line counts in the Changes review's tree (`success`).",
+    default: { light: "var(--success)" },
+  },
+  {
+    id: "file-tree-review-deleted",
+    description:
+      "Deleted files' names and deleted line counts in the Changes review's tree (`destructive`).",
+    default: { light: "var(--destructive)" },
+  },
+  {
     id: "file-tree-selected-foreground",
     default: UNSET,
     description: "The selected row's text. Unset: the tree's text colour.",

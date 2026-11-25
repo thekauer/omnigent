@@ -321,6 +321,11 @@
   --viewer-search-match: color-mix(in oklch, var(--warning) 30%, transparent);
   --viewer-search-match-selected: color-mix(in oklch, var(--warning) 70%, transparent);
   --viewer-selection-match: color-mix(in oklch, var(--primary) 16%, transparent);
+  --viewer-background: initial;
+  --viewer-gutter-background: initial;
+  --viewer-gutter-foreground: initial;
+  --viewer-gutter-active-foreground: initial;
+  --code-block-background: initial;
   --code-selected-line: initial;
   --syntax-theme-light: github-light;
   --syntax-theme-dark: github-dark;
@@ -358,6 +363,8 @@
   --diff-deletion-text: initial;
   --diff-number-text: initial;
   --diff-word-mix: initial;
+  --diff-stat-added: oklch(62.7% 0.194 149.214);
+  --diff-stat-deleted: oklch(57.7% 0.245 27.325);
   --diff-line-mix: initial;
   --diff-line-mix-light: 12%;
   --diff-line-mix-dark: 20%;
@@ -369,6 +376,9 @@
   --diff-hover-mix-dark: 9%;
   --file-tree-hover: var(--muted);
   --file-tree-selected: var(--sidebar-active, var(--accent));
+  --file-tree-row-active: var(--muted);
+  --file-tree-review-added: var(--success);
+  --file-tree-review-deleted: var(--destructive);
   --file-tree-selected-foreground: initial;
   --file-tree-guide: initial;
   --file-tree-focus-ring: var(--ring);
@@ -441,6 +451,8 @@
   --terminal-tone-subtle: #1f2123;
   --terminal-tone-input: #2f3132;
   --terminal-tone-emphasis: #464849;
+  --diff-stat-added: oklch(79.2% 0.209 151.711);
+  --diff-stat-deleted: oklch(70.4% 0.191 22.216);
 }
 
 :root:not(.dark):not([data-theme]) {
@@ -1215,6 +1227,9 @@
   --terminal-cursor-accent: var(--terminal-background);
   --file-tree-hover: var(--muted);
   --file-tree-selected: var(--sidebar-active, var(--accent));
+  --file-tree-row-active: var(--muted);
+  --file-tree-review-added: var(--success);
+  --file-tree-review-deleted: var(--destructive);
   --file-tree-focus-ring: var(--ring);
   --file-tree-radius: var(--ui-radius-md);
 }
@@ -1324,6 +1339,9 @@
   --terminal-cursor-accent: var(--terminal-background);
   --file-tree-hover: var(--muted);
   --file-tree-selected: var(--sidebar-active, var(--accent));
+  --file-tree-row-active: var(--muted);
+  --file-tree-review-added: var(--success);
+  --file-tree-review-deleted: var(--destructive);
   --file-tree-focus-ring: var(--ring);
   --file-tree-radius: var(--ui-radius-md);
 }
