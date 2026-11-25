@@ -1,10 +1,13 @@
 // Validation of theme values that reach CSS. Pure: shared by the browser and Node (the
 // dev plugin, M6), with no DOM access.
 //
-// For now it holds the part the syntax themes need (`registerSyntaxTheme`): their
-// colours and font styles end up verbatim in inline `style` strings (Shiki's tokens,
-// @pierre/diffs' theme styles), so anything but a plain colour could inject CSS
-// properties. The theme contribution API (M6) adds the token kinds here.
+// Two parts: the syntax themes' (`registerSyntaxTheme`), whose colours and font styles
+// end up verbatim in inline `style` strings (Shiki's tokens, @pierre/diffs' theme
+// styles), so anything but a plain colour could inject CSS properties; and the token
+// values of the theme contribution API (`validateTokenValue`), checked per kind and
+// written back out by the host.
+
+import type { TokenKind } from "./tokens/types.ts";
 
 /**
  * A hex colour as VS Code colour themes write them: `#rgb`, `#rgba`, `#rrggbb` or
@@ -108,49 +111,49 @@ export function snapshotPlainData(
   let chars = 0;
   let nodes = 0;
   const seen = new Set<object>();
-  const fail = (reason: string): never => {
+  const reject = (reason: string): never => {
     throw new PlainDataError(reason);
   };
   const copy = (current: unknown, depth: number, at: string): PlainData => {
     nodes += 1;
-    if (nodes > limits.nodes) fail(`more than ${limits.nodes} values`);
+    if (nodes > limits.nodes) reject(`more than ${limits.nodes} values`);
     if (current === null || typeof current === "boolean") return current;
     if (typeof current === "number") {
-      return Number.isFinite(current) ? current : fail(`${at}: not a finite number`);
+      return Number.isFinite(current) ? current : reject(`${at}: not a finite number`);
     }
     if (typeof current === "string") {
       chars += current.length;
-      if (chars > limits.chars) fail(`more than ${limits.chars} characters`);
+      if (chars > limits.chars) reject(`more than ${limits.chars} characters`);
       return current;
     }
-    if (typeof current !== "object") return fail(`${at}: not JSON data`);
-    if (depth >= limits.depth) fail(`${at}: nested deeper than ${limits.depth}`);
-    if (seen.has(current)) fail(`${at}: a cycle`);
+    if (typeof current !== "object") return reject(`${at}: not JSON data`);
+    if (depth >= limits.depth) reject(`${at}: nested deeper than ${limits.depth}`);
+    if (seen.has(current)) reject(`${at}: a cycle`);
     seen.add(current);
     if (Array.isArray(current)) {
       const length = Object.getOwnPropertyDescriptor(current, "length")?.value as number;
-      if (length > limits.nodes) fail(`${at}: more than ${limits.nodes} entries`);
+      if (length > limits.nodes) reject(`${at}: more than ${limits.nodes} entries`);
       const items: PlainData[] = [];
       for (let index = 0; index < length; index += 1) {
         const descriptor = Object.getOwnPropertyDescriptor(current, index);
-        if (!descriptor) fail(`${at}[${index}]: a hole`);
-        if (!("value" in descriptor!)) fail(`${at}[${index}]: an accessor`);
+        if (!descriptor) reject(`${at}[${index}]: a hole`);
+        if (!("value" in descriptor!)) reject(`${at}[${index}]: an accessor`);
         items.push(copy(descriptor!.value, depth + 1, `${at}[${index}]`));
       }
       seen.delete(current);
       return items;
     }
     const prototype = Object.getPrototypeOf(current) as unknown;
-    if (prototype !== Object.prototype && prototype !== null) fail(`${at}: not a plain object`);
+    if (prototype !== Object.prototype && prototype !== null) reject(`${at}: not a plain object`);
     const result = nullMap<PlainData>();
     for (const key of Reflect.ownKeys(current)) {
-      if (typeof key !== "string") fail(`${at}: a symbol key`);
+      if (typeof key !== "string") reject(`${at}: a symbol key`);
       const name = key as string;
       const descriptor = Object.getOwnPropertyDescriptor(current, name);
       if (!descriptor || !descriptor.enumerable) continue;
-      if (!("value" in descriptor)) fail(`${at}.${name.slice(0, 64)}: an accessor`);
+      if (!("value" in descriptor)) reject(`${at}.${name.slice(0, 64)}: an accessor`);
       chars += name.length;
-      if (chars > limits.chars) fail(`more than ${limits.chars} characters`);
+      if (chars > limits.chars) reject(`more than ${limits.chars} characters`);
       result[name] = copy(descriptor.value, depth + 1, `${at}.${name.slice(0, 64)}`);
     }
     seen.delete(current);
@@ -255,4 +258,888 @@ export function sanitizeSyntaxTheme(
     keptRules.push(kept);
   });
   return { colors: keptColors, tokenColors: keptRules, issues };
+}
+
+// --- Token values ----------------------------------------------------------------------
+//
+// Theme token values (theming plan, "Validation"): tokenized, checked per kind against a
+// small grammar, and written back out by the host, so no text of the theme's reaches CSS
+// as written. Dangerous constructs fail before tokenizing.
+
+/** What a token's value must be: a registry kind, or one of the extra value kinds. */
+export type ValueKind = TokenKind | "duration" | "easing";
+
+/** Caps on a theme (one file of a theme contribution). */
+export const THEME_LIMITS = {
+  /** Characters in one value. */
+  valueLength: 256,
+  /** Tokens one theme may set (aliases, tokens and terminal slots together). */
+  tokens: 1000,
+  /** Bytes of the theme's JSON. */
+  jsonBytes: 65_536,
+  /** Theme contributions per extension. */
+  themesPerExtension: 20,
+  /** `color-mix()` nesting. */
+  colorMixDepth: 3,
+  /** Nested functions in one value. */
+  functionDepth: 8,
+} as const;
+
+// Never in a value: what could leave the declaration, load anything or run script.
+const FORBIDDEN_VALUE =
+  /url\(|image-set\(|@|expression|attr\(|env\(|!\s*important|[;{}<>\\]|\/\*|\*\/|javascript:/i;
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARACTER = /[\u0000-\u001f\u007f]/;
+
+/** CSS's named colours, `transparent` and `currentColor` (lower case). */
+export const CSS_NAMED_COLORS: ReadonlySet<string> = new Set(
+  (
+    "aliceblue antiquewhite aqua aquamarine azure beige bisque black blanchedalmond blue " +
+    "blueviolet brown burlywood cadetblue chartreuse chocolate coral cornflowerblue cornsilk " +
+    "crimson cyan darkblue darkcyan darkgoldenrod darkgray darkgreen darkgrey darkkhaki " +
+    "darkmagenta darkolivegreen darkorange darkorchid darkred darksalmon darkseagreen " +
+    "darkslateblue darkslategray darkslategrey darkturquoise darkviolet deeppink deepskyblue " +
+    "dimgray dimgrey dodgerblue firebrick floralwhite forestgreen fuchsia gainsboro ghostwhite " +
+    "gold goldenrod gray green greenyellow grey honeydew hotpink indianred indigo ivory khaki " +
+    "lavender lavenderblush lawngreen lemonchiffon lightblue lightcoral lightcyan " +
+    "lightgoldenrodyellow lightgray lightgreen lightgrey lightpink lightsalmon lightseagreen " +
+    "lightskyblue lightslategray lightslategrey lightsteelblue lightyellow lime limegreen linen " +
+    "magenta maroon mediumaquamarine mediumblue mediumorchid mediumpurple mediumseagreen " +
+    "mediumslateblue mediumspringgreen mediumturquoise mediumvioletred midnightblue mintcream " +
+    "mistyrose moccasin navajowhite navy oldlace olive olivedrab orange orangered orchid " +
+    "palegoldenrod palegreen paleturquoise palevioletred papayawhip peachpuff peru pink plum " +
+    "powderblue purple rebeccapurple red rosybrown royalblue saddlebrown salmon sandybrown " +
+    "seagreen seashell sienna silver skyblue slateblue slategray slategrey snow springgreen " +
+    "steelblue tan teal thistle tomato turquoise violet wheat white whitesmoke yellow " +
+    "yellowgreen transparent currentcolor"
+  ).split(" "),
+);
+
+/** The generic font families, which a font list may always end with. */
+export const GENERIC_FONT_FAMILIES: ReadonlySet<string> = new Set([
+  "serif",
+  "sans-serif",
+  "monospace",
+  "cursive",
+  "fantasy",
+  "system-ui",
+  "ui-serif",
+  "ui-sans-serif",
+  "ui-monospace",
+  "ui-rounded",
+  "emoji",
+  "math",
+  "fangsong",
+]);
+
+/** Families the host ships or its default stacks name, which a theme may use by name. */
+export const HOST_FONT_FAMILIES: ReadonlySet<string> = new Set([
+  "Geist Mono Variable",
+  "JetBrains Mono",
+  "Apple Color Emoji",
+  "Segoe UI Emoji",
+  "Segoe UI Symbol",
+  "Noto Color Emoji",
+]);
+
+/** A font family name a theme may write (quoted or not). */
+export const FONT_FAMILY_NAME = /^[A-Za-z0-9 _-]{1,64}$/;
+
+/**
+ * Host variables a value may read besides tokens: Tailwind's spacing step and text sizes,
+ * which the density and label defaults are written in. Never Tailwind's colours.
+ */
+const READABLE_HOST_VARIABLES = /^(?:spacing|text-(?:xs|sm|base|lg|ui))$/;
+
+/** Per-token limits beyond the kind. */
+export interface TokenConstraint {
+  /** The range a number (or the number of a duration, in ms) must be in. */
+  range?: readonly [number, number];
+  /** The keywords a `keyword` token takes. */
+  keywords?: readonly string[];
+  /** A `keyword` token that names a syntax theme ({@link SYNTAX_THEME_NAME}). */
+  syntaxTheme?: boolean;
+  /** Internal: themes may not set it. */
+  internal?: boolean;
+}
+
+const BORDER_STYLES = [
+  "none",
+  "hidden",
+  "solid",
+  "dashed",
+  "dotted",
+  "double",
+  "groove",
+  "ridge",
+  "inset",
+  "outset",
+] as const;
+const WEIGHT_RANGE = [1, 1000] as const;
+
+/** The registry tokens with limits beyond their kind. */
+export const TOKEN_CONSTRAINTS: Readonly<Record<string, TokenConstraint>> = {
+  "ui-elevation": { range: [0, 1] },
+  "omnigent-elevation": { internal: true },
+  "ui-weight-normal": { range: WEIGHT_RANGE },
+  "ui-weight-medium": { range: WEIGHT_RANGE },
+  "ui-weight-strong": { range: WEIGHT_RANGE },
+  "ui-label-weight": { range: WEIGHT_RANGE },
+  "ui-view-title-weight": { range: WEIGHT_RANGE },
+  "ui-label-transform": { keywords: ["none", "uppercase", "lowercase", "capitalize"] },
+  "ui-border-style": { keywords: BORDER_STYLES },
+  "ui-divider-style": { keywords: BORDER_STYLES },
+  "ui-divider-dashed-style": { keywords: BORDER_STYLES },
+  "ui-scrollbar-width": { keywords: ["auto", "thin", "none"] },
+  "syntax-theme-light": { syntaxTheme: true },
+  "syntax-theme-dark": { syntaxTheme: true },
+};
+
+/** What a value may refer to, for {@link validateTokenValue}. */
+export interface ValueContext {
+  /** Whether `var(--<id>)` may be read: a registry token or the extension's own colour. */
+  isKnownToken: (id: string) => boolean;
+  /**
+   * The CSS a font family name becomes (the extension's declared fonts map to their
+   * namespaced family), or undefined when the name is not allowed. Generic and
+   * host families are allowed without it.
+   */
+  fontFamily?: (name: string) => string | undefined;
+  /** Whether a syntax theme of this name exists (bundled or registered). */
+  isSyntaxTheme?: (name: string) => boolean;
+}
+
+/** A checked value: the host's own serialization, and the tokens it reads. */
+export type ValueResult =
+  { ok: true; value: string; references: readonly string[] } | { ok: false; reason: string };
+
+type CssNode =
+  | { type: "ident"; value: string }
+  | { type: "number"; value: number; unit: string }
+  | { type: "hash"; value: string }
+  | { type: "string"; value: string }
+  | { type: "function"; name: string; args: CssNode[] }
+  | { type: "group"; args: CssNode[] }
+  | { type: "comma" }
+  | { type: "slash" }
+  | { type: "op"; value: "+" | "-" | "*" };
+
+class ValueError extends Error {}
+
+function fail(reason: string): never {
+  throw new ValueError(reason);
+}
+
+const NUMBER_TOKEN = /^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?/i;
+const IDENT_TOKEN = /^-{0,2}[A-Za-z_][A-Za-z0-9_-]*/;
+const UNIT_TOKEN = /^(?:%|[A-Za-z]+)/;
+
+/** Tokenizes and nests a value; anything outside the small grammar fails. */
+function parseValue(text: string): CssNode[] {
+  let index = 0;
+  const parseList = (depth: number, closing: boolean): CssNode[] => {
+    if (depth > THEME_LIMITS.functionDepth) fail("nested too deeply");
+    const nodes: CssNode[] = [];
+    while (index < text.length) {
+      const rest = text.slice(index);
+      const char = rest[0]!;
+      if (/\s/.test(char)) {
+        index += 1;
+        continue;
+      }
+      if (char === ")") {
+        if (!closing) fail("unbalanced )");
+        index += 1;
+        return nodes;
+      }
+      if (char === "(") {
+        index += 1;
+        nodes.push({ type: "group", args: parseList(depth + 1, true) });
+        continue;
+      }
+      if (char === ",") {
+        nodes.push({ type: "comma" });
+        index += 1;
+        continue;
+      }
+      if (char === "/") {
+        nodes.push({ type: "slash" });
+        index += 1;
+        continue;
+      }
+      if (char === "#") {
+        const hex = /^#[0-9a-fA-F]+/.exec(rest)?.[0];
+        if (!hex || !HEX_COLOR.test(hex)) fail(`invalid hex colour ${rest.slice(0, 10)}`);
+        nodes.push({ type: "hash", value: hex.toLowerCase() });
+        index += hex.length;
+        continue;
+      }
+      if (char === '"' || char === "'") {
+        const end = text.indexOf(char, index + 1);
+        if (end < 0) fail("unterminated string");
+        nodes.push({ type: "string", value: text.slice(index + 1, end) });
+        index = end + 1;
+        continue;
+      }
+      const number = NUMBER_TOKEN.exec(rest)?.[0];
+      if (number && !(char === "+" && /^\+\s/.test(rest))) {
+        index += number.length;
+        const unit = UNIT_TOKEN.exec(text.slice(index))?.[0] ?? "";
+        index += unit.length;
+        const value = Number(number);
+        if (!Number.isFinite(value)) fail("not a finite number");
+        nodes.push({ type: "number", value, unit: unit.toLowerCase() });
+        continue;
+      }
+      const ident = IDENT_TOKEN.exec(rest)?.[0];
+      if (ident) {
+        index += ident.length;
+        if (text[index] === "(") {
+          index += 1;
+          nodes.push({
+            type: "function",
+            name: ident.toLowerCase(),
+            args: parseList(depth + 1, true),
+          });
+        } else {
+          nodes.push({ type: "ident", value: ident });
+        }
+        continue;
+      }
+      if (char === "+" || char === "-" || char === "*") {
+        nodes.push({ type: "op", value: char });
+        index += 1;
+        continue;
+      }
+      fail(`unexpected ${JSON.stringify(char)}`);
+    }
+    if (closing) fail("unbalanced (");
+    return nodes;
+  };
+  return parseList(0, false);
+}
+
+function formatNumber(value: number): string {
+  return String(Number(value.toPrecision(12)));
+}
+
+/** Writes nodes back out: the host's own text, never the theme's. */
+function serialize(nodes: readonly CssNode[]): string {
+  let out = "";
+  nodes.forEach((node, position) => {
+    const previous = nodes[position - 1];
+    const separated =
+      position > 0 && node.type !== "comma" && previous?.type !== "comma" ? " " : "";
+    switch (node.type) {
+      case "ident":
+        out += separated + node.value;
+        break;
+      case "number":
+        out += separated + formatNumber(node.value) + node.unit;
+        break;
+      case "hash":
+        out += separated + node.value;
+        break;
+      case "string":
+        out += `${separated}"${node.value}"`;
+        break;
+      case "function":
+        out += `${separated}${node.name}(${serialize(node.args)})`;
+        break;
+      case "group":
+        out += `${separated}(${serialize(node.args)})`;
+        break;
+      case "comma":
+        out += ", ";
+        break;
+      case "slash":
+        out += `${separated}/`;
+        break;
+      case "op":
+        out += `${separated}${node.value}`;
+        break;
+    }
+  });
+  return out.replace(/, $/, ",");
+}
+
+/** Splits nodes on top-level commas. */
+function splitCommas(nodes: readonly CssNode[]): CssNode[][] {
+  const parts: CssNode[][] = [[]];
+  for (const node of nodes) {
+    if (node.type === "comma") parts.push([]);
+    else parts[parts.length - 1]!.push(node);
+  }
+  return parts;
+}
+
+const COLOR_FUNCTIONS = new Set([
+  "rgb",
+  "rgba",
+  "hsl",
+  "hsla",
+  "hwb",
+  "lab",
+  "lch",
+  "oklab",
+  "oklch",
+]);
+const COLOR_SPACES = new Set([
+  "srgb",
+  "srgb-linear",
+  "display-p3",
+  "a98-rgb",
+  "prophoto-rgb",
+  "rec2020",
+  "xyz",
+  "xyz-d50",
+  "xyz-d65",
+  "lab",
+  "oklab",
+  "lch",
+  "oklch",
+  "hsl",
+  "hwb",
+]);
+const HUE_METHODS = new Set(["shorter", "longer", "increasing", "decreasing"]);
+const CHANNEL_KEYWORDS = new Set([
+  "none",
+  "r",
+  "g",
+  "b",
+  "h",
+  "s",
+  "l",
+  "w",
+  "c",
+  "a",
+  "x",
+  "y",
+  "z",
+  "alpha",
+]);
+const ANGLE_UNITS = new Set(["deg", "rad", "grad", "turn"]);
+const LENGTH_UNITS = new Set(["px", "rem", "em", "%"]);
+const MATH_FUNCTIONS = new Set(["calc", "min", "max", "clamp"]);
+const GRADIENTS = new Set([
+  "linear-gradient",
+  "radial-gradient",
+  "conic-gradient",
+  "repeating-linear-gradient",
+  "repeating-radial-gradient",
+  "repeating-conic-gradient",
+]);
+const GRADIENT_KEYWORDS = new Set([
+  "to",
+  "at",
+  "in",
+  "from",
+  "left",
+  "right",
+  "top",
+  "bottom",
+  "center",
+  "circle",
+  "ellipse",
+  "closest-side",
+  "closest-corner",
+  "farthest-side",
+  "farthest-corner",
+  ...COLOR_SPACES,
+  ...HUE_METHODS,
+  "hue",
+]);
+const EASING_KEYWORDS = new Set([
+  "linear",
+  "ease",
+  "ease-in",
+  "ease-out",
+  "ease-in-out",
+  "step-start",
+  "step-end",
+]);
+const STEP_POSITIONS = new Set([
+  "jump-start",
+  "jump-end",
+  "jump-none",
+  "jump-both",
+  "start",
+  "end",
+]);
+
+/** Checks one kind's grammar over parsed nodes, collecting `var()` references. */
+class ValueChecker {
+  readonly references: string[] = [];
+  private readonly context: ValueContext;
+  private readonly constraint: TokenConstraint;
+  constructor(context: ValueContext, constraint: TokenConstraint) {
+    this.context = context;
+    this.constraint = constraint;
+  }
+
+  /** `var(--id[, fallback])`: a known token, or a readable host variable. */
+  private variable(node: CssNode, fallback?: (nodes: CssNode[]) => void): boolean {
+    if (node.type !== "function" || node.name !== "var") return false;
+    const [name, comma, ...rest] = node.args;
+    if (name?.type !== "ident" || !name.value.startsWith("--")) fail("var() needs a --name");
+    const id = name.value.slice(2);
+    if (!READABLE_HOST_VARIABLES.test(id)) {
+      if (!this.context.isKnownToken(id)) fail(`var(--${id}) is not a token`);
+      this.references.push(id);
+    }
+    if (comma !== undefined) {
+      if (comma.type !== "comma" || rest.length === 0) fail("var() fallback is malformed");
+      if (!fallback) fail("var() takes no fallback here");
+      fallback(rest);
+    }
+    return true;
+  }
+
+  private single(nodes: readonly CssNode[], what: string): CssNode {
+    if (nodes.length !== 1) fail(`expected one ${what}`);
+    return nodes[0]!;
+  }
+
+  /** A math expression: operands (numbers, dimensions, var(), nested math) and operators. */
+  private math(nodes: readonly CssNode[], units: ReadonlySet<string>): void {
+    if (nodes.length === 0) fail("empty calc()");
+    let expectOperand = true;
+    for (const node of nodes) {
+      if (expectOperand) {
+        if (node.type === "number") {
+          if (node.unit !== "" && !units.has(node.unit)) fail(`unit ${node.unit} not allowed`);
+        } else if (node.type === "ident" && /^-?infinity$/i.test(node.value)) {
+          // `calc(var(--ui-radius-base) * infinity)`, the pill radius.
+        } else if (node.type === "group") {
+          this.math(node.args, units);
+        } else if (node.type === "function" && MATH_FUNCTIONS.has(node.name)) {
+          this.mathFunction(node, units);
+        } else if (!this.variable(node)) {
+          fail("calc() takes numbers, lengths and var()");
+        }
+        expectOperand = false;
+      } else {
+        if (node.type !== "op" && node.type !== "slash") fail("calc() needs an operator");
+        expectOperand = true;
+      }
+    }
+    if (expectOperand) fail("calc() ends with an operator");
+  }
+
+  private mathFunction(node: Extract<CssNode, { type: "function" }>, units: ReadonlySet<string>) {
+    const parts = splitCommas(node.args);
+    if (node.name === "calc" ? parts.length !== 1 : parts.length < 1 || parts.length > 3) {
+      fail(`${node.name}() takes the wrong number of arguments`);
+    }
+    for (const part of parts) this.math(part, units);
+  }
+
+  /** A number, dimension or math in `units` (and unitless). */
+  private numeric(node: CssNode, units: ReadonlySet<string>, range?: readonly [number, number]) {
+    if (node.type === "number") {
+      if (node.unit !== "" && !units.has(node.unit))
+        fail(`unit ${node.unit || "none"} not allowed`);
+      if (range && (node.value < range[0] || node.value > range[1])) {
+        fail(`${formatNumber(node.value)} is outside ${range[0]}..${range[1]}`);
+      }
+      return;
+    }
+    if (node.type === "function" && MATH_FUNCTIONS.has(node.name)) {
+      this.mathFunction(node, units);
+      return;
+    }
+    if (!this.variable(node)) fail("expected a number");
+  }
+
+  color(nodes: readonly CssNode[], depth = 0): void {
+    const node = this.single(nodes, "colour");
+    if (node.type === "hash") return;
+    if (node.type === "ident") {
+      if (!CSS_NAMED_COLORS.has(node.value.toLowerCase())) fail(`${node.value} is not a colour`);
+      return;
+    }
+    if (node.type !== "function") fail("expected a colour");
+    if (this.variable(node, (fallback) => this.color(fallback, depth))) return;
+    if (COLOR_FUNCTIONS.has(node.name)) return this.colorFunction(node.args, depth);
+    if (node.name === "color") {
+      const [space, ...rest] = node.args;
+      if (space?.type !== "ident" || !COLOR_SPACES.has(space.value.toLowerCase())) {
+        fail("color() needs a colour space");
+      }
+      return this.channels(rest, 3);
+    }
+    if (node.name === "light-dark") {
+      const parts = splitCommas(node.args);
+      if (parts.length !== 2) fail("light-dark() takes two colours");
+      for (const part of parts) this.color(part, depth);
+      return;
+    }
+    if (node.name === "color-mix") {
+      if (depth + 1 > THEME_LIMITS.colorMixDepth) fail("color-mix() nested too deeply");
+      const [method, ...colors] = splitCommas(node.args);
+      const [inWord, space, hue, hueWord, ...extra] = method ?? [];
+      if (inWord?.type !== "ident" || inWord.value !== "in") fail("color-mix() needs in <space>");
+      if (space?.type !== "ident" || !COLOR_SPACES.has(space.value.toLowerCase())) {
+        fail("color-mix() needs a colour space");
+      }
+      if (hue !== undefined) {
+        const valid =
+          hue.type === "ident" &&
+          HUE_METHODS.has(hue.value) &&
+          hueWord?.type === "ident" &&
+          hueWord.value === "hue" &&
+          extra.length === 0;
+        if (!valid) fail("color-mix() interpolation is malformed");
+      }
+      if (colors.length !== 2) fail("color-mix() takes two colours");
+      for (const part of colors) {
+        const percentages = part.filter((item) => item.type === "number");
+        const rest = part.filter((item) => item.type !== "number");
+        if (percentages.length > 1) fail("color-mix() takes one percentage per colour");
+        for (const percentage of percentages) this.numeric(percentage, new Set(["%"]), [0, 100]);
+        this.color(rest, depth + 1);
+      }
+      return;
+    }
+    fail(`${node.name}() is not a colour function`);
+  }
+
+  private colorFunction(args: readonly CssNode[], depth: number): void {
+    const [first, origin, ...rest] = args;
+    if (first?.type === "ident" && first.value.toLowerCase() === "from") {
+      if (origin === undefined) fail("relative colour needs an origin");
+      this.color([origin], depth);
+      return this.channels(rest, 3);
+    }
+    return this.channels(args, 3);
+  }
+
+  /** Colour channels: `count` values (commas or spaces), then an optional `/ alpha`. */
+  private channels(nodes: readonly CssNode[], count: number): void {
+    const values = nodes.filter((node) => node.type !== "comma");
+    const slash = values.findIndex((node) => node.type === "slash");
+    const channelNodes = slash < 0 ? values : values.slice(0, slash);
+    const alpha = slash < 0 ? [] : values.slice(slash + 1);
+    const legacyAlpha = slash < 0 && channelNodes.length === count + 1;
+    if (channelNodes.length !== count && !legacyAlpha) fail(`expected ${count} channels`);
+    if (slash >= 0 && alpha.length !== 1) fail("expected one alpha after /");
+    const units = new Set(["%", ...ANGLE_UNITS]);
+    for (const node of [...channelNodes, ...alpha]) {
+      if (node.type === "ident" && CHANNEL_KEYWORDS.has(node.value.toLowerCase())) continue;
+      this.numeric(node, units);
+    }
+  }
+
+  length(nodes: readonly CssNode[]): void {
+    const node = this.single(nodes, "length");
+    if (node.type === "number" && node.unit === "" && node.value !== 0) {
+      fail("a length needs a unit (px, rem, em or %)");
+    }
+    this.numeric(node, LENGTH_UNITS);
+  }
+
+  number(nodes: readonly CssNode[]): void {
+    this.numeric(this.single(nodes, "number"), new Set(), this.constraint.range);
+  }
+
+  alpha(nodes: readonly CssNode[]): void {
+    const node = this.single(nodes, "alpha");
+    if (node.type === "number") {
+      this.numeric(node, new Set(["%"]), node.unit === "%" ? [0, 100] : [0, 1]);
+      return;
+    }
+    this.numeric(node, new Set(["%"]));
+  }
+
+  percentage(nodes: readonly CssNode[]): void {
+    const node = this.single(nodes, "percentage");
+    if (node.type === "number" && node.unit !== "%") fail("expected a percentage");
+    this.numeric(node, new Set(["%"]), node.type === "number" ? [0, 100] : undefined);
+  }
+
+  channelTriple(nodes: readonly CssNode[]): void {
+    if (nodes.length === 1 && this.variable(nodes[0]!)) return;
+    if (nodes.length !== 3) fail("expected three channels (R G B)");
+    for (const node of nodes) {
+      if (node.type !== "number" || node.unit !== "") fail("channels are plain numbers");
+      this.numeric(node, new Set(), [0, 255]);
+    }
+  }
+
+  duration(nodes: readonly CssNode[]): void {
+    const node = this.single(nodes, "duration");
+    if (node.type === "number") {
+      const ms = node.unit === "s" ? node.value * 1000 : node.value;
+      if (node.unit !== "ms" && node.unit !== "s" && !(node.unit === "" && node.value === 0)) {
+        fail("a duration needs ms or s");
+      }
+      const [min, max] = this.constraint.range ?? [0, 10_000];
+      if (ms < min || ms > max) fail(`duration outside ${min}..${max}ms`);
+      return;
+    }
+    this.numeric(node, new Set(["ms", "s"]));
+  }
+
+  easing(nodes: readonly CssNode[]): void {
+    const node = this.single(nodes, "easing");
+    if (node.type === "ident") {
+      if (!EASING_KEYWORDS.has(node.value)) fail(`${node.value} is not an easing`);
+      return;
+    }
+    if (this.variable(node)) return;
+    if (node.type !== "function") fail("expected an easing");
+    if (node.name === "cubic-bezier") {
+      const parts = splitCommas(node.args);
+      if (parts.length !== 4) fail("cubic-bezier() takes four numbers");
+      parts.forEach((part, index) =>
+        this.numeric(this.single(part, "number"), new Set(), index % 2 === 0 ? [0, 1] : [-10, 10]),
+      );
+      return;
+    }
+    if (node.name === "steps") {
+      const [count, position, ...extra] = splitCommas(node.args);
+      const steps = count?.length === 1 ? count[0] : undefined;
+      if (steps?.type !== "number" || steps.unit !== "" || !Number.isInteger(steps.value)) {
+        fail("steps() needs a whole number");
+      }
+      if (steps.value < 1 || steps.value > 1000) fail("steps() outside 1..1000");
+      if (position !== undefined) {
+        const word = position.length === 1 ? position[0] : undefined;
+        if (word?.type !== "ident" || !STEP_POSITIONS.has(word.value)) fail("steps() position");
+      }
+      if (extra.length > 0) fail("steps() takes at most two arguments");
+      return;
+    }
+    fail(`${node.name}() is not an easing`);
+  }
+
+  keyword(nodes: readonly CssNode[]): void {
+    const node = this.single(nodes, "keyword");
+    if (this.variable(node)) return;
+    if (node.type !== "ident") fail("expected a keyword");
+    if (this.constraint.syntaxTheme) {
+      if (!SYNTAX_THEME_NAME.test(node.value)) fail(`${node.value} is not a syntax theme name`);
+      if (this.context.isSyntaxTheme && !this.context.isSyntaxTheme(node.value)) {
+        fail(`no syntax theme named ${node.value}`);
+      }
+      return;
+    }
+    const keywords = this.constraint.keywords;
+    if (keywords && !keywords.includes(node.value)) {
+      fail(`${node.value} is not one of ${keywords.join(", ")}`);
+    }
+    if (!keywords && !/^[a-z][a-z0-9-]{0,63}$/.test(node.value)) fail("not a keyword");
+  }
+
+  /** A font family list; names are rewritten to what the context maps them to. */
+  font(nodes: readonly CssNode[]): CssNode[] {
+    const out: CssNode[] = [];
+    splitCommas(nodes).forEach((family, index) => {
+      if (index > 0) out.push({ type: "comma" });
+      if (family.length === 0) fail("empty font family");
+      const [first] = family;
+      if (family.length === 1 && first?.type === "function") {
+        if (!this.variable(first)) fail("a font list takes names and var()");
+        const id = this.references[this.references.length - 1] ?? "";
+        if (!/^ui-font-/.test(id)) fail("a font list may read only the ui-font-* tokens");
+        out.push(first);
+        return;
+      }
+      let name: string;
+      if (family.length === 1 && first?.type === "string") name = first.value;
+      else if (family.every((part) => part.type === "ident")) {
+        name = family.map((part) => (part as { value: string }).value).join(" ");
+      } else fail("a font family is a name or a quoted name");
+      if (family.length === 1 && first?.type === "ident" && GENERIC_FONT_FAMILIES.has(name)) {
+        out.push(first);
+        return;
+      }
+      if (!FONT_FAMILY_NAME.test(name)) fail(`font family ${JSON.stringify(name)} is malformed`);
+      const mapped = this.context.fontFamily?.(name);
+      if (mapped !== undefined) {
+        out.push({ type: "string", value: mapped });
+        return;
+      }
+      if (!HOST_FONT_FAMILIES.has(name)) {
+        fail(`font family ${name} is neither generic, the host's nor the extension's`);
+      }
+      out.push({ type: "string", value: name });
+    });
+    return out;
+  }
+
+  shadow(nodes: readonly CssNode[]): void {
+    if (nodes.length === 1 && nodes[0]!.type === "ident" && nodes[0].value === "none") return;
+    for (const layer of splitCommas(nodes)) {
+      if (layer.length === 1 && this.variable(layer[0]!)) continue;
+      let lengths = 0;
+      let colors = 0;
+      layer.forEach((node, position) => {
+        if (node.type === "ident" && node.value === "inset") {
+          if (position !== 0 && position !== layer.length - 1) fail("inset goes first or last");
+          return;
+        }
+        const isLength =
+          node.type === "number" ||
+          (node.type === "function" && (MATH_FUNCTIONS.has(node.name) || node.name === "var"));
+        if (isLength && lengths < 4 && colors === 0) {
+          if (node.type === "number") this.length([node]);
+          else if (node.type === "function" && node.name === "var") this.variable(node);
+          else this.numeric(node, LENGTH_UNITS);
+          lengths += 1;
+          return;
+        }
+        colors += 1;
+        if (colors > 1) fail("a shadow takes one colour");
+        this.color([node]);
+      });
+      if (lengths < 2) fail("a shadow needs at least two lengths");
+    }
+  }
+
+  image(nodes: readonly CssNode[]): void {
+    if (nodes.length === 1 && nodes[0]!.type === "ident" && nodes[0].value === "none") return;
+    for (const layer of splitCommas(nodes)) {
+      const node = this.single(layer, "image");
+      if (node.type === "function" && GRADIENTS.has(node.name)) {
+        this.gradient(node.args);
+        continue;
+      }
+      this.color([node]);
+    }
+  }
+
+  private gradient(args: readonly CssNode[]): void {
+    for (const part of splitCommas(args)) {
+      if (part.length === 0) fail("empty gradient argument");
+      for (const node of part) {
+        if (node.type === "ident" && GRADIENT_KEYWORDS.has(node.value.toLowerCase())) continue;
+        if (node.type === "number") {
+          if (node.unit !== "" && !LENGTH_UNITS.has(node.unit) && !ANGLE_UNITS.has(node.unit)) {
+            fail(`unit ${node.unit} not allowed in a gradient`);
+          }
+          continue;
+        }
+        if (node.type === "function" && MATH_FUNCTIONS.has(node.name)) {
+          this.mathFunction(node, new Set([...LENGTH_UNITS, ...ANGLE_UNITS]));
+          continue;
+        }
+        this.color([node]);
+      }
+    }
+  }
+}
+
+/**
+ * Checks a theme's value for a token of `kind` and writes it back out in the host's own
+ * syntax: dangerous text (`url(`, `@`, `;`, braces, comments, `!important`, ...),
+ * values over {@link THEME_LIMITS}.valueLength, `var()` of anything but a known token
+ * and values outside the kind's grammar or the token's {@link TokenConstraint} fail.
+ *
+ * @returns The value as the host writes it and the tokens it reads, or why it failed.
+ */
+export function validateTokenValue(
+  kind: ValueKind,
+  value: unknown,
+  context: ValueContext,
+  constraint: TokenConstraint = {},
+): ValueResult {
+  if (typeof value !== "string") return { ok: false, reason: "not a string" };
+  if (value.length > THEME_LIMITS.valueLength) {
+    return { ok: false, reason: `longer than ${THEME_LIMITS.valueLength} characters` };
+  }
+  if (constraint.internal) return { ok: false, reason: "internal, not themable" };
+  if (CONTROL_CHARACTER.test(value)) return { ok: false, reason: "control characters" };
+  const forbidden = FORBIDDEN_VALUE.exec(value);
+  if (forbidden) return { ok: false, reason: `${JSON.stringify(forbidden[0])} is not allowed` };
+  if (value.trim() === "") return { ok: false, reason: "empty" };
+  try {
+    const nodes = parseValue(value);
+    const checker = new ValueChecker(context, constraint);
+    let output = nodes;
+    switch (kind) {
+      case "color":
+        checker.color(nodes);
+        break;
+      case "image":
+        checker.image(nodes);
+        break;
+      case "channels":
+        checker.channelTriple(nodes);
+        break;
+      case "length":
+        checker.length(nodes);
+        break;
+      case "number":
+        checker.number(nodes);
+        break;
+      case "percentage":
+        checker.percentage(nodes);
+        break;
+      case "alpha":
+        checker.alpha(nodes);
+        break;
+      case "font":
+        output = checker.font(nodes);
+        break;
+      case "shadow":
+        checker.shadow(nodes);
+        break;
+      case "keyword":
+        checker.keyword(nodes);
+        break;
+      case "duration":
+        checker.duration(nodes);
+        break;
+      case "easing":
+        checker.easing(nodes);
+        break;
+    }
+    return { ok: true, value: serialize(output), references: [...new Set(checker.references)] };
+  } catch (error) {
+    if (error instanceof ValueError) return { ok: false, reason: error.message };
+    throw error;
+  }
+}
+
+/**
+ * The ids in `graph` (id to the ids its value reads) that are on a reference cycle, a
+ * token reading itself included. CSS makes every token on a cycle invalid.
+ */
+export function referenceCycles(graph: ReadonlyMap<string, readonly string[]>): Set<string> {
+  // Tarjan's strongly connected components: a component of two or more, or a self-loop.
+  const onCycle = new Set<string>();
+  const index = new Map<string, number>();
+  const low = new Map<string, number>();
+  const stack: string[] = [];
+  const onStack = new Set<string>();
+  let counter = 0;
+  const connect = (id: string): void => {
+    index.set(id, counter);
+    low.set(id, counter);
+    counter += 1;
+    stack.push(id);
+    onStack.add(id);
+    for (const next of graph.get(id) ?? []) {
+      if (!index.has(next)) {
+        connect(next);
+        low.set(id, Math.min(low.get(id)!, low.get(next)!));
+      } else if (onStack.has(next)) {
+        low.set(id, Math.min(low.get(id)!, index.get(next)!));
+      }
+    }
+    if (low.get(id) !== index.get(id)) return;
+    const component: string[] = [];
+    let member: string;
+    do {
+      member = stack.pop()!;
+      onStack.delete(member);
+      component.push(member);
+    } while (member !== id);
+    if (component.length > 1 || (graph.get(id) ?? []).includes(id)) {
+      for (const entry of component) onCycle.add(entry);
+    }
+  };
+  for (const id of graph.keys()) if (!index.has(id)) connect(id);
+  return onCycle;
 }
