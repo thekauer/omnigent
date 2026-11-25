@@ -11,9 +11,10 @@ the same commit that lands each milestone.
 |---|---|---|
 | Step 0 | Done | This plan saved in the fork and linked from `vscode_style_extensions.md`. |
 | M0 | Done | `verify.sh --screens --token-dump --embed` and `--compare` in `my-extensions/dev/verify/screens.py`; baselines of `0c1afd2594` in `my-extensions/dev/verify/baselines/` (96 screens, 16 standalone and 14 embed dumps). Two runs: 0 px, identical dumps. |
-| M1 | Done | `web/src/theme/tokens/` (registry, workbench, status, chart); `PaletteTokens` and `PALETTE_TOKEN_CSS_NAMES` derived from it; `scripts/generate-theme-tokens.mjs` writes `src/themeTokens.generated.css` (`just generate-theme-tokens`, pre-commit `web-theme-token-generation`). 37 non-palette colour tokens (59 declarations) left `index.css`; its remaining `:root`/`.dark` tokens (shadows, radii, insets, motion) are listed in `registry.test.ts` for M2/M3. Against the M0 baselines: identical dumps, 0 px. |
-| M2 | Next | Waits for the user. |
-| M3 to M11 | Queued | |
+| M1 | Done | `web/src/theme/tokens/` (registry, workbench, status, chart); `PaletteTokens` and `PALETTE_TOKEN_CSS_NAMES` derived from it; `scripts/generate-theme-tokens.mjs` writes `src/themeTokens.generated.css` (`just generate-theme-tokens`, pre-commit `web-theme-token-generation`). 37 non-palette colour tokens (61 declarations) left `index.css`; its remaining `:root`/`.dark` tokens (shadows, radii, insets, motion) are listed in `registry.test.ts` for M2/M3. Against the M0 baselines: identical dumps, 0 px. |
+| M2 | Done | Shape (`ui-radius-base` and its derived scale, `ui-radius-pill`, off-scale `ui-radius-3/10/12/16/20/30`; `--radius` and `radius-otto-*` aliases), typography (`ui-font-ui/title/mono/code/label`, weights, letter-spacing, label tokens) and elevation (`ui-elevation`, every shadow recipe with an elevation-scaled alpha) in `web/src/theme/tokens/`; tokens that alias a plain value are registered with `@property`. `@theme inline` reads `var(--ui-*)`; the `rounded-[Npx]` TSX uses read the scale or the off-scale aliases; the Appearance font setting is a layer over `ui-font-ui`. Derived values re-emit on the theme roots, light formulas included on dark roots. Harness (my-extensions `bc235e1`, 195 screens on `13dbdd5d14`): 0 px; the dump gains only the new tokens, plus 11 embed shadow tokens whose minified literal text became computed text of identical value. `--ui-radius-base: 0` with `--ui-elevation: 0` leaves no radius or cast shadow on the session page. |
+| M3 | Next | |
+| M4 to M11 | Queued | |
 
 Resume notes:
 
@@ -22,10 +23,18 @@ Resume notes:
 - The harness and its baselines live in `my-extensions/dev/verify/` (decision 6).
 - No-change check for a Layer 0 step: from `my-extensions/dev`, run
   `OMNI_UI_REPO=<checkout> ./verify/verify.sh --screens --token-dump --embed --compare verify/baselines`
-  (about 4 minutes). It needs 0 px per screen and identical `tokens.json` and
-  `tokens-embed.json`. The only tolerance (at most 0.01% of a screen's pixels, 2 per
-  channel, with identical dumps) covers one known flake: the dark session's code-block
-  copy icon flips by one LSB at a few pixels in about one run of four.
+  (about 10 minutes). It needs 0 px per screen and identical `tokens.json` and
+  `tokens-embed.json` (added tokens aside), and the baseline's Chrome version. The only
+  tolerance is spot-specific: inside the recorded masks of the dark code blocks' copy
+  buttons (a known one-LSB flake), at most 2 per channel, with both dumps present and
+  identical; 0 px everywhere else.
+- M3 notes: the label tokens (`ui-label-*`) have no consumers yet; the sidebar section
+  label, view title and fold row hooks should read them. Still literal: the glass
+  surfaces' shadows (`components/ui/glass-surface/GlassSurface.css`,
+  `OmniGlassSurface`, the drop-shadow filters in `NewChatDialog` and
+  `SidebarHeaderActions`), the vendored file tree, PDF viewer and CodeMirror radii
+  (M4), and the `border-radius: 100%` circle in index.css. `onboarding-modal-shadow`
+  is deprecated (unscaled); remove it in M6.
 - Refresh the baselines (`--save-baselines`) only on a commit that is meant to change
   the look, and say so in its message.
 - The terminal screen is the transcript's shell output; the xterm panel needs a live
