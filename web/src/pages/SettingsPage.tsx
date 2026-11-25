@@ -1029,7 +1029,7 @@ function ColorThemeControl() {
                 <SelectTrigger
                   {...settingsControlProps(COLOR_THEME_ENTRY)}
                   data-testid="color-theme-select"
-                  className="w-full shrink-0 gap-2 sm:w-60"
+                  className="w-full shrink-0 gap-2 sm:w-auto sm:min-w-60 sm:max-w-80"
                 >
                   <SelectValue>
                     {chip(current, swatch)}
