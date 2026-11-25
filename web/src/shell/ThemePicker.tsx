@@ -143,13 +143,16 @@ export function ThemePicker() {
   );
 }
 
-/** Closes the open picker when the route changes; closing reverts its previews. */
+/**
+ * Closes the open picker when the route changes; closing reverts its previews. A route
+ * still catching up with the address it had when the picker opened is not a change.
+ */
 function CloseOnNavigation() {
-  const location = useLocation();
-  const path = `${location.pathname}${location.search}`;
-  const opened = useRef(path);
+  // The path only: search parameters carry view state that changes without leaving the page.
+  const path = useLocation().pathname;
+  const opened = useRef<readonly string[]>([path, window.location.pathname]);
   useEffect(() => {
-    if (path !== opened.current) closeThemePicker();
+    if (!opened.current.includes(path)) closeThemePicker();
   }, [path]);
   return null;
 }
