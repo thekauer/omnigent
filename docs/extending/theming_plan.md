@@ -27,7 +27,10 @@ Resume notes:
   `tokens-embed.json` (added tokens aside), and the baseline's Chrome version. The only
   tolerance is spot-specific: inside the recorded masks of the dark code blocks' copy
   buttons (a known one-LSB flake), at most 2 per channel, with both dumps present and
-  identical; 0 px everywhere else.
+  no token value changed or removed; 0 px everywhere else. M2 added tokens and changed
+  the text of 11 embed shadow tokens (same values), so refresh the dumps only
+  (`--token-dump --embed --save-baselines --only-screens none`) from M2's commit before
+  comparing M3, or the embed text differences keep the tolerance off.
 - M3 notes: the label tokens (`ui-label-*`) have no consumers yet; the sidebar section
   label, view title and fold row hooks should read them. Still literal: the glass
   surfaces' shadows (`components/ui/glass-surface/GlassSurface.css`,
