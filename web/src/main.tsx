@@ -69,6 +69,9 @@ const queryClient = new QueryClient({
 // invalidate cached queries (e.g. the conversations list when a new
 // conversation is created server-side).
 initChatStore(queryClient);
+// A chosen theme from a dev extension keeps its cached values until they load; marked
+// before the built-ins start, which settles which themes exist.
+const extensionThemesLoaded = import.meta.env.DEV ? themeService.beginLoading() : undefined;
 // VS Code-style extensions. The built-ins (core tabs such as Changes) start here,
 // before the first render, in every build.
 startExtensionHost();
@@ -77,13 +80,11 @@ startExtensionHost();
 if (import.meta.env.DEV) {
   // A restored extension tab waits for the views those extensions contribute.
   const extensionViewsLoaded = railViews.beginLoading();
-  // A chosen theme from a dev extension keeps its cached values until they load.
-  const extensionThemesLoaded = themeService.beginLoading();
   void import("./vscodeExtensions/devLoader")
     .then(({ startDevExtensions }) => startDevExtensions())
     .finally(() => {
       extensionViewsLoaded();
-      extensionThemesLoaded();
+      extensionThemesLoaded?.();
     });
   // The dev-only way to drive the theme service (the theming harness, the console).
   (window as unknown as { omnigentDevThemes?: unknown }).omnigentDevThemes = themeService;

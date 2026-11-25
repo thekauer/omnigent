@@ -18,6 +18,16 @@
 /* The token registry's descriptions name the utilities that read each token
  * (`rounded-xs`, `shadow-dialog`); scanning them would emit utilities nothing uses. */
 @source not "./theme/tokens";
+/* The theme validation and runtime modules name CSS keywords (`ease-in`, `inset`) as
+ * data; scanning them would emit utilities nothing uses. */
+@source not "./theme/validate.ts";
+@source not "./theme/themeFile.ts";
+@source not "./theme/themeContributions.ts";
+@source not "./theme/themeCss.ts";
+@source not "./theme/themeService.ts";
+@source not "./theme/vscodeColorAliases.ts";
+@source not "./theme/brandAssets.ts";
+@source not "./test/themeFixtures.ts";
 
 /* Width picks the layout: below md the mobile touch UI, md and up the mouse-driven desktop UI.
  * The desktop app marks its style root `data-desktop-app` and keeps the desktop UI at every width.
