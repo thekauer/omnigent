@@ -75,6 +75,8 @@ export const ACTIVATION_TIMEOUT_MS = 10_000;
 export const LOAD_TIMEOUT_MS = 20_000;
 /** The activation budget of a built-in extension, which core UI depends on. */
 export const BUILT_IN_ACTIVATION_TIMEOUT_MS = 60_000;
+/** The publisher of the built-in extensions; no other extension may use it. */
+export const RESERVED_PUBLISHER = "omnigent";
 
 export interface ExtensionHostOptions {
   services: HostServices;
@@ -116,6 +118,8 @@ export class ExtensionHost {
   private readonly cancelPending = new Set<() => void>();
   /** Removes each extension's contributed views, commands and menus. */
   private readonly contributed = new Map<string, () => void>();
+  /** Every id {@link start} took, so a later extension can't claim one. */
+  private readonly startedIds = new Set<string>();
   private readonly extensionState: ExtensionStateStore;
   private disposed = false;
 
@@ -161,6 +165,21 @@ export class ExtensionHost {
     });
   }
 
+  /**
+   * Whether a non-built-in extension claims what only built-ins may: the `omnigent`
+   * publisher, or the id of an extension already loaded. It is skipped with a warning.
+   */
+  private claimsBuiltIn(extension: ExtensionDescription): boolean {
+    let reason: string | undefined;
+    if (extension.id.startsWith(`${RESERVED_PUBLISHER}.`)) {
+      reason = `the "${RESERVED_PUBLISHER}" publisher is reserved for built-in extensions`;
+    } else if (this.startedIds.has(extension.id) || this.contributed.has(extension.id)) {
+      reason = "an extension with this id is already loaded";
+    }
+    if (reason) this.log.warn(`[omnigent-extensions] ${extension.id}: ${reason}; not loading it`);
+    return reason !== undefined;
+  }
+
   isActive(extensionId: string): boolean {
     return this.active.has(extensionId);
   }
@@ -170,6 +189,8 @@ export class ExtensionHost {
     const eager: ExtensionDescription[] = [];
     const afterStartup: ExtensionDescription[] = [];
     for (const extension of extensions) {
+      if (!extension.builtIn && this.claimsBuiltIn(extension)) continue;
+      this.startedIds.add(extension.id);
       const events = extension.activationEvents;
       for (const event of events) {
         if (!SUPPORTED_ACTIVATION_EVENTS.has(event)) {

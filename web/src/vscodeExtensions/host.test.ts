@@ -69,6 +69,27 @@ function describeExtension(
 }
 
 describe("ExtensionHost", () => {
+  it("skips a non-built-in extension under the omnigent publisher or a loaded id, with a warning", async () => {
+    const activate = vi.fn();
+    const { host, log } = setup({
+      "/ext/omnigent.themes.js": { activate },
+      "/ext/pub.a.js": { activate },
+    });
+    await host.start([
+      { ...describeExtension("pub.a"), builtIn: true },
+      describeExtension("omnigent.themes"),
+      describeExtension("pub.a"),
+    ]);
+    expect(activate).toHaveBeenCalledTimes(1);
+    expect(host.isActive("omnigent.themes")).toBe(false);
+    expect(log.warn).toHaveBeenCalledWith(
+      expect.stringContaining('omnigent.themes: the "omnigent" publisher is reserved'),
+    );
+    expect(log.warn).toHaveBeenCalledWith(
+      expect.stringContaining("pub.a: an extension with this id is already loaded"),
+    );
+  });
+
   it("activates with a context and disposes subscriptions on deactivate", async () => {
     const disposed = vi.fn();
     const deactivate = vi.fn();
