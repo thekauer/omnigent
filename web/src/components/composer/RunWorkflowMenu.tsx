@@ -89,7 +89,7 @@ export function RunWorkflowMenu({
         collisionPadding={12}
         aria-label="Run a workflow"
         // The "+" menu's look, so the list reads the same in both places.
-        className="composer-add-menu w-80 max-w-[calc(100vw-24px)] rounded-[16px] max-md:p-1.5"
+        className="composer-add-menu w-80 max-w-[calc(100vw-24px)] rounded-[var(--ui-radius-16)] max-md:p-1.5"
       >
         <WorkflowPicker
           workflows={workflows}

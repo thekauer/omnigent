@@ -2198,7 +2198,7 @@ export function DiffReview<A = undefined>({
     "--diffs-line-height": `${lineHeight}px`,
     "--diffs-font-family": codeFontFamilyForEditor(fontFamily ?? ""),
     "--diffs-font-weight": fontWeight,
-    "--diffs-header-font-family": "var(--ui-font-family, var(--font-sans))",
+    "--diffs-header-font-family": "var(--ui-font-family, var(--ui-font-ui))",
     // Comment tints are the shared code-surface highlight tokens.
     "--diff-review-comment":
       "var(--comment-highlight, color-mix(in oklch, var(--warning) 14%, transparent))",

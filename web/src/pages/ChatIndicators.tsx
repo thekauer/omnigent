@@ -137,7 +137,7 @@ export function ConnectionIndicator({
           type="button"
           data-testid="disconnected-indicator"
           onClick={onShowReconnectHelp}
-          className="flex items-center gap-2 rounded-[12px] px-4 py-2 text-sm text-destructive transition-[filter] hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+          className="flex items-center gap-2 rounded-[var(--ui-radius-12)] px-4 py-2 text-sm text-destructive transition-[filter] hover:brightness-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
           style={{
             background:
               "color-mix(in srgb, var(--destructive) 4%, var(--app-shell-bg, var(--background)))",

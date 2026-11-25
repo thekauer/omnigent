@@ -513,7 +513,7 @@ export function ErrorBanner({
         data-level={notice ? "info" : "error"}
         onClick={() => expandable && setExpanded((value) => !value)}
         className={cn(
-          "group/error relative z-10 w-[560px] max-w-full rounded-[12px] p-[8px] text-foreground",
+          "group/error relative z-10 w-[560px] max-w-full rounded-[var(--ui-radius-12)] p-[8px] text-foreground",
           expandable && "cursor-pointer",
         )}
         style={{

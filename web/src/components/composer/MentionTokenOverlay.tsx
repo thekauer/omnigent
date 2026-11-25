@@ -12,7 +12,7 @@ import {
  * shift the mirror out of line with the textarea above it.
  */
 export const MENTION_TOKEN_CLASS =
-  "rounded-[4px] bg-brand-accent/10 text-brand-accent ring-2 ring-brand-accent/10";
+  "rounded-sm bg-brand-accent/10 text-brand-accent ring-2 ring-brand-accent/10";
 
 /** ``text`` with each tagged token wrapped in a pill span. */
 export function renderMentionTokens(text: string, tokens: readonly string[]): ReactNode {

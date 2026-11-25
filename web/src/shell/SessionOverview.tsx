@@ -90,7 +90,7 @@ export function SessionCostButton({
                 data-testid="header-session-cost"
                 // Shown cards get the view toggle's selected look, so open never reads as hover.
                 className={cn(
-                  "hidden h-6 shrink-0 items-center rounded-[6px] border px-2 font-mono text-xs tabular-nums md:inline-flex",
+                  "hidden h-6 shrink-0 items-center rounded-md border px-2 font-mono text-xs tabular-nums md:inline-flex",
                   open
                     ? "border-border bg-background text-foreground shadow-sm dark:border-transparent dark:bg-[var(--segmented-active-bg)]"
                     : "border-transparent text-muted-foreground hover:bg-muted hover:text-foreground",

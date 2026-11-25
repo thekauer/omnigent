@@ -104,7 +104,7 @@ function OptionItem({
       <span
         aria-hidden
         className={cn(
-          "flex size-3.5 shrink-0 items-center justify-center rounded-[4px] border",
+          "flex size-3.5 shrink-0 items-center justify-center rounded-sm border",
           option.checked
             ? "border-primary bg-primary text-primary-foreground"
             : "border-muted-foreground/50",

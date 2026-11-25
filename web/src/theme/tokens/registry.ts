@@ -6,16 +6,21 @@
 // `.ts` imports: the generator loads this module directly in Node.
 
 import { CHART_TOKENS } from "./chart.ts";
+import { ELEVATION_TOKENS } from "./elevation.ts";
+import { SHAPE_TOKENS } from "./shape.ts";
 import { STATUS_TOKENS } from "./status.ts";
 import type { TokenDef } from "./types.ts";
+import { TYPOGRAPHY_TOKENS } from "./typography.ts";
 import { PALETTE_TOKENS, WORKBENCH_TOKENS } from "./workbench.ts";
 
 export {
   isDerivedValue,
+  SYNTAX_INITIAL_VALUES,
   type TokenDef,
   type TokenDefaults,
   type TokenGroup,
   type TokenKind,
+  type TokenSyntax,
 } from "./types.ts";
 export { PALETTE_TOKENS } from "./workbench.ts";
 
@@ -43,6 +48,9 @@ export const TOKENS: readonly TokenDef[] = [
   ...WORKBENCH_TOKENS,
   ...STATUS_TOKENS,
   ...CHART_TOKENS,
+  ...SHAPE_TOKENS,
+  ...TYPOGRAPHY_TOKENS,
+  ...ELEVATION_TOKENS,
 ];
 
 /** Tokens with host defaults (no palette sets them), in registry order. */

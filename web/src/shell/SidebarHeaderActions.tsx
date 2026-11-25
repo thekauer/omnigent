@@ -292,7 +292,7 @@ export function SidebarSettingsButton({
           size="icon-xs"
           aria-label={label}
           aria-keyshortcuts={opensSettings ? settingsAriaShortcut() : undefined}
-          className={cn(SIDEBAR_FLOAT_BUTTON, "rounded-[8px] bg-transparent", className)}
+          className={cn(SIDEBAR_FLOAT_BUTTON, "rounded-lg bg-transparent", className)}
         >
           <Link to={to} onClick={onSettingsClick} data-testid={testId}>
             <Icon className={cn(SIDEBAR_FLOAT_ICON, isMobile && "relative z-10")} />

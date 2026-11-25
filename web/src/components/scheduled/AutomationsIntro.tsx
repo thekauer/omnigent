@@ -311,7 +311,7 @@ function IntroDialog({
             <div className="relative flex flex-col items-center justify-center border-t bg-muted/40 p-6 md:min-h-[560px] md:border-t-0 md:border-l md:p-10">
               <div
                 aria-hidden="true"
-                className="pointer-events-none absolute inset-0 rounded-br-[30px] bg-[radial-gradient(ellipse_at_center,var(--color-primary),transparent_70%)] opacity-[0.07]"
+                className="pointer-events-none absolute inset-0 rounded-br-[var(--ui-radius-30)] bg-[radial-gradient(ellipse_at_center,var(--color-primary),transparent_70%)] opacity-[0.07]"
               />
               <div
                 className="relative hidden w-full flex-col items-center md:flex"

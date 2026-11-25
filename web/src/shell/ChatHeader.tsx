@@ -280,7 +280,7 @@ function PendingHeaderActions({ isMobile }: { isMobile: boolean }) {
         aria-label="Switch between chat and terminal"
         aria-disabled="true"
         title={PENDING_ACTION_TITLE}
-        className="hidden h-6 w-[74px] shrink-0 items-center gap-0.5 rounded-[6px] bg-muted p-0 md:flex"
+        className="hidden h-6 w-[74px] shrink-0 items-center gap-0.5 rounded-md bg-muted p-0 md:flex"
       >
         <Button
           type="button"
@@ -289,7 +289,7 @@ function PendingHeaderActions({ isMobile }: { isMobile: boolean }) {
           aria-label="Chat view"
           aria-pressed="true"
           disabled
-          className="h-6 w-9 rounded-[6px] border border-border bg-background px-2.5 py-0 text-foreground shadow-sm"
+          className="h-6 w-9 rounded-md border border-border bg-background px-2.5 py-0 text-foreground shadow-sm"
         >
           <MessagesSquareIcon className="size-4" />
         </Button>
@@ -300,7 +300,7 @@ function PendingHeaderActions({ isMobile }: { isMobile: boolean }) {
           aria-label="Terminal view"
           aria-pressed="false"
           disabled
-          className="h-6 w-9 rounded-[6px] border border-transparent px-2.5 py-0 text-muted-foreground"
+          className="h-6 w-9 rounded-md border border-transparent px-2.5 py-0 text-muted-foreground"
         >
           <TerminalIcon className="size-4" />
         </Button>
@@ -321,7 +321,7 @@ function PendingHeaderActions({ isMobile }: { isMobile: boolean }) {
         aria-label="Share session"
         title={PENDING_ACTION_TITLE}
         disabled
-        className="share-button-glassy hidden h-6 gap-1 rounded-[6px] px-2 text-ui font-normal text-white md:inline-flex"
+        className="share-button-glassy hidden h-6 gap-1 rounded-md px-2 text-ui font-normal text-white md:inline-flex"
       >
         <span className="flex size-4 shrink-0 items-center justify-center">
           <UserPlusIcon />
@@ -841,7 +841,7 @@ export function ChatHeader({
                   title={shareDisabledReason}
                   // share-button-glassy (index.css) paints the pink gradient,
                   // shadow, and white text in both light and dark mode.
-                  className="share-button-glassy h-6 gap-1 rounded-[6px] px-2 text-ui font-normal text-white"
+                  className="share-button-glassy h-6 gap-1 rounded-md px-2 text-ui font-normal text-white"
                 >
                   <span className="flex size-4 shrink-0 items-center justify-center">
                     <UserPlusIcon />
@@ -860,7 +860,7 @@ export function ChatHeader({
             componentId="chat.header.share"
             // share-button-glassy (index.css) paints the pink gradient,
             // shadow, and white text in both light and dark mode.
-            className="share-button-glassy hidden h-6 gap-1 rounded-[6px] px-2 text-ui font-normal text-white md:inline-flex"
+            className="share-button-glassy hidden h-6 gap-1 rounded-md px-2 text-ui font-normal text-white md:inline-flex"
           >
             <span className="flex size-4 shrink-0 items-center justify-center">
               <UserPlusIcon />

@@ -175,7 +175,12 @@ describe("ErrorBanner", () => {
     expect(pill).toHaveAttribute("data-testid", "error-pill");
     expect(pill).not.toHaveAttribute("role");
     expect(pill).not.toHaveAttribute("tabindex");
-    expect(pill).toHaveClass("rounded-[12px]", "p-[8px]", "w-[560px]", "group/error");
+    expect(pill).toHaveClass(
+      "rounded-[var(--ui-radius-12)]",
+      "p-[8px]",
+      "w-[560px]",
+      "group/error",
+    );
     expect(pill.style.background).toContain("color-mix");
     expect(pill.style.border).toContain("color-mix");
     expect(pill.parentElement).toHaveClass("items-center", "px-[16px]", "mb-[24px]");

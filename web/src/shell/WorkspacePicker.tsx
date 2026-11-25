@@ -831,7 +831,7 @@ export function WorkspacePicker({
     <div
       ref={setDropTarget}
       className={cn(
-        "flex h-[min(600px,calc(100dvh-4rem))] max-h-full min-h-0 w-[min(800px,calc(100vw-2rem))] flex-col justify-self-center overflow-hidden rounded-[20px] border border-border bg-background shadow-xl",
+        "flex h-[min(600px,calc(100dvh-4rem))] max-h-full min-h-0 w-[min(800px,calc(100vw-2rem))] flex-col justify-self-center overflow-hidden rounded-[var(--ui-radius-20)] border border-border bg-background shadow-xl",
         isDragActive && "ring-2 ring-ring ring-inset",
       )}
       data-testid="workspace-picker"

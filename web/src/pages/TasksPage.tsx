@@ -742,7 +742,7 @@ function TemplateGallery({
               aria-describedby={`${detailsId}-description ${detailsId}-requirements`}
               onClick={() => onPick(template.id)}
               data-testid={template.testId}
-              className="flex cursor-pointer items-start gap-4 rounded-[20px] border border-border bg-card p-4 text-left text-ui transition-colors hover:border-foreground/20 hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
+              className="flex cursor-pointer items-start gap-4 rounded-[var(--ui-radius-20)] border border-border bg-card p-4 text-left text-ui transition-colors hover:border-foreground/20 hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50 focus-visible:outline-none"
             >
               <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-muted">
                 <Icon className={cn("size-5", template.iconClassName)} />

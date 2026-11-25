@@ -611,7 +611,7 @@ export function HarnessFixDialog(props: HarnessFixDialogProps) {
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent
-        className="gap-0 overflow-hidden rounded-[20px] bg-background p-0 text-foreground sm:max-w-[440px]"
+        className="gap-0 overflow-hidden rounded-[var(--ui-radius-20)] bg-background p-0 text-foreground sm:max-w-[440px]"
         {...parts.overlay()}
       >
         <DialogHeader className="px-6 pt-6 pb-4">
@@ -1383,7 +1383,7 @@ function CommandRow({
   const [copied, setCopied] = useState(false);
   const parts = useSettingsOverlayParts();
   return (
-    <div className="flex min-h-9 items-center gap-2 rounded-[10px] border border-border px-3 py-1.5">
+    <div className="flex min-h-9 items-center gap-2 rounded-[var(--ui-radius-10)] border border-border px-3 py-1.5">
       <code className="min-w-0 flex-1 break-all font-mono text-sm text-foreground">{command}</code>
       <Button
         variant="ghost"

@@ -23,7 +23,7 @@ export function ProjectSessionPanel({
       aria-label={title}
       data-testid="project-session-panel"
       data-project-session-panel=""
-      className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[16px] border bg-background"
+      className="relative flex min-h-0 flex-1 flex-col overflow-hidden rounded-[var(--ui-radius-16)] border bg-background"
     >
       {/* Laid over the transcript, which scrolls under its glass. */}
       <header

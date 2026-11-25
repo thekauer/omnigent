@@ -46,10 +46,6 @@ const STILL_IN_INDEX_CSS = {
     "desktop-ui-font-size",
     "icon-size-default",
     "icon-container-default",
-    "ui-shadow-neutral-rgb",
-    "ui-shadow-warm-rgb",
-    "onboarding-modal-shadow",
-    "composer-shadow",
     "omnigent-header-height",
     "omnigent-safe-top",
     "omnigent-safe-bottom",
@@ -63,21 +59,32 @@ const STILL_IN_INDEX_CSS = {
     "omnigent-android-switcher-height",
     "omnigent-inset-top",
     "omnigent-inset-bottom",
-    "radius",
-    "radius-otto-button",
-    "radius-otto-sm",
-    "radius-otto-md",
     "ease-otto",
     "duration-otto-fast",
   ],
-  ".dark": [
-    "menu-surface-backdrop-filter",
-    "ui-shadow-neutral-rgb",
-    "ui-shadow-warm-rgb",
-    "onboarding-modal-shadow",
-    "composer-shadow",
-  ],
+  ".dark": ["menu-surface-backdrop-filter"],
 };
+
+// Legacy tokens the registry now derives from the shape and elevation scales. The
+// browser token dump (my-extensions verify harness) checks they compute to the same
+// values; `composer-shadow`'s dark value comes from its dark alpha.
+const RESTATED = {
+  ":root": ["radius", "radius-otto-button", "radius-otto-sm", "radius-otto-md", "composer-shadow"],
+  ".dark": ["composer-shadow"],
+};
+
+/** The declarations of the generated stylesheet's rule with exactly this selector. */
+function generatedRule(selector: string): Record<string, string> {
+  const css = readFileSync(resolve(WEB_ROOT, "src/themeTokens.generated.css"), "utf8");
+  const found: Record<string, string> = {};
+  parse(css).each((node) => {
+    if (node.type !== "rule" || node.selector.replace(/\s+/g, " ") !== selector) return;
+    node.each((declaration) => {
+      if (declaration.type === "decl") found[declaration.prop.slice(2)] = declaration.value;
+    });
+  });
+  return found;
+}
 
 describe("theme token registry", () => {
   it("has unique ids", () => {
@@ -117,10 +124,16 @@ describe("theme token registry", () => {
   it("keeps the defaults index.css had before the registry", () => {
     for (const selector of [":root", ".dark"] as const) {
       const mode = selector === ":root" ? "light" : "dark";
-      const moved = DEFAULT_TOKENS.filter((token) => token.default?.[mode] !== undefined);
+      const legacyIds = new Set([...Object.keys(legacy[":root"]), ...Object.keys(legacy[".dark"])]);
+      const moved = DEFAULT_TOKENS.filter(
+        (token) =>
+          token.default?.[mode] !== undefined &&
+          legacyIds.has(token.id) &&
+          !RESTATED[selector].includes(token.id),
+      );
       const expected = Object.fromEntries(
         Object.entries(legacy[selector]).filter(
-          ([id]) => !STILL_IN_INDEX_CSS[selector].includes(id),
+          ([id]) => !STILL_IN_INDEX_CSS[selector].includes(id) && !RESTATED[selector].includes(id),
         ),
       );
       expect(
@@ -137,6 +150,57 @@ describe("theme token registry", () => {
         [...STILL_IN_INDEX_CSS[selector]].sort(),
       );
     }
+  });
+
+  it("derives the restated legacy tokens from the scales", () => {
+    for (const id of RESTATED[":root"]) {
+      expect(isDerivedValue(getToken(id)?.default?.light ?? ""), id).toBe(true);
+    }
+  });
+
+  it("adds only shape, typography and elevation tokens beside the legacy ones", () => {
+    const legacyIds = new Set([...Object.keys(legacy[":root"]), ...Object.keys(legacy[".dark"])]);
+    const added = DEFAULT_TOKENS.filter((token) => !legacyIds.has(token.id));
+    expect(new Set(added.map((token) => token.group))).toEqual(
+      new Set(["shape", "typography", "elevation"]),
+    );
+    expect(
+      added.every((token) => token.id.startsWith("ui-")),
+      "added ids",
+    ).toBe(true);
+  });
+
+  it("registers every token with a syntax as an inherited property", () => {
+    const css = readFileSync(resolve(WEB_ROOT, "src/themeTokens.generated.css"), "utf8");
+    const registered = new Map<string, string>();
+    parse(css).walkAtRules("property", (rule) => {
+      rule.walkDecls("syntax", (declaration) => {
+        registered.set(rule.params.slice(2), declaration.value.replace(/"/g, ""));
+      });
+    });
+    const expected = DEFAULT_TOKENS.filter((token) => token.syntax);
+    expect(expected.map((token) => token.id)).toEqual(
+      expect.arrayContaining(["ui-radius-sm", "ui-elevation", "ui-shadow-xs-alpha"]),
+    );
+    expect(Object.fromEntries(registered)).toEqual(
+      Object.fromEntries(expected.map((token) => [token.id, token.syntax])),
+    );
+  });
+
+  it("re-emits derived tokens on the theme roots, light formulas included on dark ones", () => {
+    const dark = generatedRule(":root.dark, :root > .dark");
+    const light = generatedRule(":root:not(.dark)[data-theme], :root > :not(.dark)[data-theme]");
+    // A light-only derived token: a dark inner root must resolve it against its own values.
+    expect(getToken("ui-radius-sm")?.default?.dark).toBeUndefined();
+    expect(normalize(dark["ui-radius-sm"])).toBe("calc(var(--ui-radius-base) * 0.5)");
+    expect(normalize(light["ui-radius-sm"])).toBe("calc(var(--ui-radius-base) * 0.5)");
+    // A token with its own dark formula gets that one on dark roots.
+    expect(normalize(dark["composer-header-bg"])).toBe(
+      normalize(getToken("composer-header-bg")?.default?.dark),
+    );
+    // Literal defaults are not re-emitted.
+    expect(dark["ui-radius-base"]).toBeUndefined();
+    expect(dark["destructive"]).toBeUndefined();
   });
 
   it("marks values that reference other tokens as derived", () => {

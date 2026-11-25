@@ -1428,7 +1428,7 @@ describe("SettingsPage", () => {
     // ...and applied live to the document root, with the system stack appended
     // so an uninstalled/partial name degrades to the default sans, not serif.
     expect(document.documentElement.style.getPropertyValue("--ui-font-family")).toBe(
-      "Inter, var(--font-sans)",
+      "Inter, var(--ui-font-ui)",
     );
     expect(screen.getByTestId("ui-font-family-reset")).not.toBeDisabled();
   });

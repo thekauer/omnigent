@@ -164,7 +164,7 @@ describe("ChatHeader — deployed Share presentation", () => {
     expect(share).toHaveClass(
       "h-6",
       "gap-1",
-      "rounded-[6px]",
+      "rounded-md",
       "px-2",
       "text-ui",
       "share-button-glassy",
@@ -188,7 +188,7 @@ describe("ChatHeader — deployed Share presentation", () => {
     expect(share).toHaveClass(
       "h-6",
       "gap-1",
-      "rounded-[6px]",
+      "rounded-md",
       "px-2",
       "text-ui",
       "share-button-glassy",
@@ -765,7 +765,7 @@ describe("ChatHeader — floating mobile controls", () => {
     expect(trigger.querySelector(".glass-surface")).toBeNull();
     const group = trigger.closest("[data-mobile-header-group]")!;
     const menuSurface = group.querySelector<HTMLElement>(".glass-surface")!;
-    expect(group).toHaveClass("rounded-[20px]");
+    expect(group).toHaveClass("rounded-[var(--ui-radius-20)]");
     expect(group.querySelectorAll(".glass-surface")).toHaveLength(1);
     expect(menuSurface.className).toBe(sidebarSurface.className);
     for (const property of [

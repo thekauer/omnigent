@@ -87,7 +87,7 @@ export function ModelValueCombobox({
         className="w-full rounded border border-border bg-background px-2 py-1.5 text-ui placeholder:text-muted-foreground/60 focus:outline-none focus:ring-1 focus:ring-ring"
       />
       {showList && (
-        <div className="max-h-40 overflow-y-auto rounded-[12px] border border-border bg-popover p-2 text-popover-foreground shadow-menu">
+        <div className="max-h-40 overflow-y-auto rounded-[var(--ui-radius-12)] border border-border bg-popover p-2 text-popover-foreground shadow-menu">
           {filtered.map((v) => {
             const isSelected = selectedSet.has(v);
             return (

@@ -194,7 +194,7 @@ export function ThemeColorPicker({
             >
               <span
                 aria-hidden
-                className="pointer-events-none absolute size-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-[0_1px_4px_rgb(0_0_0/0.75)] ring-1 ring-black/60"
+                className="pointer-events-none absolute size-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white shadow-[0_1px_4px_rgb(0_0_0/calc(0.75*var(--ui-elevation)))] ring-1 ring-black/60"
                 style={{
                   left: `${color.saturation * 100}%`,
                   top: `${(1 - color.value) * 100}%`,

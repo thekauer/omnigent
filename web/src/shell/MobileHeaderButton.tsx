@@ -19,7 +19,8 @@ export function MobileHeaderButtonGroup({
         data-mobile-header-group=""
         className={cn(
           className,
-          isMobile && "relative isolate h-11 rounded-[20px] px-2 [&:not(:has(button))]:hidden",
+          isMobile &&
+            "relative isolate h-11 rounded-[var(--ui-radius-20)] px-2 [&:not(:has(button))]:hidden",
         )}
       >
         {isMobile && <OmniGlassSurface borderRadius={20} className="-z-10" />}

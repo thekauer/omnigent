@@ -9,7 +9,7 @@ export const WORKSPACE_FILE_TREE_CLASS = "workspace-file-tree";
 
 /** Maps the tree's colors and type onto the app's theme tokens. */
 export const FILE_TREE_THEME: CSSProperties = {
-  "--trees-font-family-override": "var(--ui-font-family, var(--font-sans))",
+  "--trees-font-family-override": "var(--ui-font-family, var(--ui-font-ui))",
   "--trees-font-size-override": "var(--text-ui, 13px)",
   "--trees-bg-override": "var(--background)",
   "--trees-bg-muted-override": "var(--muted)",

@@ -451,7 +451,7 @@ describe("Composer status line (branch + context ring)", () => {
         expect(actions).not.toContainElement(harness);
         expect(screen.queryByTestId("composer-workspace-controls")).toBeNull();
         expect(group.querySelectorAll(".glass-surface")).toHaveLength(1);
-        expect(group).toHaveClass("rounded-[20px]");
+        expect(group).toHaveClass("rounded-[var(--ui-radius-20)]");
         expect(screen.getByTestId("composer-host-icon")).toHaveClass("size-5");
         expect(host).toHaveClass("[--icon-container-default:20px]");
         expect(harness).toHaveClass("[--icon-container-default:20px]");

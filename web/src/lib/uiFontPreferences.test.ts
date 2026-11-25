@@ -139,7 +139,7 @@ describe("uiFontPreferences", () => {
     applyUiFontFamily("Comic Sans");
     expect(scope.style.getPropertyValue("--desktop-ui-font-size")).toBe("16px");
     expect(readAppliedUiFontSizePx()).toBe(16);
-    expect(scope.style.getPropertyValue("--ui-font-family")).toBe("Comic Sans, var(--font-sans)");
+    expect(scope.style.getPropertyValue("--ui-font-family")).toBe("Comic Sans, var(--ui-font-ui)");
     expect(document.documentElement.style.getPropertyValue("--desktop-ui-font-size")).toBe("");
     expect(document.documentElement.style.getPropertyValue("--ui-font-family")).toBe("");
   });
@@ -207,17 +207,17 @@ describe("uiFontPreferences — family", () => {
     // the app's default sans, not the browser's default serif.
     applyUiFontFamily("Inter");
     expect(document.documentElement.style.getPropertyValue("--ui-font-family")).toBe(
-      "Inter, var(--font-sans)",
+      "Inter, var(--ui-font-ui)",
     );
   });
 
   it("removes the custom property when applied empty (System default)", () => {
     applyUiFontFamily("Inter");
     expect(document.documentElement.style.getPropertyValue("--ui-font-family")).toBe(
-      "Inter, var(--font-sans)",
+      "Inter, var(--ui-font-ui)",
     );
     applyUiFontFamily("");
-    // Removing the property lets the html rule fall back to var(--font-sans).
+    // Removing the property lets the html rule fall back to var(--ui-font-ui).
     expect(document.documentElement.style.getPropertyValue("--ui-font-family")).toBe("");
   });
 });

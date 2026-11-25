@@ -158,7 +158,7 @@ interface ChatComposerBaseProps extends Omit<ComponentPropsWithoutRef<"div">, "c
 /** The card's own surface for each appearance; a panel has none, since its window is the card. */
 const COMPOSER_SURFACE_CLASS = {
   panel: "min-h-0 flex-1",
-  glass: "isolate rounded-[20px] border-0 bg-transparent md:min-h-[105px]",
+  glass: "isolate rounded-[var(--ui-radius-20)] border-0 bg-transparent md:min-h-[105px]",
   default:
     "composer-reference-surface rounded-2xl border transition-shadow duration-150 hover:shadow-[var(--composer-shadow)] has-[[data-composer-input]:focus]:shadow-[var(--composer-shadow)] md:min-h-[105px]",
 } as const;

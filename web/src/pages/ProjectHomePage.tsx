@@ -120,7 +120,7 @@ export function ProjectHomePage() {
           <div
             data-testid="project-floating-composer"
             // drop-shadow() takes no spread, so this can't use the spread-based shadow tokens.
-            className="project-floating-composer pointer-events-auto w-full max-w-3xl [filter:drop-shadow(0_16px_48px_rgb(var(--ui-shadow-neutral-rgb)/0.2))]"
+            className="project-floating-composer pointer-events-auto w-full max-w-3xl [filter:drop-shadow(0_16px_48px_rgb(var(--ui-shadow-neutral-rgb)/calc(0.2*var(--ui-elevation))))]"
             onKeyDown={closeComposerOnEscape}
           >
             <NewChatLandingScreen

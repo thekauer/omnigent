@@ -535,7 +535,7 @@ function McpServerMenu({
     <div
       data-testid="mcp-server-menu"
       onMouseDown={(event) => event.preventDefault()}
-      className="menu-surface mobile-menu-glass absolute bottom-full left-0 z-30 mb-2 w-[28rem] max-w-[calc(100vw-24px)] overflow-hidden rounded-[16px] border border-border bg-popover p-2 shadow-menu"
+      className="menu-surface mobile-menu-glass absolute bottom-full left-0 z-30 mb-2 w-[28rem] max-w-[calc(100vw-24px)] overflow-hidden rounded-[var(--ui-radius-16)] border border-border bg-popover p-2 shadow-menu"
     >
       <MobileMenuGlassSurface />
       <div className="px-2 py-1">
@@ -815,7 +815,7 @@ export function SlashCommandMenu({
     <TooltipProvider>
       <div
         data-testid="slash-command-menu"
-        className="menu-surface mobile-menu-glass absolute right-0 bottom-full left-0 z-30 mb-2 w-full overflow-hidden rounded-[16px] border border-border bg-popover p-2 shadow-menu"
+        className="menu-surface mobile-menu-glass absolute right-0 bottom-full left-0 z-30 mb-2 w-full overflow-hidden rounded-[var(--ui-radius-16)] border border-border bg-popover p-2 shadow-menu"
       >
         <MobileMenuGlassSurface />
         <div ref={listRef} className="max-h-[22rem] overflow-y-auto">

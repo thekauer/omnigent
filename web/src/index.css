@@ -55,14 +55,10 @@
 }
 
 @theme inline {
-  --font-heading: var(--font-sans);
-  /* Native system UI font stack — defers to whatever the OS ships
-     * (San Francisco on Apple, Segoe UI on Windows, Roboto on Android),
-     * matching Tailwind's default sans so the app reads as native chrome. */
-  --font-sans:
-    ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol",
-    "Noto Color Emoji";
-  --font-mono: "Geist Mono Variable", "JetBrains Mono", ui-monospace, monospace;
+  /* Fonts, radii and shadows read the theme tokens (src/theme/tokens/registry.ts). */
+  --font-heading: var(--ui-font-title);
+  --font-sans: var(--ui-font-ui);
+  --font-mono: var(--ui-font-mono);
   /* Hero/title step — overrides Tailwind's default text-3xl (30/36)
      * with a slightly larger 32px face on the same 36px line. */
   --text-3xl: 32px;
@@ -136,27 +132,33 @@
   --color-tray: var(--tray);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
-  --radius-sm: 4px;
-  --radius-md: 6px;
-  --radius-lg: 8px;
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
-  /* One raised-surface recipe at every size: the drop is ~0.3× the blur and the
-   * spread ~−0.4× it, so each shadow gathers under the element's bottom center.
-   * Inline theme values can't reference each other, so aliases repeat a step. */
-  --shadow-xs: 0 2px 8px -3px rgb(var(--ui-shadow-neutral-rgb) / 0.08);
-  --shadow-sm: 0 4px 12px -5px rgb(var(--ui-shadow-neutral-rgb) / 0.1);
-  --shadow-md: 0 5px 16px -6px rgb(var(--ui-shadow-neutral-rgb) / 0.12);
-  --shadow-lg: 0 6px 20px -8px rgb(var(--ui-shadow-neutral-rgb) / 0.12);
-  --shadow-xl: 0 10px 32px -13px rgb(var(--ui-shadow-neutral-rgb) / 0.16);
-  --shadow-dialog: 0 14px 48px -19px rgb(var(--ui-shadow-neutral-rgb) / 0.2);
-  /* Aliases: tooltip = xs, card and composer = lg, menu = xl. */
-  --shadow-tooltip: 0 2px 8px -3px rgb(var(--ui-shadow-neutral-rgb) / 0.08);
-  --shadow-card: 0 6px 20px -8px rgb(var(--ui-shadow-neutral-rgb) / 0.12);
-  --shadow-composer: 0 6px 20px -8px rgb(var(--ui-shadow-neutral-rgb) / 0.12);
-  --shadow-menu: 0 10px 32px -13px rgb(var(--ui-shadow-neutral-rgb) / 0.16);
+  /* Bare `rounded` (Tailwind's theme key `--radius`, 0.25rem); the runtime
+   * `--radius` variable is the shadcn base, a registry alias of ui-radius-base. */
+  --radius: var(--ui-radius-sm);
+  --radius-xs: var(--ui-radius-xs);
+  --radius-sm: var(--ui-radius-sm);
+  --radius-md: var(--ui-radius-md);
+  --radius-lg: var(--ui-radius-lg);
+  --radius-xl: var(--ui-radius-xl);
+  --radius-2xl: var(--ui-radius-2xl);
+  --radius-3xl: var(--ui-radius-3xl);
+  --radius-4xl: var(--ui-radius-4xl);
+  --radius-full: var(--ui-radius-pill);
+  /* Every recipe is scaled by --ui-elevation. Aliases: tooltip = xs, card and
+   * composer = lg, menu = xl. */
+  --shadow: var(--ui-shadow-default);
+  --shadow-xs: var(--ui-shadow-xs);
+  --shadow-sm: var(--ui-shadow-sm);
+  --shadow-md: var(--ui-shadow-md);
+  --shadow-lg: var(--ui-shadow-lg);
+  --shadow-xl: var(--ui-shadow-xl);
+  --shadow-2xl: var(--ui-shadow-2xl);
+  --shadow-inner: var(--ui-shadow-inner);
+  --shadow-dialog: var(--ui-shadow-dialog);
+  --shadow-tooltip: var(--ui-shadow-xs);
+  --shadow-card: var(--ui-shadow-lg);
+  --shadow-composer: var(--ui-shadow-lg);
+  --shadow-menu: var(--ui-shadow-xl);
 }
 
 /* Keep these non-inline: `@theme inline` bakes values into utilities and
@@ -167,7 +169,9 @@
    * variants above and MOBILE_BREAKPOINT_PX in useIsMobileViewport repeat it. */
   --breakpoint-md: 73.8125rem;
   /* App-default interface/body text — every control, label, and menu item. */
-  --font-weight-normal: 450;
+  --font-weight-normal: var(--ui-weight-normal);
+  --font-weight-medium: var(--ui-weight-medium);
+  --font-weight-semibold: var(--ui-weight-strong);
   --text-ui: 1rem;
   --text-ui--line-height: 1.6;
   --text-message: var(--text-ui);
@@ -191,15 +195,10 @@
   --desktop-ui-font-size: 14px;
   --icon-size-default: 14px;
   --icon-container-default: 16px;
-  --ui-shadow-neutral-rgb: 0 0 0;
-  --ui-shadow-warm-rgb: 60 40 10;
-  --onboarding-modal-shadow: 0 24px 80px 8px #00000012;
-  /* The shadow-lg recipe, per theme, for both hover and typing. */
-  --composer-shadow: 0 6px 20px -8px rgb(0 0 0 / 12%);
 
   /* User-controlled UI font family (see Appearance settings /
    * lib/uiFontPreferences.ts). Deliberately left unset here so the `html` rule's
-   * `var(--ui-font-family, var(--font-sans))` falls back to the system stack;
+   * `var(--ui-font-family, var(--ui-font-ui))` falls back to the theme's UI font;
    * the Appearance setting sets it at runtime on documentElement. */
 
   /* ---- Inset system -------------------------------------------------------
@@ -262,20 +261,12 @@
       var(--omnigent-bottom-bar-visible)
   );
 
-  --radius: 0.5rem;
-  --radius-otto-button: 6px;
-  --radius-otto-sm: 8px;
-  --radius-otto-md: 12px;
   --ease-otto: cubic-bezier(0.34, 1.4, 0.64, 1);
   --duration-otto-fast: 180ms;
 }
 
 .dark {
   --menu-surface-backdrop-filter: blur(24px) saturate(120%);
-  --ui-shadow-neutral-rgb: 0 0 0;
-  --ui-shadow-warm-rgb: 0 0 0;
-  --onboarding-modal-shadow: 0 24px 80px 8px #00000038;
-  --composer-shadow: 0 6px 20px -8px rgb(0 0 0 / 80%);
 }
 
 /* Main-sidebar item labels use the same text-ui semantic step as Appearance
@@ -313,7 +304,7 @@
 .composer-add-menu [role="menuitem"] {
   min-height: 24px;
   gap: 8px;
-  border-radius: 8px;
+  border-radius: var(--ui-radius-lg);
   padding: 2px 6px;
   font-size: var(--text-ui);
   line-height: 20px;
@@ -322,7 +313,7 @@
 .composer-host-menu [role="menuitem"] {
   min-height: 28px;
   gap: 4px;
-  border-radius: 8px;
+  border-radius: var(--ui-radius-lg);
   padding: 4px 12px 4px 8px;
   font-size: var(--text-ui);
   line-height: 20px;
@@ -358,7 +349,7 @@
   min-height: 32px;
   align-items: center;
   gap: 8px;
-  border-radius: 8px;
+  border-radius: var(--ui-radius-lg);
   padding: 4px 12px 4px 8px;
   font-size: var(--text-ui);
   line-height: 20px;
@@ -574,10 +565,10 @@
     &[data-mobile-composer="collapsed"]:not(
         :has([data-state="open"]:not([data-composer-action="add"]))
       ) {
-      border-radius: 30px;
+      border-radius: var(--ui-radius-30);
 
       > [aria-hidden="true"] > .glass-surface {
-        border-radius: 30px !important;
+        border-radius: var(--ui-radius-30) !important;
       }
 
       > [data-composer-input-area] {
@@ -660,7 +651,7 @@
   background-color: var(--composer-header-bg);
   border: 0.5px solid color-mix(in srgb, var(--foreground) 2%, transparent);
   border-bottom: none;
-  border-radius: 16px 16px 0 0;
+  border-radius: var(--ui-radius-16) var(--ui-radius-16) 0 0;
 }
 
 /* Over the project board, a faint edge sets the tray off the background. */
@@ -701,7 +692,7 @@
     flex-wrap: wrap;
     background: transparent;
     border: 0;
-    border-radius: 20px;
+    border-radius: var(--ui-radius-20);
   }
 }
 
@@ -1024,11 +1015,11 @@
 /* Edge treatment is mode-specific but palette-independent. */
 html:not(.dark) .conversations-sidebar:not(.is-peek) {
   border-right: none;
-  box-shadow: inset -4px 0 6px -4px rgb(0 0 0 / 5%);
+  box-shadow: inset -4px 0 6px -4px rgb(0 0 0 / calc(5% * var(--ui-elevation)));
 }
 .dark .conversations-sidebar {
   border-right: 1px solid var(--sidebar-edge-border);
-  box-shadow: inset -4px 0 6px -4px rgb(0 0 0 / 5%);
+  box-shadow: inset -4px 0 6px -4px rgb(0 0 0 / calc(5% * var(--ui-elevation)));
 }
 
 .dark .workspace-panel-motion {
@@ -1542,11 +1533,11 @@ html[data-electron-mac] .breadcrumb-folder {
      the shadow stays visible while open, separating it from the strip of chat
      behind. iOS-only: the web overlay is unchanged. */
   :is([data-ios-native], [data-android-native]) .conversations-sidebar:not([data-collapsed]) {
-    box-shadow: 8px 0 28px -6px rgb(0 0 0 / 0.22);
+    box-shadow: 8px 0 28px -6px rgb(0 0 0 / calc(0.22 * var(--ui-elevation)));
   }
 
   .dark :is([data-ios-native], [data-android-native]) .conversations-sidebar:not([data-collapsed]) {
-    box-shadow: 8px 0 30px -4px rgb(0 0 0 / 0.55);
+    box-shadow: 8px 0 30px -4px rgb(0 0 0 / calc(0.55 * var(--ui-elevation)));
   }
 
   [data-ios-native] :is(input, textarea, select, [contenteditable="true"]) {
@@ -1685,8 +1676,8 @@ html[data-electron-mac] .breadcrumb-folder {
   background: linear-gradient(150deg, #ff4da6 0%, #f22286 40%, #b8185f 100%);
   border: none;
   box-shadow:
-    0 4px 16px rgba(0, 0, 0, 0.5),
-    0 1px 3px rgba(0, 0, 0, 0.4);
+    0 4px 16px rgb(0 0 0 / calc(0.5 * var(--ui-elevation))),
+    0 1px 3px rgb(0 0 0 / calc(0.4 * var(--ui-elevation)));
   color: #ffffff;
 }
 
@@ -1717,14 +1708,11 @@ html[data-electron-mac] .breadcrumb-folder {
     overflow: hidden;
   }
   html {
-    /* Font family for the whole inherited UI. Can't `@apply font-sans`: Tailwind
-     * v4's `@theme inline` inlines the literal stack, so a runtime `--font-sans`
-     * override is a no-op. Read a dedicated `--ui-font-family` (set on
-     * documentElement by the Appearance setting / lib/uiFontPreferences.ts)
-     * with the system stack as the fallback when it's unset. */
-    font-family: var(--ui-font-family, var(--font-sans));
+    /* Font family for the whole inherited UI: the Appearance setting's
+     * `--ui-font-family` (lib/uiFontPreferences.ts) over the theme's UI font. */
+    font-family: var(--ui-font-family, var(--ui-font-ui));
     font-weight: var(--font-weight-normal);
-    letter-spacing: 0em;
+    letter-spacing: var(--ui-letter-spacing);
     -webkit-font-smoothing: antialiased;
     /* Keep the desktop rem grid fixed so font preferences cannot resize icons,
      * controls, spacing, or radii. Typography is mapped separately below. */
@@ -1737,7 +1725,7 @@ html[data-electron-mac] .breadcrumb-folder {
    * is a guard against inheritance leaking in through any unpinned descendant. */
   .monaco-editor,
   .xterm {
-    font-family: var(--font-mono);
+    font-family: var(--ui-font-code);
   }
   ::selection {
     background: var(--selection-background);
@@ -1870,8 +1858,8 @@ body {
 .github-diff-stack {
   --diffs-font-size: calc(var(--text-ui) * 0.875);
   --diffs-line-height: calc(var(--diffs-font-size) * var(--text-ui--line-height));
-  --diffs-font-family: var(--font-mono);
-  --diffs-header-font-family: var(--ui-font-family, var(--font-sans));
+  --diffs-font-family: var(--ui-font-code);
+  --diffs-header-font-family: var(--ui-font-family, var(--ui-font-ui));
   --diffs-font-features: "liga" 0, "calt" 0;
 }
 
@@ -1990,7 +1978,7 @@ body {
 [data-streamdown="inline-code"][role="button"]:focus-visible {
   outline: 2px solid var(--link);
   outline-offset: 3px;
-  border-radius: 2px;
+  border-radius: var(--ui-radius-xs);
 }
 
 [data-streamdown="inline-code"][role="button"] {
@@ -2294,7 +2282,7 @@ body {
   width: 1.625rem;
   height: 1.625rem;
   margin: -0.8125rem;
-  border-radius: 9999px;
+  border-radius: var(--ui-radius-pill);
   background: radial-gradient(
     circle,
     color-mix(in oklch, var(--brand-accent) 14%, transparent) 0%,
@@ -2343,7 +2331,7 @@ body {
   width: 1.125rem;
   height: 1.125rem;
   margin: -0.5625rem;
-  border-radius: 9999px;
+  border-radius: var(--ui-radius-pill);
   border: 1.5px solid color-mix(in oklch, var(--brand-accent) 55%, transparent);
   opacity: 0;
   pointer-events: none;
@@ -2425,7 +2413,7 @@ body {
 .md-comment {
   background-color: color-mix(in oklch, var(--warning) 30%, transparent);
   border-bottom: 2px solid color-mix(in oklch, var(--warning) 60%, transparent);
-  border-radius: 2px;
+  border-radius: var(--ui-radius-xs);
   cursor: pointer;
 }
 
@@ -2439,13 +2427,13 @@ body {
 .md-comment-pending {
   background-color: color-mix(in oklch, var(--primary) 20%, transparent);
   border-bottom: 2px solid color-mix(in oklch, var(--primary) 50%, transparent);
-  border-radius: 2px;
+  border-radius: var(--ui-radius-xs);
 }
 
 /* Find-in-file matches in the markdown editor — all matches dim, current match strong */
 .md-search-match {
   background-color: color-mix(in oklch, var(--warning) 30%, transparent);
-  border-radius: 2px;
+  border-radius: var(--ui-radius-xs);
 }
 .md-search-match-current {
   background-color: color-mix(in oklch, var(--warning) 70%, transparent);
@@ -2712,12 +2700,12 @@ body {
   font-size: 0.85em;
   background: var(--code-bg);
   padding: 0.15em 0.35em;
-  border-radius: 3px;
+  border-radius: var(--ui-radius-3);
 }
 .tiptap-md-content .ProseMirror pre {
   background: var(--muted);
   padding: 1em;
-  border-radius: 6px;
+  border-radius: var(--ui-radius-md);
   overflow-x: auto;
   margin: 0.75em 0;
 }
@@ -2793,7 +2781,7 @@ body {
 }
 .tiptap-md-content .ProseMirror img.ProseMirror-selectednode {
   outline: 2px solid var(--primary);
-  border-radius: 2px;
+  border-radius: var(--ui-radius-xs);
 }
 .tiptap-md-content .ProseMirror .tableWrapper {
   overflow-x: auto;
@@ -2833,7 +2821,7 @@ body {
   height: 100%; /* fallback before JS runs */
   width: 3px;
   z-index: 20;
-  border-radius: 2px;
+  border-radius: var(--ui-radius-xs);
 }
 /* Cursor when hovering over a resizable column border */
 .tiptap-md-content .resize-cursor {
@@ -2843,7 +2831,7 @@ body {
 .theme-contrast-range {
   appearance: none;
   height: 0.375rem;
-  border-radius: 9999px;
+  border-radius: var(--ui-radius-pill);
   background: linear-gradient(
     to right,
     var(--primary) 0%,
@@ -2854,12 +2842,12 @@ body {
 }
 .theme-contrast-range::-webkit-slider-runnable-track {
   height: 0.375rem;
-  border-radius: 9999px;
+  border-radius: var(--ui-radius-pill);
   background: transparent;
 }
 .theme-contrast-range::-moz-range-track {
   height: 0.375rem;
-  border-radius: 9999px;
+  border-radius: var(--ui-radius-pill);
   background: transparent;
 }
 .theme-contrast-range::-moz-range-progress {
@@ -2871,14 +2859,14 @@ body {
   margin-top: -0.1875rem;
   appearance: none;
   border: 0;
-  border-radius: 9999px;
+  border-radius: var(--ui-radius-pill);
   background: var(--primary);
 }
 .theme-contrast-range::-moz-range-thumb {
   width: 0.75rem;
   height: 0.75rem;
   border: 0;
-  border-radius: 9999px;
+  border-radius: var(--ui-radius-pill);
   background: var(--primary);
 }
 :root:not(.dark)[data-theme="custom"][data-custom-translucent-sidebar]

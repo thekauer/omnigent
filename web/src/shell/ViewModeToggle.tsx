@@ -51,7 +51,7 @@ export function ViewModeToggle({ hotkeyEnabled = true, alwaysVisible = false } =
       data-testid="view-mode-toggle"
       // Two 36×24 segments separated by 2px make a flush 74×24 track.
       // Narrow layouts fold the switch into the header kebab.
-      className="flex h-6 w-[74px] mobile-app:h-auto mobile-app:w-auto shrink-0 items-center gap-0.5 rounded-[6px] bg-muted p-0 dark:bg-[var(--segmented-trough-bg)]"
+      className="flex h-6 w-[74px] mobile-app:h-auto mobile-app:w-auto shrink-0 items-center gap-0.5 rounded-md bg-muted p-0 dark:bg-[var(--segmented-trough-bg)]"
     >
       <ViewModeSegment
         label="Chat view"
@@ -115,7 +115,7 @@ function ViewModeSegment({
             data-testid={testId}
             componentId={componentId}
             className={cn(
-              "h-6 w-9 mobile-touch-target rounded-[6px] border px-2.5 py-0",
+              "h-6 w-9 mobile-touch-target rounded-md border px-2.5 py-0",
               active
                 ? "border-border bg-background text-foreground shadow-sm hover:bg-background dark:border-transparent dark:bg-[var(--segmented-active-bg)] dark:hover:bg-[var(--segmented-active-bg)]"
                 : "border-transparent text-muted-foreground hover:bg-transparent hover:text-foreground dark:bg-[var(--segmented-inactive-bg)] dark:hover:bg-[var(--segmented-inactive-bg)]",

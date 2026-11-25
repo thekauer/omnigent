@@ -6,12 +6,10 @@
 // changes without resizing icons, controls, or spacing. With no saved choice,
 // CSS supplies a 14px desktop default and a 15px mobile default.
 //
-// Font family works the analogous way with `--ui-font-family`. Note it can't
-// reuse `--font-sans`: Tailwind v4's `@theme inline` block inlines the literal
-// stack into the `font-sans` utility instead of a `var()` reference, so setting
-// `--font-sans` at runtime is a no-op. The `html` rule reads
-// `var(--ui-font-family, var(--font-sans))`, so an unset family falls back to
-// the system stack and any value we set on the style root wins.
+// Font family works the analogous way with `--ui-font-family`, a layer over the
+// theme's UI font token `--ui-font-ui`: the `html` rule reads
+// `var(--ui-font-family, var(--ui-font-ui))`, so an unset family falls back to the
+// theme's font and any value we set on the style root wins.
 //
 // The DOM mutations target `getStyleRoot()`, not `document.documentElement`
 // directly: embedded, the scoped `.omnigent-app` redefines the font tokens
@@ -128,7 +126,7 @@ export function applyStoredUiFontSize(): void {
 
 const FONT_FAMILY_STORAGE_KEY = "omnigent:ui-font-family";
 
-/** Empty string = "System default": no override, falls back to `--font-sans`. */
+/** Empty string = "System default": no override, falls back to `--ui-font-ui`. */
 export const UI_FONT_FAMILY_DEFAULT = "";
 
 /** Longest family name we'll accept — a guard against a corrupt/oversized entry. */
@@ -195,7 +193,7 @@ export function writeUiFontFamily(name: string): void {
  * font. An empty name removes the property, restoring the system stack.
  *
  * The chosen family is applied WITH the system stack appended
- * (`<name>, var(--font-sans)`) so a name that isn't installed — or a partial one
+ * (`<name>, var(--ui-font-ui)`) so a name that isn't installed — or a partial one
  * typed so far — degrades to the app's default sans rather than the browser's
  * default serif. (The `var(--ui-font-family, …)` fallback in the CSS only fires
  * when the property is unset, not when it holds an unusable name, so the
@@ -210,5 +208,5 @@ export function applyUiFontFamily(name: string): void {
     root.style.removeProperty("--ui-font-family");
     return;
   }
-  root.style.setProperty("--ui-font-family", `${normalized}, var(--font-sans)`);
+  root.style.setProperty("--ui-font-family", `${normalized}, var(--ui-font-ui)`);
 }

@@ -244,7 +244,7 @@ describe("AgentInfoButton hover behavior", () => {
       "menu-surface",
       "max-h-[var(--radix-popover-content-available-height)]",
       "overflow-y-auto",
-      "rounded-[12px]",
+      "rounded-[var(--ui-radius-12)]",
       "ring-0",
     );
     expect(screen.getByText("Databricks_coding_agent")).toBeInTheDocument();

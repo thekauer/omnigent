@@ -261,7 +261,7 @@ export function ImportContextModal({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         showCloseButton={false}
-        className="flex h-[640px] max-h-[85vh] flex-col gap-0 overflow-hidden rounded-[20px] p-0 sm:max-w-[560px]"
+        className="flex h-[640px] max-h-[85vh] flex-col gap-0 overflow-hidden rounded-[var(--ui-radius-20)] p-0 sm:max-w-[560px]"
       >
         <ImportContextBody
           {...body}

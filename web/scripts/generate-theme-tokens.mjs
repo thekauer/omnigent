@@ -3,7 +3,11 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { format, resolveConfig } from "prettier";
 import { PALETTES, PALETTE_TOKEN_CSS_NAMES } from "../src/lib/themePalette.ts";
-import { DEFAULT_TOKENS, isDerivedValue } from "../src/theme/tokens/registry.ts";
+import {
+  DEFAULT_TOKENS,
+  SYNTAX_INITIAL_VALUES,
+  isDerivedValue,
+} from "../src/theme/tokens/registry.ts";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const outputPath = resolve(root, "src/themeTokens.generated.css");
@@ -16,8 +20,14 @@ if (unexpectedArgs.length > 0) {
 
 const MODES = ["light", "dark"];
 
+// A custom property keeps the line breaks of its value, so a shadow stays on one line.
+function declaration(token, value) {
+  const line = `  --${token.id}: ${value};`;
+  return token.kind === "shadow" ? `  /* prettier-ignore */\n${line}` : line;
+}
+
 function rule(selector, declarations) {
-  return `${selector} {\n${declarations.map(([name, value]) => `  ${name}: ${value};`).join("\n")}\n}`;
+  return `${selector} {\n${declarations.join("\n")}\n}`;
 }
 
 // Registry defaults: light on `:root` (dark mode inherits it unless the token sets
@@ -26,24 +36,43 @@ function defaultRules() {
   return MODES.map((mode) =>
     rule(
       mode === "light" ? ":root" : ".dark",
-      DEFAULT_TOKENS.filter((token) => token.default?.[mode] !== undefined).map((token) => [
-        `--${token.id}`,
-        token.default[mode],
-      ]),
+      DEFAULT_TOKENS.filter((token) => token.default?.[mode] !== undefined).map((token) =>
+        declaration(token, token.default[mode]),
+      ),
     ),
   );
 }
 
-// Derived defaults again on every root a palette stamps, so a token computed from
-// other tokens resolves against that root's own values (the embed's inner root).
+// Registered tokens compute to plain values, so their aliases read those values.
+function propertyRules() {
+  return DEFAULT_TOKENS.filter((token) => token.syntax).map(
+    (token) =>
+      `@property --${token.id} {\n  syntax: "${token.syntax}";\n  inherits: true;\n  initial-value: ${SYNTAX_INITIAL_VALUES[token.syntax]};\n}`,
+  );
+}
+
+// A root's value in a mode: dark mode inherits the light default unless it sets one.
+function modeValue(token, mode) {
+  return mode === "dark" ? (token.default?.dark ?? token.default?.light) : token.default?.light;
+}
+
+// Derived defaults again on the theme roots below the top one (the embed's inner
+// root, a child of its scope root) and on palette-stamped roots, so a token computed
+// from other tokens resolves against that root's own values. A dark root gets the
+// light formula of a token without a dark default, as it would inherit it.
+const DERIVED_SELECTORS = {
+  light: ":root:not(.dark)[data-theme], :root > :not(.dark)[data-theme]",
+  dark: ":root.dark, :root > .dark",
+};
+
 function derivedRules() {
   return MODES.map((mode) =>
     rule(
-      mode === "light" ? "[data-theme]:not(.dark)" : ".dark[data-theme]",
+      DERIVED_SELECTORS[mode],
       DEFAULT_TOKENS.filter((token) => {
-        const value = token.default?.[mode];
+        const value = modeValue(token, mode);
         return value !== undefined && isDerivedValue(value);
-      }).map((token) => [`--${token.id}`, token.default[mode]]),
+      }).map((token) => declaration(token, modeValue(token, mode))),
     ),
   );
 }
@@ -60,24 +89,23 @@ function selectorFor(palette, mode) {
 function paletteRules(palette, mode) {
   const selector = selectorFor(palette, mode);
   const tokens = palette.tokens[mode];
-  const declarations = Object.entries(PALETTE_TOKEN_CSS_NAMES).map(([key, cssName]) => [
-    `--${cssName}`,
-    tokens[key],
-  ]);
+  const declarations = Object.entries(PALETTE_TOKEN_CSS_NAMES).map(
+    ([key, cssName]) => `  --${cssName}: ${tokens[key]};`,
+  );
   return [rule(selector, declarations)];
 }
 
 function customRules(mode) {
   const selector =
     mode === "light" ? ':root:not(.dark)[data-theme="custom"]' : '.dark[data-theme="custom"]';
-  const declarations = Object.values(PALETTE_TOKEN_CSS_NAMES).map((cssName) => [
-    `--${cssName}`,
-    `var(--custom-${mode}-${cssName})`,
-  ]);
+  const declarations = Object.values(PALETTE_TOKEN_CSS_NAMES).map(
+    (cssName) => `  --${cssName}: var(--custom-${mode}-${cssName});`,
+  );
   return [rule(selector, declarations)];
 }
 
 const rules = [
+  ...propertyRules(),
   ...defaultRules(),
   ...PALETTES.flatMap((palette) => MODES.flatMap((mode) => paletteRules(palette, mode))),
   ...MODES.flatMap(customRules),

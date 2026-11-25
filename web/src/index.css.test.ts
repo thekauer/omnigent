@@ -907,7 +907,7 @@ describe("index.css sidebar canvas", () => {
   });
 
   it("uses the shared inset shadow with a dark-only right border", () => {
-    const shadow = "inset -4px 0 6px -4px rgb(0 0 0 / 5%)";
+    const shadow = "inset -4px 0 6px -4px rgb(0 0 0 / calc(5% * var(--ui-elevation)))";
     expect(lightEdgeRule).toContain(`box-shadow: ${shadow}`);
     expect(darkEdgeRule).toContain(`box-shadow: ${shadow}`);
     expect(lightEdgeRule).toContain("border-right: none");
@@ -1156,19 +1156,25 @@ describe("index.css shadow tokens", () => {
   const themeBlock = cssSource.match(/@theme inline \{[^}]*\}/)?.[0].replace(/\s+/g, " ");
 
   it.each([
-    "--shadow-xs: 0 2px 8px -3px rgb(var(--ui-shadow-neutral-rgb) / 0.08)",
-    "--shadow-sm: 0 4px 12px -5px rgb(var(--ui-shadow-neutral-rgb) / 0.1)",
-    "--shadow-md: 0 5px 16px -6px rgb(var(--ui-shadow-neutral-rgb) / 0.12)",
-    "--shadow-lg: 0 6px 20px -8px rgb(var(--ui-shadow-neutral-rgb) / 0.12)",
-    "--shadow-xl: 0 10px 32px -13px rgb(var(--ui-shadow-neutral-rgb) / 0.16)",
-    "--shadow-dialog: 0 14px 48px -19px rgb(var(--ui-shadow-neutral-rgb) / 0.2)",
-    // Aliases repeat their step: tooltip = xs, card and composer = lg, menu = xl.
-    "--shadow-tooltip: 0 2px 8px -3px rgb(var(--ui-shadow-neutral-rgb) / 0.08)",
-    "--shadow-card: 0 6px 20px -8px rgb(var(--ui-shadow-neutral-rgb) / 0.12)",
-    "--shadow-composer: 0 6px 20px -8px rgb(var(--ui-shadow-neutral-rgb) / 0.12)",
-    "--shadow-menu: 0 10px 32px -13px rgb(var(--ui-shadow-neutral-rgb) / 0.16)",
-  ])("defines %s", (token) => {
-    expect(themeBlock).toContain(token);
+    ["--shadow-xs", "xs", "0 2px 8px -3px", "0.08"],
+    ["--shadow-sm", "sm", "0 4px 12px -5px", "0.1"],
+    ["--shadow-md", "md", "0 5px 16px -6px", "0.12"],
+    ["--shadow-lg", "lg", "0 6px 20px -8px", "0.12"],
+    ["--shadow-xl", "xl", "0 10px 32px -13px", "0.16"],
+    ["--shadow-dialog", "dialog", "0 14px 48px -19px", "0.2"],
+    // Aliases read their step: tooltip = xs, card and composer = lg, menu = xl.
+    ["--shadow-tooltip", "xs", "0 2px 8px -3px", "0.08"],
+    ["--shadow-card", "lg", "0 6px 20px -8px", "0.12"],
+    ["--shadow-composer", "lg", "0 6px 20px -8px", "0.12"],
+    ["--shadow-menu", "xl", "0 10px 32px -13px", "0.16"],
+  ])("defines %s from its elevation-scaled recipe", (theme, step, geometry, alpha) => {
+    expect(themeBlock).toContain(`${theme}: var(--ui-shadow-${step});`);
+    expect(generatedTokenCssSource).toContain(
+      `--ui-shadow-${step}: ${geometry} rgb(var(--ui-shadow-neutral-rgb) / var(--ui-shadow-${step}-alpha));`,
+    );
+    expect(generatedTokenCssSource).toContain(
+      `--ui-shadow-${step}-alpha: calc(${alpha} * var(--ui-elevation));`,
+    );
   });
 
   it("uses the specified light colors and black dark-mode counterparts", () => {

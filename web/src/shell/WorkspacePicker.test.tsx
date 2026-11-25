@@ -1180,7 +1180,7 @@ describe("WorkspacePicker modal actions", () => {
       expect(screen.getByTestId("workspace-picker")).toHaveClass(
         "h-[min(600px,calc(100dvh-4rem))]",
         "w-[min(800px,calc(100vw-2rem))]",
-        "rounded-[20px]",
+        "rounded-[var(--ui-radius-20)]",
       );
       expect(screen.getByTestId("workspace-picker-body")).toHaveClass(
         "md:grid-cols-[minmax(0,1.2fr)_minmax(18rem,0.8fr)]",
