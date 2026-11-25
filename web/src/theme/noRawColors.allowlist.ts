@@ -35,6 +35,8 @@ export const RAW_COLOR_EXEMPT: Readonly<Record<string, string>> = {
   "lib/themePalette.ts": "palette definitions",
   // The vendored file tree's own stylesheet, bridged by fileTreeStyle.ts.
   "components/file-tree/vendored/file-tree.css": "vendored stylesheet",
+  // The pre-M1 index.css values the registry test compares the defaults with (test data).
+  "theme/tokens/legacyIndexCss.fixture.json": "test fixture of the pre-registry values",
   // File-type icon colours keyed by file type, a copy of the vendored tree's palette.
   "components/file-tree/fileTypeIconPalette.ts": "file-type icon palette",
 };
@@ -83,7 +85,7 @@ export const RAW_COLOR_ALLOWLIST: Readonly<Record<string, RawCounts>> = {
   "components/scheduled/TriggerTemplateFields.tsx": { palette: 9 },
   "components/scheduled/triggerTemplates.ts": { palette: 8 },
   "components/SlashCommandMenu.tsx": { palette: 5, rounded: 2 },
-  "components/theme/ThemeColorPicker.tsx": { hex: 10, colorFunction: 1 },
+  "components/theme/ThemeColorPicker.tsx": { hex: 11, colorFunction: 1 },
   "components/ui/button.tsx": { rounded: 5 },
   "components/ui/context-menu.tsx": { rounded: 2 },
   "components/ui/dialog.tsx": { hex: 1, rounded: 1 },
@@ -102,6 +104,7 @@ export const RAW_COLOR_ALLOWLIST: Readonly<Record<string, RawCounts>> = {
   "hooks/useCommandPaletteHotkey.ts": { hex: 3 },
   "hooks/useSuppressBrowserView.ts": { hex: 1 },
   "index.css": { hex: 38, colorFunction: 20, named: 1 },
+  "lib/customTheme.ts": { hex: 2 },
   "lib/gitProviders.ts": { hex: 1 },
   "lib/pullRequestReference.ts": { hex: 1 },
   "lib/workflow.ts": { hex: 1 },
@@ -147,6 +150,7 @@ export const RAW_COLOR_ALLOWLIST: Readonly<Record<string, RawCounts>> = {
   "shell/MobileHeaderButton.tsx": { rounded: 1 },
   "shell/NewChatDialog.tsx": { hex: 1, rounded: 2, textPx: 2 },
   "shell/ProjectPicker.tsx": { textPx: 2 },
+  "shell/PullRequestLabels.tsx": { hex: 1 },
   "shell/PullRequestPanelDetails.tsx": { hex: 1, textPx: 1, colorFunction: 1 },
   "shell/railTabs.ts": { textPx: 1 },
   "shell/Sidebar.tsx": { palette: 1, rounded: 4, textPx: 4 },
@@ -162,5 +166,6 @@ export const RAW_COLOR_ALLOWLIST: Readonly<Record<string, RawCounts>> = {
   "shell/WorkspacePicker.tsx": { rounded: 1 },
   "shell/workspaceTabs/placeTitle.ts": { hex: 1 },
   "shell/workspaceTabs/recentPullRequestRow.ts": { hex: 1 },
+  "shell/workspaceTabs/WorkspaceStripTab.tsx": { named: 1 },
   "theme/noRawColors.allowlist.ts": { rounded: 1 },
 };

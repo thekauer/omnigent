@@ -100,15 +100,41 @@ export const NAMED_COLORS = (
   "seagreen seashell sienna silver skyblue slateblue slategray slategrey snow springgreen " +
   "steelblue tan teal thistle tomato turquoise violet wheat white whitesmoke yellow yellowgreen"
 ).split(" ");
-const NAMED_WORD = new RegExp(
-  `(?<![A-Za-z0-9-])(?:${[...NAMED_COLORS].sort((a, b) => b.length - a.length).join("|")})(?![A-Za-z0-9-])`,
-  "gi",
+/** CSS's system colours, current and deprecated, which count as named colours. */
+export const SYSTEM_COLORS = (
+  "AccentColor AccentColorText ActiveText ButtonBorder ButtonFace ButtonText Canvas " +
+  "CanvasText Field FieldText GrayText Highlight HighlightText LinkText Mark MarkText " +
+  "SelectedItem SelectedItemText VisitedText ActiveBorder ActiveCaption AppWorkspace " +
+  "Background ButtonHighlight ButtonShadow CaptionText InactiveBorder InactiveCaption " +
+  "InactiveCaptionText InfoBackground InfoText Menu MenuText Scrollbar ThreeDDarkShadow " +
+  "ThreeDFace ThreeDHighlight ThreeDLightShadow ThreeDShadow Window WindowFrame WindowText"
+).split(" ");
+// Not after `.`: a property read (`colors.background`) names a value, not a colour.
+const wordPattern = (words: readonly string[], flags: string) =>
+  new RegExp(
+    `(?<![A-Za-z0-9.$-])(?:${[...words].sort((a, b) => b.length - a.length).join("|")})(?![A-Za-z0-9-])`,
+    flags,
+  );
+const NAMED_WORD = wordPattern(NAMED_COLORS, "gi");
+// System colours as CSS writes them, and the compound names in lower case too; a lower-case
+// `canvas`, `field` or `menu` is a word, not a colour.
+const SYSTEM_WORD = wordPattern(
+  [
+    ...SYSTEM_COLORS,
+    ...SYSTEM_COLORS.filter((name) => /[A-Z].*[A-Z]/.test(name)).map((name) => name.toLowerCase()),
+  ],
+  "g",
 );
 
 /** What the guard counts by pattern, by category. */
 export const RAW_PATTERNS = {
-  /** `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, also after `_` in arbitrary values. */
-  hex: /(?<![&A-Za-z0-9])#(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})(?![A-Za-z0-9-])/g,
+  /**
+   * `#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`, also after `_` in arbitrary values, written
+   * with an escaped `#` (`\x23`, `\u0023`, `\u{23}`), and a template literal's `#${…}`
+   * whose expression reads a colour (`color`, `hex`, `rgb`, `channel(`), not an id. A colour
+   * built by concatenation (`"#" + hex`) or from other names is out of scope.
+   */
+  hex: /(?:(?<![&A-Za-z0-9])#|\\x23|\\u0023|\\u\{23\})(?:[0-9a-fA-F]{8}|[0-9a-fA-F]{6}|[0-9a-fA-F]{3,4})(?![A-Za-z0-9-])|(?<![&A-Za-z0-9])#\$\{(?=[^}]{0,80}?(?:[Cc]olou?r|[Hh]ex|[Rr][Gg][Bb]|channel\())/g,
   /**
    * Tailwind's palette: steps and white/black in a colour utility (any variant, with an
    * alpha), its `--color-<hue>-<n>` variables however they are read (`var()`,
@@ -175,6 +201,7 @@ function namedColorOffsets(text: string, stylesheet: boolean): Set<number> {
   const offsets = new Set<number>();
   const collect = (value: string, at: number) => {
     for (const match of value.matchAll(NAMED_WORD)) offsets.add(at + match.index);
+    for (const match of value.matchAll(SYSTEM_WORD)) offsets.add(at + match.index);
   };
   const scan = (pattern: RegExp, source: string, base: number) => {
     for (const match of source.matchAll(pattern)) {
@@ -249,7 +276,7 @@ export function countRaw(text: string, { stylesheet = false } = {}): RawCounts {
   return counts;
 }
 
-const SOURCE = /\.(?:ts|tsx|js|jsx|mjs|css)$/;
+const SOURCE = /\.(?:ts|tsx|js|jsx|mjs|css|scss|json|html)$/;
 const NOT_SOURCE = /\.(?:test|stories)\.[^.]+$|\.d\.ts$/;
 
 function relativeToSrc(path: string): string {
@@ -277,7 +304,7 @@ function isExempt(file: string): boolean {
 
 function countFile(path: string): RawCounts {
   return countRaw(withoutDataBlocks(readFileSync(path, "utf8")), {
-    stylesheet: path.endsWith(".css"),
+    stylesheet: /\.s?css$/.test(path),
   });
 }
 
@@ -376,6 +403,28 @@ describe("raw colours in the UI sources", () => {
       hex: 3,
     });
     expect(countRaw("issue#123 a&#x27;b url#fff")).toEqual({});
+  });
+
+  it("finds escaped and interpolated hex colours", () => {
+    expect(
+      countRaw('const a = "\\x23fff"; const b = "\\u0023abcdef"; const c = "\\u{23}0008";'),
+    ).toEqual({ hex: 3 });
+    expect(
+      countRaw("const d = `#${hex}`; const e = `#${channel(r)}${channel(g)}`; `#${label.color}`"),
+    ).toEqual({ hex: 3 });
+    expect(
+      countRaw('const f = "\\x23 is a hash"; `item#${n}` `#${id}` `url(#${maskId})` `#${channel}`'),
+    ).toEqual({});
+  });
+
+  it("finds CSS system colours where they are colours", () => {
+    expect(
+      countRaw('style={{ color: "CanvasText", background: "Canvas" }} [color:LinkText]'),
+    ).toEqual({ named: 3 });
+    expect(
+      countRaw(".a { outline: 1px solid Highlight; color: canvastext }", { stylesheet: true }),
+    ).toEqual({ named: 2 });
+    expect(countRaw('const label = "Highlight the Menu"; const menu = "Menu";')).toEqual({});
   });
 
   it("finds Tailwind's palette under every colour utility and hue, and its variables", () => {
@@ -534,7 +583,7 @@ describe("raw colours in the UI sources", () => {
       const lines = text.split("\n");
       for (const { start, end, reason } of dataBlocks(text)) {
         const block = lines.slice(start + 1, end).join("\n");
-        const counts = countRaw(block, { stylesheet: path.endsWith(".css") });
+        const counts = countRaw(block, { stylesheet: /\.s?css$/.test(path) });
         expect(
           Object.keys(counts).length,
           `${relativeToSrc(path)}:${start + 1} (${reason})`,
