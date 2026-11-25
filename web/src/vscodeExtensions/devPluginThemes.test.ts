@@ -201,7 +201,10 @@ describe("the dev server", () => {
     const logoResponse = await globalThis.fetch(`${baseUrl}${logo}`);
     expect(logoResponse.headers.get("content-type")).toBe("image/svg+xml");
     expect(logoResponse.headers.get("x-content-type-options")).toBe("nosniff");
-    expect(logoResponse.headers.get("content-security-policy")).toMatch(/default-src 'none'/);
+    // Opened as a document, a brand SVG may not load or style anything.
+    expect(logoResponse.headers.get("content-security-policy")).toBe(
+      "default-src 'none'; style-src 'none'; sandbox",
+    );
     expect(await logoResponse.text()).not.toContain("onload");
     const refused = await Promise.all(
       [

@@ -366,6 +366,28 @@ export interface TokenConstraint {
    * percentage stays within -100..100 clipped to the range's sign). Default 0..10000.
    */
   lengthRange?: readonly [number, number];
+  /** Whether a calc() may multiply by `infinity` (the pill radius). */
+  allowInfinity?: boolean;
+}
+
+/** The values a math expression can take, `var()`s at their tokens' ranges. */
+interface Interval {
+  readonly lo: number;
+  readonly hi: number;
+  /** Whether it reads a variable (its exact value unknown). */
+  readonly vars: boolean;
+  /** Whether it multiplies by `infinity`. */
+  readonly infinite: boolean;
+}
+
+function multiply(a: Interval, b: Interval): Interval {
+  const products = [a.lo * b.lo, a.lo * b.hi, a.hi * b.lo, a.hi * b.hi];
+  return {
+    lo: Math.min(...products),
+    hi: Math.max(...products),
+    vars: a.vars || b.vars,
+    infinite: a.infinite || b.infinite,
+  };
 }
 
 const BORDER_STYLES = [
@@ -385,6 +407,9 @@ const WEIGHT_RANGE = [1, 1000] as const;
 export const DEFAULT_LENGTH_RANGE = [0, 10_000] as const;
 /** The largest literal a calc() in a value may hold (lengths in px, or plain numbers). */
 const MATH_LITERAL_LIMIT = 10_000;
+/** A colour channel's numbers and angles (rgb's 255, a hue's degrees, lab's axes). */
+const CHANNEL_RANGE = [-1000, 1000] as const;
+const GRADIENT_STOP_LIMIT = 32;
 const ROW_RANGE = [0, 400] as const;
 const TEXT_SIZE_RANGE = [0, 200] as const;
 const TRACKING_RANGE = [-100, 100] as const;
@@ -394,6 +419,7 @@ const CSS_WIDE_KEYWORDS = new Set(["initial", "inherit", "unset", "revert", "rev
 /** The registry tokens with limits beyond their kind. */
 export const TOKEN_CONSTRAINTS: Readonly<Record<string, TokenConstraint>> = {
   "ui-elevation": { range: [0, 1] },
+  "ui-radius-pill": { allowInfinity: true },
   "omnigent-elevation": { internal: true },
   "ui-weight-normal": { range: WEIGHT_RANGE },
   "ui-weight-medium": { range: WEIGHT_RANGE },
@@ -734,42 +760,142 @@ class ValueChecker {
     return nodes[0]!;
   }
 
-  /** A math expression: operands (numbers, dimensions, var(), nested math) and operators. */
-  private math(nodes: readonly CssNode[], units: ReadonlySet<string>): void {
-    if (nodes.length === 0) fail("empty calc()");
-    let expectOperand = true;
-    for (const node of nodes) {
-      if (expectOperand) {
-        if (node.type === "number") {
-          if (node.unit !== "" && !units.has(node.unit)) fail(`unit ${node.unit} not allowed`);
-          const scale = node.unit === "rem" || node.unit === "em" ? 16 : 1;
-          if (Math.abs(node.value * scale) > MATH_LITERAL_LIMIT) {
-            fail(`${formatNumber(node.value)}${node.unit} is too large for calc()`);
-          }
-        } else if (node.type === "ident" && /^-?infinity$/i.test(node.value)) {
-          // `calc(var(--ui-radius-base) * infinity)`, the pill radius.
-        } else if (node.type === "group") {
-          this.math(node.args, units);
-        } else if (node.type === "function" && MATH_FUNCTIONS.has(node.name)) {
-          this.mathFunction(node, units);
-        } else if (!this.variable(node)) {
-          fail("calc() takes numbers, lengths and var()");
-        }
-        expectOperand = false;
-      } else {
-        if (node.type !== "op" && node.type !== "slash") fail("calc() needs an operator");
-        expectOperand = true;
-      }
-    }
-    if (expectOperand) fail("calc() ends with an operator");
+  /** The values `var(--id)` can hold inside a calc(): its token's range, else the cap. */
+  private variableBound(id: string): Interval {
+    if (/^spacing$/.test(id)) return { lo: 0, hi: 16, vars: true, infinite: false };
+    if (/^text-/.test(id)) return { lo: 0, hi: TEXT_SIZE_RANGE[1], vars: true, infinite: false };
+    const constraint = TOKEN_CONSTRAINTS[id];
+    const [lo, hi] = constraint?.lengthRange ??
+      constraint?.range ?? [-MATH_LITERAL_LIMIT, MATH_LITERAL_LIMIT];
+    return { lo, hi, vars: true, infinite: false };
   }
 
-  private mathFunction(node: Extract<CssNode, { type: "function" }>, units: ReadonlySet<string>) {
+  /** One operand of a math expression, as the interval of values it can take. */
+  private mathOperand(node: CssNode, units: ReadonlySet<string>): Interval {
+    if (node.type === "number") {
+      if (node.unit !== "" && !units.has(node.unit)) fail(`unit ${node.unit} not allowed`);
+      const scale = node.unit === "rem" || node.unit === "em" ? 16 : 1;
+      const value = node.value * scale;
+      if (Math.abs(value) > MATH_LITERAL_LIMIT) {
+        fail(`${formatNumber(node.value)}${node.unit} is too large for calc()`);
+      }
+      return { lo: value, hi: value, vars: false, infinite: false };
+    }
+    if (node.type === "ident" && /^-?infinity$/i.test(node.value)) {
+      // `calc(var(--ui-radius-base) * infinity)`, the pill radius; nowhere else.
+      if (!this.constraint.allowInfinity) fail("infinity is not allowed here");
+      return { lo: 1, hi: 1, vars: false, infinite: true };
+    }
+    if (node.type === "group") return this.math(node.args, units);
+    if (node.type === "function" && MATH_FUNCTIONS.has(node.name)) {
+      return this.mathFunction(node, units);
+    }
+    const before = this.references.length;
+    if (!this.variable(node)) fail("calc() takes numbers, lengths and var()");
+    const id = this.references[before];
+    if (id !== undefined) return this.variableBound(id);
+    // A readable host variable (Tailwind's spacing or a text size).
+    const [name] = node.type === "function" ? node.args : [];
+    return this.variableBound(name?.type === "ident" ? name.value.slice(2) : "");
+  }
+
+  /**
+   * A math expression: operands (numbers, dimensions, var(), nested math) and operators,
+   * evaluated as an interval (`*` and `/` before `+` and `-`), so its result is bounded.
+   * Division is by a number range that excludes zero only.
+   */
+  private math(nodes: readonly CssNode[], units: ReadonlySet<string>): Interval {
+    if (nodes.length === 0) fail("empty calc()");
+    const terms: { sign: 1 | -1; value: Interval }[] = [];
+    let sign: 1 | -1 = 1;
+    let product: Interval | undefined;
+    let pending: "*" | "/" | undefined;
+    let expectOperand = true;
+    const finishTerm = () => {
+      if (product) terms.push({ sign, value: product });
+      product = undefined;
+    };
+    for (const node of nodes) {
+      if (expectOperand) {
+        const value = this.mathOperand(node, units);
+        if (!product) product = value;
+        else if (pending === "*") product = multiply(product, value);
+        else {
+          if (value.infinite) fail("calc() divides only by a finite number");
+          if (value.lo <= 0 && value.hi >= 0) fail("calc() divides only by a non-zero number");
+          product = multiply(product, {
+            lo: 1 / value.hi,
+            hi: 1 / value.lo,
+            vars: value.vars,
+            infinite: false,
+          });
+        }
+        expectOperand = false;
+        continue;
+      }
+      if (node.type === "slash") pending = "/";
+      else if (node.type === "op" && node.value === "*") pending = "*";
+      else if (node.type === "op") {
+        finishTerm();
+        sign = node.value === "-" ? -1 : 1;
+        pending = undefined;
+      } else fail("calc() needs an operator");
+      expectOperand = true;
+    }
+    if (expectOperand) fail("calc() ends with an operator");
+    finishTerm();
+    return terms.reduce<Interval>(
+      (sum, term) => ({
+        lo: sum.lo + (term.sign === 1 ? term.value.lo : -term.value.hi),
+        hi: sum.hi + (term.sign === 1 ? term.value.hi : -term.value.lo),
+        vars: sum.vars || term.value.vars,
+        infinite: sum.infinite || term.value.infinite,
+      }),
+      { lo: 0, hi: 0, vars: false, infinite: false },
+    );
+  }
+
+  private mathFunction(
+    node: Extract<CssNode, { type: "function" }>,
+    units: ReadonlySet<string>,
+  ): Interval {
     const parts = splitCommas(node.args);
     if (node.name === "calc" ? parts.length !== 1 : parts.length < 1 || parts.length > 3) {
       fail(`${node.name}() takes the wrong number of arguments`);
     }
-    for (const part of parts) this.math(part, units);
+    // min(), max() and clamp() lie within the hull of their arguments.
+    return parts
+      .map((part) => this.math(part, units))
+      .reduce((hull, value) => ({
+        lo: Math.min(hull.lo, value.lo),
+        hi: Math.max(hull.hi, value.hi),
+        vars: hull.vars || value.vars,
+        infinite: hull.infinite || value.infinite,
+      }));
+  }
+
+  /**
+   * A math function whose result must lie in `range`: exactly when it reads only
+   * literals, within the range widened by its own width when it reads tokens (so a
+   * default-like `calc(var(--ui-row-line) + 8px)` passes and a multiplied one doesn't),
+   * and never beyond the calc() cap. Infinity only where the token allows it.
+   */
+  private boundedMath(
+    node: Extract<CssNode, { type: "function" }>,
+    units: ReadonlySet<string>,
+    range: readonly [number, number] = [-MATH_LITERAL_LIMIT, MATH_LITERAL_LIMIT],
+  ): void {
+    const result = this.mathFunction(node, units);
+    if (result.infinite) return;
+    if (!Number.isFinite(result.lo) || !Number.isFinite(result.hi)) fail("calc() is not finite");
+    const width = range[1] - range[0];
+    const lo = Math.max(result.vars ? range[0] - width : range[0], -MATH_LITERAL_LIMIT);
+    const hi = Math.min(result.vars ? range[1] + width : range[1], MATH_LITERAL_LIMIT);
+    if (result.lo < lo - 1e-9 || result.hi > hi + 1e-9) {
+      fail(
+        `${node.name}() can reach ${formatNumber(result.lo)}..${formatNumber(result.hi)}, outside ${formatNumber(lo)}..${formatNumber(hi)}`,
+      );
+    }
   }
 
   /** A number, dimension or math in `units` (and unitless). */
@@ -783,7 +909,7 @@ class ValueChecker {
       return;
     }
     if (node.type === "function" && MATH_FUNCTIONS.has(node.name)) {
-      this.mathFunction(node, units);
+      this.boundedMath(node, units, range);
       return;
     }
     if (!this.variable(node)) fail("expected a number");
@@ -862,9 +988,21 @@ class ValueChecker {
     if (channelNodes.length !== count && !legacyAlpha) fail(`expected ${count} channels`);
     if (slash >= 0 && alpha.length !== 1) fail("expected one alpha after /");
     const units = new Set(["%", ...ANGLE_UNITS]);
-    for (const node of [...channelNodes, ...alpha]) {
+    for (const node of channelNodes) {
       if (node.type === "ident" && CHANNEL_KEYWORDS.has(node.value.toLowerCase())) continue;
-      this.numeric(node, units);
+      this.numeric(
+        node,
+        units,
+        node.type === "number" && node.unit === "%" ? [-100, 100] : CHANNEL_RANGE,
+      );
+    }
+    for (const node of alpha) {
+      if (node.type === "ident" && CHANNEL_KEYWORDS.has(node.value.toLowerCase())) continue;
+      this.numeric(
+        node,
+        new Set(["%"]),
+        node.type === "number" && node.unit === "" ? [0, 1] : [0, 100],
+      );
     }
   }
 
@@ -875,6 +1013,10 @@ class ValueChecker {
     const node = this.single(nodes, "length");
     if (node.type === "number" && node.unit === "" && node.value !== 0) {
       fail("a length needs a unit (px, rem, em or %)");
+    }
+    if (node.type === "function" && MATH_FUNCTIONS.has(node.name)) {
+      this.boundedMath(node, LENGTH_UNITS, range);
+      return;
     }
     this.numeric(node, LENGTH_UNITS);
     if (node.type !== "number") return;
@@ -1070,7 +1212,10 @@ class ValueChecker {
   }
 
   private gradient(args: readonly CssNode[]): void {
-    for (const part of splitCommas(args)) {
+    const parts = splitCommas(args);
+    if (parts.length > GRADIENT_STOP_LIMIT)
+      fail(`a gradient takes at most ${GRADIENT_STOP_LIMIT} stops`);
+    for (const part of parts) {
       if (part.length === 0) fail("empty gradient argument");
       for (const node of part) {
         if (node.type === "ident" && GRADIENT_KEYWORDS.has(node.value.toLowerCase())) continue;
@@ -1078,10 +1223,15 @@ class ValueChecker {
           if (node.unit !== "" && !LENGTH_UNITS.has(node.unit) && !ANGLE_UNITS.has(node.unit)) {
             fail(`unit ${node.unit} not allowed in a gradient`);
           }
+          const scale = node.unit === "rem" || node.unit === "em" ? 16 : 1;
+          const limit = node.unit === "%" ? 1000 : MATH_LITERAL_LIMIT;
+          if (Math.abs(node.value * scale) > limit) {
+            fail(`${formatNumber(node.value)}${node.unit} is out of range in a gradient`);
+          }
           continue;
         }
         if (node.type === "function" && MATH_FUNCTIONS.has(node.name)) {
-          this.mathFunction(node, new Set([...LENGTH_UNITS, ...ANGLE_UNITS]));
+          this.boundedMath(node, new Set([...LENGTH_UNITS, ...ANGLE_UNITS]));
           continue;
         }
         this.color([node]);

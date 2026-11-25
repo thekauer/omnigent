@@ -105,9 +105,10 @@ describe("validateTokenValue", () => {
     );
     expect(ok("length", "calc(var(--spacing) * 2 + 1px)")).toBe("calc(var(--spacing) * 2 + 1px)");
     expect(ok("length", "max(4px, 1em)")).toBe("max(4px, 1em)");
-    expect(ok("length", "calc(var(--ui-radius-base) * infinity)")).toBe(
+    expect(ok("length", "calc(var(--ui-radius-base) * infinity)", { allowInfinity: true })).toBe(
       "calc(var(--ui-radius-base) * infinity)",
     );
+    bad("length", "calc(var(--ui-radius-base) * infinity)", /infinity/);
     bad("length", "12", /unit/);
     bad("length", "10vw", /unit/);
     bad("length", "calc(1px +)", /operator/);

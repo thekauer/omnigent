@@ -685,7 +685,8 @@ export function omnigentExtensionsDev(options: OmnigentExtensionsDevOptions = {}
         res.setHeader("X-Content-Type-Options", "nosniff");
         res.setHeader("Cache-Control", "no-cache");
         if (asset.type === "image/svg+xml") {
-          res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'");
+          // Opened as a document, a brand SVG loads and styles nothing, and runs nothing.
+          res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'none'; sandbox");
         }
         res.end(req.method === "HEAD" ? undefined : Buffer.from(asset.body));
       });

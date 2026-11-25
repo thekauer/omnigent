@@ -383,7 +383,13 @@ Defaults must match today exactly.
 - **Lengths:** px/rem/em/%, plus `calc()` of those. Literals within 0..10000px (rem and em
   at 16px; tighter per token: borders 32px, scrollbars 64px, rows and bars 400px, label
   sizes 200px, letter spacing -100..100px), percentages within 0..100, and every literal in a
-  `calc()` at most 10000 (`infinity` stays for the pill radius).
+  `calc()` at most 10000. A `calc()` (and `min()`, `max()`, `clamp()`) is evaluated as an
+  interval with each `var()` at its token's range: of literals only it must lie in the
+  token's range, reading tokens within the range widened by its own width, and never past
+  10000; it divides only by a number range that excludes zero, and `infinity` only where
+  the registry allows it (`allowInfinity`: `ui-radius-pill`). Colour channels are capped
+  (numbers and angles within -1000..1000, percentages -100..100, alpha 0..1 or 0..100%),
+  gradients at 32 stops of at most 10000px or 1000%.
 - **Other kinds:** numbers in range, durations, `cubic-bezier`, enums, shadow lists.
 - **Rejected values:**
   - `url(`, `image-set(`, `@`, `expression`, `attr(`, `env(`, `!important`

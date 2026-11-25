@@ -97,7 +97,6 @@ const ELEMENTS = new Set([
   "femerge",
   "femergenode",
 ]);
-const NAMESPACES = new Set(["http://www.w3.org/2000/svg", "http://www.w3.org/1999/xlink"]);
 const ATTRIBUTE_NAME = /^[A-Za-z_][A-Za-z0-9_.:-]*$/;
 const ELEMENT_NAME = /^[A-Za-z][A-Za-z0-9_.:-]*$/;
 const ENTITY = /&(?!(?:amp|lt|gt|quot|apos|#\d{1,7}|#x[0-9a-fA-F]{1,6});)/;
@@ -110,15 +109,29 @@ function escapeAttribute(value: string): string {
   return value.replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+const SVG_NAMESPACE = "http://www.w3.org/2000/svg";
+const XLINK_NAMESPACE = "http://www.w3.org/1999/xlink";
+// `xml:base` rebases every relative reference; `requiredExtensions` names other
+// namespaces' processors. Both are dropped.
+const DROPPED_ATTRIBUTES = new Set(["xml:base", "requiredextensions"]);
+
 /** Why an attribute is dropped, or undefined when it may stay. */
 function attributeProblem(name: string, value: string): string | undefined {
   const lower = name.toLowerCase();
   if (lower.startsWith("on")) return "an event handler";
   // Presentation attributes style a logo; a style attribute is a whole CSS parser's worth.
   if (lower === "style") return "a style attribute";
-  if (lower === "xmlns" || lower.startsWith("xmlns:")) {
-    return NAMESPACES.has(value) ? undefined : "a foreign namespace";
+  // Only the two namespaces, each under its usual name, so a prefix always means the same.
+  if (lower === "xmlns") return value === SVG_NAMESPACE ? undefined : "a foreign namespace";
+  if (lower.startsWith("xmlns:")) {
+    return lower === "xmlns:xlink" && value === XLINK_NAMESPACE ? undefined : "a foreign namespace";
   }
+  if (DROPPED_ATTRIBUTES.has(lower)) return "a reference base or extension";
+  // `xlink:` (bound above) and `xml:` are the only prefixes: no other one is declared.
+  const prefix = lower.includes(":") ? lower.slice(0, lower.indexOf(":")) : "";
+  if (prefix !== "" && prefix !== "xlink" && prefix !== "xml") return "an undeclared prefix";
+  // CSS escapes (`\75 rl(`) would spell what the checks below look for.
+  if (value.includes("\\")) return "a backslash";
   const decoded = value.replace(/&#x?[0-9a-f]+;?/gi, "\u0000");
   if (/javascript:|data:|vbscript:/i.test(value) || decoded.includes("\u0000")) {
     return "a script or data URL (or an encoded one)";
@@ -126,6 +139,7 @@ function attributeProblem(name: string, value: string): string | undefined {
   if (lower === "href" || lower === "xlink:href") {
     return /^#[A-Za-z_][A-Za-z0-9_.-]*$/.test(value) ? undefined : "an external reference";
   }
+  if (prefix === "xlink") return "an xlink attribute other than href";
   // Only local references: `url(#id)`.
   const urls = value.match(/url\([^)]*\)/gi) ?? [];
   const opened = value.match(/url\(/gi)?.length ?? 0;

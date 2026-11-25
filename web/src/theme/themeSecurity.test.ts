@@ -344,3 +344,92 @@ describe("F8: value ranges, CSS-wide keywords and __proto__", () => {
     expect(parsed.issues.join("\n")).not.toMatch(/theme rejected/);
   });
 });
+
+describe("M7 follow-up: SVG sanitizer bypasses", () => {
+  const attributesOf = (svg: string) => {
+    const result = sanitizeSvg(svg);
+    if (!result.ok) throw new Error(result.reason);
+    return result;
+  };
+
+  it("drops CSS escapes in presentation attributes", () => {
+    const { svg, issues } = attributesOf(
+      '<svg xmlns="http://www.w3.org/2000/svg"><rect fill="\\75 rl(https://evil.example/x)" stroke="red"/></svg>',
+    );
+    expect(svg).not.toContain("fill=");
+    expect(svg).toContain('stroke="red"');
+    expect(issues.join(";")).toMatch(/backslash/);
+  });
+
+  it("resolves no namespace prefix but xlink and xml", () => {
+    const { svg } = attributesOf(
+      '<svg xmlns="http://www.w3.org/2000/svg" xmlns:foo="http://www.w3.org/1999/xlink" xmlns:xlink="http://www.w3.org/1999/xlink">' +
+        '<use foo:href="https://evil.example/x.svg#a"/><use xlink:href="#ok"/><use href="#ok2"/></svg>',
+    );
+    expect(svg).not.toContain("foo:");
+    expect(svg).not.toContain("evil.example");
+    expect(svg).toContain('xlink:href="#ok"');
+    expect(svg).toContain('href="#ok2"');
+    // The xlink prefix bound to another namespace, or the default namespace changed, is dropped.
+    const rebound = attributesOf(
+      '<svg xmlns="http://www.w3.org/2000/svg"><g xmlns:xlink="http://example.com/ns" xmlns="http://www.w3.org/1999/xhtml"/></svg>',
+    ).svg;
+    expect(rebound).toBe('<svg xmlns="http://www.w3.org/2000/svg"><g/></svg>');
+  });
+
+  it("drops xml:base and requiredExtensions, and xlink attributes but href", () => {
+    const { svg, issues } = attributesOf(
+      '<svg xmlns="http://www.w3.org/2000/svg" xml:base="https://evil.example/"><g requiredExtensions="http://example.com/x" xml:space="preserve"><a xlink:show="new"/></g></svg>',
+    );
+    expect(svg).not.toMatch(/xml:base|requiredExtensions/);
+    expect(svg).toContain('xml:space="preserve"');
+    expect(issues.length).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("M7 follow-up: calc() can't get around the ranges", () => {
+  const check = (id: string, value: string) =>
+    validateTokenValue(getToken(id)!.kind, value, registryOnly, TOKEN_CONSTRAINTS[id]);
+
+  it("bounds a calc() of literals by the token's range", () => {
+    expect(check("ui-border-width", "calc(32px * 300)").ok).toBe(false);
+    expect(check("ui-border-width", "calc(16px * 2)").ok).toBe(true);
+    expect(check("ui-radius-base", "calc(10000px + 10000px)").ok).toBe(false);
+    expect(check("ui-label-size", "min(1px, 9000px)").ok).toBe(false);
+  });
+
+  it("bounds a calc() of tokens near the range, and never past the cap", () => {
+    // The registry's own formulas pass.
+    expect(check("ui-row-height", "calc(var(--ui-row-line) + calc(var(--spacing) * 2))").ok).toBe(
+      true,
+    );
+    expect(check("ui-radius-sm", "calc(var(--ui-radius-base) * 0.5)").ok).toBe(true);
+    expect(check("ui-border-width", "calc(var(--ui-border-width) * 300)").ok).toBe(false);
+    expect(check("ui-radius-base", "calc(var(--ui-radius-base) * 9 * 9 * 9)").ok).toBe(false);
+  });
+
+  it("rejects division by zero, by a token and infinity but the pill's", () => {
+    expect(check("ui-radius-base", "calc(1px / 0)").ok).toBe(false);
+    expect(check("ui-radius-base", "calc(1px / (2 - 2))").ok).toBe(false);
+    expect(check("ui-radius-base", "calc(10px / var(--ui-radius-base))").ok).toBe(false);
+    expect(check("ui-radius-base", "calc(10px / 0.0001)").ok).toBe(false);
+    expect(check("ui-radius-base", "calc(16px / 2)").ok).toBe(true);
+    expect(check("ui-radius-base", "calc(1px * infinity)").ok).toBe(false);
+    expect(check("ui-row-height", "calc(infinity * 1px)").ok).toBe(false);
+    expect(check("ui-radius-pill", "calc(var(--ui-radius-base) * infinity)").ok).toBe(true);
+    expect(check("ui-radius-pill", "calc(1px / infinity)").ok).toBe(false);
+  });
+
+  it("caps colour channels and gradient stops", () => {
+    expect(check("background", "rgb(1e5 0 0)").ok).toBe(false);
+    expect(check("background", "rgb(255 0 0 / 2)").ok).toBe(false);
+    expect(check("background", "hsl(200deg 150% 50%)").ok).toBe(false);
+    expect(check("background", "rgb(calc(255 * 1000) 0 0)").ok).toBe(false);
+    expect(check("background", "oklch(0.7 0.1 200 / 50%)").ok).toBe(true);
+    const stops = (count: number) =>
+      `linear-gradient(${Array.from({ length: count }, () => "red").join(", ")})`;
+    expect(check("ui-glass-sheen", stops(32)).ok).toBe(true);
+    expect(check("ui-glass-sheen", stops(33)).ok).toBe(false);
+    expect(check("ui-glass-sheen", "linear-gradient(red 1e6px, blue)").ok).toBe(false);
+  });
+});
