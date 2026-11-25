@@ -1,3 +1,5 @@
+import "@/test/withBuiltInThemes";
+
 // Tests for the Settings content panel. The section nav lives in the sidebar
 // card (see settingsNav); the page renders only the section named by the URL.
 // Covers the Appearance theme picker, the auth-gated Account section, and the

@@ -1,3 +1,5 @@
+import "@/test/withBuiltInThemes";
+
 // Every Settings section that can be audited now, rendered by the real page with its real
 // controls, providers and queries, against an explicit table of server answers. Every control
 // it renders answers to the catalog, and every row of an audited section renders somewhere.

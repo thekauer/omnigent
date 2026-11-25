@@ -1,3 +1,5 @@
+import "@/test/withBuiltInThemes";
+
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useNavigate } from "react-router-dom";
