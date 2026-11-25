@@ -17,7 +17,7 @@ the same commit that lands each milestone.
 | M3 | Done | Density, border, scrollbar and label-site tokens (token groups above), `.ui-label`, `.ui-scroll`, `.ui-scroll-hidden` and the `data-slot` hooks in `theme_hooks.md`; literal radii of AnimatedOmnigentPanel (`ui-radius-24`, `ui-radius-14`) and SuggestionChart (`ui-radius-md`) moved onto tokens. Against the refreshed baselines: 0 px on all screens, dumps gain only additions (standalone and embed). The DevHub preview reads the hooks and tokens instead of DOM shape, aria-labels and class text. |
 | M3 follow-ups | Done | F5: the generator writes every value on one line (Prettier wrapped long ones and the browser kept the breaks in the computed text). F2: tokens without a default and `--ui-font-family` are reset to `initial` on the top root, so in the embed a host page's variables of those names stay out. F1: every shadow scales by `--omnigent-elevation`, registered in both builds (naming section); the M2 follow-ups' "an invalid elevation on the top root keeps full shadows" held standalone only until then, since the embed's unregistered `ui-elevation` made the whole `box-shadow` (rings and insets included) invalid. F3: the harness checks every documented hook on rendered pages (the session as a multi-user server, so Share renders), and probes F1 and F2 on the embed page. Harness: 0 px; the dump gains additions only, and standalone also 112 whitespace-only text changes (`=` in the diff), embed additions only. |
 | M4 | Done | Bridges for the parallel colour systems (token groups above). xterm: `terminalTheme()` and the Codex tones read the `terminal-*` tokens through `theme/tokenValues.ts` (per mode, with `data-token-mode` probes), unset slots left out of the ITheme, re-read when a palette or theme changes them. Diffs: `DIFF_TOKEN_CSS`/`DIFF_PALETTE_CSS` read `diff-*` (the PR diff too). File tree: `FILE_TREE_THEME` maps `file-tree-*` onto the vendored `--trees-*-override` variables, the vendored CSS untouched. CodeMirror: `viewer-active-line` and the find washes are tokens, its radii `ui-radius-sm`/`-xs`. Syntax: `syntax-theme-light`/`-dark` drive Streamdown's and the code block's Shiki, CodeMirror (`refreshHighlighting`), Monaco (`useMonacoTheme`, `shell/monacoTheme.ts`) and diffs (`useDiffSyntaxTheme`); `registerSyntaxTheme` turns `tokenColors` into a Shiki theme (Monaco-safe name `registered-<n>-<name>`, loaded with `highlighter.loadTheme`, `shikiToMonaco`, diffs' `registerCustomTheme`); not wired to `contributes.themes` (M6). Glass shadows, `ui-shadow-none`, the PDF radius, the composer circle (`ui-radius-pill`) and CanvasPage's strip are on tokens. Harness (my-extensions): new `terminal-xterm`, `file-viewer` and `file-diff` screens (baselines from the Part A commit); against the baselines 0 px on all 219 screens, dumps additions only in both builds (plus Part A's whitespace-only text). A fixture theme with `tokenColors` and `terminal-*`, `diff-*`, `file-tree-*` and viewer overrides, applied live, recoloured the chat code blocks (both modes), Monaco and its diff, CodeMirror, the xterm, the PR diff and the vendored tree's git status colours (the last two only mount in workspace tabs v2, so a scratch page mounted them). The Files tab's own rows still colour status letters with raw palette classes (M5). |
-| M5 | Next | |
+| M5 | Done | Part A (M4 follow-ups): `useMonacoTheme` keeps the Monaco names it loaded (`loadSyntaxThemes` returns them), the previous pair until the new one is loaded and the default pair for a name that fails, so re-registering or unregistering the active syntax theme no longer crashes the viewer (RTL regression test); `registerSyntaxTheme` keeps only hex colours and the `fontStyle` keywords, size-capped (`theme/validate.ts`); the Shiki bridge into Monaco is installed once (`shell/monacoShikiBridge.ts`); the terminal frame reads `terminal-*` (new `-muted`, `-muted-foreground`, `-border`, `-destructive`) through `terminalSurfaceProps`; `tokenValues.ts` re-observes the embed's roots and caches reads per task; viewer backgrounds and gutters, Monaco's diff washes (`shell/monacoTokenColors.ts`, only for set tokens), the code block frames, diffstats and the review and PR trees are tokens. Harness (my-extensions): Monaco's overview ruler stays in the shots with the cursor left out, light-nord's session gets the copy-button mask; dumps refreshed from the Part A commit, dump-only (with the re-captured Monaco screens). M5: status tones, file, viewer, glass, colour picker and brand tokens (token groups above) replace the hotspots' raw colours with their exact values (Tailwind steps through `tw()`, Tailwind's own variables); a browser check of all 101 old and new class pairs in both modes found no computed difference. `lib/branding.ts` takes a brand override (M6 feeds a theme's `brand` into it). Guard `theme/noRawColors.test.ts` with `noRawColors.allowlist.ts`: before, 153 hex, 375 palette classes, 53 `rounded-[…]`, 76 `text-[Npx]`, 71 colour functions in 135 files; after, 104, 101, 53, 76, 39 in 120. Against the refreshed baselines: 0 px on all 219 screens (light-nord's session within its new spot mask), dumps additions only in both builds. |
 | M6 to M11 | Queued | |
 
 Resume notes:
@@ -31,18 +31,19 @@ Resume notes:
   `tokens-embed.json` (added tokens aside), and the baseline's Chrome version. The only
   tolerance is spot-specific: inside the baseline's recorded masks of the dark code
   blocks' copy buttons (a known one-LSB flake), at most 2 per channel, with both dumps
-  present and no token value changed or removed; 0 px everywhere else. The dumps were
-  refreshed after the M2 follow-ups; M3 only added tokens to them.
+  present and no token value changed or removed; 0 px everywhere else. Since M5 the
+  masks also cover light-nord's session, where the flake showed too. The dumps were
+  last refreshed from M5's Part A commit (dump-only).
 - A worktree needs real `node_modules` (`cp -al` of the main checkout's root and
   `web/` ones): symlinked ones resolve outside the worktree, and Vite's dev server then
   refuses the Geist Mono font, which changes every mono glyph.
-- Still literal after M4, for M5: the glass surfaces' rim highlights (light-dark
-  `color-mix` of black and white, and OmniGlassSurface's `rgba(212, 212, 216, 0.08)`
-  ring), the PDF viewer's highlight yellows, the chat's terminal-styled shell blocks
-  (`lib/terminalPalette.ts` `terminalSurfaceStyle`, used when the terminal's mode
-  differs from the app's; its colours equal the `terminal-*` defaults but are not read
-  from them), the Changes review tree's added and deleted colours (`success` and
-  `destructive`, not `file-tree-git-*`), and the 3D model viewer's colours.
+- Still literal after M5 (frozen by `theme/noRawColors.test.ts`): `index.css`'s
+  markdown alert and preview colours, the rest of the palette classes in files outside
+  the hotspots (approval and slash command cards, terminal command cards, trigger
+  templates, the design tools' marks), every `rounded-[…]` and `text-[Npx]` (the guard
+  counts them; no token yet), mask colours (`#000` in CSS masks, which only carry
+  alpha), the colour picker's hue and value gradients (the picker's data), and the
+  chat's ANSI output colours (the syntax theme's `terminal.ansi*`, not `terminal-*`).
   `onboarding-modal-shadow` is deprecated (unscaled); remove it in M6. CanvasPage's
   thin strip reads `ui-scrollbar-width` but is not a `.ui-scroll` (it has no WebKit
   styling, which `.ui-scroll` would add in Safari). No hook yet (the DevHub preview still matches them
@@ -69,6 +70,15 @@ Resume notes:
   the defaults. `syntax-theme-*` names are passed to Shiki as written; M6 validates them
   against Shiki's bundled themes and the registered ones (`registerSyntaxTheme`), and
   wires a theme's `tokenColors` to `registerSyntaxTheme`.
+
+- For M6: `theme/validate.ts` exists with the syntax theme part (hex colours,
+  `fontStyle`, size caps); add the token kinds there. Wire a theme's `brand` section to
+  `setBrandOverride` (logos as allow-listed asset URLs). Tokens whose default is a
+  Tailwind step read `var(--color-<step>)` (`tw()`): a theme replaces the token, never
+  the Tailwind variable. `shell/monacoTokenColors.ts` writes Monaco's `--vscode-*`
+  variables only for tokens with a value, so a token that must stay "unset = the
+  syntax theme's" has no default. The raw colour guard's allowlist only shrinks; new
+  UI code reads tokens.
 
 Paths are relative to the omnigent repo root unless they start with `my-extensions/`.
 
@@ -204,22 +214,44 @@ Defaults must match today exactly.
   - foreground-tertiary, border-weak, primary-cta(+foreground), destructive(+foreground)
   - tooltip-bg, tag-pink, session-active, search-match-foreground, button-icon-hover-color
   - composer, menu and card surfaces; segmented-*; app-shell-bg; selection-native
-- **Status:** success, warning, info, status-{blue,green,yellow,red,gray}.
+- **Status:** success, warning, info, status-{blue,green,yellow,red,gray}. M5's tones
+  (`status.ts`, exact Tailwind pairs): ui-{success,warning,danger,merged}-tone (a hue for
+  washes, borders and dots, used with alphas), ui-success-text(-strong/-emphasis),
+  ui-warning-text(-soft/-strong/-emphasis), ui-danger-text(-strong), ui-info-text(-strong),
+  ui-merged-text-strong, ui-warning-banner-{background,border,foreground,hover},
+  ui-warning-callout-{border,background}, ui-warning-chip-{border,hover,ring},
+  ui-merge-button(-hover/-foreground).
 - **Chart:** chart-1..5.
 - **Code and syntax** (M4, `code.ts`): code-bg, code-selection (palette), viewer-active-line,
   viewer-search-match(-selected), viewer-selection-match, code-selected-line (unset: `sidebar-active`),
   syntax-theme-light/-dark (`github-light`/`github-dark`, a bundled Shiki theme or one
-  registered with `registerSyntaxTheme`, `lib/syntaxTheme.ts`). code-inline-bg and
+  registered with `registerSyntaxTheme`, `lib/syntaxTheme.ts`). M5: viewer-background,
+  viewer-gutter-{background,foreground,active-foreground} and code-block-background (unset:
+  each surface's own), viewer-highlight-rgb (channels) and viewer-cited-line, the Shiki
+  viewer's viewer-shiki-background and viewer-mark-{cited,icon,line,active,range}, and
+  viewer-model-{background,surface} (hex, read by three.js). code-inline-bg and
   code-inline-border come with the DevHub themes (M11).
 - **Terminal** (M4, `terminal.ts`, `perMode`): terminal-{background,foreground,cursor,cursor-accent,selection},
   terminal-ansi-* (16, `black` to `bright-white`) and terminal-tone-{subtle,input,emphasis}
   (Codex's input box). An unset slot is left out of xterm's theme, so xterm's default applies.
+  M5: terminal-{muted,muted-foreground,border,destructive} for the frame (`terminalSurfaceProps`).
 - **Diff** (M4, `diff.ts`): diff-addition/deletion-base and -text, diff-number-text, diff-word-mix
   (unset: the diff's own), and diff-{line,gutter,hover}-mix with per-scheme -light/-dark defaults.
+  The base colours also tint Monaco's diff when set. M5: diff-stat-added/-deleted (`+N −M`).
 - **File tree** (M4, `fileTree.ts`): file-tree-hover, -selected(-foreground), -guide, -focus-ring,
   -radius and -git-{added,deleted,ignored,modified,renamed,untracked} (the vendored `light-dark()` pairs),
-  bridged in `fileTreeStyle.ts`.
-- **Brand (decision 7):** brand-* colours used by OttoIcon/NessieIcon and the logo accents.
+  bridged in `fileTreeStyle.ts`. M5: file-tree-row-active (the PR's changed-files list),
+  file-tree-review-added/-deleted (the Changes review tree), file-tree-status-added/-modified
+  (the Files tab's rows) and file-tree-icon-{pdf,document,spreadsheet,presentation,archive,code,image,media}.
+- **Brand (decision 7):** brand-otto-{body,shade,buddy,buddy-shade,eye,pupil} (`brand.ts`), the
+  colours OttoIcon fills its parts with; NessieIcon is `currentColor`, the accent is
+  `brand-accent` (palette). Logo, wordmark and favicon images come from the brand source
+  (`lib/branding.ts` `setBrandOverride`), not tokens.
+- **Elevation, glass** (M5): ui-glass-rim, -sheen (images), ui-glass-rim-edge/-glow,
+  ui-glass-fallback-{highlight-top,highlight-bottom,edge,glow} and
+  ui-omni-glass-{highlight-top,highlight-bottom,ring,glow,border}.
+- **Workbench** (M5): ui-color-swatch-border/-ring, ui-color-picker-ring/-handle/-handle-ring,
+  ui-qr-background.
 - **Typography:**
   - ui-font-ui, ui-font-title, ui-font-mono, ui-font-code, ui-font-label
   - ui-weight-normal/medium/strong, ui-letter-spacing
