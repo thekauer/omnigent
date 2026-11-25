@@ -5,8 +5,6 @@ import {
   type SelectedLineRange,
 } from "@pierre/diffs";
 
-export const PULL_REQUEST_DIFF_THEME = { dark: "github-dark", light: "github-light" } as const;
-
 export interface ReviewThreadAnchor {
   path: string;
   side: "LEFT" | "RIGHT";

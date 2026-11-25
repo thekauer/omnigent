@@ -28,6 +28,8 @@ export interface DocumentRange {
 export type HighlightSlice = (text: string, from: number) => Promise<DecorationSet>;
 
 const setHighlighting = StateEffect.define<DecorationSet>();
+/** Re-tokenizes what is shown, as after a syntax theme change. */
+export const refreshHighlighting = StateEffect.define<null>();
 const highlighting = StateField.define<DecorationSet>({
   create: () => Decoration.none,
   update(value, transaction) {
@@ -95,7 +97,8 @@ function covers(
 
 /**
  * Keeps the visible part of the document highlighted, re-tokenizing after the
- * reader scrolls past the highlighted slice or the document changes.
+ * reader scrolls past the highlighted slice, the document changes or a
+ * `refreshHighlighting` effect asks.
  */
 export function viewportHighlighting(highlightSlice: HighlightSlice): Extension {
   const loader = ViewPlugin.fromClass(
@@ -111,7 +114,10 @@ export function viewportHighlighting(highlightSlice: HighlightSlice): Extension 
       }
 
       update(update: ViewUpdate): void {
-        if (update.docChanged) {
+        const refreshed = update.transactions.some((transaction) =>
+          transaction.effects.some((effect) => effect.is(refreshHighlighting)),
+        );
+        if (update.docChanged || refreshed) {
           this.coveredRange = undefined;
           this.schedule(update.view, VIEWPORT_DEBOUNCE_MILLISECONDS);
         } else if (update.viewportChanged) {

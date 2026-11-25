@@ -14,7 +14,7 @@ import {
   type CSSProperties,
   type ReactNode,
 } from "react";
-import { DIFF_PALETTE_CSS, DIFF_SYNTAX_THEME } from "@/lib/diffTheme";
+import { DIFF_PALETTE_CSS, useDiffSyntaxTheme } from "@/lib/diffTheme";
 import type {
   AnnotationSide,
   CodeViewItem,
@@ -1716,9 +1716,10 @@ export function DiffReview<A = undefined>({
   }, [files]);
   // The shared pool once it's started; before that, or after it fails, its own as before.
   const workers = useDiffWorkers();
+  const syntaxTheme = useDiffSyntaxTheme();
   const highlighterOptions = useMemo(
-    () => ({ langs: languages, theme: DIFF_SYNTAX_THEME }),
-    [languages],
+    () => ({ langs: languages, theme: syntaxTheme }),
+    [languages, syntaxTheme],
   );
   const poolOptions = useMemo(
     () => ({
@@ -1746,7 +1747,7 @@ export function DiffReview<A = undefined>({
   }, [onLineSelection]);
   const options = useMemo(
     () => ({
-      theme: DIFF_SYNTAX_THEME,
+      theme: syntaxTheme,
       themeType,
       diffStyle: shownLayout,
       diffIndicators: "classic" as const,
@@ -1795,6 +1796,7 @@ export function DiffReview<A = undefined>({
       loadFullText,
       selectionCallbacks,
       onRenderError,
+      syntaxTheme,
     ],
   );
 

@@ -44,8 +44,8 @@ import { readFileViewPreferences, writeFileViewPreferences } from "@/lib/fileVie
 import { gitProviderCopy } from "@/lib/gitProviders";
 import { hasCommandModifier } from "@/lib/hotkeys";
 import { consumeLocalReviewNavigation, useLocalReviewNavigation } from "@/lib/localReviewContext";
-import { DIFF_TOKEN_CSS } from "@/lib/diffTheme";
-import { PULL_REQUEST_DIFF_THEME, type ReviewThread } from "@/lib/pullRequestReviewThreads";
+import { DIFF_TOKEN_CSS, useDiffSyntaxTheme } from "@/lib/diffTheme";
+import type { ReviewThread } from "@/lib/pullRequestReviewThreads";
 import { patchFileHashes, useViewedFiles, type PullRequestIdentity } from "@/lib/pullRequestViewed";
 import { cn } from "@/lib/utils";
 import {
@@ -979,9 +979,10 @@ export function PullRequestChangesTab({
     [conversationId, baseRef, prUrl, headSha, baseSha],
   );
 
+  const syntaxTheme = useDiffSyntaxTheme();
   const diffOptions = useMemo<DiffOptions>(
     () => ({
-      theme: PULL_REQUEST_DIFF_THEME,
+      theme: syntaxTheme,
       themeType,
       diffStyle,
       unsafeCSS: `
@@ -1005,7 +1006,7 @@ export function PullRequestChangesTab({
       // A commit's unchanged lines need its parent revision, so its context can't expand.
       loadDiffFiles: patchView ? undefined : loadDiffFiles,
     }),
-    [themeType, diffStyle, loadDiffFiles, patchView],
+    [syntaxTheme, themeType, diffStyle, loadDiffFiles, patchView],
   );
 
   // The stacked diff scrolls as one; the sidebar highlights the file at the top

@@ -35,12 +35,8 @@ import { useMonacoFilePosition } from "./useMonacoFilePosition";
 // setContentRef). Named for markdown only because that was its first caller.
 import { type FinishServerCheck, useMarkdownEditorSync } from "./useMarkdownEditorSync";
 import { useEditorAutoSave } from "./useEditorAutoSave";
-import {
-  ensureLanguage,
-  ensureMonacoReady,
-  monacoLanguageId,
-  resolvedThemeToMonaco,
-} from "./monacoSetup";
+import { ensureLanguage, ensureMonacoReady, monacoLanguageId } from "./monacoSetup";
+import { useMonacoTheme } from "./monacoTheme";
 import type { monaco } from "./monacoSetup";
 import { useMonacoCommentLayer, type CodeEditorInstance } from "./useMonacoCommentLayer";
 import { attachEditorScrollRestore } from "./useScrollRestore";
@@ -252,7 +248,7 @@ function MonacoCodeEditorInner({
   attachToAgent,
 }: InnerProps) {
   const lang = detectLang(path);
-  const monacoTheme = resolvedThemeToMonaco(useResolvedThemeMode());
+  const monacoTheme = useMonacoTheme(useResolvedThemeMode());
 
   // Gate rendering until Shiki has registered the github themes + this file's
   // grammar, so the editor never flashes Monaco's default 'vs' theme.

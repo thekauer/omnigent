@@ -1,10 +1,37 @@
 // The syntax theme diffs render with, and the colours every diff shares. A
 // colour the theme doesn't define keeps the diff's own default.
 
-import { SYNTAX_THEME_NAMES } from "./syntaxTheme";
+import { registerCustomTheme } from "@pierre/diffs";
+import { useMemo } from "react";
+import {
+  registeredSyntaxThemes,
+  shikiThemeNames,
+  SYNTAX_THEME_NAMES,
+  type SyntaxThemeNames,
+  useSyntaxThemeNames,
+} from "./syntaxTheme";
 
-/** The `theme` option for every diff. */
+/** The `theme` option a diff starts with (worker pools): the default pair. */
 export const DIFF_SYNTAX_THEME = SYNTAX_THEME_NAMES;
+
+const registeredWithDiffs = new Set<string>();
+
+/** The pair as a diff's `theme` option, its registered themes registered with diffs. */
+export function diffSyntaxTheme(names: SyntaxThemeNames): SyntaxThemeNames {
+  for (const theme of registeredSyntaxThemes(names)) {
+    const name = theme.name ?? "";
+    if (registeredWithDiffs.has(name)) continue;
+    registeredWithDiffs.add(name);
+    registerCustomTheme(name, () => Promise.resolve(theme));
+  }
+  return shikiThemeNames(names);
+}
+
+/** The `theme` option for every diff: the syntax themes the tokens name, live. */
+export function useDiffSyntaxTheme(): SyntaxThemeNames {
+  const names = useSyntaxThemeNames();
+  return useMemo(() => diffSyntaxTheme(names), [names]);
+}
 
 /**
  * The colours every diff takes from the `diff-*` theme tokens

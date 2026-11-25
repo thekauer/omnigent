@@ -5,7 +5,7 @@ import type { Range } from "@codemirror/state";
 import { Decoration, type DecorationSet } from "@codemirror/view";
 import type { ThemedToken } from "shiki";
 import { getHighlighter, type CodeLanguage } from "@/components/ai-elements/code-block";
-import { SYNTAX_THEME_NAMES } from "@/lib/syntaxTheme";
+import { ensureSyntaxThemes, shikiThemeNames, syntaxThemeNames } from "@/lib/syntaxTheme";
 
 /**
  * Upper bound for one tokenization pass. Shiki and decoration building are
@@ -55,9 +55,11 @@ export async function shikiDecorations(
   }
   const highlighter = await getHighlighter(language);
   if (!highlighter.getLoadedLanguages().includes(language)) return Decoration.none;
+  const names = syntaxThemeNames();
+  await ensureSyntaxThemes(highlighter, names);
   const result = highlighter.codeToTokens(text, {
     lang: language,
-    themes: SYNTAX_THEME_NAMES,
+    themes: shikiThemeNames(names),
   });
   return tokenDecorations(result.tokens, baseOffset);
 }

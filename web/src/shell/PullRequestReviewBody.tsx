@@ -3,8 +3,8 @@ import type { FileDiffMetadata } from "@pierre/diffs";
 import { FileDiff } from "@pierre/diffs/react";
 import { ChatCodeBlockPre, MessageResponse } from "@/components/ai-elements/message";
 import { useResolvedThemeMode } from "@/components/theme/useResolvedThemeMode";
+import { useDiffSyntaxTheme } from "@/lib/diffTheme";
 import {
-  PULL_REQUEST_DIFF_THEME,
   reviewSuggestionDiff,
   reviewSuggestionSource,
   type ReviewThread,
@@ -39,6 +39,7 @@ function ReviewSuggestion({
   replacement,
 }: ReviewCodeContext & { replacement: string }) {
   const themeType = useResolvedThemeMode();
+  const syntaxTheme = useDiffSyntaxTheme();
   const source = useMemo(() => reviewSuggestionSource(thread, fileDiff), [thread, fileDiff]);
   const diff = useMemo(
     () => source && reviewSuggestionDiff(thread.path, source, replacement),
@@ -46,13 +47,13 @@ function ReviewSuggestion({
   );
   const options = useMemo(
     () => ({
-      theme: PULL_REQUEST_DIFF_THEME,
+      theme: syntaxTheme,
       themeType,
       diffStyle: "unified" as const,
       diffIndicators: "classic" as const,
       disableFileHeader: true,
     }),
-    [themeType],
+    [syntaxTheme, themeType],
   );
   return (
     <section

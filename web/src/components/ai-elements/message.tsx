@@ -7,6 +7,7 @@ import { copyText } from "@/lib/clipboard";
 import { toggleCodeBlockWordWrap, useCodeBlockWordWrap } from "@/lib/codeWrapPreferences";
 import { getEmbedRoot } from "@/lib/host";
 import { useResolvedThemeMode } from "@/components/theme/useResolvedThemeMode";
+import { syntaxThemeKey, useSyntaxThemeNames } from "@/lib/syntaxTheme";
 import { cn } from "@/lib/utils";
 import { ShellCommandContext } from "@/shell/ShellCommandContext";
 import type { Comment } from "@/hooks/useComments";
@@ -769,6 +770,8 @@ export const MessageResponse = memo(
     ...props
   }: MessageResponseProps) => {
     const themeMode = useResolvedThemeMode();
+    // Code blocks take the syntax themes when Streamdown mounts, so it re-mounts on a change.
+    const syntaxThemes = syntaxThemeKey(useSyntaxThemeNames());
     const shellCommands = useContext(ShellCommandContext);
     const shellAction = useMemo(
       () =>
@@ -799,9 +802,9 @@ export const MessageResponse = memo(
           <LocalReviewCommentRendererContext.Provider value={renderLocalReviewComment}>
             <StreamingTextContext.Provider value={isStreaming}>
               {/* Streamdown is memoized and its comparator ignores the mermaid prop,
-              so remount on theme change to recolor already-rendered diagrams. */}
+              so remount on theme change to recolor already-rendered diagrams and code. */}
               <Streamdown
-                key={themeMode}
+                key={`${themeMode} ${syntaxThemes}`}
                 // wrap-anywhere is inherited, giving every prose descendant (including inline code) a break opportunity.
                 className={cn(
                   "message-markdown size-full wrap-anywhere [&>*:first-child]:mt-0 [&>*:last-child]:mb-0",

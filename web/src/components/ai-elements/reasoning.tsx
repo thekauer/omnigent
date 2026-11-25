@@ -8,6 +8,7 @@ import { createContext, memo, useCallback, useContext, useEffect, useMemo, useSt
 import { Streamdown } from "streamdown";
 import { MERMAID_STREAMDOWN_PROPS } from "@/components/ai-elements/MermaidBlock";
 import { useResolvedThemeMode } from "@/components/theme/useResolvedThemeMode";
+import { syntaxThemeKey, useSyntaxThemeNames } from "@/lib/syntaxTheme";
 
 import { normalizeExplicitMathDelimiters } from "./mathMarkdown";
 import { Shimmer } from "./shimmer";
@@ -185,6 +186,8 @@ export type ReasoningContentProps = ComponentProps<typeof CollapsibleContent> & 
 export const ReasoningContent = memo(({ className, children, ...props }: ReasoningContentProps) => {
   const { expandable } = useReasoning();
   const themeMode = useResolvedThemeMode();
+  // Code blocks take the syntax themes when Streamdown mounts, so it re-mounts on a change.
+  const syntaxThemes = syntaxThemeKey(useSyntaxThemeNames());
   const normalizedChildren = useMemo(() => normalizeExplicitMathDelimiters(children), [children]);
   const mermaidOptions = useMemo(() => mermaidOptionsForTheme(themeMode), [themeMode]);
 
@@ -203,10 +206,10 @@ export const ReasoningContent = memo(({ className, children, ...props }: Reasoni
     >
       <MarkdownErrorBoundary source={normalizedChildren}>
         {/* Streamdown is memoized and its comparator ignores the mermaid prop,
-            so remount on theme change to recolor already-rendered diagrams. */}
+            so remount on theme change to recolor already-rendered diagrams and code. */}
         <Streamdown
           {...MERMAID_STREAMDOWN_PROPS}
-          key={themeMode}
+          key={`${themeMode} ${syntaxThemes}`}
           plugins={STREAMDOWN_PLUGINS}
           mermaid={mermaidOptions}
           // Let links open on a plain click (and cmd/ctrl-click in a new tab)

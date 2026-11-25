@@ -1,4 +1,5 @@
 import type { CodeHighlighterPlugin, HighlightOptions, ThemeInput } from "streamdown";
+import { syntaxThemeInput, syntaxThemeNames } from "@/lib/syntaxTheme";
 
 // streamdown exports the plugin interface but not its HighlightResult type;
 // recover it from the highlight method's signature.
@@ -12,10 +13,15 @@ type HighlightResult = NonNullable<ReturnType<CodeHighlighterPlugin["highlight"]
 // call, mirroring the lazy Monaco/Shiki pattern elsewhere in the app, so the
 // engine splits into its own chunk loaded on demand. It satisfies the same
 // CodeHighlighterPlugin contract Streamdown consumes: getThemes() returns the
-// default themes synchronously, and highlight() returns null while the engine
+// current themes synchronously, and highlight() returns null while the engine
 // loads, resolving tokens through the callback once it's ready.
 
-const DEFAULT_THEMES: [ThemeInput, ThemeInput] = ["github-light", "github-dark"];
+// The themes the `syntax-theme-*` tokens name, read when a Streamdown mounts (the
+// message re-mounts it when they change, see useSyntaxThemeNames).
+const currentThemes = (): [ThemeInput, ThemeInput] => {
+  const names = syntaxThemeNames();
+  return [syntaxThemeInput(names.light), syntaxThemeInput(names.dark)];
+};
 
 let realCode: CodeHighlighterPlugin | null = null;
 let codePromise: Promise<CodeHighlighterPlugin> | null = null;
@@ -32,7 +38,7 @@ const loadCode = (): Promise<CodeHighlighterPlugin> => {
 export const lazyCodePlugin: CodeHighlighterPlugin = {
   name: "shiki",
   type: "code-highlighter",
-  getThemes: () => realCode?.getThemes() ?? DEFAULT_THEMES,
+  getThemes: currentThemes,
   getSupportedLanguages: () => realCode?.getSupportedLanguages() ?? [],
   // Streamdown never calls supportsLanguage/getSupportedLanguages on the render
   // path (zero call sites in streamdown's dist), and the real plugin's

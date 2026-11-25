@@ -9,6 +9,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { copyText } from "@/lib/clipboard";
+import {
+  ensureSyntaxThemes,
+  shikiThemeNames,
+  SYNTAX_THEME_NAMES,
+  syntaxThemeKey,
+  syntaxThemeNames,
+  useSyntaxThemeNames,
+} from "@/lib/syntaxTheme";
 import { stripAnsi } from "@/lib/ansi";
 import { cn } from "@/lib/utils";
 import { CheckIcon, CopyIcon } from "lucide-react";
@@ -166,10 +174,10 @@ const tokensCache = new Map<string, TokenizedCode>();
 // Subscribers for async token updates
 const subscribers = new Map<string, Set<(result: TokenizedCode) => void>>();
 
-const getTokensCacheKey = (code: string, language: CodeLanguage) => {
+const getTokensCacheKey = (code: string, language: CodeLanguage, themes: string) => {
   const start = code.slice(0, 100);
   const end = code.length > 100 ? code.slice(-100) : "";
-  return `${language}:${code.length}:${start}:${end}`;
+  return `${themes}:${language}:${code.length}:${start}:${end}`;
 };
 
 /** The shared Shiki highlighter for one language, loading its grammar on first use. */
@@ -186,7 +194,7 @@ export const getHighlighter = (
   const highlighterPromise = import("shiki").then(({ createHighlighter }) =>
     createHighlighter({
       langs: [language],
-      themes: ["github-light", "github-dark"],
+      themes: [SYNTAX_THEME_NAMES.light, SYNTAX_THEME_NAMES.dark],
     }),
   );
 
@@ -217,7 +225,8 @@ export const highlightCode = (
   // oxlint-disable-next-line eslint-plugin-promise(prefer-await-to-callbacks)
   callback?: (result: TokenizedCode) => void,
 ): TokenizedCode | null => {
-  const tokensCacheKey = getTokensCacheKey(code, language);
+  const themeNames = syntaxThemeNames();
+  const tokensCacheKey = getTokensCacheKey(code, language, syntaxThemeKey(themeNames));
 
   // Return cached result if available
   const cached = tokensCache.get(tokensCacheKey);
@@ -236,7 +245,8 @@ export const highlightCode = (
   // Start highlighting in background - fire-and-forget async pattern
   getHighlighter(language)
     // oxlint-disable-next-line eslint-plugin-promise(prefer-await-to-then)
-    .then((highlighter) => {
+    .then(async (highlighter) => {
+      await ensureSyntaxThemes(highlighter, themeNames);
       const availableLangs = highlighter.getLoadedLanguages();
       // Shiki's built-in `ansi` renders terminal colors but is never listed as loaded.
       const langToUse =
@@ -244,10 +254,7 @@ export const highlightCode = (
 
       const result = highlighter.codeToTokens(code, {
         lang: langToUse,
-        themes: {
-          dark: "github-dark",
-          light: "github-light",
-        },
+        themes: shikiThemeNames(themeNames),
       });
 
       const tokenized: TokenizedCode = {
@@ -426,19 +433,26 @@ export const CodeBlockContent = ({
     [code, language],
   );
 
+  // The syntax themes: a change re-highlights.
+  const syntaxThemes = syntaxThemeKey(useSyntaxThemeNames());
+
   // Synchronous cache lookup — avoids setState in effect for cached results
   const syncTokens = useMemo(
     () => highlightCode(code, language) ?? rawTokens,
-    [code, language, rawTokens],
+    [code, language, rawTokens, syntaxThemes],
   );
 
   // Async highlighting result (populated after shiki loads)
   const [asyncTokens, setAsyncTokens] = useState<TokenizedCode | null>(null);
-  const asyncKeyRef = useRef({ code, language });
+  const asyncKeyRef = useRef({ code, language, syntaxThemes });
 
   // Invalidate stale async tokens synchronously during render
-  if (asyncKeyRef.current.code !== code || asyncKeyRef.current.language !== language) {
-    asyncKeyRef.current = { code, language };
+  if (
+    asyncKeyRef.current.code !== code ||
+    asyncKeyRef.current.language !== language ||
+    asyncKeyRef.current.syntaxThemes !== syntaxThemes
+  ) {
+    asyncKeyRef.current = { code, language, syntaxThemes };
     setAsyncTokens(null);
   }
 
@@ -454,7 +468,7 @@ export const CodeBlockContent = ({
     return () => {
       cancelled = true;
     };
-  }, [code, language]);
+  }, [code, language, syntaxThemes]);
 
   const tokenized = asyncTokens ?? syncTokens;
 

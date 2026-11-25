@@ -17,12 +17,8 @@ import {
 import type { Comment } from "@/hooks/useComments";
 import { useCanEdit } from "@/hooks/usePermissions";
 import { detectLang, type ActiveSelection } from "./codeViewerHelpers";
-import {
-  ensureLanguage,
-  ensureMonacoReady,
-  monacoLanguageId,
-  resolvedThemeToMonaco,
-} from "./monacoSetup";
+import { ensureLanguage, ensureMonacoReady, monacoLanguageId } from "./monacoSetup";
+import { useMonacoTheme } from "./monacoTheme";
 import { useMonacoCommentLayer, type CodeEditorInstance } from "./useMonacoCommentLayer";
 import { attachEditorScrollRestore } from "./useScrollRestore";
 import { useMonacoFilePosition } from "./useMonacoFilePosition";
@@ -131,7 +127,7 @@ export function MonacoDiffViewer({
 }: MonacoDiffViewerProps) {
   const canEdit = useCanEdit(conversationId);
   const lang = detectLang(path);
-  const monacoTheme = resolvedThemeToMonaco(useResolvedThemeMode());
+  const monacoTheme = useMonacoTheme(useResolvedThemeMode());
 
   // Gate rendering until Shiki has registered the github themes + this file's
   // grammar (so the diff never flashes Monaco's default 'vs' theme); surface an

@@ -283,6 +283,8 @@
   --viewer-search-match-selected: color-mix(in oklch, var(--warning) 70%, transparent);
   --viewer-selection-match: color-mix(in oklch, var(--primary) 16%, transparent);
   --code-selected-line: initial;
+  --syntax-theme-light: github-light;
+  --syntax-theme-dark: github-dark;
   --terminal-background: #ffffff;
   --terminal-foreground: #18181b;
   --terminal-cursor: #0891b2;

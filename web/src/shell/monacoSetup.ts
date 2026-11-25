@@ -6,7 +6,8 @@
 //      network-restricted deployments, so @monaco-editor/react's default
 //      CDN AMD loader would fail; loader.config({ monaco }) points it at the
 //      bundled ESM instance instead.
-//   2. Drive tokenization and theming from Shiki (github-light/github-dark)
+//   2. Drive tokenization and theming from Shiki (the syntax themes the
+//      `syntax-theme-*` tokens name, github-light/github-dark by default)
 //      via @shikijs/monaco so editor colors match the read-only Shiki views
 //      and chat code blocks. Monaco's own Monarch tokenizers and language
 //      services are left unused.
@@ -33,10 +34,16 @@ import * as monaco from "monaco-editor/esm/vs/editor/editor.api.js";
 // missing worker). This keeps grammars out while still giving real editor UX.
 import "monaco-editor/esm/vs/editor/edcore.main.js";
 import type { ResolvedThemeMode } from "@/components/theme/themeMode";
+import {
+  ensureSyntaxThemes,
+  shikiThemeName,
+  SYNTAX_THEME_NAMES,
+  type SyntaxThemeNames,
+} from "@/lib/syntaxTheme";
 
-// Shiki theme ids registered into Monaco; identical to the read-only viewer.
-const LIGHT_THEME = "github-light";
-const DARK_THEME = "github-dark";
+// The Shiki themes registered into Monaco first: the default syntax theme pair.
+const LIGHT_THEME = SYNTAX_THEME_NAMES.light;
+const DARK_THEME = SYNTAX_THEME_NAMES.dark;
 
 // Monaco reads this global to construct its workers. The global is declared by
 // monaco's own types (editor.api.d.ts), so no augmentation is needed. Set once
@@ -147,8 +154,22 @@ export function monacoLanguageId(lang: BundledLanguage | "text"): string {
  * Map the app's resolved palette to the Monaco theme id to apply.
  *
  * @param resolved Concrete palette from `normalizeResolvedTheme`, e.g. `"dark"`.
+ * @param names The syntax theme pair (the `syntax-theme-*` tokens), the GitHub
+ *     themes by default.
  * @returns The registered Monaco theme id, e.g. `"github-dark"`.
  */
-export function resolvedThemeToMonaco(resolved: ResolvedThemeMode): string {
-  return resolved === "dark" ? DARK_THEME : LIGHT_THEME;
+export function resolvedThemeToMonaco(
+  resolved: ResolvedThemeMode,
+  names: SyntaxThemeNames = SYNTAX_THEME_NAMES,
+): string {
+  return shikiThemeName(resolved === "dark" ? names.dark : names.light);
+}
+
+/**
+ * Registers the pair with Monaco: loads any theme the shared highlighter lacks and
+ * re-runs shikiToMonaco, which defines every loaded theme in Monaco.
+ */
+export async function ensureMonacoThemes(names: SyntaxThemeNames): Promise<void> {
+  const hl = await ensureMonacoReady();
+  if (await ensureSyntaxThemes(hl, names)) shikiToMonaco(hl, monaco);
 }

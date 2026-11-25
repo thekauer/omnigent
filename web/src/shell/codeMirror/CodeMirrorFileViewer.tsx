@@ -83,7 +83,8 @@ import {
   useCodeMirrorCommentLayer,
 } from "./useCodeMirrorCommentLayer";
 import { shikiDecorations } from "./shikiDecorations";
-import { viewportHighlighting } from "./viewportHighlighting";
+import { refreshHighlighting, viewportHighlighting } from "./viewportHighlighting";
+import { syntaxThemeKey, useSyntaxThemeNames } from "@/lib/syntaxTheme";
 
 export const FIND_IN_FILE_LABEL = "Find in file";
 export const FIND_AND_REPLACE_LABEL = "Find and replace in file";
@@ -447,6 +448,15 @@ export function CodeMirrorFileViewer({
       effects: lineWrapping.reconfigure(wrapLines ? EditorView.lineWrapping : []),
     });
   }, [wrapLines, lineWrapping]);
+
+  // Shown code re-tokenizes when the syntax themes change (not on mount: it just did).
+  const syntaxThemes = syntaxThemeKey(useSyntaxThemeNames());
+  const highlightedThemes = useRef(syntaxThemes);
+  useEffect(() => {
+    if (highlightedThemes.current === syntaxThemes) return;
+    highlightedThemes.current = syntaxThemes;
+    viewRef.current?.dispatch({ effects: refreshHighlighting.of(null) });
+  }, [syntaxThemes]);
 
   // Reveal a citation until the reader scrolls, clicks, or types; its lines
   // stay highlighted while it is the viewer's position.
