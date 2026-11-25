@@ -23,7 +23,7 @@
 .pdf-comment {
   position: absolute;
   background-color: rgba(250, 204, 21, 0.25);
-  border-radius: 2px;
+  border-radius: var(--ui-radius-xs);
   cursor: pointer;
   pointer-events: auto;
 }

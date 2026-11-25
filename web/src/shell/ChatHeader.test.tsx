@@ -707,7 +707,9 @@ describe("ChatHeader — floating mobile controls", () => {
         "-270",
       );
       expect(surface.style.boxShadow).toContain("inset 0 0 2px 1px rgba(212, 212, 216, 0.08)");
-      expect(surface.style.boxShadow).toContain("0 2px 6px 1px rgba(17, 17, 26, 0.08)");
+      expect(surface.style.boxShadow).toContain(
+        "var(--omni-glass-drop-shadow, var(--ui-shadow-glass-drop))",
+      );
       expect(surface.querySelector('feGaussianBlur[in="output"]')).toHaveAttribute(
         "stdDeviation",
         "4.4",

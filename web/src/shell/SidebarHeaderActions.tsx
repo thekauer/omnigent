@@ -201,7 +201,7 @@ export function SidebarHeaderActions({
  * and keep their outline but drop the shadow over the drawer's own glass.
  */
 const SIDEBAR_GLASS_CONTROL =
-  "[--omni-glass-drop-shadow:0_0_#0000] [--sidebar-icon-size-mobile:20px]";
+  "[--omni-glass-drop-shadow:var(--ui-shadow-none)] [--sidebar-icon-size-mobile:20px]";
 
 /** Shared sizing for the mobile icon-only Search and Settings actions. */
 const SIDEBAR_FLOAT_BUTTON = cn(

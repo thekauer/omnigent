@@ -598,7 +598,7 @@ function CanvasSurface({ selectedSessionId }: { selectedSessionId?: string | nul
       </header>
       <nav
         aria-label="Canvases"
-        className="flex items-center gap-2 overflow-x-auto px-6 py-3 [scrollbar-width:thin]"
+        className="flex items-center gap-2 overflow-x-auto px-6 py-3 [scrollbar-width:var(--ui-scrollbar-width)]"
       >
         <div role="tablist" className="flex gap-1">
           <button

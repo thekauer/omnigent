@@ -138,6 +138,30 @@
   initial-value: 0;
 }
 
+@property --ui-shadow-glass-alpha {
+  syntax: "<number> | <percentage>";
+  inherits: true;
+  initial-value: 0;
+}
+
+@property --ui-shadow-glass-inset-alpha {
+  syntax: "<number> | <percentage>";
+  inherits: true;
+  initial-value: 0;
+}
+
+@property --ui-shadow-glass-fallback-alpha {
+  syntax: "<number> | <percentage>";
+  inherits: true;
+  initial-value: 0;
+}
+
+@property --ui-shadow-glass-drop-alpha {
+  syntax: "<number> | <percentage>";
+  inherits: true;
+  initial-value: 0;
+}
+
 @property --ui-shadow-composer-alpha {
   syntax: "<number> | <percentage>";
   inherits: true;
@@ -247,6 +271,21 @@
   --ui-shadow-inner-alpha: calc(0.05 * var(--omnigent-elevation));
   /* prettier-ignore */
   --ui-shadow-inner: inset 0 2px 4px 0 rgb(var(--ui-shadow-neutral-rgb) / var(--ui-shadow-inner-alpha));
+  /* prettier-ignore */
+  --ui-shadow-none: 0 0 #0000;
+  --ui-shadow-glass-rgb: 17 17 26;
+  --ui-shadow-glass-alpha: calc(0.05 * var(--omnigent-elevation));
+  /* prettier-ignore */
+  --ui-shadow-glass: 0px 4px 16px rgb(var(--ui-shadow-glass-rgb) / var(--ui-shadow-glass-alpha)), 0px 8px 24px rgb(var(--ui-shadow-glass-rgb) / var(--ui-shadow-glass-alpha)), 0px 16px 56px rgb(var(--ui-shadow-glass-rgb) / var(--ui-shadow-glass-alpha));
+  --ui-shadow-glass-inset-alpha: calc(0.05 * var(--omnigent-elevation));
+  /* prettier-ignore */
+  --ui-shadow-glass-inset: inset 0px 4px 16px rgb(var(--ui-shadow-glass-rgb) / var(--ui-shadow-glass-inset-alpha)), inset 0px 8px 24px rgb(var(--ui-shadow-glass-rgb) / var(--ui-shadow-glass-inset-alpha)), inset 0px 16px 56px rgb(var(--ui-shadow-glass-rgb) / var(--ui-shadow-glass-inset-alpha));
+  --ui-shadow-glass-fallback-alpha: calc(0.06 * var(--omnigent-elevation));
+  /* prettier-ignore */
+  --ui-shadow-glass-fallback: 0px 4px 16px rgb(var(--ui-shadow-glass-rgb) / var(--ui-shadow-glass-fallback-alpha)), 0px 8px 24px rgb(var(--ui-shadow-glass-rgb) / var(--ui-shadow-glass-fallback-alpha)), 0px 16px 56px rgb(var(--ui-shadow-glass-rgb) / var(--ui-shadow-glass-fallback-alpha));
+  --ui-shadow-glass-drop-alpha: calc(0.08 * var(--omnigent-elevation));
+  /* prettier-ignore */
+  --ui-shadow-glass-drop: 0 2px 6px 1px rgb(var(--ui-shadow-glass-rgb) / var(--ui-shadow-glass-drop-alpha));
   --ui-shadow-composer-alpha: calc(12% * var(--omnigent-elevation));
   /* prettier-ignore */
   --composer-shadow: 0 6px 20px -8px rgb(var(--ui-shadow-neutral-rgb) / var(--ui-shadow-composer-alpha));
@@ -1130,6 +1169,18 @@
   --ui-shadow-inner-alpha: calc(0.05 * var(--omnigent-elevation));
   /* prettier-ignore */
   --ui-shadow-inner: inset 0 2px 4px 0 rgb(var(--ui-shadow-neutral-rgb) / var(--ui-shadow-inner-alpha));
+  --ui-shadow-glass-alpha: calc(0.05 * var(--omnigent-elevation));
+  /* prettier-ignore */
+  --ui-shadow-glass: 0px 4px 16px rgb(var(--ui-shadow-glass-rgb) / var(--ui-shadow-glass-alpha)), 0px 8px 24px rgb(var(--ui-shadow-glass-rgb) / var(--ui-shadow-glass-alpha)), 0px 16px 56px rgb(var(--ui-shadow-glass-rgb) / var(--ui-shadow-glass-alpha));
+  --ui-shadow-glass-inset-alpha: calc(0.05 * var(--omnigent-elevation));
+  /* prettier-ignore */
+  --ui-shadow-glass-inset: inset 0px 4px 16px rgb(var(--ui-shadow-glass-rgb) / var(--ui-shadow-glass-inset-alpha)), inset 0px 8px 24px rgb(var(--ui-shadow-glass-rgb) / var(--ui-shadow-glass-inset-alpha)), inset 0px 16px 56px rgb(var(--ui-shadow-glass-rgb) / var(--ui-shadow-glass-inset-alpha));
+  --ui-shadow-glass-fallback-alpha: calc(0.06 * var(--omnigent-elevation));
+  /* prettier-ignore */
+  --ui-shadow-glass-fallback: 0px 4px 16px rgb(var(--ui-shadow-glass-rgb) / var(--ui-shadow-glass-fallback-alpha)), 0px 8px 24px rgb(var(--ui-shadow-glass-rgb) / var(--ui-shadow-glass-fallback-alpha)), 0px 16px 56px rgb(var(--ui-shadow-glass-rgb) / var(--ui-shadow-glass-fallback-alpha));
+  --ui-shadow-glass-drop-alpha: calc(0.08 * var(--omnigent-elevation));
+  /* prettier-ignore */
+  --ui-shadow-glass-drop: 0 2px 6px 1px rgb(var(--ui-shadow-glass-rgb) / var(--ui-shadow-glass-drop-alpha));
   --ui-shadow-composer-alpha: calc(12% * var(--omnigent-elevation));
   /* prettier-ignore */
   --composer-shadow: 0 6px 20px -8px rgb(var(--ui-shadow-neutral-rgb) / var(--ui-shadow-composer-alpha));
@@ -1227,6 +1278,18 @@
   --ui-shadow-inner-alpha: calc(0.05 * var(--omnigent-elevation));
   /* prettier-ignore */
   --ui-shadow-inner: inset 0 2px 4px 0 rgb(var(--ui-shadow-neutral-rgb) / var(--ui-shadow-inner-alpha));
+  --ui-shadow-glass-alpha: calc(0.05 * var(--omnigent-elevation));
+  /* prettier-ignore */
+  --ui-shadow-glass: 0px 4px 16px rgb(var(--ui-shadow-glass-rgb) / var(--ui-shadow-glass-alpha)), 0px 8px 24px rgb(var(--ui-shadow-glass-rgb) / var(--ui-shadow-glass-alpha)), 0px 16px 56px rgb(var(--ui-shadow-glass-rgb) / var(--ui-shadow-glass-alpha));
+  --ui-shadow-glass-inset-alpha: calc(0.05 * var(--omnigent-elevation));
+  /* prettier-ignore */
+  --ui-shadow-glass-inset: inset 0px 4px 16px rgb(var(--ui-shadow-glass-rgb) / var(--ui-shadow-glass-inset-alpha)), inset 0px 8px 24px rgb(var(--ui-shadow-glass-rgb) / var(--ui-shadow-glass-inset-alpha)), inset 0px 16px 56px rgb(var(--ui-shadow-glass-rgb) / var(--ui-shadow-glass-inset-alpha));
+  --ui-shadow-glass-fallback-alpha: calc(0.06 * var(--omnigent-elevation));
+  /* prettier-ignore */
+  --ui-shadow-glass-fallback: 0px 4px 16px rgb(var(--ui-shadow-glass-rgb) / var(--ui-shadow-glass-fallback-alpha)), 0px 8px 24px rgb(var(--ui-shadow-glass-rgb) / var(--ui-shadow-glass-fallback-alpha)), 0px 16px 56px rgb(var(--ui-shadow-glass-rgb) / var(--ui-shadow-glass-fallback-alpha));
+  --ui-shadow-glass-drop-alpha: calc(0.08 * var(--omnigent-elevation));
+  /* prettier-ignore */
+  --ui-shadow-glass-drop: 0 2px 6px 1px rgb(var(--ui-shadow-glass-rgb) / var(--ui-shadow-glass-drop-alpha));
   --ui-shadow-composer-alpha: calc(80% * var(--omnigent-elevation));
   /* prettier-ignore */
   --composer-shadow: 0 6px 20px -8px rgb(var(--ui-shadow-neutral-rgb) / var(--ui-shadow-composer-alpha));

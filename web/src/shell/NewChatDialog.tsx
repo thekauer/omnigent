@@ -2306,7 +2306,7 @@ function NewChatWorkspaceControls({ children }: { children: ReactNode }) {
   const isMobile = useIsMobileViewport();
   if (!isMobile) return children;
   return (
-    <fieldset className="new-chat-workspace-controls relative isolate z-30 min-w-0 max-w-full self-center rounded-[var(--ui-radius-20)] [--omni-glass-drop-shadow:0_0_#0000]">
+    <fieldset className="new-chat-workspace-controls relative isolate z-30 min-w-0 max-w-full self-center rounded-[var(--ui-radius-20)] [--omni-glass-drop-shadow:var(--ui-shadow-none)]">
       <OmniGlassSurface borderRadius={20} className="-z-10" />
       {children}
     </fieldset>

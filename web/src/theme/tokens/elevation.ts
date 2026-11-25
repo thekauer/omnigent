@@ -12,6 +12,7 @@
 import { defineTokens, type TokenInput } from "./types.ts";
 
 const NEUTRAL = "var(--ui-shadow-neutral-rgb)";
+const GLASS = "var(--ui-shadow-glass-rgb)";
 
 // Every shadow alpha takes a number or a percentage, the two forms `rgb()` accepts,
 // so a theme may write either. Each keeps the form of the literal it replaced
@@ -24,6 +25,7 @@ function recipe(
   alpha: number,
   layers: readonly string[],
   description: string,
+  channels: string = NEUTRAL,
 ): TokenInput[] {
   const alphaId = `ui-shadow-${name}-alpha`;
   return [
@@ -39,7 +41,7 @@ function recipe(
       kind: "shadow",
       description,
       default: {
-        light: layers.map((layer) => `${layer} rgb(${NEUTRAL} / var(--${alphaId}))`).join(", "),
+        light: layers.map((layer) => `${layer} rgb(${channels} / var(--${alphaId}))`).join(", "),
       },
     },
   ];
@@ -103,6 +105,46 @@ export const ELEVATION_TOKENS = defineTokens("elevation", [
     "The bare `shadow` utility's two-layer shadow.",
   ),
   ...recipe("inner", 0.05, ["inset 0 2px 4px 0"], "Inset shadow, `shadow-inner`."),
+  {
+    id: "ui-shadow-none",
+    kind: "shadow",
+    description: "No shadow, as a shadow value (a transparent zero layer).",
+    default: { light: "0 0 #0000" },
+  },
+  {
+    id: "ui-shadow-glass-rgb",
+    kind: "channels",
+    description: "Shadow colour channels of the glass surfaces.",
+    default: { light: "17 17 26" },
+  },
+  ...recipe(
+    "glass",
+    0.05,
+    ["0px 4px 16px", "0px 8px 24px", "0px 16px 56px"],
+    "A glass surface's cast shadow (components/ui/glass-surface).",
+    GLASS,
+  ),
+  ...recipe(
+    "glass-inset",
+    0.05,
+    ["inset 0px 4px 16px", "inset 0px 8px 24px", "inset 0px 16px 56px"],
+    "A glass surface's inner shade.",
+    GLASS,
+  ),
+  ...recipe(
+    "glass-fallback",
+    0.06,
+    ["0px 4px 16px", "0px 8px 24px", "0px 16px 56px"],
+    "A glass surface's cast shadow where it falls back to a blur.",
+    GLASS,
+  ),
+  ...recipe(
+    "glass-drop",
+    0.08,
+    ["0 2px 6px 1px"],
+    "The app's glass controls' drop shadow (OmniGlassSurface); `--omni-glass-drop-shadow` overrides it per site.",
+    GLASS,
+  ),
   {
     id: "ui-shadow-composer-alpha",
     kind: "alpha",
