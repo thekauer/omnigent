@@ -129,6 +129,111 @@ describe("resolveTokenLayers", () => {
     expect(rejected.map((entry) => entry.reason).join("\n")).toMatch(/reference cycle/);
   });
 
+  describe("a locked layer", () => {
+    /** `layers` with the last one as the product's locks. */
+    const resolveLocked = (layers: Record<string, string>[], mode: UiTheme = "dark") =>
+      resolveTokenLayers(layers.map(layerOf), mode, { locked: layers.length - 1 });
+    const reasons = (result: ReturnType<typeof resolveLocked>) =>
+      Object.fromEntries(result.rejected.map((entry) => [entry.token, entry.reason]));
+
+    it("never takes a lower layer's value for a locked token", () => {
+      const result = resolveLocked([
+        { "ui-row-height": "20px" },
+        { "ui-row-height": "10px" },
+        { "ui-row-height": "34px" },
+      ]);
+      expect(result.values["ui-row-height"]).toBe("34px");
+      expect(result.rejected).toEqual([]);
+    });
+
+    it("drops the value that pushes a lock out of range, not the lock", () => {
+      const result = resolveLocked([
+        { "ui-row-line": "20px" },
+        { "ui-row-line": "400px", "ui-row-height": "10px" },
+        { "ui-row-height": "calc(var(--ui-row-line) + 8px)" },
+      ]);
+      expect(result.values["ui-row-height"]).toBe("calc(var(--ui-row-line) + 8px)");
+      // The user's row line goes; the theme's (below it) applies.
+      expect(result.values["ui-row-line"]).toBe("20px");
+      expect(reasons(result)).toEqual({
+        "ui-row-line": expect.stringMatching(/pushes the product's --ui-row-height out of range/),
+      });
+      expect(result.rejected[0]!.layer).toBe(1);
+    });
+
+    it("blames a multi-hop chain the lock reads, highest layer first", () => {
+      const result = resolveLocked([
+        { "ui-radius-base": "400px" },
+        { "ui-radius-md": "calc(var(--ui-radius-base) * 1)" },
+        { "ui-row-height": "calc(var(--ui-row-line) + 8px)", "ui-row-line": "var(--ui-radius-md)" },
+      ]);
+      // The lock reads row line (also locked), which reads radius md, which reads the base.
+      expect(result.values["ui-row-height"]).toBe("calc(var(--ui-row-line) + 8px)");
+      expect(result.values["ui-row-line"]).toBe("var(--ui-radius-md)");
+      // The highest layer's link goes first: radius md takes its default, which reads
+      // the base at a fraction, and the locks fit again.
+      expect(result.values["ui-radius-md"]).toBeUndefined();
+      expect(reasons(result)["ui-radius-md"]).toMatch(/pushes the product's --ui-row-/);
+      const deeper = resolveLocked([
+        { "ui-radius-base": "530px" },
+        { "ui-radius-md": "var(--ui-radius-base)" },
+        { "ui-row-height": "calc(var(--ui-radius-md) + 8px)" },
+      ]);
+      // Without the link, md's default (0.75 of the base) still reads the base too far:
+      // the next layer's link goes too.
+      expect(deeper.values["ui-row-height"]).toBe("calc(var(--ui-radius-md) + 8px)");
+      expect(Object.keys(reasons(deeper)).sort()).toEqual(["ui-radius-base", "ui-radius-md"]);
+    });
+
+    it("blames a cycle a lock closes through a var() fallback", () => {
+      const result = resolveLocked([
+        { ring: "var(--accent, var(--primary))", accent: "var(--primary)" },
+        { primary: "var(--ring, #000000)" },
+      ]);
+      expect(result.values.primary).toBe("var(--ring, #000000)");
+      expect(Object.keys(reasons(result)).sort()).toEqual(["accent", "ring"]);
+    });
+
+    it("drops the values that close a cycle with a lock, never the lock", () => {
+      const result = resolveLocked([
+        { ring: "#ff8800" },
+        { ring: "var(--primary)", primary: "#123456" },
+        { primary: "var(--ring)" },
+      ]);
+      expect(result.values.primary).toBe("var(--ring)");
+      expect(result.values.ring).toBe("#ff8800");
+      expect(reasons(result)).toEqual({
+        ring: "closes a reference cycle with the product's --primary",
+      });
+    });
+
+    it("drops every lower value on a longer cycle through a lock", () => {
+      const result = resolveLocked([
+        { ring: "var(--accent)", accent: "var(--primary)", primary: "#123456" },
+        { primary: "var(--ring)" },
+      ]);
+      expect(result.values.primary).toBe("var(--ring)");
+      expect(result.values.ring).toBeUndefined();
+      expect(result.values.accent).toBeUndefined();
+      expect(Object.keys(reasons(result)).sort()).toEqual(["accent", "ring"]);
+    });
+
+    it("gives a lock that fails on its own its default, never a lower layer's value", () => {
+      const cycle = resolveLocked([
+        { ring: "#123456", primary: "#654321" },
+        { ring: "var(--primary)", primary: "var(--ring)" },
+      ]);
+      expect(cycle.values.primary).toBeUndefined();
+      expect(cycle.values.ring).toBeUndefined();
+      const range = resolveLocked([
+        { "ui-row-height": "30px" },
+        { "ui-row-height": "calc(var(--ui-row-line) + 390px)" },
+      ]);
+      expect(range.values["ui-row-height"]).toBeUndefined();
+      expect(reasons(range)["ui-row-height"]).toMatch(/out of range/);
+    });
+  });
+
   it("takes non-static inputs at their worst case", () => {
     // Tailwind's spacing step up to 16px, the text sizes up to 200px, an em up to 64px.
     expect(rejectedOf([{ "ui-row-height": "calc(var(--spacing) * 25)" }])).toEqual([]);

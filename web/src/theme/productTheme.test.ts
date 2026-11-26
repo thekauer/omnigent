@@ -7,7 +7,11 @@ import { registerBuiltInThemes } from "@/builtinExtensions/builtInThemes";
 import { FIXTURE_EXTENSION_ID, fixtureThemeExtension } from "@/test/themeFixtures";
 
 import {
+  applyBootProductThemes,
+  applyServerProductTheme,
+  LAST_SERVER_PRODUCT_THEME_STORAGE_KEY,
   mergeProductThemes,
+  PRODUCT_THEME_MAX_CHARS,
   parseProductTheme,
   parseServerProductTheme,
   setProductTheme,
@@ -118,6 +122,79 @@ describe("parseProductTheme", () => {
       ]),
     ).toEqual({ lockMode: "dark", default: "nord", hidePicker: true });
     expect(mergeProductThemes([undefined, {}])).toBeNull();
+  });
+
+  it("merges the locks per key, the higher source winning each, and takes empty as no opinion", () => {
+    expect(
+      mergeProductThemes([
+        { lockedTokens: { primary: "#000000" }, allowed: [] },
+        { lockedTokens: { primary: "#111111", ring: "#222222" }, lockedVariants: {} },
+        { lockedVariants: { density: "compact" }, allowed: ["nord"] },
+      ]),
+    ).toEqual({
+      lockedTokens: { primary: "#000000", ring: "#222222" },
+      lockedVariants: { density: "compact" },
+      allowed: ["nord"],
+    });
+    // An embed's empty or all-malformed locks never hide the server's.
+    const server = parseServerProductTheme({
+      locked_tokens: { primary: "#ff0000" },
+      locked_variants: { density: "compact" },
+    });
+    const embed = parseProductTheme(
+      { lockedTokens: {}, lockedVariants: { density: "nope", bogus: "x" } },
+      "embed",
+    );
+    expect(embed).toEqual({});
+    expect(mergeProductThemes([embed, server])).toEqual({
+      lockedTokens: { primary: "#ff0000" },
+      lockedVariants: { density: "compact" },
+    });
+  });
+
+  it("fails open on an allowed list with no well-formed entry", () => {
+    expect(parseServerProductTheme({ allowed: ["bad id!", 3, "  "] })).toEqual({});
+    expect(parseProductTheme({ allowed: [] }, "test")).toEqual({});
+    const messages = warn.mock.calls.map((call: unknown[]) => String(call[0])).join("\n");
+    expect(messages).toMatch(/every theme is allowed/);
+  });
+
+  it("keeps what fits a configuration over the size limit, field by field", () => {
+    // The server's own caps allow about 384 KB of tokens; the rest of the policy holds.
+    const lockedTokens: Record<string, string> = {};
+    for (let index = 0; index < 1000; index += 1) {
+      lockedTokens[`ui-tok-${index}`] = "x".repeat(250);
+    }
+    const parsed = parseServerProductTheme({
+      hide_picker: true,
+      hide_customizations: true,
+      allowed: ["omnigent.themes/nord"],
+      lock_mode: "dark",
+      locked_variants: { density: "compact" },
+      locked_tokens: lockedTokens,
+    })!;
+    expect(parsed).toMatchObject({
+      hidePicker: true,
+      hideCustomizations: true,
+      allowed: ["omnigent.themes/nord"],
+      lockMode: "dark",
+      lockedVariants: { density: "compact" },
+    });
+    const kept = Object.keys(parsed.lockedTokens ?? {});
+    expect(kept.length).toBeGreaterThan(400);
+    expect(kept.length).toBeLessThan(1000);
+    expect(kept[0]).toBe("ui-tok-0");
+    const size = Object.entries(parsed.lockedTokens!).reduce(
+      (sum, [key, value]) => sum + JSON.stringify(key).length + JSON.stringify(value).length + 2,
+      JSON.stringify("omnigent.themes/nord").length + 1 + JSON.stringify("density").length + 11,
+    );
+    expect(size).toBeLessThanOrEqual(PRODUCT_THEME_MAX_CHARS);
+    const messages = warn.mock.calls.map((call: unknown[]) => String(call[0])).join("\n");
+    expect(messages).toMatch(/lockedTokens is over the 131072-character limit; left out: ui-tok-/);
+    // A field that can't be read as data goes alone.
+    const hostile = { hidePicker: true, lockedTokens: {} as Record<string, string> };
+    Object.defineProperty(hostile.lockedTokens, "primary", { get: () => "#000", enumerable: true });
+    expect(parseProductTheme(hostile, "test")).toEqual({ hidePicker: true });
   });
 
   it("feeds the window's theme service through one path, embed over build over server", () => {
@@ -231,6 +308,45 @@ describe("the product theme in the theme service", () => {
     expect(style()).toContain("--primary: #00ff00");
   });
 
+  for (const which of ["a built-in palette", "a contributed theme"] as const) {
+    it(`keeps a lock when the user attacks what it reads, under ${which}`, () => {
+      if (which === "a contributed theme") {
+        service.addExtension(fixtureThemeExtension());
+        service.select(DARK);
+      }
+      const save = (values: Record<string, string>) =>
+        service.saveSettingsText(JSON.stringify({ "workbench.colorCustomizations": values }));
+      // Out of range: the user's row line would push the locked row height past 400px.
+      service.setProductPolicy({
+        lockedTokens: { "ui-row-height": "calc(var(--ui-row-line) + 8px)" },
+      });
+      save({ "ui-row-line": "400px", "ui-row-height": "10px" });
+      expect(style()).not.toMatch(/--ui-row-height: 10px/);
+      expect(style()).not.toMatch(/--ui-row-line: 400px/);
+      expect(style()).toContain("--ui-row-height: calc(var(--ui-row-line) + 8px)");
+      expect(
+        service.checkCustomizations('{"ui-row-line": "400px", "ui-row-height": "10px"}'),
+      ).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ key: "ui-row-height", severity: "warning" }),
+          {
+            key: "ui-row-line",
+            message: expect.stringMatching(/pushes the product's --ui-row-height out of range/),
+          },
+        ]),
+      );
+      // A cycle: the user's ring reads the locked primary, which reads the ring.
+      service.setProductPolicy({ lockedTokens: { primary: "var(--ring)" } });
+      save({ ring: "var(--primary)", primary: "#123456" });
+      expect(style()).not.toContain("#123456");
+      expect(style()).not.toMatch(/--ring: var\(--primary\)/);
+      expect(style()).toContain("--primary: var(--ring)");
+      expect(service.checkCustomizations('{"ring": "var(--primary)"}')).toEqual([
+        { key: "ring", message: "closes a reference cycle with the product's --primary" },
+      ]);
+    });
+  }
+
   it("holds locked variants and options over the user's, and refuses to change them", () => {
     service.addExtension(fixtureThemeExtension());
     service.select(DARK);
@@ -296,5 +412,66 @@ describe("the product theme in the theme service", () => {
     // The stock theme is dark only: it can't show in light.
     expect(service.entries().some((entry) => entry.id === STOCK)).toBe(false);
     expect(service.entries().some((entry) => entry.members.light === LIGHT)).toBe(true);
+  });
+
+  it("repairs or retires a first-paint cache written under another policy", () => {
+    service.addExtension(fixtureThemeExtension());
+    service.select(DARK);
+    service.setCustomizations(JSON.stringify({ primary: "#111111" }));
+    expect(localStorage.getItem("omnigent:ui-theme-cache")).toContain("#111111");
+    const firstPaint = (policy: Parameters<ThemeService["setProductPolicy"]>[0]) => {
+      document.getElementById("omnigent-theme-runtime")?.remove();
+      const fresh = new ThemeService();
+      fresh.setProductPolicy(policy);
+      fresh.applyCached();
+      const css = style();
+      fresh.setProductPolicy(null);
+      return { css, fromCache: fresh.getActive()?.fromCache === true };
+    };
+    // The same policy: the cache as written.
+    expect(firstPaint(null)).toMatchObject({ fromCache: true });
+    expect(firstPaint(null).css).toContain("--primary: #111111");
+    // A lock since: the cache, with the lock over it.
+    const locked = firstPaint({ lockedTokens: { primary: "#00ff00" } });
+    expect(locked.fromCache).toBe(true);
+    expect(locked.css).toContain("--primary: #00ff00");
+    expect(locked.css).not.toContain("#111111");
+    // Customizations hidden since: the cache can't be repaired, and isn't used.
+    const hidden = firstPaint({ hideCustomizations: true, lockedTokens: { primary: "#00ff00" } });
+    expect(hidden.fromCache).toBe(false);
+    expect(hidden.css).not.toContain("#111111");
+    // A policy that arrives while the extension loads repairs the painted cache too.
+    document.getElementById("omnigent-theme-runtime")?.remove();
+    const loading = new ThemeService();
+    loading.beginLoading();
+    loading.applyCached();
+    expect(style()).toContain("#111111");
+    loading.setProductPolicy({ hideCustomizations: true });
+    expect(style()).not.toContain("#111111");
+    loading.setProductPolicy(null);
+  });
+
+  it("keeps the server's last product theme for the next load's first paint", () => {
+    applyServerProductTheme({ product: { theme: { hide_customizations: true } } } as never);
+    expect(localStorage.getItem(LAST_SERVER_PRODUCT_THEME_STORAGE_KEY)).toContain(
+      "hideCustomizations",
+    );
+    setProductTheme("server", undefined);
+    expect(themeService.getProductPolicy()).toBeNull();
+    // The next load: before the server answers, its last policy holds.
+    applyBootProductThemes();
+    expect(themeService.getProductPolicy()).toEqual({ hideCustomizations: true });
+    // A server with none clears it.
+    applyServerProductTheme({} as never);
+    expect(localStorage.getItem(LAST_SERVER_PRODUCT_THEME_STORAGE_KEY)).toBeNull();
+    expect(themeService.getProductPolicy()).toBeNull();
+    // Whatever another writer put there is checked again.
+    localStorage.setItem(
+      LAST_SERVER_PRODUCT_THEME_STORAGE_KEY,
+      '{"lockMode":"dim","hidePicker":1}',
+    );
+    setProductTheme("server", undefined);
+    applyBootProductThemes();
+    expect(themeService.getProductPolicy()).toBeNull();
   });
 });

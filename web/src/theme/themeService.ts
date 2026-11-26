@@ -224,6 +224,33 @@ interface ThemeCache {
   readonly syntax?: readonly TokenSyntaxTheme[];
   /** The theme's own variants (the user's apply over them from storage). */
   readonly variants?: Readonly<Record<string, string>>;
+  /**
+   * The product policy it was written under ({@link policyFingerprints}): its parts other
+   * than the locks, and its locks. None (an older cache): no policy.
+   */
+  readonly policy?: { readonly structure: string; readonly locks: string };
+}
+
+/**
+ * Fingerprints of a product policy for the first-paint cache: `structure`, what the cached
+ * values can't be repaired for (hidden customizations, locked options, the allowed themes,
+ * the mode lock), and `locks`, the locked tokens and variants, which apply over them.
+ */
+export function policyFingerprints(policy: ThemeProductPolicy | null): {
+  structure: string;
+  locks: string;
+} {
+  const { lockedTokens, lockedVariants, ...structure } = policy ?? {};
+  const sorted = (value: unknown) =>
+    JSON.stringify(value, (_key, entry: unknown) =>
+      isRecord(entry)
+        ? Object.fromEntries(Object.entries(entry).sort(([a], [b]) => (a < b ? -1 : 1)))
+        : entry,
+    );
+  return {
+    structure: hashText(sorted(structure)),
+    locks: hashText(sorted([lockedTokens ?? {}, lockedVariants ?? {}])),
+  };
 }
 
 interface CachedFont {
@@ -1274,6 +1301,8 @@ export class ThemeService implements ThemeContributionSink {
   /**
    * Applies the cached values of the chosen theme before first paint, so a reload shows
    * the theme before its extension loads. The live values replace them once it registers.
+   * A cache written under another product policy is repaired (the current locks over its
+   * values) or, when it can't be (customizations hidden since, say), not used.
    */
   applyCached(): void {
     const choice = this.currentChoice();
@@ -1287,9 +1316,18 @@ export class ThemeService implements ThemeContributionSink {
       this.refresh();
       return;
     }
+    this.paintCache(choice);
+  }
+
+  /** Paints the cache of `choice` under the current policy; false when it can't be used. */
+  private paintCache(choice: string): boolean {
     const cache = this.readCache();
-    if (!cache || cache.id !== choice) return;
-    const css = buildThemeCss([cache.blocks], themeSelectors(getThemeScopeSelector()));
+    if (!cache || cache.id !== choice) return false;
+    const current = policyFingerprints(this.policy);
+    const written = cache.policy ?? policyFingerprints(null);
+    if (written.structure !== current.structure) return false;
+    const blocks = written.locks === current.locks ? cache.blocks : this.lockCachedBlocks(cache);
+    const css = buildThemeCss([blocks], themeSelectors(getThemeScopeSelector()));
     this.writeStyle(css);
     this.appliedKey = cache.key;
     this.cacheWritten = false;
@@ -1314,6 +1352,35 @@ export class ThemeService implements ThemeContributionSink {
     };
     this.watchRoots();
     this.emit();
+    return true;
+  }
+
+  /** The cache's values with the current locked tokens over them, as {@link resolve} layers them. */
+  private lockCachedBlocks(cache: ThemeCache): ThemeBlocks {
+    const lock = (
+      block: Readonly<Record<string, string>> | undefined,
+      mode: UiTheme,
+      probe = false,
+    ) => {
+      if (!block) return undefined;
+      const layer = nullMap<{ value: string; references: readonly string[] }>();
+      for (const [token, value] of Object.entries(block)) {
+        layer[token] = { value, references: valueReferences(value) };
+      }
+      const { values } = this.resolveLayers(cache.id, [layer, this.lockedTokens], mode, true);
+      const out = nullMap<string>();
+      for (const [token, value] of Object.entries(values)) {
+        // A probe holds the per-mode tokens only.
+        if (!probe || PER_MODE_TOKENS.has(token)) out[token] = value;
+      }
+      return out;
+    };
+    const probes = cache.blocks.probes ?? {};
+    return {
+      ...(cache.blocks.light ? { light: lock(cache.blocks.light, "light") } : {}),
+      ...(cache.blocks.dark ? { dark: lock(cache.blocks.dark, "dark") } : {}),
+      probes: { light: lock(probes.light, "light", true), dark: lock(probes.dark, "dark", true) },
+    };
   }
 
   private info(theme: ThemeContribution, extensionId: string, available: boolean): ThemeInfo {
@@ -1711,7 +1778,9 @@ export class ThemeService implements ThemeContributionSink {
     mode: UiTheme,
     quiet = false,
   ): { values: Record<string, string>; rejected: readonly RejectedToken[] } {
-    const { values, rejected } = resolveTokenLayers(layers, mode);
+    // The product's layer, when given, is the top one: its tokens never fall back below it.
+    const locked = layers.at(-1) === this.lockedTokens ? layers.length - 1 : undefined;
+    const { values, rejected } = resolveTokenLayers(layers, mode, { locked });
     for (const entry of quiet ? [] : rejected) {
       this.warnOnce(
         `${id}:${mode}:${entry.token}:${entry.layer}:${hashText(entry.value)}`,
@@ -1743,8 +1812,9 @@ export class ThemeService implements ThemeContributionSink {
     const defaults = this.colorDefaults();
     const selectors = themeSelectors(getThemeScopeSelector());
     if (contributed && !resolution && !settled && this.active?.fromCache) {
-      // Still loading: keep the cached values, with the colours known so far under them.
-      return;
+      // Still loading: keep the cached values, under the current policy (a product theme
+      // that arrived since repairs or retires them).
+      if (this.paintCache(contributed)) return;
     }
     // A built-in palette is its precompiled CSS (`data-theme`), under any customizations.
     applyThemePalette(choice !== null && isThemeSelection(choice) ? choice : DEFAULT_PALETTE);
@@ -1969,6 +2039,7 @@ export class ThemeService implements ThemeContributionSink {
       ...(Object.keys(resolution.themeVariants).length > 0
         ? { variants: resolution.themeVariants }
         : {}),
+      policy: policyFingerprints(this.policy),
     };
     let text = JSON.stringify(cache);
     if (text.length > CACHE_LIMIT) text = JSON.stringify({ ...cache, syntax: [] });
@@ -1996,7 +2067,7 @@ export class ThemeService implements ThemeContributionSink {
  */
 export function checkCache(raw: unknown): ThemeCache | undefined {
   if (!isRecord(raw) || raw.version !== 1) return undefined;
-  const { variants } = raw;
+  const { variants, policy } = raw;
   const { id, key, label, uiTheme, family, familyLabel, forcedMode, blocks, fonts, brand, syntax } =
     raw;
   if (!isContributedThemeId(id) || typeof key !== "string" || key.length > 300) return undefined;
@@ -2120,7 +2191,20 @@ export function checkCache(raw: unknown): ThemeCache | undefined {
     ...(Object.keys(checkVariants(variants)).length > 0
       ? { variants: checkVariants(variants) as Readonly<Record<string, string>> }
       : {}),
+    // An unreadable fingerprint matches no policy: the cache is then not used.
+    ...(policy === undefined
+      ? {}
+      : {
+          policy:
+            isRecord(policy) && isFingerprint(policy.structure) && isFingerprint(policy.locks)
+              ? { structure: policy.structure, locks: policy.locks }
+              : { structure: "", locks: "" },
+        }),
   };
+}
+
+function isFingerprint(value: unknown): value is string {
+  return typeof value === "string" && /^[a-z0-9]{1,32}$/.test(value);
 }
 
 /** Host token values (a variant's) as a theme layer, with the tokens each reads. */

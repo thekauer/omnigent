@@ -23,6 +23,7 @@ from omnigent.server.server_config import (
     BRANDING_ASSET_MAX_DIMENSION,
     BRANDING_ASSET_MAX_FRAMES,
     BRANDING_ASSETS_DIRNAME,
+    PRODUCT_THEME_MAX_CHARS,
     automation_trigger_poll_minutes,
     branding_config,
     branding_logo_asset,
@@ -31,6 +32,7 @@ from omnigent.server.server_config import (
     load_picker_curation,
     load_product_theme,
     load_server_config,
+    product_theme_cost,
     resolve_config_path,
     session_title_instructions,
 )
@@ -830,3 +832,82 @@ def test_product_theme_of_the_wrong_type_is_ignored(caplog: pytest.LogCaptureFix
         assert load_product_theme({"product": ["theme"]}) is None
         assert load_product_theme({"product": {"theme": "console"}}) is None
     assert "product.theme must be a mapping" in caplog.text
+
+
+def test_product_theme_allowed_with_no_well_formed_entry_fails_open(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """An ``allowed`` list of only malformed entries restricts nothing, not everything."""
+    with caplog.at_level(logging.WARNING, logger="omnigent.server.server_config"):
+        theme = load_product_theme(
+            {"product": {"theme": {"allowed": [3, " ", None], "hide_picker": True}}}
+        )
+    assert theme == {"hide_picker": True}
+    assert "allowing every theme" in caplog.text
+
+
+def test_product_theme_leaves_out_empty_maps() -> None:
+    """An empty locked map is no opinion: it is not served, so it hides no other source's."""
+    assert load_product_theme({"product": {"theme": {"locked_tokens": {}}}}) is None
+
+
+def test_product_theme_warns_about_camel_case_keys(caplog: pytest.LogCaptureFixture) -> None:
+    """The web's camelCase spellings are not server keys: each is named with its fix."""
+    with caplog.at_level(logging.WARNING, logger="omnigent.server.server_config"):
+        theme = load_product_theme(
+            {"product": {"theme": {"lockMode": "dark", "hidePicker": True, "hide_picker": True}}}
+        )
+    assert theme == {"hide_picker": True}
+    assert "lockMode is not a key; did you mean lock_mode?" in caplog.text
+    assert "hidePicker is not a key; did you mean hide_picker?" in caplog.text
+
+
+def test_product_theme_is_capped_to_the_web_limit(caplog: pytest.LogCaptureFixture) -> None:
+    """Over the web's size limit, the last tokens go (named), and the rest of the policy stays."""
+    tokens = {f"ui-tok-{index}": "x" * 250 for index in range(1000)}
+    with caplog.at_level(logging.WARNING, logger="omnigent.server.server_config"):
+        theme = load_product_theme(
+            {
+                "product": {
+                    "theme": {
+                        "allowed": ["omnigent.themes/nord"],
+                        "lock_mode": "dark",
+                        "hide_customizations": True,
+                        "locked_variants": {"density": "compact"},
+                        "locked_tokens": tokens,
+                    }
+                }
+            }
+        )
+    assert theme is not None
+    assert theme["allowed"] == ["omnigent.themes/nord"]
+    assert theme["lock_mode"] == "dark"
+    assert theme["hide_customizations"] is True
+    assert theme["locked_variants"] == {"density": "compact"}
+    kept = list(theme["locked_tokens"])
+    assert 400 < len(kept) < 1000
+    assert kept == list(tokens)[: len(kept)]
+    size = sum(product_theme_cost(name) + 1 for name in theme["allowed"])
+    for key in ("locked_variants", "locked_tokens"):
+        size += sum(
+            product_theme_cost(name) + product_theme_cost(value) + 2
+            for name, value in theme[key].items()
+        )
+    assert size <= PRODUCT_THEME_MAX_CHARS
+    assert f"ui-tok-{len(kept)}" in caplog.text
+    assert "over the 131072-character limit" in caplog.text
+
+
+def test_product_theme_cost_counts_as_javascript_does() -> None:
+    """The cost is the JSON text's length in UTF-16 code units, escapes included."""
+    assert product_theme_cost("ab") == 4
+    assert product_theme_cost('a"b') == 6
+    assert product_theme_cost("\U0001f600") == 4
+
+
+def test_product_theme_limit_matches_the_web() -> None:
+    """The server and the web share one limit."""
+    source = (
+        Path(__file__).resolve().parents[2] / "web" / "src" / "theme" / "productTheme.ts"
+    ).read_text(encoding="utf-8")
+    assert f"PRODUCT_THEME_MAX_CHARS = {PRODUCT_THEME_MAX_CHARS:_};" in source

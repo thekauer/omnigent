@@ -55,23 +55,56 @@ interface Candidate extends LayerValue {
   readonly layer: number;
 }
 
+export interface ResolveOptions {
+  /**
+   * The index of the product's layer (`lockedTokens`). Its tokens never fall back to a
+   * lower layer: a value that pushes a lock out of range or closes a cycle with it is
+   * left out instead, and a lock that still fails takes the registry default.
+   */
+  readonly locked?: number;
+  readonly kindOf?: (id: string) => ValueKind | undefined;
+}
+
+/** Whether `to` is reachable from `from` in `graph`. */
+function reaches(graph: ReadonlyMap<string, readonly string[]>, from: string, to: string): boolean {
+  const seen = new Set<string>();
+  const stack = [from];
+  while (stack.length > 0) {
+    const next = stack.pop()!;
+    if (next === to) return true;
+    if (seen.has(next)) continue;
+    seen.add(next);
+    stack.push(...(graph.get(next) ?? []));
+  }
+  return false;
+}
+
 /**
  * The values of `layers` (lowest first) over the registry defaults in `mode`: per token
  * the highest layer's value that is on no `var()` cycle (CSS makes a cycle invalid) and,
  * for a length, number, duration or percentage, whose interval lies in the token's
  * absolute range and the calc() cap. Intervals are computed from what each token read
  * resolves to (dependencies first); a default reads the same way and is trusted.
+ * A token of the `locked` layer takes that layer's value or its default, never a lower
+ * layer's ({@link ResolveOptions.locked}).
  */
 export function resolveTokenLayers(
   layers: readonly TokenLayer[],
   mode: UiTheme,
-  kindOf: (id: string) => ValueKind | undefined = (id) => getToken(id)?.kind,
+  options: ResolveOptions = {},
 ): ResolvedLayers {
+  const kindOf = options.kindOf ?? ((id: string) => getToken(id)?.kind);
+  const lockedLayer = options.locked;
   const candidates = new Map<string, Candidate[]>();
+  const locks = new Map<string, Candidate>();
   for (let layer = layers.length - 1; layer >= 0; layer -= 1) {
     for (const [token, entry] of Object.entries(layers[layer]!)) {
+      // A locked token's lower values never apply.
+      if (locks.has(token)) continue;
+      const candidate: Candidate = { value: entry.value, references: entry.references, layer };
+      if (layer === lockedLayer) locks.set(token, candidate);
       const list = candidates.get(token) ?? [];
-      list.push({ value: entry.value, references: entry.references, layer });
+      list.push(candidate);
       candidates.set(token, list);
     }
   }
@@ -83,26 +116,87 @@ export function resolveTokenLayers(
   };
   const rejected: RejectedToken[] = [];
   const dropped = new Set<Candidate>();
+  /** Locks that failed on their own (a cycle among locks and defaults): their default applies. */
+  const failedLocks = new Set<string>();
+  /** Why each lock now dropped failed: what a value it reads is blamed for. */
+  const brokenLocks = new Map<string, "range" | "cycle">();
   const drop = (token: string, candidate: Candidate, reason: string) => {
     dropped.add(candidate);
     rejected.push({ token, value: candidate.value, layer: candidate.layer, reason });
   };
   const top = (token: string) => candidates.get(token)?.find((entry) => !dropped.has(entry));
+  const isLock = (entry: Candidate) => entry.layer === lockedLayer;
   const dropCycles = (chosen: ReadonlyMap<string, Candidate>): boolean => {
     const graph = new Map<string, readonly string[]>();
     for (const token of TOKENS) graph.set(token.id, references(registryDefault(token.id, mode)));
     for (const [token, entry] of chosen) graph.set(token, entry.references);
-    let found = false;
-    for (const token of referenceCycles(graph)) {
+    const onCycle = [...referenceCycles(graph)].flatMap((token) => {
       const entry = chosen.get(token);
-      if (!entry) continue;
-      drop(token, entry, "is on a reference cycle");
-      found = true;
+      return entry ? [{ token, entry }] : [];
+    });
+    // A cycle through a lock drops the other values on it, never the lock.
+    const free = onCycle.filter(({ entry }) => !isLock(entry));
+    const locked = onCycle.filter(({ entry }) => isLock(entry)).map(({ token }) => token);
+    for (const { token, entry } of free) {
+      const lock = locked.find((id) => reaches(graph, token, id) && reaches(graph, id, token));
+      drop(
+        token,
+        entry,
+        lock ? `closes a reference cycle with the product's --${lock}` : "is on a reference cycle",
+      );
     }
-    return found;
+    if (free.length > 0) return true;
+    // Only locks (and defaults) are left on a cycle: those locks take their defaults.
+    for (const { token, entry } of onCycle) {
+      drop(token, entry, "is on a reference cycle");
+      failedLocks.add(token);
+    }
+    return onCycle.length > 0;
+  };
+  /**
+   * Blames the values a broken lock reads (its dependency closure, through what applies
+   * now) and drops those of the highest layer among them, so the lock applies again; a
+   * lock that reads nothing to blame keeps failing and takes its default.
+   */
+  const blame = (token: string, why: "range" | "cycle"): void => {
+    const lock = locks.get(token)!;
+    const found: { token: string; entry: Candidate }[] = [];
+    const seen = new Set<string>();
+    const visit = (refs: readonly string[]) => {
+      for (const ref of refs) {
+        if (seen.has(ref)) continue;
+        seen.add(ref);
+        const entry = top(ref);
+        if (entry && !isLock(entry)) found.push({ token: ref, entry });
+        visit(entry ? entry.references : references(registryDefault(ref, mode)));
+      }
+    };
+    visit(lock.references);
+    if (found.length === 0) {
+      failedLocks.add(token);
+      return;
+    }
+    const highest = Math.max(...found.map(({ entry }) => entry.layer));
+    for (const { token: ref, entry } of found) {
+      if (entry.layer !== highest) continue;
+      drop(
+        ref,
+        entry,
+        why === "range"
+          ? `pushes the product's --${token} out of range in ${mode}`
+          : `closes a reference cycle with the product's --${token}`,
+      );
+    }
+    // The lock applies again: its rejection goes.
+    dropped.delete(lock);
+    const index = rejected.findLastIndex(
+      (entry) => entry.token === token && entry.layer === lock.layer,
+    );
+    if (index >= 0) rejected.splice(index, 1);
   };
   // Each pass drops what fails; a fallback may close a new cycle, which the next pass drops.
   for (;;) {
+    brokenLocks.clear();
     const initial = new Map<string, Candidate>();
     for (const token of candidates.keys()) {
       const entry = top(token);
@@ -141,6 +235,7 @@ export function resolveTokenLayers(
         } catch (error) {
           if (!(error instanceof CycleSignal)) throw error;
           drop(token, entry, "is on a reference cycle");
+          if (isLock(entry)) brokenLocks.set(token, "cycle");
           continue;
         }
         if (result.ok) {
@@ -150,6 +245,7 @@ export function resolveTokenLayers(
           break;
         }
         drop(token, entry, `is out of range in ${mode}: ${result.reason}`);
+        if (isLock(entry)) brokenLocks.set(token, "range");
       }
       if (!decided && kind && INTERVAL_KINDS.has(kind)) {
         const fallback = registryDefault(token, mode);
@@ -163,6 +259,11 @@ export function resolveTokenLayers(
       return interval;
     };
     for (const token of candidates.keys()) bound(token);
+    const broken = [...brokenLocks].filter(([token]) => !failedLocks.has(token));
+    if (broken.length > 0) {
+      for (const [token, why] of broken) blame(token, why);
+      continue;
+    }
     if (dropCycles(chosen)) continue;
     const values: Record<string, string> = Object.create(null) as Record<string, string>;
     // In the order the layers first name each token, as a merge of them would.

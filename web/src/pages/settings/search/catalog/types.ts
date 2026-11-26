@@ -192,6 +192,10 @@ export interface SettingsAvailability {
   sessionTitleInstructions: boolean;
   /** The server offers the proactive agent. */
   proactiveAgent: boolean;
+  /** The product shows the theme picker (no `hidePicker`). */
+  themePicker: boolean;
+  /** The product shows the theme's options, variants and customizations (no `hideCustomizations`). */
+  themeCustomizations: boolean;
 }
 
 export interface SettingsEntry {

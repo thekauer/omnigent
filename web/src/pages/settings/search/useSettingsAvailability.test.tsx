@@ -4,6 +4,8 @@ import { afterEach, expect, it, vi } from "vitest";
 
 import { CapabilitiesProvider } from "@/lib/CapabilitiesContext";
 import { FALLBACK_SERVER_INFO, type ServerInfo } from "@/lib/capabilities";
+import { themeService } from "@/theme/themeService";
+import { COLOR_THEME_ENTRY, SETTINGS_JSON_ENTRY } from "./catalog/appearance";
 import { FLOATING_COMPOSER_SHORTCUT_ENTRY } from "./catalog/general";
 import type { SettingsAvailability } from "./catalog/types";
 import { useSettingsAvailability } from "./useSettingsAvailability";
@@ -62,4 +64,21 @@ it("leaves the New Agent row out, without asking the shell, while floating_compo
 
   expect(listsNewAgentRow(result.current)).toBe(false);
   expect(getDesktopFeatures).not.toHaveBeenCalled();
+});
+
+it("leaves the theme rows out of search as the product hides them", () => {
+  const { result } = renderAvailability(false, false);
+  const listed = () =>
+    [COLOR_THEME_ENTRY, SETTINGS_JSON_ENTRY]
+      .filter((entry) => entry.available?.(result.current) !== false)
+      .map((entry) => entry.id);
+  expect(listed()).toEqual(["color-theme", "settings-json"]);
+  act(() => themeService.setProductPolicy({ hidePicker: true }));
+  expect(listed()).toEqual(["settings-json"]);
+  act(() => themeService.setProductPolicy({ hideCustomizations: true }));
+  expect(listed()).toEqual(["color-theme"]);
+  act(() => themeService.setProductPolicy({ hidePicker: true, hideCustomizations: true }));
+  expect(listed()).toEqual([]);
+  act(() => themeService.setProductPolicy(null));
+  expect(listed()).toEqual(["color-theme", "settings-json"]);
 });

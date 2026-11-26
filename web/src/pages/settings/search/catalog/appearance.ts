@@ -61,6 +61,9 @@ export const COLOR_THEME_ENTRY = settingsEntry({
   },
   // Extensions' themes, named by their contributions.
   overlays: { "": { runtimeChoices: {} } },
+  // Under the product's `hidePicker` the select and its colours don't render; the row
+  // then holds only the settings JSON row, searched as its own entry.
+  available: (availability) => availability.themePicker,
 });
 
 /**
@@ -88,6 +91,8 @@ export const SETTINGS_JSON_ENTRY = settingsEntry({
     "advanced",
   ],
   revealedBy: "color-theme",
+  // The product's `hideCustomizations` withdraws it.
+  available: (availability) => availability.themeCustomizations,
 });
 
 export const UI_FONT_SIZE_ENTRY = settingsEntry({

@@ -219,12 +219,34 @@ describe("variants.css", () => {
     }
   });
 
-  it("insets the floating sheet only from md up, and on all sides with the sidebar collapsed", () => {
+  it("insets the floating sheet as md does: from md up, and in the desktop app at any width", () => {
     expect(variantsCss).toMatch(
       /@media \(width >= 73\.8125rem\) \{\s*\[data-omni-sheet="floating"\] \[data-slot="main-area"\] \{\s*margin: var\(--ui-sheet-gap-top\)/,
     );
     expect(variantsCss).toContain(
       '[data-omni-sheet="floating"] .app-shell:not([data-sidebar-open]) [data-slot="main-area"]',
+    );
+    // The same breakpoint and desktop-app rule as index.css's md variant.
+    const indexCss = readFileSync(resolve(__dirname, "../index.css"), "utf8");
+    expect(indexCss).toMatch(
+      /@custom-variant md \{\s*@media \(width >= 73\.8125rem\)[\s\S]*?&:where\(\[data-desktop-app\], \[data-desktop-app\] \*\)/,
+    );
+    const rule = (selector: string) =>
+      new RegExp(`${selector.replace(/[[\]().*:"=]/g, "\\$&")}\\s*\\{([^}]*)\\}`, "g");
+    const desktop = ":where([data-desktop-app], [data-desktop-app] *)";
+    const [width, app] = [
+      ...variantsCss.matchAll(rule('[data-omni-sheet="floating"] [data-slot="main-area"]')),
+      ...variantsCss.matchAll(
+        rule(`[data-omni-sheet="floating"] [data-slot="main-area"]${desktop}`),
+      ),
+    ];
+    expect(app).toBeDefined();
+    // Both carry the same declarations.
+    const declarations = (match: RegExpMatchArray | undefined) =>
+      (match?.[1] ?? "").replace(/\s+/g, " ").trim();
+    expect(declarations(app)).toBe(declarations(width));
+    expect(variantsCss.replace(/\s+/g, " ")).toContain(
+      `[data-omni-sheet="floating"] .app-shell:not([data-sidebar-open]) [data-slot="main-area"]${desktop} { margin-left: var(--ui-sheet-gap); }`,
     );
   });
 

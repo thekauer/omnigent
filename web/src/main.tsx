@@ -40,7 +40,7 @@ import {
 import { migrateLegacyProjectFolderPagination } from "./lib/projectFolderPaginationPreferences";
 import { applyThemePalette, readThemePalette } from "./lib/themePalette";
 import { applyCustomTheme, readCustomTheme } from "./lib/customTheme";
-import { applyBuildProductTheme, applyServerProductTheme } from "./theme/productTheme";
+import { applyBootProductThemes, applyServerProductTheme } from "./theme/productTheme";
 import { themeService } from "./theme/themeService";
 import { initChatStore } from "./store/chatStore";
 import { railViews } from "./shell/railViews";
@@ -149,8 +149,9 @@ migrateLegacyProjectFolderPagination();
 // so the app renders in the chosen theme rather than flashing the brand default.
 applyCustomTheme(readCustomTheme());
 applyThemePalette(readThemePalette());
-// The build's product theme (web/product.json), before the theme first applies.
-applyBuildProductTheme();
+// The build's product theme (web/product.json) and the server's last, before the theme
+// first applies; the server's answer replaces its own.
+applyBootProductThemes();
 // A contributed theme's last applied values, until its extension registers it.
 themeService.applyCached();
 

@@ -732,14 +732,16 @@ limitHit, message }`; a cancelled token aborts the request and rejects
       (`data-theme`) instead of a runtime stylesheet, and stores its id
       (`nord`) as before. A product's theme configuration (theming plan M10,
       `theme/productTheme.ts`: `OmnigentAppProps.product.theme` over a build's
-      `web/product.json` over the server's `product.theme`, field by field, into
-      `setProductPolicy`): `default` is the first run's and reset's theme;
+      `web/product.json` over the server's `product.theme`, field by field and the
+      locks per key, into `setProductPolicy`; content capped to
+      `PRODUCT_THEME_MAX_CHARS` on both sides, kept field by field): `default` is the first run's and reset's theme;
       `allowed` limits the list, `select()`, `preview()` and
       `omnigent.selectColorTheme` (by entry or member id, or a `*` pattern; a
       stored choice outside it yields to the default); `lockMode`,
       `lockedTokens`, `lockedOptions` and `lockedVariants` are the top layer
       (the settings JSON marks those keys "Set by product", faded, and the quick
-      picks grey them out); `hidePicker` hides
+      picks grey them out; a locked token never falls to a lower layer, and the
+      values that push it out of range or close a cycle with it are left out); `hidePicker` hides
       the picker command and Settings' picker row (and the built-in palette
       editor, which chooses Custom), keeping the chosen theme's options and
       settings JSON; `hideCustomizations` hides the settings JSON and its quick

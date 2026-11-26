@@ -2666,6 +2666,11 @@ describe("Color theme with contributed themes", () => {
     });
     renderPage("/settings/appearance");
     expect(screen.getByText("Set by product: light.")).toBeInTheDocument();
+    // Read out, not hidden: the locked control is described by it.
+    expect(screen.getByText("Set by product: light.").closest('[aria-hidden="true"]')).toBeNull();
+    expect(screen.getByRole("radiogroup", { name: "Mode" })).toHaveAccessibleDescription(
+      "Set by product: light.",
+    );
     expect(screen.getByTestId("theme-light")).toBeDisabled();
     expect(screen.getByTestId("theme-light")).toHaveAttribute("aria-checked", "true");
     // The locked options and variants show in the settings JSON and the quick picks.

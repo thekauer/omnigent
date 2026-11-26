@@ -10,6 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { scopeCss } from "../vite.embed.config";
 import { OmnigentApp, type ProductConfig } from "./embed";
 import { themeService } from "./theme/themeService";
+import { colorThemes } from "./theme/colorThemes";
 import { getEmbedRoot, getEmbedScopeRoot } from "./lib/host";
 
 // Exercise the embed's real providers and native detection without loading
@@ -252,7 +253,7 @@ describe("embed product theme", () => {
     );
   }
 
-  it("applies the default, locks the mode and tokens over the user's, and clears on unmount", () => {
+  it("applies the default, locks the mode and tokens over the user's, and clears on unmount", async () => {
     const setColorScheme = vi.fn();
     vi.stubGlobal("omnigentDesktop", { kind: "electron", setColorScheme });
     vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -288,8 +289,44 @@ describe("embed product theme", () => {
     expect(getEmbedRoot()).not.toHaveClass("dark");
     expect(style()).toContain("12px");
     unmount();
+    // Cleared after the commit (a strict-mode remount in the same commit changes nothing).
+    await act(async () => {});
     expect(themeService.getProductPolicy()).toBeNull();
     expect(themeService.getChoice()).toBe("omni");
+  });
+
+  it("gives each mount its own source, the later one winning, and one change event per change", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const changes: string[] = [];
+    const stop = colorThemes.onDidChange((theme) => changes.push(theme.id));
+    const first = render(
+      app({ theme: { default: "nord", lockedTokens: { "ui-radius-base": "1px" } } }),
+    );
+    const second = render(
+      app({ theme: { default: "dracula", lockedTokens: { "ui-row-line": "20px" } } }),
+    );
+    expect(themeService.getChoice()).toBe("dracula");
+    // The locks merge per key across the mounts.
+    expect(themeService.getProductPolicy()?.lockedTokens).toEqual({
+      "ui-row-line": "20px",
+      "ui-radius-base": "1px",
+    });
+    changes.length = 0;
+    // A new prop value is one change, not a clear and a reapply.
+    second.rerender(app({ theme: { default: "nord" } }));
+    expect(themeService.getChoice()).toBe("nord");
+    expect(changes).toHaveLength(1);
+    // Unmounting one leaves the other's in place.
+    second.unmount();
+    await act(async () => {});
+    expect(themeService.getProductPolicy()).toMatchObject({
+      default: "nord",
+      lockedTokens: { "ui-radius-base": "1px" },
+    });
+    first.unmount();
+    await act(async () => {});
+    expect(themeService.getProductPolicy()).toBeNull();
+    stop();
   });
 
   it("applies it only to the embed's roots, never the host page's, while mounting", () => {

@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { useAdminViewSwitchShown } from "@/hooks/useAdminViewSwitchShown";
+import { useThemeCustomizationsHidden, useThemePickerHidden } from "@/theme/themeService";
 import { useServerInfo } from "@/lib/CapabilitiesContext";
 import { isFeatureEnabled } from "@/lib/capabilities";
 import {
@@ -46,6 +47,8 @@ export function useSettingsAvailability(): SettingsAvailability {
   const projectKanban = isFeatureEnabled(info, "project_kanban");
   const sessionTitleInstructions = loaded?.session_title_instructions === true;
   const proactiveAgent = loaded?.proactive_agent_available === true;
+  const themePicker = !useThemePickerHidden();
+  const themeCustomizations = !useThemeCustomizationsHidden();
   return useMemo(
     () => ({
       globalShortcut,
@@ -60,6 +63,8 @@ export function useSettingsAvailability(): SettingsAvailability {
       projectKanban,
       sessionTitleInstructions,
       proactiveAgent,
+      themePicker,
+      themeCustomizations,
     }),
     [
       globalShortcut,
@@ -75,6 +80,8 @@ export function useSettingsAvailability(): SettingsAvailability {
       projectKanban,
       sessionTitleInstructions,
       proactiveAgent,
+      themePicker,
+      themeCustomizations,
     ],
   );
 }

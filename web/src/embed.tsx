@@ -64,8 +64,10 @@ import {
 import { applyThemePalette, readThemePalette } from "./lib/themePalette";
 import { applyCustomTheme, readCustomTheme } from "./lib/customTheme";
 import {
-  applyBuildProductTheme,
+  applyBootProductThemes,
+  applyProductThemes,
   applyServerProductTheme,
+  createEmbedProductThemeSource,
   parseProductTheme,
   type ProductConfig,
   setProductTheme,
@@ -235,6 +237,8 @@ function OmnigentProviders({
       applyUiFontFamily(readUiFontFamily());
       applyThemePalette(readThemePalette());
       applyCustomTheme(readCustomTheme());
+      // The product's policy (this render's embed prop included) before the cache paints.
+      applyProductThemes();
       themeService.applyCached();
     }
   }, []);
@@ -301,22 +305,26 @@ function plainDataKey(value: unknown): string {
 /**
  * The product theme from the props, with the build's file: recorded on the first render
  * and applied once the scope root has mounted (before the first paint), so nothing lands
- * on the host page's root; kept in step with the props, cleared on unmount.
+ * on the host page's root; kept in step with the props, cleared on unmount. Each mount has
+ * its own source, so two apps on a page never clear each other's.
  */
 function useEmbedProductTheme(product: ProductConfig | undefined) {
   const key = plainDataKey(product?.theme);
   const latest = useRef(product);
   latest.current = product;
-  useState(() => {
-    applyBuildProductTheme({ apply: false });
+  const [source] = useState(() => {
+    applyBootProductThemes({ apply: false });
+    // Recorded for whatever applies before this app mounts; its own source takes over then.
     setProductTheme("embed", parseProductTheme(product?.theme, "embed"), { apply: false });
-    return null;
+    return createEmbedProductThemeSource();
   });
   // A layout effect runs after the scope root's ref (a descendant's) in the same commit.
+  // A new prop value replaces this mount's in one change; only an unmount clears it.
   useLayoutEffect(() => {
-    setProductTheme("embed", parseProductTheme(latest.current?.theme, "embed"));
-    return () => setProductTheme("embed", undefined);
-  }, [key]);
+    setProductTheme("embed", undefined, { apply: false });
+    source.set(parseProductTheme(latest.current?.theme, "embed"));
+  }, [key, source]);
+  useLayoutEffect(() => () => source.release(), [source]);
 }
 
 /**

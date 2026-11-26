@@ -30,6 +30,7 @@ Resolution order for the config path:
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import warnings
@@ -245,6 +246,87 @@ _PRODUCT_THEME_ID_LIMIT = 200
 _PRODUCT_THEME_ALLOWED_LIMIT = 100
 _PRODUCT_THEME_KEY_LIMIT = 128
 _PRODUCT_THEME_VALUE_LIMIT = 256
+# The most the theme block's content may take, as the web app counts it (UTF-16 code units
+# of each string's JSON text, plus 2 per map entry and 1 per allowed id): the web's
+# ``PRODUCT_THEME_MAX_CHARS`` in ``web/src/theme/productTheme.ts``. Over it, entries are
+# dropped from the end, locked tokens first, so what is served always fits.
+PRODUCT_THEME_MAX_CHARS = 131_072
+# The camelCase spellings the web's own configs use, which the server config doesn't take.
+_PRODUCT_THEME_CAMEL_KEYS = {
+    "lockMode": "lock_mode",
+    "lockedTokens": "locked_tokens",
+    "lockedOptions": "locked_options",
+    "lockedVariants": "locked_variants",
+    "hidePicker": "hide_picker",
+    "hideCustomizations": "hide_customizations",
+}
+
+
+def product_theme_cost(text: str) -> int:
+    """Return what *text* takes of :data:`PRODUCT_THEME_MAX_CHARS`, as the web counts it.
+
+    :param text: A default, an allowed id, or a locked map's key or value.
+    :returns: The length of its JSON text in UTF-16 code units (JavaScript's ``length``).
+    """
+    return len(json.dumps(text, ensure_ascii=False).encode("utf-16-le")) // 2
+
+
+def _cap_product_theme(out: dict[str, Any]) -> None:
+    """Drop what is over :data:`PRODUCT_THEME_MAX_CHARS` from *out*, warning with the keys.
+
+    Spends the budget in the order the web reads the fields (the default, the allowed ids,
+    then the locked variants, options and tokens), so the web keeps all of it.
+    """
+    left = PRODUCT_THEME_MAX_CHARS
+    default = out.get("default")
+    if default is not None:
+        left -= product_theme_cost(default)
+    if "allowed" in out:
+        kept: list[str] = []
+        dropped: list[str] = []
+        for name in out["allowed"]:
+            cost = product_theme_cost(name) + 1
+            if cost <= left:
+                left -= cost
+                kept.append(name)
+            else:
+                dropped.append(name)
+        if dropped:
+            _warn_over_limit("allowed", dropped)
+        if kept:
+            out["allowed"] = kept
+        else:
+            del out["allowed"]
+    for key in ("locked_variants", "locked_options", "locked_tokens"):
+        if key not in out:
+            continue
+        entries: dict[str, str] = {}
+        over: list[str] = []
+        for name, value in out[key].items():
+            cost = product_theme_cost(name) + product_theme_cost(value) + 2
+            if cost <= left:
+                left -= cost
+                entries[name] = value
+            else:
+                over.append(name)
+        if over:
+            _warn_over_limit(key, over)
+        if entries:
+            out[key] = entries
+        else:
+            del out[key]
+
+
+def _warn_over_limit(key: str, names: list[str]) -> None:
+    shown = ", ".join(name[:64] for name in names[:10])
+    more = f" and {len(names) - 10} more" if len(names) > 10 else ""
+    logger.warning(
+        "server config product.theme.%s is over the %d-character limit; dropping %s%s",
+        key,
+        PRODUCT_THEME_MAX_CHARS,
+        shown,
+        more,
+    )
 
 
 def _product_theme_map(raw: Any, key: str, limit: int) -> dict[str, str] | None:
@@ -280,7 +362,9 @@ def load_product_theme(config: Mapping[str, Any]) -> dict[str, Any] | None:
     locked mode, locked tokens, options and variants, and whether Settings shows the
     picker and the customizations. Only the shape is checked here; the web checks the
     values (token values against its registry, as a theme's). Each key fails open: a
-    malformed one logs and is left out.
+    malformed one logs and is left out, as is an empty list or map, and an ``allowed``
+    list with no well-formed entry restricts nothing. The content is capped to
+    :data:`PRODUCT_THEME_MAX_CHARS` as the web counts it, so the web never drops it.
 
     :param config: Loaded server config carrying the optional ``product`` mapping.
     :returns: The theme block as ``GET /v1/info`` serves it (snake_case keys), or
@@ -298,6 +382,13 @@ def load_product_theme(config: Mapping[str, Any]) -> dict[str, Any] | None:
     if not isinstance(theme, Mapping):
         logger.warning("server config product.theme must be a mapping; ignoring it")
         return None
+    for camel, snake in _PRODUCT_THEME_CAMEL_KEYS.items():
+        if camel in theme:
+            logger.warning(
+                "server config product.theme.%s is not a key; did you mean %s? ignoring it",
+                camel,
+                snake,
+            )
     out: dict[str, Any] = {}
     default = theme.get("default")
     if default is not None:
@@ -315,7 +406,14 @@ def load_product_theme(config: Mapping[str, Any]) -> dict[str, Any] | None:
         ]
         if len(names) != len(items):
             logger.warning("server config product.theme.allowed has malformed entries")
-        out["allowed"] = list(dict.fromkeys(names))[:_PRODUCT_THEME_ALLOWED_LIMIT]
+        if names:
+            out["allowed"] = list(dict.fromkeys(names))[:_PRODUCT_THEME_ALLOWED_LIMIT]
+        else:
+            # Fails open: no well-formed entry restricts nothing, rather than everything.
+            logger.warning(
+                "server config product.theme.allowed has no well-formed entry;"
+                " allowing every theme"
+            )
     lock_mode = theme.get("lock_mode")
     if lock_mode is not None:
         if lock_mode in ("light", "dark"):
@@ -326,7 +424,8 @@ def load_product_theme(config: Mapping[str, Any]) -> dict[str, Any] | None:
         if theme.get(key) is None:
             continue
         entries = _product_theme_map(theme[key], key, limit)
-        if entries is not None:
+        # An empty map (or one of only malformed entries) is no opinion.
+        if entries:
             out[key] = entries
     for key in _PRODUCT_THEME_FLAGS:
         value = theme.get(key)
@@ -336,6 +435,7 @@ def load_product_theme(config: Mapping[str, Any]) -> dict[str, Any] | None:
             out[key] = value
         else:
             logger.warning("server config product.theme.%s must be true or false", key)
+    _cap_product_theme(out)
     return out or None
 
 

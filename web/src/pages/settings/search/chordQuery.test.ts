@@ -296,6 +296,8 @@ const SHOWN: SettingsAvailability = {
   projectKanban: true,
   sessionTitleInstructions: true,
   proactiveAgent: true,
+  themePicker: true,
+  themeCustomizations: true,
 };
 
 describe("chord results in Settings search", () => {
