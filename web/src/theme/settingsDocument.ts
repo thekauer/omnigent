@@ -436,8 +436,14 @@ function readText(text: string): ParsedSettings {
               parent: frame.node,
               children: [],
             };
-            const key = newNode("string", token.value);
-            key.parent = property;
+            // A key isn't a value: it doesn't count toward the values limit.
+            const key: MutableNode = {
+              type: "string",
+              offset: token.offset,
+              length: token.length,
+              value: token.value,
+              parent: property,
+            };
             property.children!.push(key);
             frame.node.children!.push(property);
             frame.property = property;
