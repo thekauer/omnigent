@@ -110,6 +110,7 @@ import {
 import { useStickToBottomContext } from "use-stick-to-bottom";
 import { isSessionScopedDecision, showsRoutingDecisionChip } from "@/lib/routingDecision";
 import { useWorkingLabelTick } from "@/hooks/useWorkingLabelTick";
+import { usePrefersReducedMotion } from "@/hooks/usePrefersReducedMotion";
 import { useForkDialog } from "@/shell/ForkDialogContext";
 import { useTerminalFirst } from "@/shell/TerminalFirstContext";
 import { DisabledActionTooltip } from "@/components/DisabledActionTooltip";
@@ -758,12 +759,15 @@ function useCycleTick(enabled: boolean, ms: number): number {
 /**
  * The working row's mark and label, as the working indicator variants draw them: Otto
  * with the shimmering label (the default), or the accent square pulse or dots with a
- * plain label in the label font. The verbs variant picks the words while unblocked.
+ * plain label in the label font (only those variants use it). The verbs variant picks
+ * the words while unblocked; the cycling ones stay on the first under reduced motion.
  */
 function WorkingIndicatorBody({ label, blocked }: { label: string; blocked: boolean }) {
   const indicator = useVariant("workingIndicator");
   const verbs = useVariant("workingVerbs");
-  const cycleTick = useCycleTick(verbs === "cycle" && !blocked, WORKING_CYCLE_MS);
+  // Under reduced motion the cycling verbs hold on the first one.
+  const reducedMotion = usePrefersReducedMotion();
+  const cycleTick = useCycleTick(verbs === "cycle" && !blocked && !reducedMotion, WORKING_CYCLE_MS);
   const shown = blocked
     ? label
     : verbs === "static"

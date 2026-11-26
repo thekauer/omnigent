@@ -58,6 +58,26 @@ describe("working indicator variants", () => {
     expect(row()).toHaveTextContent("Working…");
   });
 
+  it("holds the first cycling verb under reduced motion", () => {
+    vi.useFakeTimers();
+    const matchMedia = window.matchMedia;
+    window.matchMedia = ((query: string) => ({
+      ...matchMedia(query),
+      matches: query === "(prefers-reduced-motion: reduce)",
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    })) as typeof window.matchMedia;
+    try {
+      act(() => themeService.setVariant("workingVerbs", "cycle"));
+      render(<WorkingIndicator />);
+      expect(row()).toHaveTextContent(WORKING_CYCLE_VERBS[0]);
+      act(() => vi.advanceTimersByTime(WORKING_CYCLE_MS * 2));
+      expect(row()).toHaveTextContent(WORKING_CYCLE_VERBS[0]);
+    } finally {
+      window.matchMedia = matchMedia;
+    }
+  });
+
   it("shows a block reason whatever the verbs", () => {
     act(() => themeService.setVariant("workingVerbs", "cycle"));
     useChatStore.setState({ blockedOn: "permission prompt" });
