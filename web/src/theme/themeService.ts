@@ -1488,18 +1488,25 @@ export class ThemeService implements ThemeContributionSink {
     return { theme, parsed, syntaxName: parsed.syntax ? syntaxName : undefined };
   }
 
-  /** The tokens of a member's option choices: the stored ones, else each option's default. */
+  /**
+   * The tokens of a member's option choices, as {@link resolve} picks them: the product's
+   * lock, else the stored choice (none under `hideCustomizations`), else the default.
+   */
   private optionTokens(
     parsed: ParsedTheme,
     theme: { id: string; family: string | undefined; extensionId: string },
   ): ThemeTokens {
-    const stored = this.storedOptions(this.optionsKey(theme));
+    const stored = this.policy?.hideCustomizations
+      ? {}
+      : this.storedOptions(this.optionsKey(theme));
+    const locked = this.policy?.lockedOptions ?? {};
     const out = nullMap<{ value: string; references: readonly string[] }>();
     for (const option of parsed.options) {
-      const wanted = typeof stored[option.id] === "string" ? stored[option.id] : option.default;
+      const find = (wanted: unknown) => option.choices.find((entry) => entry.id === wanted);
       const choice =
-        option.choices.find((entry) => entry.id === wanted) ??
-        option.choices.find((entry) => entry.id === option.default);
+        (Object.hasOwn(locked, option.id) ? find(locked[option.id]) : undefined) ??
+        find(stored[option.id]) ??
+        find(option.default);
       if (choice) Object.assign(out, choice.tokens);
     }
     return out;

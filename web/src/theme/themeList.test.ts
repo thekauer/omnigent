@@ -110,6 +110,24 @@ describe("the theme list", () => {
     );
   });
 
+  it("shows the product's locked option and no stored choice under hideCustomizations", () => {
+    service.addExtension(fixtureThemeExtension());
+    service.select(DARK);
+    service.setOption("accent", "lava");
+    const accent = () =>
+      service.entries().find((entry) => entry.id === DARK)!.swatches.dark?.accent;
+    service.setProductPolicy({ lockedOptions: { accent: "orange" } });
+    expect(accent()).toBe("#ff6a00");
+    service.setProductPolicy({ hideCustomizations: true });
+    expect(accent()).toBe("#ff6a00");
+    service.setProductPolicy({ hideCustomizations: true, lockedOptions: { accent: "lava" } });
+    expect(accent()).toBe("#e5322d");
+    // A lock naming no choice falls back to the stored one, as the theme itself does.
+    service.setProductPolicy({ lockedOptions: { accent: "none" } });
+    expect(accent()).toBe("#e5322d");
+    service.setProductPolicy(null);
+  });
+
   it("names the chosen family member, whichever it is", () => {
     service.addExtension(fixtureThemeExtension());
     service.select(LIGHT);
