@@ -501,13 +501,16 @@ export class ThemeService implements ThemeContributionSink {
 
   /**
    * Chooses a theme: a contributed theme's id, a built-in palette's id, or null for the
-   * default. The choice is kept even while its extension is missing.
+   * default ({@link defaultSelection}: the first allowed theme when the product's
+   * `allowed` leaves the default palette out). The choice is kept even while its
+   * extension is missing.
    */
   select(requested: string | null): void {
     if (requested !== null && !isContributedThemeId(requested) && !isThemeSelection(requested)) {
       throw new TypeError(`no theme ${JSON.stringify(String(requested).slice(0, 80))}`);
     }
-    const id = requested === null ? null : this.selectionId(requested);
+    const fallback = requested === null ? this.defaultSelection() : null;
+    const id = fallback ?? (requested === null ? null : this.selectionId(requested));
     if (id !== null && !this.isAllowed(id)) {
       throw new TypeError(`theme ${JSON.stringify(id.slice(0, 80))} is not allowed here`);
     }
@@ -535,7 +538,8 @@ export class ThemeService implements ThemeContributionSink {
       if (id !== null && !isContributedThemeId(id) && !isThemeSelection(id)) {
         throw new TypeError(`no theme ${JSON.stringify(String(id).slice(0, 80))}`);
       }
-      const next = id === null ? DEFAULT_PALETTE : this.selectionId(id);
+      const next =
+        id === null ? (this.defaultSelection() ?? DEFAULT_PALETTE) : this.selectionId(id);
       if (!this.isAllowed(next)) {
         throw new TypeError(`theme ${JSON.stringify(next.slice(0, 80))} is not allowed here`);
       }
@@ -622,6 +626,22 @@ export class ThemeService implements ThemeContributionSink {
       (entry) =>
         entryHas(entry, choice) || allowed.some((id) => entry.id === id || entryHas(entry, id)),
     );
+  }
+
+  /**
+   * What "the default" selects under the product's `allowed`: null (the default palette)
+   * when it is allowed or nothing allowed is listed, else the first allowed entry's id.
+   */
+  private defaultSelection(): string | null {
+    const allowed = this.policy?.allowed;
+    if (!allowed) return null;
+    const permitted = (entry: ThemeListEntry) =>
+      allowed.some((id) => entry.id === id || entryHas(entry, id));
+    const entries = this.allEntries(this.getChoice()).filter(
+      (entry) => entry.available && permitted(entry),
+    );
+    if (entries.some((entry) => entry.id === DEFAULT_PALETTE)) return null;
+    return entries[0]?.id ?? null;
   }
 
   /** Whether the product allows `id` (a list id): its entry, or one of its members, is allowed. */

@@ -409,7 +409,15 @@ describe("ThemeService: per-theme customization keys, product policy, applied th
     // A family is allowed by any of its members.
     service.select(LIGHT);
     expect(service.getChoice()).toBe(LIGHT);
+    // The default palette isn't allowed: "the default" is the first allowed theme.
+    service.preview(null);
+    expect(document.documentElement.getAttribute("data-theme")).toBe("nord");
+    service.preview(undefined);
     service.select(null);
+    expect(service.getChoice()).toBe("nord");
+    service.setProductPolicy({ allowed: ["omni", "nord"] });
+    service.select(null);
+    expect(service.getChoice()).toBe("omni");
     service.setProductPolicy(null);
   });
 
