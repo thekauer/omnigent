@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { afterEach, expect, it } from "vitest";
 import {
   formatLocalReviewComments,

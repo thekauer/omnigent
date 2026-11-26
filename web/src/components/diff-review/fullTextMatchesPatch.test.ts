@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { hydratePartialDiff, parsePatchFiles, parseDiffFromFile } from "@pierre/diffs";
 import { describe, expect, it } from "vitest";
 import { fullTextMatchesPatch } from "./fullTextMatchesPatch";

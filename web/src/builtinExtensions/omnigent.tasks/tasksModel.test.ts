@@ -1,3 +1,4 @@
+// @vitest-environment node
 // The Tasks tab's content as pure data: what each state of a session's tasks shows,
 // which controls apply and which command each runs.
 import type * as Omnigent from "omnigent";

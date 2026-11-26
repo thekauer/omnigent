@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { buildDesignModePrompt } from "@/lib/designModePrompt";
 import { buildDrawPrompt } from "./core/designPrompts";

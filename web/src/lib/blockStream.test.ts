@@ -1,3 +1,4 @@
+// @vitest-environment node
 // Mirrors tests/frontends/sdk/test_stream.py.
 //
 // Hand-built event sequences → BlockStream → assert on emitted blocks.

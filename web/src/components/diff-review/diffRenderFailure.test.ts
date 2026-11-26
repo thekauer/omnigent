@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { parseDiffFromFile } from "@pierre/diffs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {

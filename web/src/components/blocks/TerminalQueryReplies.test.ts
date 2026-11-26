@@ -1,3 +1,4 @@
+// @vitest-environment node
 // Unit tests for dropping xterm.js's replies to the pane queries tmux answers.
 // Each query is checked both ways, so an empty reply list means it was dropped
 // and a non-empty one means the program still gets xterm.js's answer.

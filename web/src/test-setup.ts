@@ -38,29 +38,31 @@ vi.mock("@/components/icons/AntigravityIcon", () => ({
 // scroll APIs that jsdom doesn't implement. Stub them so component tests
 // that open a Radix menu don't throw. No-ops are sufficient — the tests
 // assert on the resulting DOM, not on capture/scroll side effects.
-if (!Element.prototype.hasPointerCapture) {
+// Files marked `// @vitest-environment node` have no DOM: every DOM stub below is skipped there.
+const hasDom = typeof window !== "undefined";
+if (hasDom && !Element.prototype.hasPointerCapture) {
   Element.prototype.hasPointerCapture = () => false;
 }
-if (!Element.prototype.setPointerCapture) {
+if (hasDom && !Element.prototype.setPointerCapture) {
   Element.prototype.setPointerCapture = () => {};
 }
-if (!Element.prototype.releasePointerCapture) {
+if (hasDom && !Element.prototype.releasePointerCapture) {
   Element.prototype.releasePointerCapture = () => {};
 }
-if (!Element.prototype.scrollIntoView) {
+if (hasDom && !Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = () => {};
 }
 
 // jsdom has no layout. CodeMirror measures its text through Range.getClientRects, so an
 // empty list lets it measure without a rect. Tests that need a rect stub it themselves.
-if (typeof Range.prototype.getClientRects !== "function") {
+if (hasDom && typeof Range.prototype.getClientRects !== "function") {
   Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
 }
 
 // jsdom doesn't implement IntersectionObserver (used by the sidebar's
 // infinite-scroll sentinel). A no-op stub is enough — tests that need to drive
 // auto-loading can override the global with their own controllable mock.
-if (!("IntersectionObserver" in globalThis)) {
+if (hasDom && !("IntersectionObserver" in globalThis)) {
   class MockIntersectionObserver {
     observe() {}
     unobserve() {}
@@ -82,7 +84,7 @@ if (!("IntersectionObserver" in globalThis)) {
 // cmdk (the command-palette primitive) constructs a ResizeObserver on mount,
 // which jsdom doesn't implement. A no-op stub lets command-palette/selector
 // component tests render without throwing.
-if (typeof globalThis.ResizeObserver === "undefined") {
+if (hasDom && typeof globalThis.ResizeObserver === "undefined") {
   globalThis.ResizeObserver = class {
     observe(): void {}
     unobserve(): void {}
@@ -130,16 +132,18 @@ vi.mock("@tanstack/react-virtual", async (importOriginal) => ({
   ),
 }));
 
-Object.defineProperty(window, "matchMedia", {
-  writable: true,
-  value: (query: string) => ({
-    matches: false,
-    media: query,
-    onchange: null,
-    addListener: () => {},
-    removeListener: () => {},
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    dispatchEvent: () => false,
-  }),
-});
+if (hasDom) {
+  Object.defineProperty(window, "matchMedia", {
+    writable: true,
+    value: (query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    }),
+  });
+}

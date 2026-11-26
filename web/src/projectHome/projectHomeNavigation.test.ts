@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from "vitest";
 import {
   PROJECT_PANEL_SESSION_PARAM,

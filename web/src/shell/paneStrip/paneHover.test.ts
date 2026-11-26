@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createPaneHover, HOVER_GRACE_MS, stripShown } from "./paneHover";

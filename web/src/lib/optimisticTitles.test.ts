@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { SESSION_MENTION_HINT } from "@/lib/composerMentions";
 import { afterEach, describe, expect, it } from "vitest";
 import {

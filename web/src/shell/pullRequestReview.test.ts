@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { parsePatchFiles, type FileDiffMetadata } from "@pierre/diffs";
 import type { PullRequestChangedFile } from "@/hooks/usePullRequests";

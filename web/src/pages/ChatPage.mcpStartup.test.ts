@@ -1,3 +1,4 @@
+// @vitest-environment node
 // Vitest cases for the MCP startup band's pure line formatter.
 import { describe, expect, it } from "vitest";
 

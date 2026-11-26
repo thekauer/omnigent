@@ -1,3 +1,4 @@
+// @vitest-environment node
 // `omnigent.sessions`'s session tree: the active tree's root, sub-agent lists and
 // session details as plain data, live through the query cache the app shares.
 import { QueryClient } from "@tanstack/react-query";

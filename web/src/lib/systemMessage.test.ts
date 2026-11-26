@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from "vitest";
 import type { MessageContentBlock } from "@/lib/blocks";
 import {

@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import wholeWordCases from "@/lib/__fixtures__/contentSearchWholeWord.json";

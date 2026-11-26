@@ -1,3 +1,4 @@
+// @vitest-environment node
 // Tests for the client-side schedule text + next-run derivation, and the RRULE
 // builder + validation that feed them. Covers every shape the create form can
 // produce: the simple presets (Hourly/Daily/Weekdays/Weekly) and all five

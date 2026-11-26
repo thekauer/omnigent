@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { authenticatedFetch } from "@/lib/identity";
 import { fetchExtensionCatalog, resolveExtensionPageFromPath } from "./catalog";

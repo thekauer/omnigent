@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from "vitest";
 
 import { SANDBOX_RESUME_TOTAL_LIMIT_MS } from "@/lib/sandboxResume";

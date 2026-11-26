@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from "vitest";
 
 import { CLIENT_CREATE_TOKEN_LABEL, isTempConvId, newTempConversation } from "./tempConversationId";

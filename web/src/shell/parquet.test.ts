@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { readFileSync } from "node:fs";
 import * as hyparquet from "hyparquet";
 import { afterEach, describe, expect, it, vi } from "vitest";

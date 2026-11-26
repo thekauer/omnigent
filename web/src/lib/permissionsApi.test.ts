@@ -1,3 +1,4 @@
+// @vitest-environment node
 // Unit tests for `permissionsApi.ts` — happy-path requests with mocked
 // `fetch`, plus error-path coverage that pins the server's structured
 // error shape (`{error: {code, message}}`) into the thrown Error.

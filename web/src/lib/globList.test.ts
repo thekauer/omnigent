@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from "vitest";
 
 import globLists from "@/lib/__fixtures__/globLists.json";

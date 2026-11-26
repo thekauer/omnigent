@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { getSessionState, isSessionWorking, withUnreadState } from "./useSessionState";
 import type { Conversation } from "@/hooks/useConversations";

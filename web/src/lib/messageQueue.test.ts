@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from "vitest";
 import type { QueuedMessage } from "@/store/chatStore";
 import { shouldQueueSend } from "./messageQueue";

@@ -1,3 +1,4 @@
+// @vitest-environment node
 // Tests for usePullRequests' pure helpers: the 404 → "update your host" classifier, the
 // payload normalizer (and that the info fetch applies it), the poll interval, and label edits.
 

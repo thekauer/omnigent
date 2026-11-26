@@ -1,3 +1,4 @@
+// @vitest-environment node
 // Agents link files they just wrote. Before the marking pass, the harden step
 // either kept such a link as a real anchor (clicking it navigated the app origin
 // and 404'd), or stripped the href and appended " [blocked]", which read as

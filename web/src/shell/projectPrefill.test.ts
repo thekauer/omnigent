@@ -1,3 +1,4 @@
+// @vitest-environment node
 // Pure state-machine tests for the project-prefill config seeding. The
 // component-level rules live in NewChatDialog.projectPrefill.test.tsx; these
 // pin the transitions that need mid-flight timing (a user acting between the

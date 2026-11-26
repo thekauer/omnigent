@@ -1,3 +1,4 @@
+// @vitest-environment node
 // Where Annotate's request card goes: beside the picked element, never over it.
 import { describe, expect, it } from "vitest";
 

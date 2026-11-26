@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
 
 import { VIEW_FILE_ACTION_ID, viewFileAction } from "./viewFileAction";

@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { ApiError } from "@/lib/sessionsApi";
 import { provesNotDelivered } from "./sendRefusal";

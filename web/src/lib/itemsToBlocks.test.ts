@@ -1,3 +1,4 @@
+// @vitest-environment node
 // Vitest cases for the items → flat blocks translator. Hand-build item
 // arrays matching the server's `ConversationItem` shape; assert on the
 // resulting `AnyBlock[]`.

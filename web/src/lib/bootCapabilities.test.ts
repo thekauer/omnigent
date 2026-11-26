@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { FALLBACK_SERVER_INFO, type ServerInfo } from "./capabilities";
 import {

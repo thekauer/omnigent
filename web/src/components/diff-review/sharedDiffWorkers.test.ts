@@ -1,3 +1,4 @@
+// @vitest-environment node
 import type { WorkerPoolManager } from "@pierre/diffs/worker";
 import { describe, expect, it, vi } from "vitest";
 

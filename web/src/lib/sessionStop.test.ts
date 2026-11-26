@@ -1,3 +1,4 @@
+// @vitest-environment node
 // Unit tests for `isSessionStoppable` — each case pins one gate branch.
 
 import { describe, expect, it } from "vitest";

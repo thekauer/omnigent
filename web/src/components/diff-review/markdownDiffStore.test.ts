@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { parseDiffFromFile, parsePatchFiles, type FileDiffMetadata } from "@pierre/diffs";
 import { describe, expect, it, vi } from "vitest";
 import { computeMarkdownDiff, type MarkdownDiffResult } from "./markdownDiff";

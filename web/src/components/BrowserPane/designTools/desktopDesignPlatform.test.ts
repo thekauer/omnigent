@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
 import type { DesignPage } from "./core/designPlatform";
 import type { Answer } from "./desktopBridge";

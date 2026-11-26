@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it, onTestFinished } from "vitest";
 import { gitHostProviders } from "./gitHostProviders";
 

@@ -1,3 +1,4 @@
+// @vitest-environment node
 // The pure logic of the Pull Requests tab: how the selection follows the data, the
 // row labels and statuses, and the content for each state, as the classic panel
 // decided them.

@@ -1,3 +1,4 @@
+// @vitest-environment node
 // `workspace.fs.readDirectory` and `workspace.findFiles` end to end, down to the
 // request URL: whatever path an extension passes, the request the browser sends
 // (after it resolves dot segments) stays on the session's filesystem or search

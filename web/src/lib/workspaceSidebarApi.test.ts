@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { Code, ConnectError } from "@connectrpc/connect";
 import { afterEach, describe, expect, it, vi } from "vitest";
 

@@ -1,3 +1,4 @@
+// @vitest-environment node
 // Local file URIs should reach FileViewer; unsafe forms stay for sanitize to block.
 
 import { describe, expect, it } from "vitest";

@@ -1,3 +1,4 @@
+// @vitest-environment node
 // Unit tests for `capabilities.ts` — the `/v1/info` probe's defensive parse
 // and the sandbox-provider option helpers.
 //

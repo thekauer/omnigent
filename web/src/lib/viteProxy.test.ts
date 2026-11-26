@@ -1,3 +1,4 @@
+// @vitest-environment node
 import path from "node:path";
 import { loadConfigFromFile } from "vite";
 import { expect, it, vi } from "vitest";

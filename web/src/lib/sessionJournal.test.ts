@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
 import { authenticatedFetch } from "@/lib/identity";
 import type * as IdentityModule from "@/lib/identity";

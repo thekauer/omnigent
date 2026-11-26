@@ -1,3 +1,4 @@
+// @vitest-environment node
 import type * as omnigent from "omnigent";
 import { describe, expect, it } from "vitest";
 import { compareChangedFiles as coreCompare, groupChangedFiles } from "@/shell/changedFilesOrder";

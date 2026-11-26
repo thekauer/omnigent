@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
 import { resolveFileTreeGitStatusState, effectiveGitStatus } from "./gitStatus";
 import { resolveFileIcon } from "./icons";

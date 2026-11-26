@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { beforeEach, expect, it, vi } from "vitest";
 import { authenticatedFetch } from "./identity";
 import { fetchSandboxProfiles } from "./sandboxProfilesApi";

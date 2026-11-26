@@ -1,3 +1,4 @@
+// @vitest-environment node
 // The Files view's pure logic: the tree, the change overlay, the order, the
 // locations, the search results and the tree items.
 import { describe, expect, it } from "vitest";

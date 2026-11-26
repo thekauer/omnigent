@@ -1,3 +1,4 @@
+// @vitest-environment node
 // The API pieces the Files view relies on: the workspace's files (root, folder
 // listings, file search, change events), the refresh and reveal commands,
 // tree view reveal and selection, the location bar, the filter's fields and

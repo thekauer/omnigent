@@ -1,3 +1,4 @@
+// @vitest-environment node
 // Tests for the RRULE builder's Hourly minute-of-hour handling.
 //
 // The broad buildRRule/validateSchedule coverage lives in scheduleText.test.ts

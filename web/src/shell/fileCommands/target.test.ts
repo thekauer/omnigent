@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { fileCommandTargetKey, pathToCopy, resolveFileCommandTarget } from "./target";
 

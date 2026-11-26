@@ -1,3 +1,4 @@
+// @vitest-environment node
 // Guard against new hard-coded colours, radii and text sizes in the UI sources: colours
 // belong in the theme tokens (`theme/tokens/`), so a theme can change them. Each file's
 // remaining counts are recorded in `noRawColors.allowlist.ts`; they may only go down, and

@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { create, fromBinary, toBinary, type MessageInitShape } from "@bufbuild/protobuf";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";

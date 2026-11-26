@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const authenticatedFetch = vi.hoisted(() => vi.fn());

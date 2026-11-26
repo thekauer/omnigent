@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from "vitest";
 
 import { cssCubicBezier, TAB_STRIP_MOTION, tabStripMotionStyle } from "./tabStripMotion";

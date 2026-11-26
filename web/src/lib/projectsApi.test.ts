@@ -1,3 +1,4 @@
+// @vitest-environment node
 // Unit tests for `projectsApi.ts` — the `/v1/projects` first-class CRUD
 // client. Happy-path requests with a mocked `fetch`, plus error-path coverage
 // that surfaces the server's structured `{error: {message}}` shape.

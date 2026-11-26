@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { journalEntry, journalPlan } from "@/test/journalFixtures";
 import { planSteps } from "./sessionJournal";

@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from "vitest";
 
 import { reorderStripEntries, type StripReorderEntry } from "./stripReorder";

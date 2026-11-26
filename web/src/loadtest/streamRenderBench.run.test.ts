@@ -1,3 +1,4 @@
+// @vitest-environment node
 // Thin runner around `runStreamRenderBench` for `loadtest/web_latency.py`.
 //
 // Gated behind WEB_LATENCY_BENCH so the heavy 1000-block run never slows

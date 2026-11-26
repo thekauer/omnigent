@@ -1,3 +1,4 @@
+// @vitest-environment node
 // The extension host hands an extension's theme contributions and files to the theme
 // service before it activates, removes them on teardown, and runs the built-in
 // `omnigent.selectColorTheme` command.

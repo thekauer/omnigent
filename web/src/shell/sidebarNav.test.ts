@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
 import type { Conversation } from "@/hooks/useConversations";
 import { clearOptimisticTitles, recordOptimisticTitle } from "@/lib/optimisticTitles";

@@ -1,3 +1,4 @@
+// @vitest-environment node
 import type * as SessionsApiModule from "@/lib/sessionsApi";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { toast } from "sonner";

@@ -1,3 +1,4 @@
+// @vitest-environment node
 // A managed create's host id is sent only when `/v1/info` reports the server accepts it.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";

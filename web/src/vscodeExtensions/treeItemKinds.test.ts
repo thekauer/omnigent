@@ -1,3 +1,4 @@
+// @vitest-environment node
 // Tree item fields of the session and text-match rows, checked into plain data.
 import { describe, expect, it } from "vitest";
 import { sanitizeTreeItem } from "./treeView";

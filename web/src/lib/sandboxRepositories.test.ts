@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from "vitest";
 import {
   SANDBOX_WORKSPACE_LENGTH_MESSAGE,

@@ -1,3 +1,4 @@
+// @vitest-environment node
 // The design's history traces, run against the real tab store: each step acts
 // through the store's own open, select, navigate, Back/Forward and close.
 

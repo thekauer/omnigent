@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { FileTreeModel } from "@/components/file-tree/vendored";
 import { describe, expect, it } from "vitest";
 import type { WorkspaceFile } from "@/hooks/useWorkspaceChangedFiles";

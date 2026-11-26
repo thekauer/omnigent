@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { groupRunsBySession, type RunListEntry } from "@/lib/runSessionGroups";
 import type { ScheduledTaskRun } from "@/lib/scheduledTasksApi";

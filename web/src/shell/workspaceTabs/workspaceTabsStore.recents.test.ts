@@ -1,3 +1,4 @@
+// @vitest-environment node
 // The new-tab page's recent places, and going to one: closed tabs and other open
 // tabs, each once, and a closed entry used up only when going there worked.
 

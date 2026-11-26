@@ -1,3 +1,4 @@
+// @vitest-environment node
 // Chat routes an `omnigent://<host>/c/<id>` link in the app only when it names the
 // server the page is served from; any other link keeps its deep-link href.
 

@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { AVAILABLE, HIDDEN } from "@/store/paletteCommands";
 import { FILE_COMMAND_IDS, fileCommands, fileCommandsById, type FileCommandFacts } from "./model";

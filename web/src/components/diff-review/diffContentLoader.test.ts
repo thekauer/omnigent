@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
 import { DiffContentLoader, type DiffSourceText } from "./diffContentLoader";
 import { computeFileDiff, createFileDiffComputer } from "./fileDiffComputation";

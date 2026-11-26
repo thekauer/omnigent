@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { afterEach, describe, expect, it } from "vitest";
 import type { JournalEntry } from "@/lib/sessionJournal";
 import { handleSessionEvent, useChatStore } from "@/store/chatStore";

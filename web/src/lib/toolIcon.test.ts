@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { FileText, Globe, ListTodo, Plug, Search, Terminal, Wrench } from "lucide-react";
 import { describe, expect, it } from "vitest";
 import { iconForTool } from "./toolIcon";

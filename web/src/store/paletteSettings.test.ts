@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { SquareTerminalIcon } from "lucide-react";
 import { describe, expect, it, vi } from "vitest";
 

@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from "vitest";
 
 import { CUSTOM_AGENT_CREATE_ENTRY } from "./customAgents";

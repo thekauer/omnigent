@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { archivedAtSeconds } from "@/lib/retentionPreferences";
 import { ARCHIVED_AT_LABEL_KEY } from "@/lib/sessionListCache";

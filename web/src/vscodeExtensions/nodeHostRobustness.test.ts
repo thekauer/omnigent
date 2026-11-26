@@ -1,3 +1,4 @@
+// @vitest-environment node
 // The Node extension host survives and recovers from misbehaving extensions:
 // uncaught throws, process.exit, hard crashes (auto-restart with backoff),
 // hung commands (per-call timeout, cancel on disconnect, forced restart), a

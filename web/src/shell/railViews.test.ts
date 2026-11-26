@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it, vi } from "vitest";
 import { ARIA_MOD_KEY } from "@/components/KeyboardShortcut";
 import {

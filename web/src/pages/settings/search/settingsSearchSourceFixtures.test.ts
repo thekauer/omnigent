@@ -1,3 +1,4 @@
+// @vitest-environment node
 // The Settings source guard's verdict on fixture modules: what it accepts and, mostly, what it
 // rejects, including controls in branches and components nothing renders. A rule that stops
 // firing fails here, not only in the page walk.

@@ -1,3 +1,4 @@
+// @vitest-environment node
 // The status a session row carries, its dot colors, and the graph layout: pure
 // parts of the Agents tab. Ported from the classic SubagentsGraphView suite.
 import { describe, expect, it } from "vitest";

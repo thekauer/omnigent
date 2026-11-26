@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from "vitest";
 
 import { FIXTURE_CONTRIBUTES, FIXTURE_EXTENSION_ID } from "@/test/themeFixtures";

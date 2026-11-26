@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from "vitest";
 
 // core/ is what every platform shares; a platform's page, capture and overlay stay outside.

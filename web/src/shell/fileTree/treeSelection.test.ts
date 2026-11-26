@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { FileTreeModel } from "@/components/file-tree/vendored";
 import { opensRow, rowClickAction, rowKeyAction, SingleSelection } from "./treeSelection";

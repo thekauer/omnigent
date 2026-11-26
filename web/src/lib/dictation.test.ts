@@ -1,3 +1,4 @@
+// @vitest-environment node
 // Tests for the dictation socket protocol parsing. The DictationSession
 // transport itself (mic + AudioWorklet + WebSocket) can't run in jsdom;
 // its behavior against the component is pinned in ComposerMicButton.test.tsx

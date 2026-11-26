@@ -1,3 +1,4 @@
+// @vitest-environment node
 import type * as omnigent from "omnigent";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { conversationRegistry } from "@/store/conversationRegistry";

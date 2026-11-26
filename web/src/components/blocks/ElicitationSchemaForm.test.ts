@@ -1,3 +1,4 @@
+// @vitest-environment node
 // An MCP server's ``requestedSchema`` is answerable, not just approvable.
 //
 // The card had one schema shape it could collect — a lone ``answer`` enum,

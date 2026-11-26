@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from "vitest";
 import type { Conversation, ProjectSummary } from "@/hooks/useConversations";
 import { PROJECT_LABEL_KEY } from "@/lib/sessionListCache";

@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from "vitest";
 import type { Comment } from "@/hooks/useComments";
 import { commentHighlights, commentSelectionAt } from "./commentHighlights";

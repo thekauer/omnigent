@@ -1,3 +1,4 @@
+// @vitest-environment node
 // The Settings source guard on shared components and what the walk reaches: how each shared
 // control is owned, and which modules the guard follows to find a control's uses.
 

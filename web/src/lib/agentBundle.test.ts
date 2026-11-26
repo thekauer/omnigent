@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from "vitest";
 
 // We can't use buildAgentBundle directly in jsdom because

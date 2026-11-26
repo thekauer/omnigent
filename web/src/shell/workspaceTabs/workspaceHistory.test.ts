@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from "vitest";
 
 import { describeHistory } from "./__fixtures__/historyWorkspace";

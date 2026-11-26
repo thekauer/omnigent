@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from "vitest";
 
 import { CLAUDE_NATIVE_SWITCHABLE_PERMISSION_MODES } from "./claudePermissionMode";

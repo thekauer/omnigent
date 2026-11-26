@@ -1,3 +1,4 @@
+// @vitest-environment node
 import GithubMono from "@lobehub/icons/es/Github/components/Mono";
 import { GitPullRequestIcon } from "lucide-react";
 import { describe, expect, it } from "vitest";

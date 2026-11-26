@@ -1,3 +1,4 @@
+// @vitest-environment node
 // Every control the Settings code can render belongs to a catalog entry, checked on the source
 // so branches no test renders count too.
 

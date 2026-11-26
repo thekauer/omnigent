@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { FileIcon } from "lucide-react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
