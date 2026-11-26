@@ -40,6 +40,7 @@ import {
 import { migrateLegacyProjectFolderPagination } from "./lib/projectFolderPaginationPreferences";
 import { applyThemePalette, readThemePalette } from "./lib/themePalette";
 import { applyCustomTheme, readCustomTheme } from "./lib/customTheme";
+import { applyBuildProductTheme, applyServerProductTheme } from "./theme/productTheme";
 import { themeService } from "./theme/themeService";
 import { initChatStore } from "./store/chatStore";
 import { railViews } from "./shell/railViews";
@@ -148,6 +149,8 @@ migrateLegacyProjectFolderPagination();
 // so the app renders in the chosen theme rather than flashing the brand default.
 applyCustomTheme(readCustomTheme());
 applyThemePalette(readThemePalette());
+// The build's product theme (web/product.json), before the theme first applies.
+applyBuildProductTheme();
 // A contributed theme's last applied values, until its extension registers it.
 themeService.applyCached();
 
@@ -158,6 +161,8 @@ themeService.applyCached();
 // safety timeout (1.5s) so users on a flaky network still get
 // something on screen.
 const bootServerInfo = createBootServerInfo(resolveServerInfo());
+// The server's product theme, below the build's.
+void bootServerInfo.settled.then(applyServerProductTheme);
 
 // Same 1.5s safety net for the identity probe: a hung /v1/me must not
 // deadlock first paint. On timeout we render anyway and the app degrades

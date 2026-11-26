@@ -4,7 +4,7 @@ import { usePrefersDarkColorScheme } from "@/hooks/usePrefersDarkColorScheme";
 import { useHostTheme } from "@/lib/embedded";
 import { setThemeSource } from "@/lib/nativeBridge";
 import { useThemeModePreview } from "@/store/themeModePreview";
-import { useThemeForcedMode } from "@/theme/themeService";
+import { useThemeForcedMode, useThemeModeLock } from "@/theme/themeService";
 import { isThemeMode, type ResolvedThemeMode, type ThemeMode } from "./themeMode";
 
 /**
@@ -16,11 +16,13 @@ function NativeThemeSync() {
   const { theme } = useTheme();
   const previewMode = useThemeModePreview();
   const forcedMode = useThemeForcedMode();
+  const modeLock = useThemeModeLock();
   const savedRef = useRef<ThemeMode | null>(null);
   const sentRef = useRef<ThemeMode | null>(null);
   savedRef.current = isThemeMode(theme) ? theme : null;
-  // A preview wins; a single-mode theme forces its mode on the native chrome too.
-  const shown = previewMode ?? forcedMode ?? savedRef.current;
+  // The product's lock wins, then a preview; a single-mode theme forces its mode on the
+  // native chrome too.
+  const shown = modeLock ?? previewMode ?? forcedMode ?? savedRef.current;
   useEffect(() => {
     if (shown === null) return;
     sentRef.current = shown;
@@ -69,6 +71,8 @@ export function ThemeProvider({
   const previewedMode = usePreviewedThemeMode();
   // A single-mode contributed theme forces its mode while active; a preview still wins.
   const themeForcedMode = useThemeForcedMode();
+  // The product's mode lock holds over a preview too.
+  const modeLock = useThemeModeLock();
   return (
     <NextThemesProvider
       // Embedded CSS is scoped to its portal root, never the host document.
@@ -78,7 +82,7 @@ export function ThemeProvider({
       enableSystem
       disableTransitionOnChange
       storageKey="web-theme"
-      forcedTheme={previewedMode ?? themeForcedMode ?? undefined}
+      forcedTheme={modeLock ?? previewedMode ?? themeForcedMode ?? undefined}
     >
       <NativeThemeSync />
       {children}

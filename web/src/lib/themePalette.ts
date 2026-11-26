@@ -701,6 +701,29 @@ export function readThemeChoice(): ThemeSelection | string | null {
 }
 
 /** Stores a contributed theme's id as the theme choice (the palette applied is the default). */
+/**
+ * Stores a choice as written, the default palette included: under a product default, an
+ * explicit default palette is a choice of its own (nothing stored means the product's).
+ */
+export function writeStoredThemeChoice(id: string): void {
+  if (typeof window === "undefined" || !(isThemeSelection(id) || isContributedThemeId(id))) return;
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(id));
+  } catch {
+    // localStorage quota or access errors shouldn't break the app.
+  }
+}
+
+/** Forgets the choice: the default (the product's, else the default palette) applies. */
+export function clearThemeChoice(): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // localStorage access errors shouldn't break the app.
+  }
+}
+
 export function writeContributedThemeChoice(id: string): void {
   if (typeof window === "undefined" || !isContributedThemeId(id)) return;
   try {

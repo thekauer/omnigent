@@ -718,12 +718,19 @@ limitHit, message }`; a cancelled token aborts the request and rejects
       `lib/themePalette.ts`); their files name `omnigent.palette`, which only a
       built-in's theme may: the service applies that palette's precompiled CSS
       (`data-theme`) instead of a runtime stylesheet, and stores its id
-      (`nord`) as before. A product's policy (`setProductPolicy`, filled by M10):
+      (`nord`) as before. A product's theme configuration (theming plan M10,
+      `theme/productTheme.ts`: `OmnigentAppProps.product.theme` over a build's
+      `web/product.json` over the server's `product.theme`, field by field, into
+      `setProductPolicy`): `default` is the first run's and reset's theme;
       `allowed` limits the list, `select()`, `preview()` and
-      `omnigent.selectColorTheme` (by entry or member id, the chosen theme
-      always kept); `hidePicker` hides the picker command and Settings' picker
-      row (and the built-in palette editor, which chooses Custom), keeping the
-      chosen theme's options and Advanced; `hideCustomizations` hides those two.
+      `omnigent.selectColorTheme` (by entry or member id, or a `*` pattern; a
+      stored choice outside it yields to the default); `lockMode`,
+      `lockedTokens`, `lockedOptions` and `lockedVariants` are the top layer
+      (Settings shows those rows disabled, "Set by product"); `hidePicker` hides
+      the picker command and Settings' picker row (and the built-in palette
+      editor, which chooses Custom), keeping the chosen theme's options and
+      Advanced; `hideCustomizations` hides those and the Style rows, and the
+      stored ones stop applying.
       A non-built-in extension under the `omnigent` publisher, or with the id of
       one already loaded, is skipped with a warning.
     - The plugin read API (theming plan M8): `window.activeColorTheme`

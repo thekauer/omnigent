@@ -132,11 +132,16 @@ describe("the theme list", () => {
     expect(service.getChoice()).toBe(DARK);
   });
 
-  it("keeps only what the product allows, and the chosen theme", () => {
+  it("keeps only what the product allows; a stored choice outside it yields to the default", () => {
     service.addExtension(fixtureThemeExtension());
     service.select("nord");
     service.setProductPolicy({ allowed: ["omni", STOCK] });
-    expect(service.entries().map((entry) => entry.id)).toEqual(["omni", "nord", STOCK]);
+    expect(service.entries().map((entry) => entry.id)).toEqual(["omni", STOCK]);
+    expect(service.getChoice()).toBe("omni");
+    // Patterns match entry and member ids.
+    service.setProductPolicy({ allowed: ["omnigent.themes/nord-*"] });
+    expect(service.entries().map((entry) => entry.id)).toEqual(["nord"]);
+    expect(service.getChoice()).toBe("nord");
     service.setProductPolicy({ hidePicker: true });
     expect(service.getProductPolicy()).toEqual({ hidePicker: true });
     service.setProductPolicy(null);

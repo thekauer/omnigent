@@ -423,6 +423,11 @@ export interface ServerInfo {
   /** Operator branding, or null when the built-in identity should be used. */
   branding?: Branding | null;
   /**
+   * The operator's product configuration (server config `product:`), or null. Its
+   * `theme` is checked by `theme/productTheme.ts`, below an embed's and a build's.
+   */
+  product?: { readonly theme?: unknown } | null;
+  /**
    * How the deployment curates the New Chat picker. Display only: it narrows
    * what the picker offers, never what exists, so a session already bound to
    * an unlisted agent keeps working and the API still reaches it. Absent on
@@ -574,6 +579,7 @@ export const FALLBACK_SERVER_INFO: ServerInfo = {
   comment_anchor_metadata: false,
   branding: null,
   picker: UNRESTRICTED_PICKER,
+  product: null,
 };
 
 /**
@@ -805,6 +811,12 @@ export async function resolveServerInfo(): Promise<ServerInfo> {
             data.scheduled_task_approval_skipping_modes === true,
           branding: parseBranding(data.branding),
           picker: parsePicker(data.picker),
+          product:
+            typeof data.product === "object" &&
+            data.product !== null &&
+            !Array.isArray(data.product)
+              ? { theme: (data.product as { theme?: unknown }).theme }
+              : null,
         };
         return cachedServerInfo;
       }

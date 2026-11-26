@@ -22,8 +22,10 @@ import {
   PALETTE_TOKEN_CSS_NAMES,
   PALETTES,
   type PaletteSwatch,
+  clearThemeChoice,
   readThemeChoice,
   type ThemeSelection,
+  writeStoredThemeChoice,
   writeContributedThemeChoice,
   writeThemePalette,
 } from "@/lib/themePalette";
@@ -45,6 +47,7 @@ import {
   type UiTheme,
 } from "./themeContributions";
 import { parseThemeFile, SWATCH_KEYS, type ParsedTheme, type ThemeTokens } from "./themeFile";
+import type { ProductThemeConfig } from "./productTheme";
 import { type RejectedToken, resolveTokenLayers } from "./resolveTokens";
 import { getToken, TOKENS } from "./tokens/registry";
 import {
@@ -134,18 +137,13 @@ export interface ThemeListEntry {
 }
 
 /**
- * What a product allows (theming plan M10 fills it from `OmnigentAppProps.product.theme`).
- * `allowed`: the themes the list offers and {@link ThemeService.select} takes (by entry or
- * member id; the chosen one always stays). `hidePicker`: no picker command and no picker
- * row in Settings (nor the built-in palette editor, which chooses Custom); the chosen
- * theme's options and the Advanced customizations stay. `hideCustomizations`: no theme
- * options and no Advanced customizations in Settings.
+ * What a product sets ({@link setProductTheme} merges its sources into it): see
+ * {@link ProductThemeConfig}. `allowed` binds the list, {@link ThemeService.select} and
+ * {@link ThemeService.preview} (by entry id, member id or `*` pattern; the chosen one stays
+ * listed, but a stored choice outside it doesn't apply). `default` is what a first run and a
+ * reset choose. The locks are the top layer of every theme's resolution.
  */
-export interface ThemeProductPolicy {
-  readonly allowed?: readonly string[];
-  readonly hidePicker?: boolean;
-  readonly hideCustomizations?: boolean;
-}
+export type ThemeProductPolicy = ProductThemeConfig;
 
 /** A colour customizations problem, for Settings' inline errors. */
 export interface CustomizationProblem {
@@ -167,6 +165,8 @@ export interface ActiveThemeOption {
   readonly id: string;
   readonly label: string;
   readonly value: string;
+  /** Set by the product's `lockedOptions`: shown, not changeable. */
+  readonly locked?: boolean;
   readonly choices: readonly { readonly id: string; readonly label: string }[];
 }
 
@@ -285,6 +285,13 @@ const BUNDLED_SYNTAX_THEMES = new Set(bundledThemesInfo.map((theme) => theme.id)
 const CUSTOMIZATION_LIMITS = { chars: 65_536, nodes: 5000, depth: 4 } as const;
 
 /** Whether `id` is the entry's id or one of its members'. */
+/** Whether an `allowed` entry takes `id`: the same id, or a pattern whose `*` matches anything. */
+export function matchesAllowed(pattern: string, id: string): boolean {
+  if (!pattern.includes("*")) return pattern === id;
+  const parts = pattern.split("*").map((part) => part.replace(/[.*+?^${}()|[\]\\/-]/g, "\\$&"));
+  return new RegExp(`^${parts.join(".*")}$`).test(id);
+}
+
 function entryHas(entry: ThemeListEntry, id: string): boolean {
   return entry.id === id || Object.values(entry.members).includes(id);
 }
@@ -413,6 +420,8 @@ export class ThemeService implements ThemeContributionSink {
   /** A picker's live preview (undefined: none); null previews the default. */
   private previewing: string | null | undefined = undefined;
   private policy: ThemeProductPolicy | null = null;
+  /** The product's checked `lockedTokens`: the top layer. */
+  private lockedTokens: ThemeTokens = nullMap();
   private version = 0;
   private readonly parsed = new Map<
     string,
@@ -518,20 +527,18 @@ export class ThemeService implements ThemeContributionSink {
     if (requested !== null && !isContributedThemeId(requested) && !isThemeSelection(requested)) {
       throw new TypeError(`no theme ${JSON.stringify(String(requested).slice(0, 80))}`);
     }
-    const fallback = requested === null ? this.defaultSelection() : null;
-    const id = fallback ?? (requested === null ? null : this.selectionId(requested));
+    const id = requested === null ? null : this.selectionId(requested);
     if (id !== null && !this.isAllowed(id)) {
       throw new TypeError(`theme ${JSON.stringify(id.slice(0, 80))} is not allowed here`);
     }
     this.previewing = undefined;
-    if (id === null || isThemeSelection(id)) {
-      const palette = id ?? DEFAULT_PALETTE;
-      writeThemePalette(palette);
-      applyThemePalette(palette);
-    } else {
-      writeContributedThemeChoice(id);
-      applyThemePalette(DEFAULT_PALETTE);
-    }
+    // The default is stored as no choice and resolved when read, so a product default
+    // whose extension loads later still applies once it does.
+    if (id === null) clearThemeChoice();
+    else if (isThemeSelection(id)) {
+      if (id === DEFAULT_PALETTE && this.policy?.default !== undefined) writeStoredThemeChoice(id);
+      else writeThemePalette(id);
+    } else writeContributedThemeChoice(id);
     this.refresh();
   }
 
@@ -606,10 +613,37 @@ export class ThemeService implements ThemeContributionSink {
     this.refresh();
   }
 
-  /** The product's restrictions (M10), or null for none. */
+  /**
+   * The product's configuration (M10), or null for none: what {@link setProductTheme}
+   * merges. Its locked tokens are checked against the registry as a theme's are.
+   */
   setProductPolicy(policy: ThemeProductPolicy | null): void {
     this.policy = policy;
+    this.lockedTokens = nullMap();
+    const context = this.valueContext(undefined, []);
+    for (const [id, value] of Object.entries(policy?.lockedTokens ?? {})) {
+      const kind = getToken(id)?.kind;
+      if (!kind || TOKEN_CONSTRAINTS[id]?.internal) {
+        this.warnOnce(`product:token:${id}`, `product theme: --${id} is not a token; left out`);
+        continue;
+      }
+      const result = validateTokenValue(kind, value, context, TOKEN_CONSTRAINTS[id]);
+      if (!result.ok) {
+        this.warnOnce(
+          `product:token:${id}:${hashText(value)}`,
+          `product theme: --${id}: ${result.reason}; left out`,
+        );
+        continue;
+      }
+      this.lockedTokens[id] = { value: result.value, references: result.references };
+    }
+    this.refresh();
     this.emit();
+  }
+
+  /** The mode the product locks the app in, or null. */
+  getModeLock(): UiTheme | null {
+    return this.policy?.lockMode ?? null;
   }
 
   getProductPolicy(): ThemeProductPolicy | null {
@@ -628,37 +662,60 @@ export class ThemeService implements ThemeContributionSink {
    */
   entries(): ThemeListEntry[] {
     const choice = this.getChoice();
-    const entries = this.allEntries(choice);
-    const allowed = this.policy?.allowed;
-    if (!allowed) return entries;
-    return entries.filter(
+    const lockMode = this.policy?.lockMode;
+    // Under a mode lock, a single-mode theme of the other mode can't show: left out.
+    return this.allEntries(choice).filter(
       (entry) =>
-        entryHas(entry, choice) || allowed.some((id) => entry.id === id || entryHas(entry, id)),
+        entryHas(entry, choice) ||
+        (this.permitsEntry(entry) &&
+          (lockMode === undefined ||
+            entry.forcedMode === undefined ||
+            entry.forcedMode === lockMode)),
     );
   }
 
   /**
-   * What "the default" selects under the product's `allowed`: null (the default palette)
-   * when it is allowed or nothing allowed is listed, else the first allowed entry's id.
+   * What "the default" selects, read lazily: the product's `default` (when `allowed` takes
+   * it), else null (the default palette) when it is allowed or nothing is restricted, else
+   * the first allowed entry, else the first allowed theme id named in full (shown from the
+   * cache, or unavailable, until its extension loads).
    */
   private defaultSelection(): string | null {
-    const allowed = this.policy?.allowed;
-    if (!allowed) return null;
-    const permitted = (entry: ThemeListEntry) =>
-      allowed.some((id) => entry.id === id || entryHas(entry, id));
-    const entries = this.allEntries(this.getChoice()).filter(
-      (entry) => entry.available && permitted(entry),
+    const policy = this.policy;
+    if (!policy) return null;
+    if (policy.default !== undefined) {
+      const id = this.selectionId(policy.default);
+      if (this.permits(id)) return id === DEFAULT_PALETTE ? null : id;
+      this.warnOnce(`product:default:${id}`, `product theme: default ${id} is not allowed`);
+    }
+    const allowed = policy.allowed;
+    if (!allowed || this.permits(DEFAULT_PALETTE)) return null;
+    const entry = this.allEntries("").find(
+      (candidate) => candidate.available && this.permitsEntry(candidate),
     );
-    if (entries.some((entry) => entry.id === DEFAULT_PALETTE)) return null;
-    return entries[0]?.id ?? null;
+    if (entry) return entry.id;
+    return allowed.find((id) => !id.includes("*") && isContributedThemeId(id)) ?? null;
   }
 
   /** Whether the product allows `id` (a list id): its entry, or one of its members, is allowed. */
   private isAllowed(id: string): boolean {
+    return id === this.getChoice() || this.permits(id);
+  }
+
+  /** Whether `allowed` takes `id` (by itself, a pattern, or through its list entry). */
+  private permits(id: string): boolean {
     const allowed = this.policy?.allowed;
-    if (!allowed || id === this.getChoice() || allowed.includes(id)) return true;
-    const entry = this.allEntries(this.getChoice()).find((candidate) => entryHas(candidate, id));
-    return entry !== undefined && allowed.some((other) => entryHas(entry, other));
+    if (!allowed || allowed.some((pattern) => matchesAllowed(pattern, id))) return true;
+    const entry = this.allEntries("").find((candidate) => entryHas(candidate, id));
+    return entry !== undefined && this.permitsEntry(entry);
+  }
+
+  /** Whether `allowed` takes a list entry: its id or one of its members. */
+  private permitsEntry(entry: ThemeListEntry): boolean {
+    const allowed = this.policy?.allowed;
+    if (!allowed) return true;
+    const ids = [entry.id, ...Object.values(entry.members)];
+    return allowed.some((pattern) => ids.some((id) => id && matchesAllowed(pattern, id)));
   }
 
   /** {@link entries}, before the product's `allowed`. */
@@ -758,14 +815,27 @@ export class ThemeService implements ThemeContributionSink {
     return checkVariants(readJson(VARIANTS_STORAGE_KEY));
   }
 
-  /** The variants that apply: the chosen theme's, with the user's over them (M9 applies them). */
+  /** The variants that apply: the chosen theme's, the user's over them, the product's over both. */
   getVariants(): VariantValues {
-    return resolveVariants(this.themeVariants(), this.getUserVariants());
+    return this.layerVariants(this.themeVariants());
+  }
+
+  /** The variants the product locks (`lockedVariants`). */
+  getLockedVariants(): VariantValues {
+    return checkVariants(this.policy?.lockedVariants);
+  }
+
+  /** `theme`'s variants with the user's over them (unless the product hides them) and the locks over all. */
+  private layerVariants(theme: unknown): VariantValues {
+    const user = this.policy?.hideCustomizations ? {} : this.getUserVariants();
+    return resolveVariants(resolveVariants(theme, user), this.getLockedVariants());
   }
 
   /** Stores a style variant choice; null is "Theme default". */
   setVariant(name: string, value: string | null): void {
     if (!isVariantName(name)) throw new TypeError(`no variant ${JSON.stringify(name)}`);
+    if (name in this.getLockedVariants())
+      throw new TypeError(`variant ${name} is set by the product`);
     if (value !== null && !isVariantValue(name, value)) {
       throw new TypeError(`variant ${name} has no value ${JSON.stringify(value)}`);
     }
@@ -827,6 +897,17 @@ export class ThemeService implements ThemeContributionSink {
       }
     };
     check(snapshot.value, "");
+    const locked = this.lockedTokens;
+    for (const key of customizationKeys(snapshot.value)) {
+      const token = key.slice(key.lastIndexOf(".") + 1);
+      if (token in locked && !problems.some((problem) => problem.key === key)) {
+        problems.push({
+          key,
+          message: "set by the product; this value doesn't apply",
+          severity: "warning",
+        });
+      }
+    }
     if (problems.some((problem) => problem.severity !== "warning")) return problems;
     // The resolve-time check, as applying them would run it.
     for (const rejection of this.customizationRejections(snapshot.value)) {
@@ -843,15 +924,19 @@ export class ThemeService implements ThemeContributionSink {
   /** The customizations in `draft` the resolve-time check would leave out, for the choice on screen. */
   private customizationRejections(draft: unknown): CustomizationRejection[] {
     const choice = this.getChoice();
-    if (isContributedThemeId(choice)) {
+    if (isContributedThemeId(choice))
       return this.resolve(choice, draft)?.customizationRejections.slice() ?? [];
-    }
     const context = this.valueContext(undefined, []);
     const variants = hostTokens(variantTokens(this.getVariants()));
     const out: CustomizationRejection[] = [];
     for (const mode of ["light", "dark"] as const) {
       const custom = this.customizations(this.customizationScopes(choice, mode), context, draft);
-      const { rejected } = this.resolveLayers(choice, [variants, custom], mode, true);
+      const { rejected } = this.resolveLayers(
+        choice,
+        [variants, custom, this.lockedTokens],
+        mode,
+        true,
+      );
       for (const entry of rejected) if (entry.layer === 1) out.push({ ...entry, mode });
     }
     return out;
@@ -905,6 +990,7 @@ export class ThemeService implements ThemeContributionSink {
     if (!active) throw new Error("no contributed theme is chosen");
     const option = active.options.find((entry) => entry.id === optionId);
     if (!option) throw new TypeError(`the theme has no option ${JSON.stringify(optionId)}`);
+    if (option.locked) throw new TypeError(`option ${optionId} is set by the product`);
     if (choiceId !== null && !option.choices.some((choice) => choice.id === choiceId)) {
       throw new TypeError(`option ${optionId} has no choice ${JSON.stringify(choiceId)}`);
     }
@@ -948,9 +1034,9 @@ export class ThemeService implements ThemeContributionSink {
     return own.find((color) => color.fullId === id || color.id === id)?.token;
   }
 
-  /** The mode the chosen theme forces, if any (next-themes' `forcedTheme`). */
+  /** The mode that holds whatever the mode setting says: the product's lock, else the chosen theme's. */
   getForcedMode(): UiTheme | null {
-    return this.forcedMode;
+    return this.policy?.lockMode ?? this.forcedMode;
   }
 
   /**
@@ -959,7 +1045,11 @@ export class ThemeService implements ThemeContributionSink {
    */
   applyCached(): void {
     const choice = this.currentChoice();
-    if (!choice || !isContributedThemeId(choice)) return;
+    // A built-in palette (the product's default too) applies at once, with its layers.
+    if (!choice || !isContributedThemeId(choice)) {
+      this.refresh();
+      return;
+    }
     // Settled, or registered already: the live values (or the default) are what applies.
     if ((this.started && this.loading === 0) || this.find(choice)) {
       this.refresh();
@@ -972,7 +1062,7 @@ export class ThemeService implements ThemeContributionSink {
     this.appliedKey = cache.key;
     this.cacheWritten = false;
     this.stamp(choice);
-    const cachedVariants = resolveVariants(cache.variants ?? {}, this.getUserVariants());
+    const cachedVariants = this.layerVariants(cache.variants ?? {});
     this.stampVariants(cachedVariants as Readonly<Record<string, string>>);
     this.forcedMode = cache.forcedMode ?? null;
     this.applyFonts(cache.fonts);
@@ -1012,7 +1102,10 @@ export class ThemeService implements ThemeContributionSink {
    */
   private committedChoice(): string | null {
     const stored = typeof window === "undefined" ? null : readThemeChoice();
-    return stored === null ? null : this.selectionId(stored);
+    const id = stored === null ? null : this.selectionId(stored);
+    // A choice the product doesn't allow stays stored, but its default applies instead.
+    if (id !== null && this.permits(id)) return id;
+    return this.defaultSelection();
   }
 
   /** What shows: the preview, else the stored choice. */
@@ -1192,6 +1285,8 @@ export class ThemeService implements ThemeContributionSink {
     draft?: unknown,
   ): ThemeTokens {
     const tokens = nullMap<{ value: string; references: readonly string[] }>();
+    // Under the product's `hideCustomizations` the user can't see them: they don't apply.
+    if (this.policy?.hideCustomizations) return tokens;
     const snapshot = snapshotPlainData(
       draft ?? readJson(COLOR_CUSTOMIZATIONS_STORAGE_KEY) ?? null,
       CUSTOMIZATION_LIMITS,
@@ -1239,22 +1334,30 @@ export class ThemeService implements ThemeContributionSink {
     const modes = Object.keys(members) as UiTheme[];
     const forcedMode = modes.length === 1 ? modes[0] : undefined;
     const optionsKey = this.optionsKey({ id, family: theme.family, extensionId: extension.id });
-    const storedOptions = this.storedOptions(optionsKey);
+    const storedOptions = this.policy?.hideCustomizations ? {} : this.storedOptions(optionsKey);
+    const lockedOptions = this.policy?.lockedOptions ?? {};
     const primary = members[theme.uiTheme] ?? members[modes[0]!];
     const options: ActiveThemeOption[] = (primary?.parsed.options ?? []).map((option) => {
+      const has = (wanted: unknown) => option.choices.some((choice) => choice.id === wanted);
+      const lock = Object.hasOwn(lockedOptions, option.id) ? lockedOptions[option.id] : undefined;
+      if (lock !== undefined && !has(lock)) {
+        this.warnOnce(
+          `product:option:${id}:${option.id}`,
+          `product theme: ${id} has no ${option.id} choice ${JSON.stringify(lock)}`,
+        );
+      }
       const stored = storedOptions[option.id];
-      const value =
-        typeof stored === "string" && option.choices.some((choice) => choice.id === stored)
-          ? stored
-          : option.default;
+      const locked = lock !== undefined && has(lock);
+      const value = locked ? lock : has(stored) ? (stored as string) : option.default;
       return {
         id: option.id,
         label: option.label,
         value,
+        ...(locked ? { locked } : {}),
         choices: option.choices.map((choice) => ({ id: choice.id, label: choice.label })),
       };
     });
-    const variants = resolveVariants(primary?.parsed.variants ?? {}, this.getUserVariants());
+    const variants = this.layerVariants(primary?.parsed.variants ?? {});
     const variantLayer = hostTokens(variantTokens(variants));
     const context = this.valueContext(extension, []);
     const blocks: { light?: Record<string, string>; dark?: Record<string, string> } = {};
@@ -1284,6 +1387,7 @@ export class ThemeService implements ThemeContributionSink {
       layers.push(variantLayer);
       const customizationLayer = layers.length;
       layers.push(this.customizations(this.customizationScopes(id, mode), context, draft));
+      layers.push(this.lockedTokens);
       const { values, rejected } = this.resolveLayers(id, layers, mode, draft !== undefined);
       for (const entry of rejected) {
         if (entry.layer === customizationLayer) customizationRejections.push({ ...entry, mode });
@@ -1401,14 +1505,18 @@ export class ThemeService implements ThemeContributionSink {
     applyThemePalette(choice !== null && isThemeSelection(choice) ? choice : DEFAULT_PALETTE);
     const layers: ThemeBlocks[] = [defaults];
     if (resolution) layers.push(resolution.blocks);
-    else if (choice === null || isThemeSelection(choice)) {
+    else {
+      // A built-in palette, or the default while a chosen theme's extension is missing
+      // (whose customizations wait for it): the variants, customizations and locks.
       const context = this.valueContext(undefined, []);
       const block: { light?: Record<string, string>; dark?: Record<string, string> } = {};
       const variants = hostTokens(variantTokens(this.getVariants()));
-      const palette = choice ?? DEFAULT_PALETTE;
+      const palette = choice !== null && isThemeSelection(choice) ? choice : DEFAULT_PALETTE;
       for (const mode of ["light", "dark"] as const) {
-        const custom = this.customizations(this.customizationScopes(palette, mode), context);
-        const { values } = this.resolveLayers(palette, [variants, custom], mode);
+        const custom = contributed
+          ? nullMap<{ value: string; references: readonly string[] }>()
+          : this.customizations(this.customizationScopes(palette, mode), context);
+        const { values } = this.resolveLayers(palette, [variants, custom, this.lockedTokens], mode);
         if (Object.keys(values).length > 0) block[mode] = values;
       }
       if (block.light || block.dark) layers.push(block);
@@ -1447,7 +1555,7 @@ export class ThemeService implements ThemeContributionSink {
             available: false,
             forcedMode: undefined,
             options: [],
-            variants: this.getUserVariants() as Readonly<Record<string, string>>,
+            variants: this.getVariants() as Readonly<Record<string, string>>,
             fromCache: false,
           }
         : null;
@@ -1842,7 +1950,36 @@ export function useThemeCustomizationsHidden(): boolean {
   );
 }
 
-/** The mode the chosen theme forces (a single-mode theme), live; null otherwise. */
+/** The mode the product locks (`lockMode`), live; null otherwise. */
+export function useThemeModeLock(): UiTheme | null {
+  return useSyncExternalStore(
+    subscribe,
+    () => themeService.getModeLock(),
+    () => null,
+  );
+}
+
+/** The variants the product locks, live (a stable snapshot per service version). */
+export function useLockedThemeVariants(): VariantValues {
+  const version = useSyncExternalStore(
+    subscribe,
+    () => themeService.getVersion(),
+    () => 0,
+  );
+  return lockedVariantsAt(version);
+}
+
+let lockedVariantsVersion = -1;
+let lockedVariantsSnapshot: VariantValues = {};
+function lockedVariantsAt(version: number): VariantValues {
+  if (version !== lockedVariantsVersion) {
+    lockedVariantsVersion = version;
+    lockedVariantsSnapshot = themeService.getLockedVariants();
+  }
+  return lockedVariantsSnapshot;
+}
+
+/** The mode that holds whatever the mode setting says (the product's lock, else a single-mode theme's), live. */
 export function useThemeForcedMode(): UiTheme | null {
   return useSyncExternalStore(
     subscribe,

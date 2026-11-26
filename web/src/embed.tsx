@@ -29,7 +29,7 @@ import { APP_QUERY_DEFAULTS } from "./lib/queryRetry";
 import { routeQueryBackgroundWorkThroughHost } from "./lib/queryBackgroundTasks";
 import { ThemeProvider } from "./components/theme/ThemeProvider";
 import { useResolvedThemeMode } from "./components/theme/useResolvedThemeMode";
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import App from "./App";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { ImageLightboxProvider } from "./components/ImageLightbox";
@@ -55,6 +55,13 @@ import {
 } from "./lib/uiFontPreferences";
 import { applyThemePalette, readThemePalette } from "./lib/themePalette";
 import { applyCustomTheme, readCustomTheme } from "./lib/customTheme";
+import {
+  applyBuildProductTheme,
+  applyServerProductTheme,
+  parseProductTheme,
+  type ProductConfig,
+  setProductTheme,
+} from "./theme/productTheme";
 import { themeService } from "./theme/themeService";
 import {
   type RoutingApi,
@@ -95,6 +102,7 @@ const queryClient = new QueryClient({
 });
 
 export type { SidebarConfig } from "./appConfig";
+export type { ProductConfig, ProductThemeConfig } from "./theme/productTheme";
 
 export interface OmnigentAppProps extends OmnigentHostConfig {
   /** Runtime consumer policy, display pagination, and polling, resolved by the host. */
@@ -120,6 +128,14 @@ export interface OmnigentAppProps extends OmnigentHostConfig {
    * overrides it; Electron automatic mode follows the OS. Defaults to light.
    */
   isDarkMode?: boolean;
+  /**
+   * The product's configuration. `theme` sets the default theme (first run and reset),
+   * the themes offered (`allowed`, ids or `*` patterns), a locked mode, locked tokens,
+   * options and variants (applied over the user's settings), and hides the picker or the
+   * customizations. Each field wins over the build's `web/product.json` and the server's
+   * `product.theme`. See `theme/productTheme.ts`.
+   */
+  product?: ProductConfig;
 }
 
 /**
@@ -152,6 +168,8 @@ function EmbedCapabilitiesProvider({ children }: { children: ReactNode }) {
       if (alive) setInfo(resolved);
     });
     void boot.settled.then((resolved) => {
+      // The server's product theme, below the embed's and the build's.
+      applyServerProductTheme(resolved);
       if (alive) setInfo(resolved);
     });
     return () => {
@@ -262,6 +280,34 @@ function OmnigentProviders({
   );
 }
 
+/** Text of a plain-data prop, to compare renders by value; a prop that isn't JSON is invalid. */
+function plainDataKey(value: unknown): string {
+  try {
+    return JSON.stringify(value ?? null);
+  } catch {
+    return "invalid";
+  }
+}
+
+/**
+ * The product theme from the props: set before the first paint (so the scope root's first
+ * apply has it, with the build's file), kept in step with the props, cleared on unmount.
+ */
+function useEmbedProductTheme(product: ProductConfig | undefined) {
+  const key = plainDataKey(product?.theme);
+  const latest = useRef(product);
+  latest.current = product;
+  useState(() => {
+    applyBuildProductTheme();
+    setProductTheme("embed", parseProductTheme(product?.theme, "embed"));
+    return null;
+  });
+  useEffect(() => {
+    setProductTheme("embed", parseProductTheme(latest.current?.theme, "embed"));
+    return () => setProductTheme("embed", undefined);
+  }, [key]);
+}
+
 /**
  * The Omnigent app for the SAME-ROOT path: a plain component the host renders
  * directly inside its OWN React tree + router. Renders NO `<Router>` (that
@@ -279,6 +325,7 @@ export function OmnigentApp({
   basename,
   routing,
   isDarkMode,
+  product,
   ...hostConfig
 }: OmnigentAppProps = {}) {
   // Install transport config ONCE per mount (not on every render). Setting it in
@@ -294,6 +341,7 @@ export function OmnigentApp({
   // Content search tabs) run in the window's extension host, as standalone. It is
   // shared by every OmnigentApp on the page. Dev-path extensions stay standalone only.
   useWindowExtensionHost();
+  useEmbedProductTheme(product);
 
   const routingApi = useMemo<RoutingApi>(() => {
     // Host overrides compose UNDER the basename wrapper: merge the host's

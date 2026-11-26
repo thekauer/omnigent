@@ -8,7 +8,8 @@ import { transform } from "lightningcss";
 import { parse, type AtRule, type Rule } from "postcss";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { scopeCss } from "../vite.embed.config";
-import { OmnigentApp } from "./embed";
+import { OmnigentApp, type ProductConfig } from "./embed";
+import { themeService } from "./theme/themeService";
 import { getEmbedRoot } from "./lib/host";
 
 // Exercise the embed's real providers and native detection without loading
@@ -238,6 +239,57 @@ describe("embedded theme selection", () => {
     fireEvent.click(getByRole("button", { name: "Select system" }));
     expect(getEmbedRoot()).not.toHaveClass("dark");
     expect(setColorScheme).toHaveBeenLastCalledWith("system");
+  });
+});
+
+describe("embed product theme", () => {
+  const style = () => document.getElementById("omnigent-theme-runtime")?.textContent ?? "";
+  function app(product: ProductConfig | undefined, isDarkMode = false) {
+    return (
+      <MemoryRouter>
+        <OmnigentApp fetcher={fetcher} isDarkMode={isDarkMode} product={product} />
+      </MemoryRouter>
+    );
+  }
+
+  it("applies the default, locks the mode and tokens over the user's, and clears on unmount", () => {
+    const setColorScheme = vi.fn();
+    vi.stubGlobal("omnigentDesktop", { kind: "electron", setColorScheme });
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    localStorage.setItem(
+      "omnigent:ui-color-customizations",
+      JSON.stringify({ "ui-radius-base": "12px" }),
+    );
+    const product: ProductConfig = {
+      theme: {
+        default: "nord",
+        allowed: ["nord", "dracula"],
+        lockMode: "dark",
+        lockedTokens: { "ui-radius-base": "0px" },
+        hidePicker: true,
+      },
+    };
+    const { getByRole, rerender, unmount } = render(app(product));
+    expect(themeService.getChoice()).toBe("nord");
+    expect(getEmbedRoot()).toHaveAttribute("data-theme", "nord");
+    // Dark although the host is light and the user picks light: the native chrome follows.
+    expect(getEmbedRoot()).toHaveClass("dark");
+    fireEvent.click(getByRole("button", { name: "Select light" }));
+    expect(getEmbedRoot()).toHaveClass("dark");
+    expect(setColorScheme).toHaveBeenLastCalledWith("dark");
+    expect(style()).toContain("--ui-radius-base: 0px");
+    expect(style()).not.toContain("12px");
+    expect(themeService.getProductPolicy()).toMatchObject({ hidePicker: true });
+    expect(() => themeService.select("omni")).toThrow(/not allowed/);
+
+    // A new prop value replaces it; an equal one re-renders without a change.
+    rerender(app({ theme: { default: "dracula" } }));
+    expect(themeService.getChoice()).toBe("dracula");
+    expect(getEmbedRoot()).not.toHaveClass("dark");
+    expect(style()).toContain("12px");
+    unmount();
+    expect(themeService.getProductPolicy()).toBeNull();
+    expect(themeService.getChoice()).toBe("omni");
   });
 });
 
