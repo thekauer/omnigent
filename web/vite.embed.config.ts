@@ -27,7 +27,7 @@
 import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import postcss from "postcss";
+import postcss, { rule as postcssRule } from "postcss";
 import { defineConfig, transformWithOxc, type Plugin } from "vite";
 import { EMBED_INNER_MARKER } from "./src/theme/themeCss.ts";
 import { DEFAULT_TOKENS } from "./src/theme/tokens/registry.ts";
@@ -139,6 +139,49 @@ function scopeRootSelector(rest: string): string {
   return `${SCOPE}${others} > ${INNER}${modes.join("")}${tail}`;
 }
 
+/**
+ * The inner root's form of a root selector's compound (`:root`/`html`/`body` already
+ * dropped) that `scopeRootSelector` leaves on the scope root itself, or null when the
+ * selector already reaches the inner root or the elements under it. Same weight as the
+ * scope root's form, a light block's `:not(.dark)` moved onto the inner root.
+ */
+function innerRootSelector(rest: string): string | null {
+  const [compound, tail] = splitFirstCompound(rest);
+  if (tail !== "") return null;
+  const [modes, others] = takeModeTests(compound);
+  if (modes.length > 0 && !modes.every((mode) => mode === ":not(.dark)")) return null;
+  return `${SCOPE}${others} > ${INNER}${modes.join("")}`;
+}
+
+/**
+ * A custom property's value is computed where it is declared, and its `var()`s with it;
+ * an element under it inherits the result. Standalone a root block's aliases
+ * (`--color-background: var(--background)`, `--ui-success-text: var(--success)`, …)
+ * resolve on the document root, which carries the mode class. Embedded, the scope root
+ * never carries it, so they resolved against the light tokens there and the dark inner
+ * root inherited light values. Such a declaration is declared again on the inner root,
+ * where the mode is, so it resolves there for the app and everything portaled into it;
+ * the scope root keeps its own copy. Plain values need no copy (they inherit as they
+ * are), and must not get one: the app writes some of them inline on the scope root (the
+ * Appearance font size and family), which an inner-root rule would override.
+ */
+function redeclareAliasesOnInnerRoot(rule: postcss.Rule, selectors: readonly string[]): void {
+  const inner = selectors.flatMap((selector) => {
+    const rootMatch = selector.trim().match(/^(?::root|html|body)(?![\w-])(.*)$/);
+    const scoped = rootMatch ? innerRootSelector(rootMatch[1]!) : null;
+    return scoped ? [scoped] : [];
+  });
+  if (inner.length === 0) return;
+  const aliases = rule.nodes.filter(
+    (node): node is postcss.Declaration =>
+      node.type === "decl" && node.prop.startsWith("--") && /var\(/i.test(node.value),
+  );
+  if (aliases.length === 0) return;
+  rule.after(
+    postcssRule({ selector: inner.join(", ") }).append(aliases.map((alias) => alias.clone())),
+  );
+}
+
 export function prefixSelector(selector: string): string {
   // Tailwind's dark variants must not inherit a dark ancestor from the host.
   const s = selector.trim().replaceAll(":is(.dark *)", `:is(${SCOPE} .dark *)`);
@@ -190,7 +233,9 @@ const scopePlugin = (): postcss.Plugin => ({
       return;
     }
     if (rule.selectors.every((sel) => sel.trim().startsWith(SCOPE))) return;
-    rule.selector = splitTopLevel(rule.selector).map(prefixSelector).join(", ");
+    const selectors = splitTopLevel(rule.selector);
+    rule.selector = selectors.map(prefixSelector).join(", ");
+    redeclareAliasesOnInnerRoot(rule, selectors);
   },
 });
 scopePlugin.postcss = true;

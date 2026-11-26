@@ -446,3 +446,139 @@ describe("embed mode tests", () => {
     expect(wrong).toEqual([]);
   });
 });
+
+describe("embed aliases of mode-dependent tokens", () => {
+  // A custom property computes its `var()`s where it is declared. The dark class is on
+  // the inner root, so a root block's aliases must be declared there too, or the inner
+  // root and its portals inherit the values resolved against the scope root's light tokens.
+  const INNER_ROOT = ":where([data-omnigent-inner])";
+  const scopedRules = (source: string) => {
+    const rules: { selector: string; declarations: string[] }[] = [];
+    parse(scopeCss(source)).walkRules((rule) => {
+      const declarations: string[] = [];
+      rule.walkDecls((declaration) => {
+        declarations.push(`${declaration.prop}: ${declaration.value}`);
+      });
+      rules.push({ selector: rule.selector, declarations });
+    });
+    return rules;
+  };
+
+  it("declares a root block's aliases again on the inner root, with the same weight", () => {
+    expect(
+      scopedRules(
+        ":root, :host { --color-background: var(--background); --text-ui: 1rem; }\n" +
+          ':root:not(.dark)[data-theme="nord"] { --ui-success-tone: var(--success); --x: red; }\n' +
+          "html[data-electron-mac] { --pane-top: calc(var(--mac-titlebar-height) + 4px); }",
+      ),
+    ).toEqual([
+      {
+        selector: ".omnigent-app, .omnigent-app :host",
+        declarations: ["--color-background: var(--background)", "--text-ui: 1rem"],
+      },
+      {
+        selector: `.omnigent-app > ${INNER_ROOT}`,
+        declarations: ["--color-background: var(--background)"],
+      },
+      {
+        selector: '.omnigent-app:not(.dark)[data-theme="nord"]',
+        declarations: ["--ui-success-tone: var(--success)", "--x: red"],
+      },
+      {
+        selector: `.omnigent-app[data-theme="nord"] > ${INNER_ROOT}:not(.dark)`,
+        declarations: ["--ui-success-tone: var(--success)"],
+      },
+      {
+        selector: ".omnigent-app[data-electron-mac]",
+        declarations: ["--pane-top: calc(var(--mac-titlebar-height) + 4px)"],
+      },
+      {
+        selector: `.omnigent-app[data-electron-mac] > ${INNER_ROOT}`,
+        declarations: ["--pane-top: calc(var(--mac-titlebar-height) + 4px)"],
+      },
+    ]);
+  });
+
+  it("copies nothing a rule already declares on the inner root or under it", () => {
+    for (const source of [
+      ":root.dark { --a: var(--b); }",
+      ":root .x { --a: var(--b); }",
+      ":root:not(.dark) .x { --a: var(--b); }",
+      ".dark { --a: var(--b); }",
+      ":root { color: var(--foreground); --plain: 1px; }",
+    ]) {
+      expect(scopedRules(source), source).toHaveLength(1);
+    }
+  });
+
+  it("declares every alias of Tailwind's theme and the token blocks on the inner root", async () => {
+    // Tailwind's own output for the app's `@theme inline` block (`static`: every variable,
+    // used or not), as the embed build scopes it, with the generated token blocks.
+    const indexCss = readFileSync("src/index.css", "utf8");
+    const themeBlock = indexCss.match(/@theme inline \{[\s\S]*?\n\}/)?.[0];
+    expect(themeBlock).toBeDefined();
+    const { compile } = await import("tailwindcss");
+    const tailwindTheme = (
+      await compile(themeBlock!.replace("@theme inline {", "@theme inline static {"))
+    ).build([]);
+    const generated = readFileSync("src/themeTokens.generated.css", "utf8");
+    const rules = scopedRules(`${tailwindTheme}\n${generated}`);
+    const onInnerRoot = new Set(
+      rules
+        .filter((rule) => rule.selector.includes(`> ${INNER_ROOT}`))
+        .flatMap((rule) =>
+          rule.selector
+            .split(", ")
+            .flatMap((selector) => rule.declarations.map((d) => `${selector} ${d}`)),
+        ),
+    );
+    const missing: string[] = [];
+    const aliases = new Set<string>();
+    for (const rule of rules) {
+      for (const selector of rule.selector.split(", ")) {
+        const root = selector.match(/^\.omnigent-app((?:\[[^\]]*\]|:not\([^)]*\))*)$/);
+        if (!root) continue;
+        const modes = root[1]!.includes(":not(.dark)") ? ":not(.dark)" : "";
+        const conditions = root[1]!.replace(":not(.dark)", "");
+        for (const declaration of rule.declarations) {
+          if (!declaration.startsWith("--") || !declaration.includes("var(")) continue;
+          aliases.add(declaration.split(":")[0]!);
+          const inner = `.omnigent-app${conditions} > ${INNER_ROOT}${modes} ${declaration}`;
+          if (!onInnerRoot.has(inner)) missing.push(inner);
+        }
+      }
+    }
+    expect(missing).toEqual([]);
+    for (const alias of [
+      "--color-background",
+      "--color-muted-foreground",
+      "--color-accent",
+      "--color-primary",
+    ]) {
+      expect(aliases).toContain(alias);
+    }
+  });
+
+  it("leaves the properties the app writes inline on the scope root to inheritance", () => {
+    // An inner-root rule for these would override the Appearance font settings and the
+    // native insets, which the app writes inline on the scope root.
+    const inline = [
+      "--desktop-ui-font-size",
+      "--ui-font-family",
+      "--omnigent-native-top-bar",
+      "--omnigent-native-bottom-bar",
+    ];
+    const wrong: string[] = [];
+    css.walkDecls((declaration) => {
+      const selector = (declaration.parent as Rule).selector ?? "";
+      if (
+        inline.includes(declaration.prop) &&
+        selector.includes(`> ${INNER_ROOT}`) &&
+        !/> \S+\s+\S/.test(selector)
+      ) {
+        wrong.push(`${selector} ${declaration.prop}`);
+      }
+    });
+    expect(wrong).toEqual([]);
+  });
+});
