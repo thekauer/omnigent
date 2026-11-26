@@ -368,6 +368,11 @@ export interface TokenConstraint {
   lengthRange?: readonly [number, number];
   /** Whether a calc() may multiply by `infinity` (the pill radius). */
   allowInfinity?: boolean;
+  /**
+   * A font size: `em` is the parent's font size, which a theme may set too, so an `em`
+   * multiplier stays within {@link FONT_SIZE_EM_LIMIT}.
+   */
+  fontSize?: boolean;
 }
 
 /** The values a math expression can take, `var()`s at their tokens' ranges. */
@@ -378,6 +383,19 @@ interface Interval {
   readonly vars: boolean;
   /** Whether it multiplies by `infinity`. */
   readonly infinite: boolean;
+}
+
+/**
+ * The range a calc() that reads tokens may reach for a token of `range`: the range widened
+ * by its own width, within the calc() cap. A token's absolute bounds (`ui-elevation`'s 0..1)
+ * are a `range` of their own and widen the same way.
+ */
+function widenedRange(range: readonly [number, number]): readonly [number, number] {
+  const width = range[1] - range[0];
+  return [
+    Math.max(range[0] - width, -MATH_LITERAL_LIMIT),
+    Math.min(range[1] + width, MATH_LITERAL_LIMIT),
+  ];
 }
 
 function multiply(a: Interval, b: Interval): Interval {
@@ -411,8 +429,17 @@ const MATH_LITERAL_LIMIT = 10_000;
 const CHANNEL_RANGE = [-1000, 1000] as const;
 const GRADIENT_STOP_LIMIT = 32;
 const ROW_RANGE = [0, 400] as const;
+const DURATION_RANGE = [0, 10_000] as const;
 const TEXT_SIZE_RANGE = [0, 200] as const;
 const TRACKING_RANGE = [-100, 100] as const;
+/** The largest `em` multiplier a font size token may use (its parent's size times this). */
+const FONT_SIZE_EM_LIMIT = 4;
+/** A dimension in the unit calc() compares: px for lengths (16px per rem and em), ms for durations. */
+function unitScale(unit: string): number {
+  if (unit === "rem" || unit === "em") return 16;
+  if (unit === "s") return 1000;
+  return 1;
+}
 // CSS-wide keywords: they would make a token take its parent's or initial value instead of a theme value.
 const CSS_WIDE_KEYWORDS = new Set(["initial", "inherit", "unset", "revert", "revert-layer"]);
 
@@ -448,9 +475,9 @@ export const TOKEN_CONSTRAINTS: Readonly<Record<string, TokenConstraint>> = {
   "ui-view-title-height": { lengthRange: ROW_RANGE },
   "ui-view-title-padding-x": { lengthRange: ROW_RANGE },
   "ui-view-title-gap": { lengthRange: ROW_RANGE },
-  "ui-label-size": { lengthRange: TEXT_SIZE_RANGE },
-  "ui-view-title-size": { lengthRange: TEXT_SIZE_RANGE },
-  "ui-fold-label-size": { lengthRange: TEXT_SIZE_RANGE },
+  "ui-label-size": { lengthRange: TEXT_SIZE_RANGE, fontSize: true },
+  "ui-view-title-size": { lengthRange: TEXT_SIZE_RANGE, fontSize: true },
+  "ui-fold-label-size": { lengthRange: TEXT_SIZE_RANGE, fontSize: true },
   "ui-letter-spacing": { lengthRange: TRACKING_RANGE },
   "ui-label-tracking": { lengthRange: TRACKING_RANGE },
 };
@@ -760,13 +787,21 @@ class ValueChecker {
     return nodes[0]!;
   }
 
-  /** The values `var(--id)` can hold inside a calc(): its token's range, else the cap. */
+  /**
+   * The values `var(--id)` can hold inside a calc(): what {@link boundedMath} lets a
+   * theme set it to, so its token's range widened by its own width (a calc() of tokens
+   * may reach that far), clamped to the cap. A chain of tokens that each double the
+   * last so stops at its second step instead of reaching past the cap.
+   */
   private variableBound(id: string): Interval {
     if (/^spacing$/.test(id)) return { lo: 0, hi: 16, vars: true, infinite: false };
     if (/^text-/.test(id)) return { lo: 0, hi: TEXT_SIZE_RANGE[1], vars: true, infinite: false };
     const constraint = TOKEN_CONSTRAINTS[id];
-    const [lo, hi] = constraint?.lengthRange ??
-      constraint?.range ?? [-MATH_LITERAL_LIMIT, MATH_LITERAL_LIMIT];
+    // A number's range (`ui-elevation`'s 0..1, the weights) is absolute: it never widens.
+    if (constraint?.range && !constraint.lengthRange) {
+      return { lo: constraint.range[0], hi: constraint.range[1], vars: true, infinite: false };
+    }
+    const [lo, hi] = widenedRange(constraint?.lengthRange ?? DEFAULT_LENGTH_RANGE);
     return { lo, hi, vars: true, infinite: false };
   }
 
@@ -774,8 +809,8 @@ class ValueChecker {
   private mathOperand(node: CssNode, units: ReadonlySet<string>): Interval {
     if (node.type === "number") {
       if (node.unit !== "" && !units.has(node.unit)) fail(`unit ${node.unit} not allowed`);
-      const scale = node.unit === "rem" || node.unit === "em" ? 16 : 1;
-      const value = node.value * scale;
+      this.checkEm(node);
+      const value = node.value * unitScale(node.unit);
       if (Math.abs(value) > MATH_LITERAL_LIMIT) {
         fail(`${formatNumber(node.value)}${node.unit} is too large for calc()`);
       }
@@ -876,21 +911,21 @@ class ValueChecker {
 
   /**
    * A math function whose result must lie in `range`: exactly when it reads only
-   * literals, within the range widened by its own width when it reads tokens (so a
-   * default-like `calc(var(--ui-row-line) + 8px)` passes and a multiplied one doesn't),
-   * and never beyond the calc() cap. Infinity only where the token allows it.
+   * literals, within the range widened by its own width when it reads tokens (each read
+   * at {@link variableBound}, so a half of another token plus 8px passes and a chain of
+   * doublings stops), and never beyond the calc() cap. Infinity only where the token
+   * allows it. An absolute range (`widen` false: a number's, a duration's) holds for every calc().
    */
   private boundedMath(
     node: Extract<CssNode, { type: "function" }>,
     units: ReadonlySet<string>,
     range: readonly [number, number] = [-MATH_LITERAL_LIMIT, MATH_LITERAL_LIMIT],
+    widen = true,
   ): void {
+    // An `infinity` factor counts as 1 here, so the pill's other operands are bounded too.
     const result = this.mathFunction(node, units);
-    if (result.infinite) return;
     if (!Number.isFinite(result.lo) || !Number.isFinite(result.hi)) fail("calc() is not finite");
-    const width = range[1] - range[0];
-    const lo = Math.max(result.vars ? range[0] - width : range[0], -MATH_LITERAL_LIMIT);
-    const hi = Math.min(result.vars ? range[1] + width : range[1], MATH_LITERAL_LIMIT);
+    const [lo, hi] = result.vars && widen ? widenedRange(range) : range;
     if (result.lo < lo - 1e-9 || result.hi > hi + 1e-9) {
       fail(
         `${node.name}() can reach ${formatNumber(result.lo)}..${formatNumber(result.hi)}, outside ${formatNumber(lo)}..${formatNumber(hi)}`,
@@ -898,8 +933,24 @@ class ValueChecker {
     }
   }
 
+  /** A font size's `em` multiplier stays within {@link FONT_SIZE_EM_LIMIT}. */
+  private checkEm(node: Extract<CssNode, { type: "number" }>): void {
+    if (
+      this.constraint.fontSize &&
+      node.unit === "em" &&
+      Math.abs(node.value) > FONT_SIZE_EM_LIMIT
+    ) {
+      fail(`${formatNumber(node.value)}em is more than ${FONT_SIZE_EM_LIMIT}em`);
+    }
+  }
+
   /** A number, dimension or math in `units` (and unitless). */
-  private numeric(node: CssNode, units: ReadonlySet<string>, range?: readonly [number, number]) {
+  private numeric(
+    node: CssNode,
+    units: ReadonlySet<string>,
+    range?: readonly [number, number],
+    widen = true,
+  ) {
     if (node.type === "number") {
       if (node.unit !== "" && !units.has(node.unit))
         fail(`unit ${node.unit || "none"} not allowed`);
@@ -909,7 +960,7 @@ class ValueChecker {
       return;
     }
     if (node.type === "function" && MATH_FUNCTIONS.has(node.name)) {
-      this.boundedMath(node, units, range);
+      this.boundedMath(node, units, range, widen);
       return;
     }
     if (!this.variable(node)) fail("expected a number");
@@ -1031,13 +1082,14 @@ class ValueChecker {
       }
       return;
     }
-    const px = node.unit === "rem" || node.unit === "em" ? node.value * 16 : node.value;
+    this.checkEm(node);
+    const px = node.value * unitScale(node.unit);
     if (px < min || px > max)
       fail(`${formatNumber(node.value)}${node.unit} is outside ${min}..${max}px`);
   }
 
   number(nodes: readonly CssNode[]): void {
-    this.numeric(this.single(nodes, "number"), new Set(), this.constraint.range);
+    this.numeric(this.single(nodes, "number"), new Set(), this.constraint.range, false);
   }
 
   alpha(nodes: readonly CssNode[]): void {
@@ -1071,11 +1123,12 @@ class ValueChecker {
       if (node.unit !== "ms" && node.unit !== "s" && !(node.unit === "" && node.value === 0)) {
         fail("a duration needs ms or s");
       }
-      const [min, max] = this.constraint.range ?? [0, 10_000];
+      const [min, max] = this.constraint.range ?? DURATION_RANGE;
       if (ms < min || ms > max) fail(`duration outside ${min}..${max}ms`);
       return;
     }
-    this.numeric(node, new Set(["ms", "s"]));
+    // In ms (`s` scales by 1000), within the duration range.
+    this.numeric(node, new Set(["ms", "s"]), this.constraint.range ?? DURATION_RANGE, false);
   }
 
   easing(nodes: readonly CssNode[]): void {

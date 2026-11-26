@@ -426,13 +426,50 @@ describe("M7 follow-up: calc() can't get around the ranges", () => {
   });
 
   it("bounds a calc() of tokens near the range, and never past the cap", () => {
-    // The registry's own formulas pass.
-    expect(check("ui-row-height", "calc(var(--ui-row-line) + calc(var(--spacing) * 2))").ok).toBe(
-      true,
-    );
+    // A scale of another token passes. A token read is taken at the most a theme may set
+    // it to (its range widened by its width), so adding to one at that bound doesn't.
     expect(check("ui-radius-sm", "calc(var(--ui-radius-base) * 0.5)").ok).toBe(true);
+    expect(check("ui-row-height", "calc(var(--ui-row-line) * 0.5 + 8px)").ok).toBe(true);
+    expect(check("ui-row-height", "calc(var(--ui-row-line) + calc(var(--spacing) * 2))").ok).toBe(
+      false,
+    );
     expect(check("ui-border-width", "calc(var(--ui-border-width) * 300)").ok).toBe(false);
     expect(check("ui-radius-base", "calc(var(--ui-radius-base) * 9 * 9 * 9)").ok).toBe(false);
+  });
+
+  it("stops a chain of tokens that each double the last before the cap", () => {
+    // Each step is within its own range read at the last one's: the second step is not.
+    const chain: [string, string][] = [
+      ["ui-label-size", "200px"],
+      ["ui-row-line", "calc(var(--ui-label-size) * 2)"],
+      ["ui-row-height", "calc(var(--ui-row-line) * 2)"],
+      ["ui-control-h-md", "calc(var(--ui-row-height) * 2)"],
+      ["ui-header-height", "calc(var(--ui-control-h-md) * 2)"],
+      ["ui-radius-base", "calc(var(--ui-header-height) * 2)"],
+    ];
+    expect(chain.map(([id, value]) => check(id, value).ok)).toEqual([
+      true,
+      true,
+      false,
+      false,
+      false,
+      true,
+    ]);
+    // Whatever passes stays within the cap: the base's reach is the cap at most.
+    expect(check("ui-radius-base", "calc(var(--ui-header-height) * 13)").ok).toBe(false);
+  });
+
+  it("scales em and durations, and checks the pill's other operands", () => {
+    expect(check("ui-label-size", "1.2em").ok).toBe(true);
+    expect(check("ui-label-size", "12em").ok).toBe(false);
+    expect(check("ui-label-size", "calc(12em * 1)").ok).toBe(false);
+    expect(validateTokenValue("duration", "calc(2s * 3)", registryOnly).ok).toBe(true);
+    expect(validateTokenValue("duration", "calc(100s * 1)", registryOnly).ok).toBe(false);
+    expect(validateTokenValue("duration", "calc(9000ms + 2s)", registryOnly).ok).toBe(false);
+    expect(
+      check("ui-radius-pill", "calc(var(--ui-radius-base) * infinity + 9000px * 9000)").ok,
+    ).toBe(false);
+    expect(check("ui-radius-pill", "calc(var(--ui-radius-base) * infinity)").ok).toBe(true);
   });
 
   it("rejects division by zero, by a token and infinity but the pill's", () => {
