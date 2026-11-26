@@ -761,6 +761,32 @@ packaged built-in agents](docker/README.md#trimming-the-packaged-built-in-agents
 an agent it removes stays hidden even when `restrict_to_agent_names` lists it.
 Both keys are served on the unauthenticated `GET /v1/info`.
 
+## Product theme
+
+Choose the web app's default color theme, limit the themes it offers, and lock
+parts of the look with a `product: theme:` block in the same server config.
+Takes effect on the next server start.
+
+```yaml
+product:
+  theme:
+    default: nord                  # first run and Settings' reset; a built-in palette or <extension id>/<theme id>
+    allowed: [omnigent.themes/*]   # what the picker offers; ids or patterns where * matches anything
+    lock_mode: dark                # the app stays in this mode
+    locked_tokens:                 # applied over every theme and the user's customizations
+      ui-radius-base: 4px
+    locked_options: { accent: lava }       # a theme option's choice, for any theme that has it
+    locked_variants: { density: compact }  # style variants
+    hide_picker: false             # hide the theme picker
+    hide_customizations: false     # hide options, style variants and Advanced; stored ones stop applying
+```
+
+Each key is optional; a malformed one logs a warning at startup and is left out.
+The web app checks token values as it checks a theme's. A product that embeds
+the app (`OmnigentAppProps.product.theme`) or ships a `web/product.json` with
+the same keys in camelCase wins over these, key by key. Locked rows show "Set by
+product" in Settings. Served on the unauthenticated `GET /v1/info`.
+
 ## Adding a new deploy target
 
 Drop a new subdirectory under `deploy/<target>/` with a `README.md`

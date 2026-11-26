@@ -275,6 +275,29 @@ class PickerInfo(BaseModel):
     default_agent_name: str | None = None
 
 
+class ProductThemeInfo(BaseModel):
+    """The product's theme configuration (server config ``product: theme:``).
+
+    The web app checks the values and applies them below an embedding product's and a
+    build's own. Unset keys are null.
+    """
+
+    default: str | None = None
+    allowed: list[str] | None = None
+    lock_mode: Literal["light", "dark"] | None = None
+    locked_tokens: dict[str, str] | None = None
+    locked_options: dict[str, str] | None = None
+    locked_variants: dict[str, str] | None = None
+    hide_picker: bool | None = None
+    hide_customizations: bool | None = None
+
+
+class ProductInfo(BaseModel):
+    """The operator's product configuration served to the web app."""
+
+    theme: ProductThemeInfo | None = None
+
+
 class FilesystemAttachmentsInfo(BaseModel):
     """Which uploads native sessions receive as files, for client-side checks."""
 
@@ -459,6 +482,7 @@ class ServerInfoResponse(BaseModel):
     memory: bool = False
     branding: BrandingInfo
     picker: PickerInfo = PickerInfo()
+    product: ProductInfo | None = None
 
 
 def _resolve_extension_state(
@@ -2152,6 +2176,7 @@ def create_app(
         automation_trigger_poll_minutes,
         load_branding_snapshot,
         load_picker_curation,
+        load_product_theme,
         load_server_config,
         session_title_instructions,
     )
@@ -2159,6 +2184,7 @@ def create_app(
     resolved_server_config = load_server_config() if server_config is None else server_config
     branding_snapshot = load_branding_snapshot(resolved_server_config)
     picker_curation = load_picker_curation(resolved_server_config)
+    product_theme = load_product_theme(resolved_server_config)
     title_instructions = session_title_instructions(resolved_server_config)
     trigger_poll_minutes = automation_trigger_poll_minutes(resolved_server_config)
     resolved_feature_flags = feature_flags or resolve_feature_flags()
@@ -4239,6 +4265,7 @@ def create_app(
                 "automation_trigger_poll_minutes": trigger_poll_minutes,
                 "branding": branding_snapshot.config(),
                 "picker": picker_curation.config(),
+                "product": {"theme": product_theme} if product_theme else None,
             }
         )
 

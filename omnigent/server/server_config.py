@@ -238,6 +238,107 @@ def load_picker_curation(config: Mapping[str, Any]) -> PickerCuration:
     return PickerCuration(restrict_to_agent_names=names, default_agent_name=default)
 
 
+PRODUCT_KEY = "product"
+_PRODUCT_THEME_MAPS = {"locked_tokens": 1000, "locked_options": 100, "locked_variants": 100}
+_PRODUCT_THEME_FLAGS = ("hide_picker", "hide_customizations")
+_PRODUCT_THEME_ID_LIMIT = 200
+_PRODUCT_THEME_ALLOWED_LIMIT = 100
+_PRODUCT_THEME_KEY_LIMIT = 128
+_PRODUCT_THEME_VALUE_LIMIT = 256
+
+
+def _product_theme_map(raw: Any, key: str, limit: int) -> dict[str, str] | None:
+    """Return a ``product.theme`` string map, or ``None`` (with a warning) when malformed."""
+    if not isinstance(raw, Mapping):
+        logger.warning("server config product.theme.%s must be a mapping; ignoring it", key)
+        return None
+    entries: dict[str, str] = {}
+    for name, value in raw.items():
+        valid = (
+            isinstance(name, str)
+            and 0 < len(name) <= _PRODUCT_THEME_KEY_LIMIT
+            and isinstance(value, str)
+            and len(value) <= _PRODUCT_THEME_VALUE_LIMIT
+        )
+        if not valid:
+            logger.warning(
+                "server config product.theme.%s.%s is malformed; ignoring it", key, name
+            )
+            continue
+        if len(entries) >= limit:
+            logger.warning("server config product.theme.%s has over %d entries", key, limit)
+            break
+        entries[name] = value
+    return entries
+
+
+def load_product_theme(config: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Read the product's theme configuration (``product: theme:``) from the server config.
+
+    The web app applies it below an embedding product's and a build's own (see
+    ``docs/extending/theming_plan.md``, M10): the default theme, the themes offered, a
+    locked mode, locked tokens, options and variants, and whether Settings shows the
+    picker and the customizations. Only the shape is checked here; the web checks the
+    values (token values against its registry, as a theme's). Each key fails open: a
+    malformed one logs and is left out.
+
+    :param config: Loaded server config carrying the optional ``product`` mapping.
+    :returns: The theme block as ``GET /v1/info`` serves it (snake_case keys), or
+        ``None`` when nothing is configured.
+    """
+    product = config.get(PRODUCT_KEY)
+    if product is None:
+        return None
+    if not isinstance(product, Mapping):
+        logger.warning("server config product must be a mapping; ignoring it")
+        return None
+    theme = product.get("theme")
+    if theme is None:
+        return None
+    if not isinstance(theme, Mapping):
+        logger.warning("server config product.theme must be a mapping; ignoring it")
+        return None
+    out: dict[str, Any] = {}
+    default = theme.get("default")
+    if default is not None:
+        if isinstance(default, str) and 0 < len(default.strip()) <= _PRODUCT_THEME_ID_LIMIT:
+            out["default"] = default.strip()
+        else:
+            logger.warning("server config product.theme.default must be a theme id; ignoring it")
+    allowed = theme.get("allowed")
+    if allowed is not None:
+        items = allowed if isinstance(allowed, list) else [allowed]
+        names = [
+            item.strip()
+            for item in items
+            if isinstance(item, str) and 0 < len(item.strip()) <= _PRODUCT_THEME_ID_LIMIT
+        ]
+        if len(names) != len(items):
+            logger.warning("server config product.theme.allowed has malformed entries")
+        out["allowed"] = list(dict.fromkeys(names))[:_PRODUCT_THEME_ALLOWED_LIMIT]
+    lock_mode = theme.get("lock_mode")
+    if lock_mode is not None:
+        if lock_mode in ("light", "dark"):
+            out["lock_mode"] = lock_mode
+        else:
+            logger.warning("server config product.theme.lock_mode must be light or dark")
+    for key, limit in _PRODUCT_THEME_MAPS.items():
+        if theme.get(key) is None:
+            continue
+        entries = _product_theme_map(theme[key], key, limit)
+        if entries is not None:
+            out[key] = entries
+    for key in _PRODUCT_THEME_FLAGS:
+        value = theme.get(key)
+        if value is None:
+            continue
+        if isinstance(value, bool):
+            out[key] = value
+        else:
+            logger.warning("server config product.theme.%s must be true or false", key)
+    return out or None
+
+
 def _config_positive_int(key: str, default: int) -> int:
     """Read a positive-int setting from the server config, else *default*.
 

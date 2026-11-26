@@ -3241,6 +3241,48 @@ async def test_info_publishes_the_picker_curation(
     }
 
 
+@pytest.mark.asyncio
+async def test_info_publishes_the_product_theme(
+    db_uri: str,
+    runtime_init: None,
+    tmp_path: Path,
+) -> None:
+    """``GET /v1/info`` carries ``product.theme`` as configured, and null without one."""
+    app = _build_branding_app(
+        db_uri,
+        tmp_path,
+        "product",
+        server_config={
+            "product": {
+                "theme": {
+                    "default": "acme.brand/console",
+                    "lock_mode": "dark",
+                    "locked_variants": {"density": "compact"},
+                    "hide_picker": True,
+                }
+            }
+        },
+    )
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+        resp = await c.get("/v1/info")
+
+    assert resp.status_code == 200
+    theme = resp.json()["product"]["theme"]
+    assert {key: value for key, value in theme.items() if value is not None} == {
+        "default": "acme.brand/console",
+        "lock_mode": "dark",
+        "locked_variants": {"density": "compact"},
+        "hide_picker": True,
+    }
+
+    plain = _build_branding_app(db_uri, tmp_path, "no-product", server_config={})
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=plain), base_url="http://test"
+    ) as c:
+        assert (await c.get("/v1/info")).json()["product"] is None
+
+
 @pytest.mark.parametrize(
     ("names", "expected", "absent"),
     [

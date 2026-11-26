@@ -29,6 +29,7 @@ from omnigent.server.server_config import (
     config_str_list,
     load_branding_snapshot,
     load_picker_curation,
+    load_product_theme,
     load_server_config,
     resolve_config_path,
     session_title_instructions,
@@ -774,3 +775,58 @@ def test_a_default_without_any_restriction_is_kept() -> None:
 
     assert curation.restrict_to_agent_names == ()
     assert curation.default_agent_name == "polly"
+
+
+@pytest.mark.parametrize(
+    "config",
+    [{}, {"product": None}, {"product": {}}, {"product": {"theme": {}}}],
+    ids=["absent", "null", "no-theme", "empty-theme"],
+)
+def test_product_theme_is_none_without_config(config: dict[str, object]) -> None:
+    """Every existing deployment serves no product theme."""
+    assert load_product_theme(config) is None
+
+
+def test_product_theme_keeps_the_well_formed_keys(caplog: pytest.LogCaptureFixture) -> None:
+    """Each key is checked for its shape; a malformed one is left out with a warning."""
+    with caplog.at_level(logging.WARNING, logger="omnigent.server.server_config"):
+        theme = load_product_theme(
+            {
+                "product": {
+                    "theme": {
+                        "default": " acme.brand/console ",
+                        "allowed": ["omnigent.themes/*", "acme.brand/*", 3, "acme.brand/*"],
+                        "lock_mode": "dim",
+                        "locked_tokens": {"ui-radius-base": "0px", "primary": 3},
+                        "locked_variants": {"density": "compact"},
+                        "locked_options": ["accent"],
+                        "hide_picker": True,
+                        "hide_customizations": "yes",
+                    }
+                }
+            }
+        )
+
+    assert theme == {
+        "default": "acme.brand/console",
+        "allowed": ["omnigent.themes/*", "acme.brand/*"],
+        "locked_tokens": {"ui-radius-base": "0px"},
+        "locked_variants": {"density": "compact"},
+        "hide_picker": True,
+    }
+    for key in (
+        "allowed",
+        "lock_mode",
+        "locked_tokens.primary",
+        "locked_options",
+        "hide_customizations",
+    ):
+        assert key in caplog.text
+
+
+def test_product_theme_of_the_wrong_type_is_ignored(caplog: pytest.LogCaptureFixture) -> None:
+    """Fail open: a product or theme that isn't a mapping serves nothing."""
+    with caplog.at_level(logging.WARNING, logger="omnigent.server.server_config"):
+        assert load_product_theme({"product": ["theme"]}) is None
+        assert load_product_theme({"product": {"theme": "console"}}) is None
+    assert "product.theme must be a mapping" in caplog.text

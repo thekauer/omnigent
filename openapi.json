@@ -6529,6 +6529,134 @@
         "title": "ProactiveAgentToggle",
         "type": "object"
       },
+      "ProductInfo": {
+        "description": "The operator's product configuration served to the web app.",
+        "properties": {
+          "theme": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProductThemeInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "ProductInfo",
+        "type": "object"
+      },
+      "ProductThemeInfo": {
+        "description": "The product's theme configuration (server config `product: theme:`).\n\nThe web app checks the values and applies them below an embedding product's and a\nbuild's own. Unset keys are null.",
+        "properties": {
+          "allowed": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Allowed"
+          },
+          "default": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "hide_customizations": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hide Customizations"
+          },
+          "hide_picker": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hide Picker"
+          },
+          "lock_mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "light",
+                  "dark"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lock Mode"
+          },
+          "locked_options": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locked Options"
+          },
+          "locked_tokens": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locked Tokens"
+          },
+          "locked_variants": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "string"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locked Variants"
+          }
+        },
+        "title": "ProductThemeInfo",
+        "type": "object"
+      },
       "ProjectOrderRequest": {
         "description": "Rank owned project IDs; unranked projects append in discovery order.\n\nNull selects alphabetical mode without erasing the remembered manual IDs.\nThe serialized preference must fit in 65,535 bytes after compression and\nframing; lists below the 10,000-ID limit can still exceed this byte limit.",
         "properties": {
@@ -8146,6 +8274,16 @@
             "default": false,
             "title": "Proactive Agent Available",
             "type": "boolean"
+          },
+          "product": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProductInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "public_sharing_enabled": {
             "title": "Public Sharing Enabled",
