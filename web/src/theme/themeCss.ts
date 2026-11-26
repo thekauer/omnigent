@@ -25,7 +25,7 @@ const ROOT = `:is([${THEME_ROOT_ATTRIBUTE}], #${THEME_SPECIFICITY_ID})`;
 
 /** Where each block of the runtime stylesheet goes. */
 export interface ThemeSelectors {
-  /** The theme roots in light mode (and the embed's scope root in either mode). */
+  /** The theme roots in light mode. */
   readonly light: string;
   /** The theme roots in dark mode. */
   readonly dark: string;
@@ -48,11 +48,14 @@ export function themeSelectors(scope: string | null): ThemeSelectors {
       probe: (mode) => `:root${ROOT} [data-token-mode="${mode}"]`,
     };
   }
+  // The inner root carries the mode class, the scope root never does; the scope root
+  // takes the inner root's mode, so a light-only value can't reach a dark inner root
+  // through it.
   const inner = `${scope} > [${EMBED_INNER_MARKER}]${ROOT}`;
-  const scoped = (suffix: string) => `${scope}${ROOT}${suffix}, ${inner}${suffix}`;
+  const innerDark = `:has(> [${EMBED_INNER_MARKER}]:where(.dark))`;
   return {
-    light: scoped(":not(.dark)"),
-    dark: scoped(".dark"),
+    light: `${scope}${ROOT}:not(${innerDark}), ${inner}:not(.dark)`,
+    dark: `${scope}${ROOT}${innerDark}, ${inner}.dark`,
     probe: (mode) => `${scope}${ROOT} [data-token-mode="${mode}"]`,
   };
 }

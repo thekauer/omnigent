@@ -129,9 +129,13 @@ describe("the runtime theme stylesheet's selectors", () => {
       [...document.querySelectorAll(selector)].map(
         (element) => element.className || element.getAttribute("data-token-mode"),
       );
-    expect(matches(embed.light)).toEqual(["omnigent-app"]);
-    expect(matches(embed.dark)).toEqual(["dark"]);
+    // The scope root takes the inner root's mode: it never carries the class itself.
+    expect(matches(embed.light)).toEqual([]);
+    expect(matches(embed.dark)).toEqual(["omnigent-app", "dark"]);
     expect(matches(embed.probe("light"))).toEqual(["light"]);
+    document.querySelector("[data-omnigent-inner]")!.className = "";
+    expect(matches(embed.light)).toEqual(["omnigent-app", null]);
+    expect(matches(embed.dark)).toEqual([]);
     const standalone = themeSelectors(null);
     document.documentElement.setAttribute("data-omni-theme", "t");
     expect(document.documentElement.matches(standalone.light)).toBe(true);

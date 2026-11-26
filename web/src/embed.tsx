@@ -242,8 +242,9 @@ function OmnigentProviders({
   return (
     // Two nested wrappers on purpose:
     //   - `.omnigent-app` (outer) is the scope anchor. The scoped stylesheet
-    //     rewrites `:root` → `.omnigent-app` (light tokens) and `.dark` →
-    //     `.omnigent-app .dark`, so the dark class must be a DESCENDANT of the
+    //     rewrites `:root` → `.omnigent-app` (light tokens), `.dark` →
+    //     `.omnigent-app .dark` and a root's mode test (`:root:not(.dark) .x`)
+    //     onto the inner root, so the dark class must be a DESCENDANT of the
     //     scope root, not the root itself.
     //   - the inner div carries the selected `dark` class (when dark) and is
     //     the Radix portal root, so both the app and its overlays read the dark

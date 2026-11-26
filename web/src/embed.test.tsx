@@ -371,3 +371,78 @@ describe("embed token registrations", () => {
     ]);
   });
 });
+
+describe("embed mode tests", () => {
+  // Standalone `.dark` is on the document root; embedded, on the inner root only.
+  function roots(dark: boolean) {
+    document.body.innerHTML =
+      `<div class="omnigent-app" data-theme="custom" data-custom-translucent-sidebar>` +
+      `<div data-omnigent-inner data-theme="custom" data-custom-translucent-sidebar class="${dark ? "dark" : ""}">` +
+      `<div class="menu-surface"></div><div class="conversations-sidebar"></div></div></div>`;
+    return {
+      scope: document.querySelector<HTMLElement>(".omnigent-app")!,
+      inner: document.querySelector<HTMLElement>("[data-omnigent-inner]")!,
+      menu: document.querySelector<HTMLElement>(".menu-surface")!,
+      sidebar: document.querySelector<HTMLElement>(".conversations-sidebar")!,
+    };
+  }
+  const rules = (fragment: string) => {
+    const found: string[] = [];
+    css.walkRules((rule) => {
+      for (const selector of rule.selectors) if (selector.includes(fragment)) found.push(selector);
+    });
+    return found;
+  };
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  it("tests the mode of a root selector on the inner root, for the app and its portals", () => {
+    const light = rules(".menu-surface").filter((selector) => selector.includes(":not(.dark)"));
+    expect(light).toEqual([
+      ".omnigent-app > :where([data-omnigent-inner]):not(.dark) .menu-surface",
+    ]);
+    const sidebar = rules(".conversations-sidebar").filter((selector) =>
+      selector.includes(":not(.dark)"),
+    );
+    expect(sidebar.length).toBeGreaterThanOrEqual(3);
+    let dom = roots(true);
+    for (const selector of [...light, ...sidebar]) {
+      expect(dom.menu.matches(selector) || dom.sidebar.matches(selector), selector).toBe(false);
+    }
+    dom = roots(false);
+    expect(dom.menu.matches(light[0]!)).toBe(true);
+    for (const selector of sidebar) {
+      expect(dom.sidebar.matches(selector), selector).toBe(true);
+    }
+  });
+
+  it("keeps the weight, the scope root's other conditions and its light fallback", () => {
+    const scoped = (selector: string) =>
+      (parse(scopeCss(`${selector} { color: red; }`)).nodes[0] as Rule).selector;
+    expect(scoped(":root.dark .x")).toBe(".omnigent-app > :where([data-omnigent-inner]).dark .x");
+    expect(scoped("html.dark")).toBe(".omnigent-app > :where([data-omnigent-inner]).dark");
+    expect(scoped(':root[data-theme="nord"]:not(.dark) .x')).toBe(
+      '.omnigent-app[data-theme="nord"] > :where([data-omnigent-inner]):not(.dark) .x',
+    );
+    // A block for the root itself in light mode stays on the scope root.
+    expect(scoped(":root:not(.dark)[data-theme]")).toBe(".omnigent-app:not(.dark)[data-theme]");
+    expect(scoped(":root > .dark")).toBe(".omnigent-app > .dark");
+    expect(scoped("html[data-electron-mac] .x")).toBe(".omnigent-app[data-electron-mac] .x");
+    expect(scoped(".dark .x")).toBe(".omnigent-app .dark .x");
+    const { inner } = roots(true);
+    expect(inner.matches(scoped(":root.dark"))).toBe(true);
+    expect(() => scoped(":root:is(.dark) .x")).toThrow(/tests the theme mode/);
+  });
+
+  it("leaves no mode test on the scope root in the scoped stylesheet", () => {
+    const wrong: string[] = [];
+    css.walkRules((rule) => {
+      for (const selector of rule.selectors) {
+        const root = selector.match(/^\.omnigent-app((?:\[[^\]]*\]|:[\w-]+(?:\([^)]*\))?)*)\s/);
+        if (root && /\.dark(?![\w-])/.test(root[1]!)) wrong.push(selector);
+      }
+    });
+    expect(wrong).toEqual([]);
+  });
+});

@@ -220,11 +220,16 @@ describe("F3: the runtime selectors match the theme roots only", () => {
     setEmbedRoot(inner);
     try {
       const selectors = themeSelectors(getThemeScopeSelector());
-      expect(scope.matches(selectors.light)).toBe(true);
+      // The scope root takes the inner root's mode.
+      expect(scope.matches(selectors.dark)).toBe(true);
       expect(inner.matches(selectors.dark)).toBe(true);
       expect(injected.matches(selectors.dark)).toBe(false);
-      expect(forged.matches(selectors.light)).toBe(false);
+      expect(forged.matches(selectors.light) || forged.matches(selectors.dark)).toBe(false);
       expect(forgedInner.matches(selectors.dark)).toBe(false);
+      inner.classList.remove("dark");
+      expect(scope.matches(selectors.light)).toBe(true);
+      expect(inner.matches(selectors.light)).toBe(true);
+      expect(injected.matches(selectors.light)).toBe(false);
       // Not markers an element could guess: the nonce is random per page.
       expect(scope.getAttribute("data-omnigent-scope")).toMatch(/^[0-9a-f]{16}$/);
     } finally {

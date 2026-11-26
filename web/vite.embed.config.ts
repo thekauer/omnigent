@@ -29,6 +29,7 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import postcss from "postcss";
 import { defineConfig, transformWithOxc, type Plugin } from "vite";
+import { EMBED_INNER_MARKER } from "./src/theme/themeCss.ts";
 import { DEFAULT_TOKENS } from "./src/theme/tokens/registry.ts";
 import { workerBuildOptions } from "./vite.workerExports";
 
@@ -66,14 +67,87 @@ function splitTopLevel(selectorList: string): string[] {
   return parts;
 }
 
-function prefixSelector(selector: string): string {
+// The embed's inner root: the scope root's only child, the element that carries the
+// `dark` class (and the Radix portal root, so overlays are inside it too). `:where()`
+// keeps the marker out of the specificity, so a rule moved onto it keeps the weight it
+// had on the scope root.
+const INNER = `:where([${EMBED_INNER_MARKER}])`;
+
+/** The first compound selector of `selector` (up to a top-level combinator) and the rest. */
+function splitFirstCompound(selector: string): [string, string] {
+  let depth = 0;
+  for (let index = 0; index < selector.length; index++) {
+    const ch = selector[index]!;
+    if (ch === "(" || ch === "[") depth++;
+    else if (ch === ")" || ch === "]") depth = Math.max(0, depth - 1);
+    else if (depth === 0 && /[\s>+~]/.test(ch)) {
+      return [selector.slice(0, index), selector.slice(index)];
+    }
+  }
+  return [selector, ""];
+}
+
+/** A compound's top-level mode tests (`.dark`, `:not(.dark)`) and the compound without them. */
+function takeModeTests(compound: string): [string[], string] {
+  const modes: string[] = [];
+  let others = "";
+  let depth = 0;
+  for (let index = 0; index < compound.length;) {
+    const rest = compound.slice(index);
+    const mode = depth === 0 ? rest.match(/^(?::not\(\.dark\)|\.dark(?![\w-]))/)?.[0] : undefined;
+    if (mode) {
+      modes.push(mode);
+      index += mode.length;
+      continue;
+    }
+    const ch = compound[index]!;
+    if (ch === "(" || ch === "[") depth++;
+    else if (ch === ")" || ch === "]") depth = Math.max(0, depth - 1);
+    others += ch;
+    index++;
+  }
+  return [modes, others];
+}
+
+/**
+ * A root selector's compound, `:root`/`html`/`body` already dropped, on the embed's
+ * roots. Standalone the document root carries the theme's mode class, so `:root.dark` and
+ * `:root:not(.dark) .x` test it there; embedded, the scope root never has the class (a
+ * host page's `.dark` rules must not reach it), its child the inner root does. So a mode
+ * test moves to the inner root (`.omnigent-app > [inner]:not(.dark) .x`), where it holds
+ * for the app and for everything portaled into the inner root. The other conditions
+ * (`[data-theme]`, `[data-omni-*]`, `[data-omni-theme]`, the shell attributes) stay on
+ * the scope root: the theme ones are stamped on both roots (`getThemeRoots`), the shell
+ * ones only on the scope root. One exception: a block for the root itself in light mode
+ * (`:root:not(.dark) { … }`) stays on the scope root, its light fallback, which the inner
+ * root inherits in light mode and overrides with the dark blocks in dark mode.
+ */
+function scopeRootSelector(rest: string): string {
+  const [compound, tail] = splitFirstCompound(rest);
+  const [modes, others] = takeModeTests(compound);
+  // A mode test written another way (`:is(.dark)`, `:not(.dark, …)`) would still test
+  // the scope root, which never has the class: fail the build rather than ship it.
+  if (/\.dark(?![\w-])/.test(others)) {
+    throw new Error(
+      `scope-omnigent: the root selector "${rest}" tests the theme mode in a form the embed ` +
+        "scoping does not move to the inner root; write it as :root.dark or :root:not(.dark).",
+    );
+  }
+  if (modes.length === 0 || (tail === "" && modes.every((mode) => mode === ":not(.dark)"))) {
+    return `${SCOPE}${rest}`;
+  }
+  return `${SCOPE}${others} > ${INNER}${modes.join("")}${tail}`;
+}
+
+export function prefixSelector(selector: string): string {
   // Tailwind's dark variants must not inherit a dark ancestor from the host.
   const s = selector.trim().replaceAll(":is(.dark *)", `:is(${SCOPE} .dark *)`);
   if (s === "" || s.startsWith(SCOPE)) return s;
-  // Root-level selectors collapse onto the scope element itself.
-  const rootMatch = s.match(/^(?::root|html|body)\b(.*)$/);
+  // Root-level selectors collapse onto the scope element itself, mode tests onto the
+  // inner root.
+  const rootMatch = s.match(/^(?::root|html|body)(?![\w-])(.*)$/);
   if (rootMatch) {
-    return `${SCOPE}${rootMatch[1]}`;
+    return scopeRootSelector(rootMatch[1]!);
   }
   return `${SCOPE} ${s}`;
 }
