@@ -225,15 +225,16 @@
 }
 
 /* ---- Working indicator: the square pulse and the dots (components in
- * chatBubbleParts.tsx), still under reduced motion. */
+ * chatBubbleParts.tsx), still under reduced motion. Keyframe names are document-global
+ * (the embed's scoping leaves them as written), so they take Omnigent's own prefix. */
 .ui-working-pulse {
   width: 8px;
   height: 8px;
   flex: none;
   background: var(--primary);
-  animation: ui-working-pulse 1.2s ease-in-out infinite;
+  animation: omnigent-working-pulse 1.2s ease-in-out infinite;
 }
-@keyframes ui-working-pulse {
+@keyframes omnigent-working-pulse {
   0%,
   100% {
     opacity: 1;
@@ -254,7 +255,7 @@
   height: 4px;
   border-radius: var(--ui-radius-pill);
   background: var(--primary);
-  animation: ui-working-dot 1.2s ease-in-out infinite;
+  animation: omnigent-working-dot 1.2s ease-in-out infinite;
 }
 .ui-working-dots > span:nth-child(2) {
   animation-delay: 0.15s;
@@ -262,7 +263,7 @@
 .ui-working-dots > span:nth-child(3) {
   animation-delay: 0.3s;
 }
-@keyframes ui-working-dot {
+@keyframes omnigent-working-dot {
   0%,
   80%,
   100% {

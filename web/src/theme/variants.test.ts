@@ -210,6 +210,15 @@ describe("variants.css", () => {
     expect(variantsCss).toContain('content: "]" / "";');
   });
 
+  it("names its keyframes with Omnigent's prefix, since they are document-global", () => {
+    const names = [...variantsCss.matchAll(/@keyframes ([\w-]+)/g)].map((match) => match[1]);
+    expect(names.length).toBeGreaterThan(0);
+    for (const name of names) expect(name).toMatch(/^omnigent-/);
+    for (const [, name] of variantsCss.matchAll(/animation: ([\w-]+) /g)) {
+      expect(names).toContain(name);
+    }
+  });
+
   it("insets the floating sheet only from md up, and on all sides with the sidebar collapsed", () => {
     expect(variantsCss).toMatch(
       /@media \(width >= 73\.8125rem\) \{\s*\[data-omni-sheet="floating"\] \[data-slot="main-area"\] \{\s*margin: var\(--ui-sheet-gap-top\)/,
