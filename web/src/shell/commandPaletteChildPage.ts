@@ -25,6 +25,16 @@ export type PaletteChildPage =
       targetKey: string;
       /** The value active when the page opened, such as the one the query named. */
       initialValue: string;
+      /**
+       * Opened from one of a command's options (`itemId` is that option's row): the setting is
+       * the option's, and Back returns to the options page as it was.
+       */
+      via?: {
+        optionsPage: Extract<PaletteChildPage, { kind: "command-options" }>;
+        optionId: string;
+        /** Where Back from the options page returns. */
+        optionsParent: PaletteParentPlace | null;
+      };
     };
 
 interface PaletteChildPageState {
@@ -77,7 +87,12 @@ export function openPaletteChildPage(page: PaletteChildPage): void {
 /** Back to the parent page; anything the child page was waiting on no longer applies. */
 export function leavePaletteChildPage(): PaletteParentPlace | null {
   paletteIntents.revoke();
-  const { parent } = paletteChildPageStore.getState();
+  const { page, parent } = paletteChildPageStore.getState();
+  // A setting opened from a command's options goes back to those options.
+  if (page?.kind === "setting-choices" && page.via) {
+    paletteChildPageStore.setState({ page: page.via.optionsPage, parent: page.via.optionsParent });
+    return { query: parent?.query ?? "", activeId: page.itemId };
+  }
   paletteChildPageStore.setState({ page: null, parent: null });
   return parent;
 }

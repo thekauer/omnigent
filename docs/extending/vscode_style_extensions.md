@@ -702,10 +702,22 @@ limitHit, message }`; a cancelled token aborts the request and rejects
       under its `displayName`, a family as one entry, a single-mode theme marked
       "Dark only"/"Light only", a chosen theme whose extension is missing as
       "Unavailable" (the choice kept, the default shown). The picker previews the
-      highlighted theme live (`preview()`), and Escape reverts it. Under the
-      picker, Settings shows the chosen theme's options and an Advanced editor
-      for colour customizations (JSON, global and `[<theme id>]`, checked once
-      typing pauses, with inline errors). A `[<id>]` key applies to what is on
+      highlighted theme live (`preview()`), and Escape reverts it. Theme options,
+      style variants and colour customizations live in one settings JSON
+      document (theming plan M10b, VS Code's `settings.json`):
+      `omnigent.themeOptions` (`{ "[<scope>]": { "<option>": "<choice>" } }`),
+      `omnigent.style.<variant>` and `workbench.colorCustomizations` (global and
+      `[<theme id>]`), stored as written (comments kept) in `omnigent:ui-settings`
+      with the last values that parsed, so a text with syntax errors keeps the
+      last good ones applying. Settings > Appearance keeps the mode, the terminal
+      theme and the picker, and opens the document from "Options, style and
+      colors" in a Monaco dialog with completions, hovers and inline problems from
+      a schema built from every registered theme's options (an extension's
+      included), the variants and the tokens (`theme/settingsSchema.ts`,
+      `theme/settingsLanguage.ts`). The palette has "Preferences: Open Settings
+      (JSON)", "Color Theme: Select Option…" and "Preferences: Select Style
+      Variant…", each option or variant a page of its values (a palette command
+      option may carry a `setting`, which opens that page). A `[<id>]` key applies to what is on
       screen: a family's `[<extension id>/<family>]` in both modes, then the
       member's own `[<extension id>/<member id>]` in its mode only (so
       `[acme.x/paper]` holds in light mode); a built-in palette also takes its
@@ -726,11 +738,12 @@ limitHit, message }`; a cancelled token aborts the request and rejects
       `omnigent.selectColorTheme` (by entry or member id, or a `*` pattern; a
       stored choice outside it yields to the default); `lockMode`,
       `lockedTokens`, `lockedOptions` and `lockedVariants` are the top layer
-      (Settings shows those rows disabled, "Set by product"); `hidePicker` hides
+      (the settings JSON marks those keys "Set by product", faded, and the quick
+      picks grey them out); `hidePicker` hides
       the picker command and Settings' picker row (and the built-in palette
       editor, which chooses Custom), keeping the chosen theme's options and
-      Advanced; `hideCustomizations` hides those and the Style rows, and the
-      stored ones stop applying.
+      settings JSON; `hideCustomizations` hides the settings JSON and its quick
+      picks, and the stored values stop applying.
       A non-built-in extension under the `omnigent` publisher, or with the id of
       one already loaded, is skipped with a warning.
     - The plugin read API (theming plan M8): `window.activeColorTheme`

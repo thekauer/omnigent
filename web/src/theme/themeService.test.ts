@@ -11,13 +11,20 @@ import { registerBuiltInThemes } from "@/builtinExtensions/builtInThemes";
 import { parseThemeContributions } from "./themeContributions";
 import {
   checkCache,
-  COLOR_CUSTOMIZATIONS_STORAGE_KEY,
   THEME_CACHE_STORAGE_KEY,
-  THEME_OPTIONS_STORAGE_KEY,
   ThemeService,
   type ThemeExtension,
 } from "./themeService";
+import {
+  LEGACY_COLOR_CUSTOMIZATIONS_STORAGE_KEY,
+  readStoredSettings,
+  SETTINGS_STORAGE_KEY,
+} from "./settingsDocument";
 import { getToken } from "./tokens/registry";
+
+function storedValues() {
+  return readStoredSettings(localStorage.getItem(SETTINGS_STORAGE_KEY)).values;
+}
 
 const { contributions } = parseThemeContributions(FIXTURE_EXTENSION_ID, FIXTURE_CONTRIBUTES, {
   isKnownToken: (id) => getToken(id) !== undefined,
@@ -149,8 +156,10 @@ describe("ThemeService", () => {
     service.setOption("corners", "soft");
     expect(block("dark")).toMatchObject({ primary: "#e5322d", "ui-radius-base": "6px" });
     expect(block("light")).toMatchObject({ primary: "#c0392b" });
-    expect(JSON.parse(localStorage.getItem(THEME_OPTIONS_STORAGE_KEY)!)).toEqual({
-      "acme.fixture-themes/fixture": { accent: "lava", corners: "soft" },
+    expect(storedValues()).toEqual({
+      "omnigent.themeOptions": {
+        "[acme.fixture-themes/fixture]": { accent: "lava", corners: "soft" },
+      },
     });
     service.select(LIGHT);
     expect(service.getActive()?.options[0]?.value).toBe("lava");
@@ -267,7 +276,7 @@ describe("ThemeService", () => {
 
   it("applies colour customizations over the theme: global, the family's, the member's on screen", () => {
     localStorage.setItem(
-      COLOR_CUSTOMIZATIONS_STORAGE_KEY,
+      LEGACY_COLOR_CUSTOMIZATIONS_STORAGE_KEY,
       JSON.stringify({
         background: "#222222",
         foreground: "url(x)",
@@ -346,7 +355,7 @@ describe("ThemeService: per-theme customization keys, product policy, applied th
     registerBuiltInThemes(service);
     service.markStarted();
     localStorage.setItem(
-      COLOR_CUSTOMIZATIONS_STORAGE_KEY,
+      LEGACY_COLOR_CUSTOMIZATIONS_STORAGE_KEY,
       JSON.stringify({
         "[nord]": { background: "#000001" },
         "[omnigent.themes/nord]": { primary: "#000002" },
@@ -391,9 +400,10 @@ describe("ThemeService: per-theme customization keys, product policy, applied th
     ]);
     // A warning doesn't stop the store; an error does.
     expect(service.setCustomizations('{"[acme.gone/dark]": {}}')).toHaveLength(1);
-    expect(localStorage.getItem(COLOR_CUSTOMIZATIONS_STORAGE_KEY)).toBe('{"[acme.gone/dark]":{}}');
+    const stored = { "workbench.colorCustomizations": { "[acme.gone/dark]": {} } };
+    expect(storedValues()).toEqual(stored);
     service.setCustomizations('{"[nrod]": {}}');
-    expect(localStorage.getItem(COLOR_CUSTOMIZATIONS_STORAGE_KEY)).toBe('{"[acme.gone/dark]":{}}');
+    expect(storedValues()).toEqual(stored);
     expect(service.checkCustomizations(" ".repeat(70_000))[0]?.message).toMatch(/longer than/);
   });
 

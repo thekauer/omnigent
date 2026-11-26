@@ -12,6 +12,7 @@ import { openThemePicker, SELECT_THEME_COMMAND } from "@/store/themePicker";
 import { useThemePickerHidden } from "@/theme/themeService";
 
 import { useSettingsCommands } from "./settingsCommands";
+import { useThemeSettingsCommands } from "./themeSettingsCommands";
 
 /** The picker ⌘K continues as for Go to Session…, which takes the palette's return target. */
 export const SESSION_SWITCHER = "session-switcher";
@@ -26,6 +27,7 @@ export function useQuickPickAppCommands({
 }: QuickPickAppCommandOptions = {}): PaletteCommand[] {
   const canOpenFind = useCanOpenFindFromCommand();
   const settingsCommands = useSettingsCommands();
+  const themeSettingsCommands = useThemeSettingsCommands();
   const themePickerHidden = useThemePickerHidden();
   return useMemo<PaletteCommand[]>(
     () => [
@@ -75,7 +77,8 @@ export function useQuickPickAppCommands({
         run: openThemePicker,
       },
       ...settingsCommands,
+      ...themeSettingsCommands,
     ],
-    [canOpenFind, onGoToSession, settingsCommands, themePickerHidden],
+    [canOpenFind, onGoToSession, settingsCommands, themeSettingsCommands, themePickerHidden],
   );
 }

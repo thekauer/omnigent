@@ -13,13 +13,17 @@ import { PALETTES } from "@/lib/themePalette";
 import { FIXTURE_EXTENSION_ID, fixtureThemeExtension } from "@/test/themeFixtures";
 
 import {
-  COLOR_CUSTOMIZATIONS_STORAGE_KEY,
   THEME_CACHE_STORAGE_KEY,
   themeService,
   ThemeService,
   useThemeVariants,
-  VARIANTS_STORAGE_KEY,
 } from "./themeService";
+import {
+  LEGACY_COLOR_CUSTOMIZATIONS_STORAGE_KEY,
+  LEGACY_VARIANTS_STORAGE_KEY,
+  readStoredSettings,
+  SETTINGS_STORAGE_KEY,
+} from "./settingsDocument";
 
 const DARK = `${FIXTURE_EXTENSION_ID}/full-dark`;
 const LIGHT = `${FIXTURE_EXTENSION_ID}/full-light`;
@@ -217,9 +221,9 @@ describe("style variants", () => {
     expect(service.getVariants()).toEqual({ density: "compact", label: "mono-upper" });
     service.setVariant("density", "comfortable");
     service.setVariant("cta", "light-square");
-    expect(JSON.parse(localStorage.getItem(VARIANTS_STORAGE_KEY)!)).toEqual({
-      density: "comfortable",
-      cta: "light-square",
+    expect(readStoredSettings(localStorage.getItem(SETTINGS_STORAGE_KEY)).values).toEqual({
+      "omnigent.style.density": "comfortable",
+      "omnigent.style.cta": "light-square",
     });
     expect(service.getVariants()).toEqual({
       density: "comfortable",
@@ -272,7 +276,7 @@ describe("colour customizations", () => {
       "omnigent-elevation",
     ]);
     expect(service.setCustomizations('{"background": "url(x)"}')).toHaveLength(1);
-    expect(localStorage.getItem(COLOR_CUSTOMIZATIONS_STORAGE_KEY)).toBeNull();
+    expect(localStorage.getItem(LEGACY_COLOR_CUSTOMIZATIONS_STORAGE_KEY)).toBeNull();
   });
 
   it("apply over a built-in palette too, globally and for its id", () => {
@@ -290,7 +294,7 @@ describe("colour customizations", () => {
     expect(service.getCustomizationsText()).toContain('"[nord]"');
     service.setCustomizations("{}");
     expect(style()).toBe("");
-    expect(localStorage.getItem(COLOR_CUSTOMIZATIONS_STORAGE_KEY)).toBeNull();
+    expect(localStorage.getItem(LEGACY_COLOR_CUSTOMIZATIONS_STORAGE_KEY)).toBeNull();
   });
 
   it("are cleared with the options and variants by the appearance reset", () => {
@@ -303,8 +307,8 @@ describe("colour customizations", () => {
     expect(service.getChoice()).toBe("omni");
     for (const key of [
       "omnigent:ui-theme-options",
-      VARIANTS_STORAGE_KEY,
-      COLOR_CUSTOMIZATIONS_STORAGE_KEY,
+      LEGACY_VARIANTS_STORAGE_KEY,
+      LEGACY_COLOR_CUSTOMIZATIONS_STORAGE_KEY,
       "omnigent:ui-theme-palette",
     ]) {
       expect(localStorage.getItem(key), key).toBeNull();

@@ -49,10 +49,39 @@ import {
 import { parseThemeFile, SWATCH_KEYS, type ParsedTheme, type ThemeTokens } from "./themeFile";
 import type { ProductThemeConfig } from "./productTheme";
 import { type RejectedToken, resolveTokenLayers } from "./resolveTokens";
+import {
+  COLOR_CUSTOMIZATIONS_SETTING,
+  editSettingsText,
+  EMPTY_SETTINGS_TEXT,
+  LEGACY_COLOR_CUSTOMIZATIONS_STORAGE_KEY,
+  LEGACY_SETTINGS_STORAGE_KEYS,
+  LEGACY_THEME_OPTIONS_STORAGE_KEY,
+  LEGACY_VARIANTS_STORAGE_KEY,
+  migrateLegacySettings,
+  parseSettingsText,
+  readStoredSettings,
+  serializeSettings,
+  SETTINGS_STORAGE_KEY,
+  SETTINGS_TEXT_LIMIT,
+  SETTINGS_WRITE_BLOCKED,
+  type StoredSettings,
+  storeSettings,
+  STYLE_SETTING_PREFIX,
+  THEME_OPTIONS_SETTING,
+} from "./settingsDocument";
+import {
+  type SettingsDiagnostic,
+  settingsDiagnostics,
+  SET_BY_PRODUCT,
+  spanOfPath,
+} from "./settingsLanguage";
+import { buildSettingsSchema, type SettingsSchemaNode } from "./settingsSchema";
 import { getToken, TOKENS } from "./tokens/registry";
 import {
   checkVariants,
   defaultVariant,
+  VARIANT_LABELS,
+  VARIANTS,
   isVariantName,
   isVariantValue,
   resolveVariants,
@@ -71,9 +100,7 @@ import {
   type ValueContext,
 } from "./validate";
 
-export const THEME_OPTIONS_STORAGE_KEY = "omnigent:ui-theme-options";
-export const VARIANTS_STORAGE_KEY = "omnigent:ui-variants";
-export const COLOR_CUSTOMIZATIONS_STORAGE_KEY = "omnigent:ui-color-customizations";
+export { SETTINGS_STORAGE_KEY } from "./settingsDocument";
 export const THEME_CACHE_STORAGE_KEY = "omnigent:ui-theme-cache";
 
 /** A syntax theme a theme's `tokenColors` make, as registered (and cached). */
@@ -368,6 +395,57 @@ function writeJson(key: string, value: unknown): void {
   }
 }
 
+/** Thrown by a write the settings document refuses (it doesn't parse, or the key is locked). */
+export class SettingsWriteError extends Error {
+  override readonly name = "SettingsWriteError";
+}
+
+// The last document read, by its stored text: reads happen several times per refresh.
+let documentCache: { raw: string | null; settings: StoredSettings } | null = null;
+
+/** Reads the stored settings document, first carrying any pre-M10b keys into it. */
+function readSettingsDocument(): StoredSettings {
+  let raw: string | null;
+  try {
+    raw = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
+  } catch {
+    return readStoredSettings(null);
+  }
+  const current =
+    documentCache && documentCache.raw === raw ? documentCache.settings : readStoredSettings(raw);
+  documentCache = { raw, settings: current };
+  let legacyPresent: boolean;
+  try {
+    legacyPresent = LEGACY_SETTINGS_STORAGE_KEYS.some(
+      (key) => window.localStorage.getItem(key) !== null,
+    );
+  } catch {
+    legacyPresent = false;
+  }
+  if (!legacyPresent) return current;
+  const migrated = migrateLegacySettings(current, {
+    options: readJson(LEGACY_THEME_OPTIONS_STORAGE_KEY),
+    variants: readJson(LEGACY_VARIANTS_STORAGE_KEY),
+    customizations: readJson(LEGACY_COLOR_CUSTOMIZATIONS_STORAGE_KEY),
+  });
+  try {
+    window.localStorage.setItem(SETTINGS_STORAGE_KEY, serializeSettings(migrated));
+    for (const key of LEGACY_SETTINGS_STORAGE_KEYS) window.localStorage.removeItem(key);
+  } catch {
+    // Quota or access errors: the legacy keys stay, and are read again next time.
+  }
+  return migrated;
+}
+
+function writeSettingsDocument(settings: StoredSettings): void {
+  try {
+    if (settings.text.trim() === "") window.localStorage.removeItem(SETTINGS_STORAGE_KEY);
+    else window.localStorage.setItem(SETTINGS_STORAGE_KEY, serializeSettings(settings));
+  } catch {
+    // Quota or access errors keep the in-memory state.
+  }
+}
+
 /** FNV-1a over a string, as a short hex key. */
 export function hashText(text: string): string {
   let hash = 0x811c9dc5;
@@ -440,6 +518,7 @@ export class ThemeService implements ThemeContributionSink {
   private fontKey = "";
   private brandKey = "";
   private stopWatchingRoots: (() => void) | null = null;
+  private schemaCache: { version: number; schema: SettingsSchemaNode } | null = null;
   private committed: CommittedThemeState = Object.freeze({
     options: Object.freeze(nullMap<string>()),
     variants: Object.freeze(nullMap<string>()),
@@ -812,7 +891,13 @@ export class ThemeService implements ThemeContributionSink {
 
   /** The user's style variant choices (`omnigent:ui-variants`), "Theme default" left out. */
   getUserVariants(): VariantValues {
-    return checkVariants(readJson(VARIANTS_STORAGE_KEY));
+    const values = this.settingsValues();
+    const stored = nullMap<unknown>();
+    for (const name of VARIANT_NAMES) {
+      const key = `${STYLE_SETTING_PREFIX}${name}`;
+      if (Object.hasOwn(values, key)) stored[name] = values[key];
+    }
+    return checkVariants(stored);
   }
 
   /** The variants that apply: the chosen theme's, the user's over them, the product's over both. */
@@ -835,21 +920,16 @@ export class ThemeService implements ThemeContributionSink {
   setVariant(name: string, value: string | null): void {
     if (!isVariantName(name)) throw new TypeError(`no variant ${JSON.stringify(name)}`);
     if (name in this.getLockedVariants())
-      throw new TypeError(`variant ${name} is set by the product`);
+      throw new SettingsWriteError(`variant ${name} is set by the product`);
     if (value !== null && !isVariantValue(name, value)) {
       throw new TypeError(`variant ${name} has no value ${JSON.stringify(value)}`);
     }
-    const next: Record<string, string> = Object.fromEntries(
-      Object.entries(this.getUserVariants()).filter(([key]) => key !== name),
-    );
-    if (value !== null) next[name] = value;
-    writeJson(VARIANTS_STORAGE_KEY, Object.keys(next).length > 0 ? next : undefined);
-    this.refresh();
+    this.editSettings([`${STYLE_SETTING_PREFIX}${name}`], value ?? undefined);
   }
 
   /** The stored colour customizations, as JSON text (an empty object when none). */
   getCustomizationsText(): string {
-    const stored = readJson(COLOR_CUSTOMIZATIONS_STORAGE_KEY);
+    const stored = this.settingsValues()[COLOR_CUSTOMIZATIONS_SETTING];
     return JSON.stringify(isRecord(stored) ? stored : {}, null, 2);
   }
 
@@ -867,6 +947,11 @@ export class ThemeService implements ThemeContributionSink {
     } catch (error) {
       return [{ key: "", message: error instanceof SyntaxError ? error.message : "not JSON" }];
     }
+    return this.checkCustomizationsValue(raw);
+  }
+
+  /** Checks colour customizations as parsed: the settings document's `workbench.colorCustomizations`. */
+  checkCustomizationsValue(raw: unknown): CustomizationProblem[] {
     const snapshot = snapshotPlainData(raw, CUSTOMIZATION_LIMITS);
     if (!snapshot.ok) return [{ key: "", message: snapshot.reason }];
     if (!isRecord(snapshot.value)) return [{ key: "", message: "must be a JSON object" }];
@@ -971,16 +1056,187 @@ export class ThemeService implements ThemeContributionSink {
     const problems = this.checkCustomizations(text);
     if (problems.some((problem) => problem.severity !== "warning")) return problems;
     const value = JSON.parse(text) as Record<string, unknown>;
-    writeJson(COLOR_CUSTOMIZATIONS_STORAGE_KEY, Object.keys(value).length > 0 ? value : undefined);
-    this.refresh();
+    try {
+      this.editSettings(
+        [COLOR_CUSTOMIZATIONS_SETTING],
+        Object.keys(value).length > 0 ? value : undefined,
+      );
+    } catch (error) {
+      return [...problems, { key: "", message: (error as Error).message }];
+    }
     return problems;
+  }
+
+  /** The settings document's text as written (an empty object when there is none). */
+  getSettingsText(): string {
+    const { text } = this.settingsDocument();
+    return text.trim() === "" ? EMPTY_SETTINGS_TEXT : text;
+  }
+
+  /** Whether the stored text parses; while it doesn't, its last good values apply. */
+  isSettingsTextValid(): boolean {
+    return this.settingsDocument().valid;
+  }
+
+  /**
+   * The settings document's schema: every registered theme's options, the style variants
+   * and the tokens, with the product's locks (`locked`) and `hideCustomizations` (`hidden`).
+   */
+  getSettingsSchema(): SettingsSchemaNode {
+    if (this.schemaCache?.version === this.version) return this.schemaCache.schema;
+    const policy = this.policy;
+    const choice = this.getChoice();
+    const extension = isContributedThemeId(choice) ? this.find(choice)?.extension : undefined;
+    const ownColors = (extension?.contributions.colors ?? []).map((color) => ({
+      id: color.token,
+      kind: "color",
+      description: color.description || `${extension!.label ?? extension!.id}: ${color.id}`,
+    }));
+    const optionScopes = new Map<
+      string,
+      { scope: string; label: string; options: ParsedTheme["options"] }
+    >();
+    const themeScopes: { id: string; label: string }[] = PALETTES.map((palette) => ({
+      id: palette.id,
+      label: palette.label,
+    }));
+    for (const entry of this.extensions.values()) {
+      for (const theme of entry.contributions.themes) {
+        themeScopes.push({ id: theme.fullId, label: theme.label });
+        const scope = this.optionsKey({
+          id: theme.fullId,
+          family: theme.family,
+          extensionId: entry.id,
+        });
+        if (theme.family && scope !== theme.fullId && !themeScopes.some((s) => s.id === scope)) {
+          themeScopes.push({ id: scope, label: theme.familyLabel ?? theme.label });
+        }
+        const options = this.member(theme, entry)?.parsed.options ?? [];
+        if (options.length > 0 && !optionScopes.has(scope)) {
+          optionScopes.set(scope, {
+            scope,
+            label: theme.family ? (theme.familyLabel ?? theme.label) : theme.label,
+            options,
+          });
+        }
+      }
+    }
+    const themeVariants = this.getThemeVariants() as Record<string, string>;
+    const schema = buildSettingsSchema({
+      tokens: [
+        ...TOKENS.filter((token) => !TOKEN_CONSTRAINTS[token.id]?.internal).map((token) => ({
+          id: token.id,
+          kind: token.kind,
+          description: token.description,
+        })),
+        ...ownColors,
+      ],
+      themeScopes,
+      optionScopes: [...optionScopes.values()].map((entry) => ({
+        scope: entry.scope,
+        label: entry.label,
+        options: entry.options.map((option) => ({
+          id: option.id,
+          label: option.label,
+          default: option.default,
+          choices: option.choices.map((optionChoice) => ({
+            id: optionChoice.id,
+            label: optionChoice.label,
+          })),
+        })),
+      })),
+      variants: VARIANT_NAMES.map((name) => ({
+        name,
+        label: VARIANT_LABELS[name].label,
+        description: VARIANT_LABELS[name].description,
+        values: (VARIANTS[name] as readonly string[]).map((value) => ({
+          value,
+          label: (VARIANT_LABELS[name].values as Record<string, string>)[value] ?? value,
+        })),
+        themeValue: themeVariants[name] ?? defaultVariant(name),
+      })),
+      locks: {
+        tokens: Object.fromEntries(
+          Object.entries(this.lockedTokens).map(([id, entry]) => [id, entry.value]),
+        ),
+        options: policy?.lockedOptions ?? {},
+        variants: this.getLockedVariants() as Record<string, string>,
+      },
+      hideCustomizations: policy?.hideCustomizations === true,
+    });
+    this.schemaCache = { version: this.version, schema };
+    return schema;
+  }
+
+  /**
+   * Checks a settings text as the editor shows it: syntax, the schema's keys and values,
+   * the colour customizations' token values and the product's locks.
+   */
+  checkSettings(text: string): SettingsDiagnostic[] {
+    const schema = this.getSettingsSchema();
+    const diagnostics = settingsDiagnostics(text, schema);
+    const parsed = parseSettingsText(text);
+    if (!parsed.ok || this.policy?.hideCustomizations) return diagnostics;
+    const customizations = parsed.values[COLOR_CUSTOMIZATIONS_SETTING];
+    if (customizations === undefined) return diagnostics;
+    for (const problem of this.checkCustomizationsValue(customizations)) {
+      const path = [COLOR_CUSTOMIZATIONS_SETTING, ...customizationPath(problem.key)];
+      const locked =
+        problem.severity === "warning" && problem.message.startsWith("set by the product");
+      diagnostics.push({
+        ...spanOfPath(text, path),
+        severity: locked ? "info" : problem.severity === "warning" ? "warning" : "error",
+        message: locked
+          ? `${SET_BY_PRODUCT}: this value doesn't apply.`
+          : problem.message.replace(/^./, (first) => first.toUpperCase()),
+        ...(locked ? { unnecessary: true } : {}),
+        path,
+      });
+    }
+    return diagnostics;
+  }
+
+  /**
+   * Stores the settings text as the editor saves it. A text that parses applies (keys it
+   * gets wrong are left out); one with syntax errors is stored, and the last good values
+   * keep applying. Returns the problems the editor shows; nothing is stored over the size cap.
+   */
+  saveSettings(text: string): { saved: boolean; diagnostics: SettingsDiagnostic[] } {
+    const diagnostics = this.checkSettings(text);
+    if (text.length > SETTINGS_TEXT_LIMIT) return { saved: false, diagnostics };
+    writeSettingsDocument(storeSettings(text, this.settingsDocument().values));
+    this.refresh();
+    return { saved: true, diagnostics };
+  }
+
+  /** Why the settings can't be written now (they don't parse), or null. */
+  settingsWriteBlocked(): string | null {
+    return this.settingsDocument().valid ? null : SETTINGS_WRITE_BLOCKED;
+  }
+
+  private settingsDocument(): StoredSettings {
+    if (typeof window === "undefined") return readStoredSettings(null);
+    return readSettingsDocument();
+  }
+
+  private settingsValues(): Readonly<Record<string, unknown>> {
+    return this.settingsDocument().values;
+  }
+
+  /** Sets (undefined: removes) one key of the document; refused while it doesn't parse. */
+  private editSettings(path: readonly string[], value: unknown): void {
+    const current = this.settingsDocument();
+    if (!current.valid) throw new SettingsWriteError(SETTINGS_WRITE_BLOCKED);
+    const edit = editSettingsText(current.text, path, value);
+    if (!edit.ok) throw new SettingsWriteError(edit.reason);
+    writeSettingsDocument(storeSettings(edit.text, current.values));
+    this.refresh();
   }
 
   /** Settings' reset: the default theme, and no options, variants or customizations. */
   resetAppearance(): void {
-    writeJson(THEME_OPTIONS_STORAGE_KEY, undefined);
-    writeJson(VARIANTS_STORAGE_KEY, undefined);
-    writeJson(COLOR_CUSTOMIZATIONS_STORAGE_KEY, undefined);
+    writeJson(SETTINGS_STORAGE_KEY, undefined);
+    for (const key of LEGACY_SETTINGS_STORAGE_KEYS) writeJson(key, undefined);
     this.select(null);
   }
 
@@ -990,27 +1246,14 @@ export class ThemeService implements ThemeContributionSink {
     if (!active) throw new Error("no contributed theme is chosen");
     const option = active.options.find((entry) => entry.id === optionId);
     if (!option) throw new TypeError(`the theme has no option ${JSON.stringify(optionId)}`);
-    if (option.locked) throw new TypeError(`option ${optionId} is set by the product`);
+    if (option.locked) throw new SettingsWriteError(`option ${optionId} is set by the product`);
     if (choiceId !== null && !option.choices.some((choice) => choice.id === choiceId)) {
       throw new TypeError(`option ${optionId} has no choice ${JSON.stringify(choiceId)}`);
     }
-    const stored = isRecord(readJson(THEME_OPTIONS_STORAGE_KEY))
-      ? (readJson(THEME_OPTIONS_STORAGE_KEY) as Record<string, unknown>)
-      : {};
-    const key = this.optionsKey(active);
-    const previous = isRecord(stored[key]) ? (stored[key] as Record<string, unknown>) : {};
-    const current = Object.fromEntries(
-      [...Object.entries(previous).filter(([id]) => id !== optionId)].concat(
-        choiceId === null ? [] : [[optionId, choiceId]],
-      ),
+    this.editSettings(
+      [THEME_OPTIONS_SETTING, `[${this.optionsKey(active)}]`, optionId],
+      choiceId ?? undefined,
     );
-    const next = Object.fromEntries(
-      Object.entries({ ...stored, [key]: current }).filter(
-        ([, value]) => !isRecord(value) || Object.keys(value).length > 0,
-      ),
-    );
-    writeJson(THEME_OPTIONS_STORAGE_KEY, Object.keys(next).length > 0 ? next : undefined);
-    this.refresh();
   }
 
   /** Calls `listener` after each change of the list or the applied theme. */
@@ -1274,8 +1517,9 @@ export class ThemeService implements ThemeContributionSink {
   }
 
   private storedOptions(key: string): Record<string, unknown> {
-    const stored = readJson(THEME_OPTIONS_STORAGE_KEY);
-    return isRecord(stored) && isRecord(stored[key]) ? stored[key] : {};
+    const stored = this.settingsValues()[THEME_OPTIONS_SETTING];
+    const scoped = isRecord(stored) ? stored[`[${key}]`] : undefined;
+    return isRecord(scoped) ? scoped : {};
   }
 
   /** The colour customizations: global ones, then those of each `[scope]` in order. */
@@ -1288,7 +1532,7 @@ export class ThemeService implements ThemeContributionSink {
     // Under the product's `hideCustomizations` the user can't see them: they don't apply.
     if (this.policy?.hideCustomizations) return tokens;
     const snapshot = snapshotPlainData(
-      draft ?? readJson(COLOR_CUSTOMIZATIONS_STORAGE_KEY) ?? null,
+      draft ?? this.settingsValues()[COLOR_CUSTOMIZATIONS_SETTING] ?? null,
       CUSTOMIZATION_LIMITS,
     );
     if (!snapshot.ok || !isRecord(snapshot.value)) return tokens;
@@ -1888,6 +2132,14 @@ function hostTokens(values: Readonly<Record<string, string>>): ThemeTokens {
 }
 
 /** The keys of colour customizations in order: `id`, and `[scope].id` for scoped ones. */
+/** A customization problem's key (`[acme.x/dark].primary`, `background`) as a path. */
+function customizationPath(key: string): string[] {
+  if (!key) return [];
+  const scoped = /^(\[[^\]]*\])(?:\.(.*))?$/.exec(key);
+  if (scoped) return scoped[2] === undefined ? [scoped[1]!] : [scoped[1]!, scoped[2]];
+  return [key];
+}
+
 function customizationKeys(record: unknown): string[] {
   if (!isRecord(record)) return [];
   return Object.entries(record).flatMap(([key, value]) =>

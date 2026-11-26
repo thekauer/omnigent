@@ -12,14 +12,14 @@ import {
   parseServerProductTheme,
   setProductTheme,
 } from "./productTheme";
+import { matchesAllowed, themeService, ThemeService } from "./themeService";
 import {
-  COLOR_CUSTOMIZATIONS_STORAGE_KEY,
-  matchesAllowed,
-  THEME_OPTIONS_STORAGE_KEY,
-  themeService,
-  ThemeService,
-  VARIANTS_STORAGE_KEY,
-} from "./themeService";
+  LEGACY_COLOR_CUSTOMIZATIONS_STORAGE_KEY,
+  LEGACY_THEME_OPTIONS_STORAGE_KEY,
+  LEGACY_VARIANTS_STORAGE_KEY,
+  readStoredSettings,
+  SETTINGS_STORAGE_KEY,
+} from "./settingsDocument";
 
 const DARK = `${FIXTURE_EXTENSION_ID}/full-dark`;
 const LIGHT = `${FIXTURE_EXTENSION_ID}/full-light`;
@@ -198,7 +198,7 @@ describe("the product theme in the theme service", () => {
     service.addExtension(fixtureThemeExtension());
     service.select(DARK);
     localStorage.setItem(
-      COLOR_CUSTOMIZATIONS_STORAGE_KEY,
+      LEGACY_COLOR_CUSTOMIZATIONS_STORAGE_KEY,
       JSON.stringify({ primary: "#111111", "ui-row-height": "30px" }),
     );
     service.reload();
@@ -265,10 +265,13 @@ describe("the product theme in the theme service", () => {
   it("leaves stored customizations, options and variants out under hideCustomizations", () => {
     service.addExtension(fixtureThemeExtension());
     service.select(DARK);
-    localStorage.setItem(COLOR_CUSTOMIZATIONS_STORAGE_KEY, JSON.stringify({ primary: "#111111" }));
-    localStorage.setItem(VARIANTS_STORAGE_KEY, JSON.stringify({ density: "comfortable" }));
     localStorage.setItem(
-      THEME_OPTIONS_STORAGE_KEY,
+      LEGACY_COLOR_CUSTOMIZATIONS_STORAGE_KEY,
+      JSON.stringify({ primary: "#111111" }),
+    );
+    localStorage.setItem(LEGACY_VARIANTS_STORAGE_KEY, JSON.stringify({ density: "comfortable" }));
+    localStorage.setItem(
+      LEGACY_THEME_OPTIONS_STORAGE_KEY,
       JSON.stringify({ [`${FIXTURE_EXTENSION_ID}/full`]: { accent: "lava" } }),
     );
     service.reload();
@@ -277,7 +280,11 @@ describe("the product theme in the theme service", () => {
     expect(style()).not.toContain("#111111");
     expect(style()).toContain("--primary: #ff6a00");
     expect(service.getVariants()).toMatchObject({ density: "compact" });
-    expect(localStorage.getItem(VARIANTS_STORAGE_KEY)).not.toBeNull();
+    // Kept (migrated into the settings document), only not applied.
+    expect(localStorage.getItem(LEGACY_VARIANTS_STORAGE_KEY)).toBeNull();
+    expect(readStoredSettings(localStorage.getItem(SETTINGS_STORAGE_KEY)).values).toMatchObject({
+      "omnigent.style.density": "comfortable",
+    });
   });
 
   it("locks the mode over a single-mode theme's, and lists only themes of that mode", () => {

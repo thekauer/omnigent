@@ -10,6 +10,7 @@ import { isCommandAvailable, type PaletteCommand } from "@/store/paletteCommands
 import { listedChoices, matchedChoice, type PaletteSetting } from "@/store/paletteSettings";
 
 import {
+  type PaletteChildPage,
   leavePaletteChildPage,
   openPaletteChildPage,
   paletteChildPageStore,
@@ -54,18 +55,34 @@ export function settingChoiceItems(
   }));
 }
 
+/** A setting page's own fields. */
+type SettingChoicesChildPage = Extract<PaletteChildPage, { kind: "setting-choices" }>;
+
+/**
+ * The setting a page opened from a command's option stands for now: `optionSetting` reads
+ * that option from the command the options page is bound to.
+ */
+export type OptionSettingReader = (page: SettingChoicesChildPage) => PaletteSetting | null;
+
 /** The setting `itemId` offers now, if it's still the one the page was opened for. */
 function boundSetting(
   items: readonly QuickPickItem<PaletteTarget>[],
-  page: { itemId: string; settingId: string; owner: string; targetKey: string },
+  page: SettingChoicesChildPage,
   targetKey: string,
+  optionSetting?: OptionSettingReader,
 ): PaletteSetting | null {
   if (targetKey !== page.targetKey) return null;
-  const value = items.find((item) => item.id === page.itemId)?.value;
-  if (value?.kind !== "command") return null;
-  const setting = value.command.setting;
+  let setting: PaletteSetting | undefined;
+  if (page.via) {
+    setting = optionSetting?.(page) ?? undefined;
+  } else {
+    const value = items.find((item) => item.id === page.itemId)?.value;
+    if (value?.kind !== "command") return null;
+    if (!isCommandAvailable(value.command.availability)) return null;
+    setting = value.command.setting;
+  }
   if (!setting || setting.id !== page.settingId || setting.owner !== page.owner) return null;
-  return isCommandAvailable(value.command.availability) ? setting : null;
+  return isCommandAvailable(setting.availability) ? setting : null;
 }
 
 export interface SettingChoicesPage {
@@ -88,6 +105,16 @@ export interface SettingChoicesPage {
     targetKey: string,
     parent: PaletteParentPlace,
   ) => string;
+  /**
+   * Open the values of the setting a command's option stands for, from that option's row
+   * `itemId` on the options page `optionsPage`. Returns the current value's row id.
+   */
+  openOptionChoices: (
+    setting: PaletteSetting,
+    itemId: string,
+    optionId: string,
+    optionsPage: Extract<PaletteChildPage, { kind: "command-options" }>,
+  ) => string;
   acceptChoice: (value: string) => QuickPickAcceptResult;
   /** Back to the parent page, returning where it was. */
   back: () => PaletteParentPlace | null;
@@ -101,18 +128,19 @@ export function useSettingChoicesPage(
   items: readonly QuickPickItem<PaletteTarget>[],
   targetKey: string,
   onLeft: (parent: PaletteParentPlace | null) => void,
+  optionSetting?: OptionSettingReader,
 ): SettingChoicesPage {
   const storePage = useStore(paletteChildPageStore, (state) => state.page);
   const page = storePage?.kind === "setting-choices" ? storePage : null;
-  const setting = page ? boundSetting(items, page, targetKey) : null;
+  const setting = page ? boundSetting(items, page, targetKey, optionSetting) : null;
   const [status, setStatus] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   // The choice waiting on its owner; repeat accepts wait with it.
   const [waiting, setWaiting] = useState<number | null>(null);
 
   // Read at accept and after an awaited choice, so they act on the current rows.
-  const latest = useRef({ items, targetKey, onLeft });
-  latest.current = { items, targetKey, onLeft };
+  const latest = useRef({ items, targetKey, onLeft, optionSetting });
+  latest.current = { items, targetKey, onLeft, optionSetting };
 
   // A new page, or none, starts without the last one's status or wait.
   useEffect(() => {
@@ -137,7 +165,12 @@ export function useSettingChoicesPage(
   const readBound = (): PaletteSetting | null => {
     const current = paletteChildPageStore.getState().page;
     if (current?.kind !== "setting-choices") return null;
-    return boundSetting(latest.current.items, current, latest.current.targetKey);
+    return boundSetting(
+      latest.current.items,
+      current,
+      latest.current.targetKey,
+      latest.current.optionSetting,
+    );
   };
 
   const leaveToParent = () => latest.current.onLeft(leavePaletteChildPage());
@@ -166,6 +199,23 @@ export function useSettingChoicesPage(
         initialValue,
       });
       return choiceItemId(rowId, initialValue);
+    },
+    openOptionChoices: (opened, rowId, optionId, optionsPage) => {
+      void opened.refresh?.().catch(() => undefined);
+      setNotice(null);
+      const { parent } = paletteChildPageStore.getState();
+      // Back from the options page still returns to the root, as it would have.
+      rememberPaletteParent({ query: parent?.query ?? "", activeId: rowId });
+      openPaletteChildPage({
+        kind: "setting-choices",
+        itemId: rowId,
+        settingId: opened.id,
+        owner: opened.owner,
+        targetKey: optionsPage.targetKey,
+        initialValue: opened.current,
+        via: { optionsPage, optionId, optionsParent: parent },
+      });
+      return choiceItemId(rowId, opened.current);
     },
     acceptChoice: (value) => {
       if (waiting !== null) return "keepOpen";

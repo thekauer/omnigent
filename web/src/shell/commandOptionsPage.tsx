@@ -6,7 +6,12 @@ import { useEffect, useRef, useState } from "react";
 import { useStore } from "zustand";
 
 import type { QuickPickAcceptResult, QuickPickItem } from "@/components/ui/quick-pick";
-import type { PaletteCommand } from "@/store/paletteCommands";
+import {
+  isCommandAvailable,
+  isCommandListed,
+  type PaletteCommand,
+  type PaletteCommandOption,
+} from "@/store/paletteCommands";
 
 import {
   leavePaletteChildPage,
@@ -16,6 +21,11 @@ import {
   type PaletteParentPlace,
 } from "./commandPaletteChildPage";
 import type { PaletteTarget } from "./paletteTarget";
+
+/** An option's row id on its command's page. */
+export function optionItemId(itemId: string, optionId: string): string {
+  return `${itemId}>${optionId}`;
+}
 
 /** Said when the chosen option is no longer offered, as when a pane closed meanwhile. */
 export const OPTION_GONE_STATUS = "That choice isn't available anymore. Choose another.";
@@ -35,6 +45,8 @@ export interface CommandOptionsPage {
     parent: PaletteParentPlace,
   ) => void;
   acceptOption: (optionId: string) => QuickPickAcceptResult;
+  /** The option `optionId` the open page's command offers now, if it's still available. */
+  liveOption: (optionId: string) => PaletteCommandOption | null;
   back: () => PaletteParentPlace | null;
 }
 
@@ -63,15 +75,20 @@ export function useCommandOptionsPage(
   const options = page && command?.options ? command.options() : [];
   const Icon = command?.icon;
   const items: QuickPickItem<PaletteTarget>[] = page
-    ? options.map((option) => ({
-        id: `${page.itemId}>${option.id}`,
-        label: option.label,
-        keywords: option.keywords,
-        icon: Icon ? <Icon aria-hidden className="size-4 text-muted-foreground" /> : undefined,
-        // The options change with what the command acts on; history keeps the command's row.
-        rememberInHistory: false,
-        value: { kind: "command-option", itemId: page.itemId, optionId: option.id },
-      }))
+    ? options
+        .filter((option) => isCommandListed(option.availability))
+        .map((option) => ({
+          id: optionItemId(page.itemId, option.id),
+          label: option.label,
+          description: option.description,
+          disabledReason:
+            option.availability?.available === false ? option.availability.reason : undefined,
+          keywords: option.keywords,
+          icon: Icon ? <Icon aria-hidden className="size-4 text-muted-foreground" /> : undefined,
+          // The options change with what the command acts on; history keeps the command's row.
+          rememberInHistory: false,
+          value: { kind: "command-option", itemId: page.itemId, optionId: option.id },
+        }))
     : [];
 
   /** The option `optionId` `live` offers now, or null: the options read what is current. */
@@ -98,7 +115,7 @@ export function useCommandOptionsPage(
       if (current?.kind !== "command-options") return "keepOpen";
       const live = latest.current.commandOf(current.itemId, current.targetKey);
       const option = liveOption(live, optionId);
-      if (!option) {
+      if (!option || !isCommandAvailable(option.availability)) {
         setStatus(OPTION_GONE_STATUS);
         return "keepOpen";
       }
@@ -108,6 +125,15 @@ export function useCommandOptionsPage(
       return {
         afterClose: () => liveOption(latest.current.commandOf(itemId, targetKey), optionId)?.run(),
       };
+    },
+    liveOption: (optionId) => {
+      const current = paletteChildPageStore.getState().page;
+      if (current?.kind !== "command-options") return null;
+      const option = liveOption(
+        latest.current.commandOf(current.itemId, current.targetKey),
+        optionId,
+      );
+      return option && isCommandAvailable(option.availability) ? option : null;
     },
     back: () => {
       setStatus(null);

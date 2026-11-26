@@ -17,7 +17,7 @@ import {
   type QuickPickSegment,
 } from "@/components/ui/quick-pick";
 import { occurrenceRanges } from "@/components/ui/quick-pick/match";
-import { usePaletteCommandsStore } from "@/store/paletteCommands";
+import { isCommandAvailable, usePaletteCommandsStore } from "@/store/paletteCommands";
 import { useAppCommands } from "./appCommands";
 import { SESSION_SWITCHER, useQuickPickAppCommands } from "./quickPickAppCommands";
 import type { CommandPaletteProps } from "./CommandPalette";
@@ -37,7 +37,7 @@ import {
 import { currentPaletteCommand, paletteCommandItems } from "./paletteCommandRows";
 import { PaletteSessionContext } from "./PaletteSessionContext";
 import type { PaletteTarget as PaletteRow } from "./paletteTarget";
-import { useSettingChoicesPage } from "./settingChoicesPage";
+import { type OptionSettingReader, useSettingChoicesPage } from "./settingChoicesPage";
 import { type PaletteSession, usePaletteSessionSearch } from "./usePaletteSessionSearch";
 
 const COMMAND_HISTORY_KEY = "command-palette:commands";
@@ -146,7 +146,14 @@ export function QuickPickCommandPalette({
     if (parent && parent.query !== query) search.setQuery(parent.query);
     setParkedId(parent?.activeId ?? null);
   };
-  const settingPage = useSettingChoicesPage(commandItems, targetKey, restoreParent);
+  // A setting a command's option stands for, read from that command as it is now.
+  const optionSetting: OptionSettingReader = (page) => {
+    if (!page.via) return null;
+    const command = commandFor(page.via.optionsPage.itemId, page.via.optionsPage.targetKey);
+    const option = command?.options?.().find((entry) => entry.id === page.via!.optionId);
+    return option && isCommandAvailable(option.availability) ? (option.setting ?? null) : null;
+  };
+  const settingPage = useSettingChoicesPage(commandItems, targetKey, restoreParent, optionSetting);
   const optionsPage = useCommandOptionsPage(
     (itemId, pageTargetKey) => commandFor(itemId, pageTargetKey),
     restoreParent,
@@ -281,7 +288,17 @@ export function QuickPickCommandPalette({
       return undefined;
     }
     if (row.kind === "setting-choice") return settingPage.acceptChoice(row.value);
-    if (row.kind === "command-option") return optionsPage.acceptOption(row.optionId);
+    if (row.kind === "command-option") {
+      // An option that stands for a setting opens its values.
+      const optionPage = paletteChildPageStore.getState().page;
+      const setting = optionsPage.liveOption(row.optionId)?.setting;
+      if (setting && optionPage?.kind === "command-options") {
+        setPageQuery("");
+        setParkedId(settingPage.openOptionChoices(setting, item.id, row.optionId, optionPage));
+        return "keepOpen";
+      }
+      return optionsPage.acceptOption(row.optionId);
+    }
     if (row.kind === "command") {
       const command = currentCommand(item);
       // A row withdrawn or built for another target since stays open, now showing what applies.

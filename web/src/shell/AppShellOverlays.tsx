@@ -6,6 +6,7 @@ import type { Conversation } from "@/hooks/useConversations";
 import { isFeatureEnabled, type ServerInfo } from "@/lib/capabilities";
 import { isElectronShell } from "@/lib/nativeBridge";
 import { updateOverlayToastOffset } from "@/lib/updateOverlayInset";
+import { useSettingsJsonEditorStore } from "@/store/settingsJsonEditor";
 import { CommandPalette } from "./CommandPalette";
 import { RecentSessionsSwitcher } from "./RecentSessionsSwitcher";
 
@@ -15,6 +16,12 @@ import { RecentSessionsSwitcher } from "./RecentSessionsSwitcher";
 const QuickPickCommandPalette = lazy(() =>
   import("./QuickPickCommandPalette").then((module) => ({
     default: module.QuickPickCommandPalette,
+  })),
+);
+// The settings JSON dialog brings Monaco only once it opens.
+const SettingsJsonDialog = lazy(() =>
+  import("./settingsJson/SettingsJsonDialog").then((module) => ({
+    default: module.SettingsJsonDialog,
   })),
 );
 const ThemePicker = lazy(() =>
@@ -64,6 +71,7 @@ export function AppShellOverlays({
   // Both palettes take the same props; the flag picks one for ⌘K and the session switcher.
   const quickPick = isFeatureEnabled(serverInfo, "quick_pick_palette");
   const Palette = quickPick ? QuickPickCommandPalette : CommandPalette;
+  const settingsJsonOpen = useSettingsJsonEditorStore((state) => state.open);
   return (
     <>
       {/* Keyboard-shortcuts reference. Self-contained (owns its open state +
@@ -97,6 +105,12 @@ export function AppShellOverlays({
       {quickPick && (
         <Suspense fallback={null}>
           <ThemePicker />
+        </Suspense>
+      )}
+      {/* Settings (JSON): theme options, style variants and color customizations. */}
+      {settingsJsonOpen && (
+        <Suspense fallback={null}>
+          <SettingsJsonDialog />
         </Suspense>
       )}
       <RecentSessionsSwitcher

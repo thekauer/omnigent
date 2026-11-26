@@ -14,12 +14,12 @@ import { themeSelectors } from "./themeCss";
 import { parseThemeFile } from "./themeFile";
 import {
   checkCache,
-  COLOR_CUSTOMIZATIONS_STORAGE_KEY,
   isHostAssetUrl,
   THEME_CACHE_STORAGE_KEY,
   ThemeService,
   type ThemeExtension,
 } from "./themeService";
+import { LEGACY_COLOR_CUSTOMIZATIONS_STORAGE_KEY } from "./settingsDocument";
 import { getToken } from "./tokens/registry";
 import { type LayerValue, resolveTokenLayers } from "./resolveTokens";
 import { TOKEN_CONSTRAINTS, validateTokenValue, type ValueContext } from "./validate";
@@ -538,7 +538,7 @@ describe("calc() ranges are checked once the tokens they read resolve", () => {
     service.select(DARK);
     // The fixture's compact density sets 24px rows; a customization past 400px is left out.
     localStorage.setItem(
-      COLOR_CUSTOMIZATIONS_STORAGE_KEY,
+      LEGACY_COLOR_CUSTOMIZATIONS_STORAGE_KEY,
       JSON.stringify({ "ui-row-height": "calc(var(--ui-row-line) * 30)" }),
     );
     service.reload();

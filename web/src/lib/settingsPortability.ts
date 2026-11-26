@@ -38,12 +38,8 @@ import {
   unpinSessionWorkspaceTabs,
 } from "./sessionWorkspaceState";
 import { notifyTerminalThemeChanged } from "./terminalThemePreferences";
-import {
-  COLOR_CUSTOMIZATIONS_STORAGE_KEY,
-  THEME_CACHE_STORAGE_KEY,
-  THEME_OPTIONS_STORAGE_KEY,
-  VARIANTS_STORAGE_KEY,
-} from "@/theme/themeService";
+import { LEGACY_SETTINGS_STORAGE_KEYS } from "@/theme/settingsDocument";
+import { SETTINGS_STORAGE_KEY, THEME_CACHE_STORAGE_KEY } from "@/theme/themeService";
 import {
   PINNED_WORKSPACE_TABS_STORAGE_KEY,
   readDefaultWorkspaceTab,
@@ -60,9 +56,7 @@ const EXPORTABLE_KEYS = [
   CODE_BLOCK_WORD_WRAP_STORAGE_KEY,
   "omnigent:terminal-theme",
   "omnigent:ui-theme-palette",
-  THEME_OPTIONS_STORAGE_KEY,
-  VARIANTS_STORAGE_KEY,
-  COLOR_CUSTOMIZATIONS_STORAGE_KEY,
+  SETTINGS_STORAGE_KEY,
   "omnigent:custom-theme",
   "omnigent:default-workspace-panel",
   "omnigent:default-workspace-tab",
@@ -86,6 +80,10 @@ const EXPORTABLE_KEYS = [
 // theme cache is rebuilt from the chosen theme, and an imported one could name any asset.
 const IGNORED_IMPORT_KEYS: ReadonlySet<string> = new Set([THEME_CACHE_STORAGE_KEY]);
 
+// Keys an older export holds that are imported as they are and then migrated: the theme
+// options, variants and colour customizations, now in the settings document.
+const LEGACY_IMPORT_KEYS: ReadonlySet<string> = new Set(LEGACY_SETTINGS_STORAGE_KEYS);
+
 const CURRENT_VERSION = 1;
 
 export interface ExportedSettings {
@@ -100,7 +98,8 @@ function isExportedSettings(value: unknown): value is ExportedSettings {
   if (!candidate.settings || typeof candidate.settings !== "object") return false;
   const allowedKeys = new Set<string>(EXPORTABLE_KEYS);
   for (const [key, val] of Object.entries(candidate.settings)) {
-    if (!allowedKeys.has(key) && !IGNORED_IMPORT_KEYS.has(key)) return false;
+    if (!allowedKeys.has(key) && !IGNORED_IMPORT_KEYS.has(key) && !LEGACY_IMPORT_KEYS.has(key))
+      return false;
     if (typeof val !== "string") return false;
   }
   return true;
@@ -175,13 +174,13 @@ export function readSettingsFile(file: File): Promise<ExportedSettings> {
  */
 export function applyImportedSettings(imported: ExportedSettings): number {
   if (typeof window === "undefined") return 0;
-  const allowedKeys = new Set<string>(EXPORTABLE_KEYS);
+  const allowedKeys = new Set<string>([...EXPORTABLE_KEYS, ...LEGACY_IMPORT_KEYS]);
   const previousPins = readPinnedWorkspaceTabs();
   const previousDefault = readDefaultWorkspaceTab();
 
   // Clear all exportable keys first to honor the "overwrite" contract, and the derived
   // state they leave stale.
-  for (const key of [...EXPORTABLE_KEYS, ...IGNORED_IMPORT_KEYS]) {
+  for (const key of [...EXPORTABLE_KEYS, ...IGNORED_IMPORT_KEYS, ...LEGACY_IMPORT_KEYS]) {
     try {
       window.localStorage.removeItem(key);
     } catch {

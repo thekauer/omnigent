@@ -27,6 +27,7 @@ the same commit that lands each milestone.
 | M9 | Done | Variants as built (Variants above). Harness (my-extensions): against the baselines the dumps change only by additions (the 9 `ui-bubble-*`, `ui-sheet-*`, `ui-cta-*` tokens) and M6's removed token, 0 px on every screen but `settings-appearance` (all 11 selections: the Style rows) and `dark-fixture`'s two (the fixture's own compact density and mono labels now apply), refreshed from the M9 commit; new `variants-dark` (24 screens, one per non-default value) and `variants-light` (5) baselines, the scrollbar ones from a Chrome that draws scrollbars. `--only-themes` 33/33 (new: the fixture's variants as theme default, a Settings override, one change event each; the brackets out of the accessible name). |
 | M10 Part A | Done | M9 follow-up: a `calc()` that reads tokens is range-checked at resolve time from the resolved values (`theme/resolveTokens.ts`, Validation above), not at parse time from widened ranges, so `calc(var(--ui-row-line) + 8px)`, the registry's own formulas and proportional radii pass; `checkCache` and the Advanced editor run the same pass. |
 | M10 | Done | The product theme hook (`theme/productTheme.ts`): `OmnigentAppProps.product.theme` over the build's `web/product.json` over the server's `product: theme:` block (`server_config.py`, shape-checked, served on `GET /v1/info` as `product.theme`, `openapi.json` regenerated), merged field by field into `setProductPolicy`. `default` is what a first run and a reset choose (nothing stored; it resolves when read, so a theme whose extension loads later still applies); `allowed` takes ids and `*` patterns, a stored choice outside it yields to the default; `lockMode`, `lockedTokens` (checked as a theme's), `lockedOptions` and `lockedVariants` are the top layer at resolve time for contributed and built-in themes, `setOption`/`setVariant` refuse locked ones, the mode lock wins over a picker's preview and NativeThemeSync sends it; `hideCustomizations` also stops stored options, variants and customizations from applying. Settings shows locks disabled with "Set by product" and groups the 13 Style rows in a disclosure (open when a variant is set or a search hits it). The embed applies the product theme in a layout effect once its scope root has mounted (before, the first render resolved against the host page's `<html>`). Also: the cycling working verbs hold the first verb under reduced motion, `usePrefersReducedMotion` falls back to `addListener` (a MediaQueryList without `addEventListener`), the floating sheet is symmetric while the sidebar is collapsed and off below md (new `ui-sheet-gap-top`), and the working indicator's keyframes are `omnigent-working-*`. Checks: vitest 1211 files green (canvas's native build is missing here and jsdom runs without it, no test affected), type-check, oxlint, the token generator and `noRawColors` guard, both builds, pre-commit on the M10 files. pytest: the `test_app.py` route failure and the `asgiref` ones were the venv, not M10 (starlette 1.10 from an unlocked install; with uv.lock's versions it passes on both `extensible-ui` and M10); M10's one real failure was `openapi.json` drift, fixed; the 51 tests still failing in a clean environment fail the same on `extensible-ui` (sandbox, interpreter provenance, psycopg). Harness (my-extensions `c8ffe6d`): against the old baselines 0 px except `settings-appearance` in all 12 selections (the Style disclosure) and dumps with additions only (`ui-sheet-gap-top`); new `cta-*-share`, `sheet-floating-collapsed` and `-narrow` variant screens; refreshed from `9dc830e4d7`, then 0 px everywhere (26 px inside the copy-button masks), identical dumps. `--only-themes` 49/49 (new: the product checks standalone and in the embed, and the bracketed label's accessible name read from Chrome through CDP). |
+| M10b | Done | Settings JSON (VS Code style), as designed in "M10b: settings JSON (VS Code style)" below: `theme/settingsDocument.ts` (the stored document, last good values, in-place edits, migration), `theme/settingsSchema.ts`, `theme/settingsLanguage.ts`, the theme service's `getSettingsText`, `getSettingsSchema`, `checkSettings`, `saveSettings` and `settingsWriteBlocked` (options, variants and customizations read from the document; `setOption`, `setVariant` and `setCustomizations` edit it, `SettingsWriteError` when it doesn't parse or the key is locked), the Monaco dialog (`shell/settingsJson/`, mounted in `AppShellOverlays`), Settings' "Options, style and colors" row (catalog `settings-json`, replacing the Theme options, Style, variant and Advanced entries) and the quick picks (`shell/themeSettingsCommands.ts`; palette command options take `description`, `availability` and `setting`). Dependency: `jsonc-parser` 3.3.1 (already in the lockfile through other packages). |
 | M11 | Queued | |
 
 Resume notes:
@@ -559,9 +560,78 @@ As built (M9, `theme/variants.ts`, `theme/variants.css`, `theme/useVariant.ts`):
   the square pulse or the dots instead of Otto, the verbs. Their animation stops under
   reduced motion; the verbs keep changing, as the stock label does (a text swap is not
   motion). The row stays `aria-hidden`; its status region still says "Working…".
-- Settings: under the theme options, one row per variant (`THEME_VARIANT_ENTRIES`, a
-  catalog entry family), each a select of "Theme default" and the values, with the
-  theme's own value shown; hidden with the options under `hideCustomizations`.
+- Settings (until M10b): under the theme options, one row per variant, each a select of
+  "Theme default" and the values. Since M10b they are `omnigent.style.<variant>` keys of
+  the settings JSON and the "Preferences: Select Style Variant…" quick pick.
+
+## M10b: settings JSON (VS Code style)
+
+User decision (2026-11-26), superseding decision 9's inline rows: Settings > Appearance keeps
+only Mode, Terminal theme and the Color theme picker (with the built-in palette editor,
+which is how Custom is made). Theme options and style variants move into a settings JSON
+document edited in the UI, as VS Code's `settings.json` with `workbench.colorCustomizations`;
+the command palette gets quick picks for them.
+
+- **One document.** `omnigent:ui-settings` stores `{ "version": 1, "text": ..., "values": ... }`:
+  the user's text as written (JSONC: comments and trailing commas allowed and kept) and the
+  last values that parsed. Its keys:
+  - `workbench.colorCustomizations`: the colour customizations, as before (token ids, and
+    `[<theme id>]` scopes of them). VS Code's own key and shape; the old Advanced JSON
+    folds into it.
+  - `omnigent.themeOptions`: `{ "[<scope>]": { "<option id>": "<choice id>" } }`, the scope a
+    theme's options are kept under (`<extension id>/<family>` for a family, else the
+    theme's id), the same scope names as the customizations'.
+  - `omnigent.style.<variant>`: one key per style variant (`"omnigent.style.density":
+    "compact"`); an unset key is "Theme default".
+- **Last good.** A text that parses (jsonc-parser) applies; a value a key doesn't take is
+  left out with an error and the other keys still apply. A text with syntax errors is
+  stored (nothing typed is lost) while the previous values keep applying, as VS Code does;
+  so a malformed document never changes the theme. Values are checked again where they
+  apply (variants, option choices, token values), so a forged `values` can't add anything.
+- **Writes** (Settings, the quick picks, `setOption`, `setVariant`, `setCustomizations`) edit
+  the text in place (jsonc-parser `modify`, comments kept) and are refused while it has
+  syntax errors ("Fix the errors in the settings JSON first"), as VS Code refuses.
+- **Layers** are unchanged: the options, variants and customizations come from the document
+  where they came from their three keys; product locks stay the top layer.
+- **Schema.** `themeService.getSettingsSchema()` builds a JSON Schema-shaped tree
+  (`description`, `enum`, `enumDescriptions`, `default`, plus `locked` and `hidden`) from the
+  registry tokens, the chosen theme's extension colours, every registered theme's options
+  under its scope (extension themes included, so a theme's accent, corners and CTA options
+  appear with nothing to register), the variants (`VARIANTS`, `VARIANT_LABELS`) and the
+  known theme scopes. It changes with `onDidChange`.
+- **Language service** (`theme/settingsLanguage.ts`, pure, offsets only): diagnostics (syntax
+  errors, unknown keys as warnings, wrong types and values as errors, token values through
+  the theme service's checks, locked keys as "Set by product" information with the
+  unnecessary tag, hidden keys), completions (keys not yet set and not locked, enum values
+  with their labels) and hover (the description, the value's label, the default, the lock).
+  The Monaco adapter (`shell/settingsJson/`) registers it for the settings model only, with
+  Shiki's `jsonc` grammar tokenizing; Monaco's JSON worker stays out (`monacoSetup.ts` ships
+  no language workers).
+- **UI.** Under the picker, one "Options, style and colors" row with "Edit in settings
+  JSON", which opens a dialog: the editor, its problems, Save (and Cmd/Ctrl+S) and Cancel.
+  The command palette: "Preferences: Open Settings (JSON)", "Color Theme: Select Option…"
+  (the chosen theme's options, each a page of its choices) and "Preferences: Select Style
+  Variant…" (each variant, a page of "Theme default" and its values). Generic: a palette
+  command's option may carry a `setting`, which opens that setting's values page, and Back
+  returns to the options.
+- **Locks.** `lockedTokens`, `lockedOptions` and `lockedVariants` never apply from the
+  document; writes to them are refused; the editor marks the key "Set by product" (hover
+  and a faded information diagnostic) and leaves it out of completions; the quick picks
+  show the row greyed with "Set by product". `hidePicker` hides only the picker.
+- **`hideCustomizations`.** The three keys are customizations: they don't apply (as in
+  M10), the schema marks them hidden, and the Settings row, the dialog and the quick picks
+  are gone.
+- **Migration.** On the first read, the old `omnigent:ui-theme-options`,
+  `omnigent:ui-variants` and `omnigent:ui-color-customizations` are written into the
+  document (over the same keys when it exists) and removed. Settings export writes only
+  `omnigent:ui-settings`; import still takes the old keys (an older export) and migrates
+  them. The first-paint cache is unchanged: it holds applied values, and the user's
+  variants over it now come from the document.
+- **Tests:** schema generation (extension options included, locks, hidden), parse and
+  last-good (a malformed text keeps the values and the theme), per-key errors, writes
+  keeping comments and refusing malformed text, locks (never applied, refused, marked),
+  migration and import of an older export, the quick picks (nested pages, greyed locks,
+  hidden under `hideCustomizations`), and the dialog.
 
 ## Layer 0 core refactor
 

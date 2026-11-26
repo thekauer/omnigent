@@ -85,7 +85,16 @@ export interface PaletteCommandOption {
   /** Stable for what it does, so a row chosen after the options changed finds its own or none. */
   id: string;
   label: string;
+  /** A short line with the label, such as the option's current value. */
+  description?: string;
   keywords?: string[];
+  /** Hidden drops the option; a reason greys it out, saying why. */
+  availability?: CommandAvailability;
+  /**
+   * A setting the option stands for: accepting it opens that setting's values on a page of
+   * their own, and Back returns to the options. `run` isn't called then.
+   */
+  setting?: PaletteSetting;
   /** Runs once the palette has closed and restored focus, so it can move focus. */
   run: () => void;
 }

@@ -1,7 +1,7 @@
 import { builtInThemeContributions } from "@/builtinExtensions/builtInThemes";
-import { VARIANT_LABELS, VARIANT_NAMES, VARIANTS, type VariantName } from "@/theme/variants";
+import { VARIANT_LABELS, VARIANT_NAMES } from "@/theme/variants";
 
-import { settingsEntry, settingsEntryFamily } from "./types";
+import { settingsEntry } from "./types";
 
 // The built-in themes' names, as the colour theme select lists them (one per family),
 // from the built-in theme extension's contributions: they follow its list.
@@ -63,75 +63,31 @@ export const COLOR_THEME_ENTRY = settingsEntry({
   overlays: { "": { runtimeChoices: {} } },
 });
 
-export const THEME_OPTIONS_ENTRY = settingsEntry({
-  id: "theme-options",
-  section: "appearance",
-  label: "Theme options",
-  description: "Choices the color theme offers, such as its accent and corners.",
-  keywords: ["theme", "options", "accent", "corners", "style"],
-  // One control per option the theme declares, named after it.
-  parts: { option: "Theme option" },
-  nameTemplates: { option: { before: "Theme option: " } },
-  overlays: { option: { runtimeChoices: {} } },
-  // Shown only for a theme with options, under the color theme picker.
-  revealedBy: "color-theme",
-});
-
-/** The style variants' select: "Theme default" first, then the values as Settings names them. */
-export const THEME_DEFAULT_VARIANT_LABEL = "Theme default";
-
-/** The "Style" disclosure under the color theme picker, which holds the style variant rows. */
-export const THEME_STYLE_ENTRY = settingsEntry({
-  id: "theme-style",
-  section: "appearance",
-  label: "Style",
-  description: "Density, labels, scrollbars, messages and other style variants.",
-  keywords: ["style", "variants", "density", "theme"],
-  parts: { toggle: "Show style variants" },
-  revealedBy: "color-theme",
-});
-
 /**
- * One row per style variant (density, labels, ...), in the Style disclosure under the color
- * theme picker: a select of "Theme default" and the variant's values.
+ * Theme options, style variants and colour customizations: one settings JSON document
+ * (theming plan M10b), opened from under the colour theme picker.
  */
-export const THEME_VARIANT_ENTRIES = settingsEntryFamily({
-  key: "theme-variants",
-  members: VARIANT_NAMES,
-  build: (name: VariantName) => {
-    const labels = VARIANT_LABELS[name];
-    const values = labels.values as Record<string, string>;
-    return settingsEntry({
-      id: `theme-variant-${name}`,
-      section: "appearance",
-      label: labels.label,
-      description: labels.description,
-      keywords: ["style", "variant", "theme"],
-      // In the Style disclosure, which opens for a search result.
-      revealedBy: "theme-style",
-      choices: [
-        THEME_DEFAULT_VARIANT_LABEL,
-        ...(VARIANTS[name] as readonly string[]).map((value) => values[value]!),
-      ],
-    });
-  },
-});
-
-export const COLOR_CUSTOMIZATIONS_ENTRY = settingsEntry({
-  id: "color-customizations",
+export const SETTINGS_JSON_ENTRY = settingsEntry({
+  id: "settings-json",
   section: "appearance",
-  label: "Advanced",
-  description: "Color customizations as JSON, over every theme or one theme by its id.",
+  label: "Options, style and colors",
+  description: "Theme options, style variants and colors, as JSON.",
   keywords: [
+    "settings json",
+    "settings.json",
+    "json",
+    "theme options",
+    "accent",
+    "corners",
+    "style",
+    "variants",
+    ...VARIANT_NAMES.map((name) => VARIANT_LABELS[name].label.toLowerCase()),
     "color customizations",
     "colorCustomizations",
     "tokens",
-    "json",
-    "override",
     "advanced",
   ],
-  parts: { editor: "Color customizations JSON", apply: "Apply color customizations" },
-  presence: { editor: { states: ["expanded"] }, apply: { states: ["expanded"] } },
+  revealedBy: "color-theme",
 });
 
 export const UI_FONT_SIZE_ENTRY = settingsEntry({
@@ -346,10 +302,7 @@ export const APPEARANCE_SETTINGS = [
   THEME_MODE_ENTRY,
   TERMINAL_THEME_ENTRY,
   COLOR_THEME_ENTRY,
-  THEME_OPTIONS_ENTRY,
-  THEME_STYLE_ENTRY,
-  ...THEME_VARIANT_ENTRIES.entries,
-  COLOR_CUSTOMIZATIONS_ENTRY,
+  SETTINGS_JSON_ENTRY,
   UI_FONT_SIZE_ENTRY,
   UI_FONT_FAMILY_ENTRY,
   CODE_FONT_SIZE_ENTRY,

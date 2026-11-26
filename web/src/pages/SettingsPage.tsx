@@ -41,15 +41,13 @@ import {
   useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
 } from "react";
 import { useViewerId } from "@/hooks/useViewerId";
 import { useProactiveAgentSettings } from "@/hooks/useProactiveAgentSettings";
 import {
   ArchiveRestoreIcon,
   AlertTriangleIcon,
-  ChevronDownIcon,
-  ChevronRightIcon,
+  BracesIcon,
   BotIcon,
   DownloadIcon,
   FileDiffIcon,
@@ -81,7 +79,6 @@ import { useTheme } from "next-themes";
 import { PageScroll } from "@/components/PageScroll";
 import { SettingsGroup } from "@/components/SettingsGroup";
 import { SettingsLabel } from "@/components/SettingsLabel";
-import type { SettingsEntry } from "@/pages/settings/search/catalog/types";
 import { ProactiveAgentSettingControl } from "@/components/ProactiveAgentSettingControl";
 import { LOCAL_CLI_ENTRY } from "@/pages/settings/search/catalog/cli";
 import {
@@ -92,7 +89,6 @@ import {
 } from "@/pages/settings/search/catalog/updates";
 import { SettingsEntryLabel, SettingsItem } from "@/pages/settings/search/SettingsItem";
 import {
-  parseSettingsHash,
   settingsControlProps,
   settingsFileInputProps,
   settingsDescriptionId,
@@ -125,13 +121,9 @@ import {
   CODE_FONT_FAMILY_ENTRY,
   CODE_FONT_SIZE_ENTRY,
   CODE_FONT_WEIGHT_ENTRY,
-  COLOR_CUSTOMIZATIONS_ENTRY,
   COLOR_THEME_ENTRY,
   HIDE_UNCONFIGURED_HARNESSES_ENTRY,
-  THEME_OPTIONS_ENTRY,
-  THEME_STYLE_ENTRY,
-  THEME_VARIANT_ENTRIES,
-  THEME_DEFAULT_VARIANT_LABEL,
+  SETTINGS_JSON_ENTRY,
   PEER_SESSION_MESSAGES_ENTRY,
   SHOW_FINAL_ANSWER_ENTRY,
   TERMINAL_THEME_ENTRY,
@@ -182,7 +174,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Dialog,
   DialogClose,
@@ -231,7 +222,7 @@ import {
 } from "@/hooks/useConversations";
 import { conversationDisplayLabel } from "@/shell/sidebarNav";
 import { absoluteTime } from "@/lib/relativeTime";
-import { useLocation, useNavigate } from "@/lib/routing";
+import { useNavigate } from "@/lib/routing";
 import { useSettingsRoute } from "@/shell/settingsNav";
 import { ImportSessionsPanel } from "@/shell/ImportSessionsPanel";
 import { isThemeMode, normalizeThemeMode, type ThemeMode } from "@/components/theme/themeMode";
@@ -385,22 +376,14 @@ import {
   useThemeEntries,
 } from "@/store/themePalette";
 import {
-  type CustomizationProblem,
   type ThemeListEntry,
   themeService,
   useThemeCustomizationsHidden,
-  useLockedThemeVariants,
   useThemeForcedMode,
   useThemeModeLock,
   useThemePickerHidden,
 } from "@/theme/themeService";
-import {
-  defaultVariant,
-  VARIANT_LABELS,
-  VARIANT_NAMES,
-  VARIANTS,
-  type VariantName,
-} from "@/theme/variants";
+import { openSettingsJsonEditor } from "@/store/settingsJsonEditor";
 import { entrySwatch, forcedModeLabel, UNAVAILABLE_LABEL } from "@/shell/themePickerItems";
 import {
   applyCustomTheme,
@@ -1095,9 +1078,6 @@ function ColorThemeControl() {
             </div>
           )}
 
-          {!customizationsHidden && <ThemeOptionsControl />}
-          {!customizationsHidden && <ThemeVariantsControl />}
-
           {palette !== null && !pickerHidden && (
             <div className="border-b border-border/70 px-4">
               <SettingsOwner entry={COLOR_THEME_ENTRY} part="accent">
@@ -1165,7 +1145,7 @@ function ColorThemeControl() {
             </div>
           )}
 
-          {!customizationsHidden && <ColorCustomizationsControl />}
+          {!customizationsHidden && <ThemeSettingsJsonControl />}
         </div>
       </ThemeSubsection>
     </SettingsItem>
@@ -1196,318 +1176,33 @@ function groupThemeEntries(entries: readonly ThemeListEntry[]) {
   return groups;
 }
 
-/** The chosen theme's options (accent, corners, ...), when it declares any. */
-function ThemeOptionsControl() {
-  const version = useThemeServiceVersion();
-  const active = useMemo(() => (version >= 0 ? themeService.getActive() : null), [version]);
-  const options = active?.available ? active.options : [];
-  if (options.length === 0) return null;
-  return (
-    <SettingsItem
-      entry={THEME_OPTIONS_ENTRY}
-      data-testid="theme-options"
-      className="flex flex-col border-b border-border/70 px-4 py-3"
-    >
-      <SettingsEntryLabel entry={THEME_OPTIONS_ENTRY} className="py-1" />
-      {options.map((option) => (
-        <div key={option.id} className="flex items-center justify-between gap-4 py-2">
-          <div aria-hidden="true" className="min-w-0 flex-1">
-            <div className="truncate text-sm">{option.label}</div>
-            {option.locked && (
-              <div
-                data-testid={`theme-option-${option.id}-locked`}
-                className="text-muted-foreground text-xs"
-              >
-                {SET_BY_PRODUCT_LABEL}
-              </div>
-            )}
-          </div>
-          <Select
-            value={option.value}
-            onValueChange={(next) => themeService.setOption(option.id, next)}
-            disabled={option.locked === true}
-            componentId="settings.appearance.theme_option"
-            valueHasNoPii
-          >
-            <SelectTrigger
-              {...settingsControlProps(THEME_OPTIONS_ENTRY, "option", { runtime: option.label })}
-              data-testid={`theme-option-${option.id}`}
-              className="w-40 shrink-0 sm:w-60"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent {...settingsOverlayProps(THEME_OPTIONS_ENTRY, "option")}>
-              {option.choices.map((choice) => (
-                <SelectItem
-                  {...settingsRuntimeChoiceProps(THEME_OPTIONS_ENTRY, "option")}
-                  key={choice.id}
-                  value={choice.id}
-                >
-                  {choice.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      ))}
-    </SettingsItem>
-  );
-}
-
 /** What a row the product's theme configuration locks says. */
 const SET_BY_PRODUCT_LABEL = "Set by product";
 
-/** The select value of "Theme default" (no user choice), outside every variant's values. */
-const THEME_DEFAULT_VARIANT = "theme-default";
-
 /**
- * The style variants (density, labels, ...) in a "Style" disclosure, each a select of "Theme
- * default" and its values: the user's choice over the theme's, the product's locks over both.
- * Open at first when any variant isn't at its default, and for a search result in it.
+ * Theme options, style variants and colour customizations: one settings JSON document
+ * (theming plan M10b), edited in the settings JSON dialog, as VS Code's settings.json.
  */
-function ThemeVariantsControl() {
-  const version = useThemeServiceVersion();
-  const locked = useLockedThemeVariants();
-  const { user, theme, styled } = useMemo(() => {
-    if (version < 0) return { user: {}, theme: {}, styled: false };
-    const resolved = themeService.getVariants();
-    return {
-      user: themeService.getUserVariants(),
-      theme: themeService.getThemeVariants(),
-      styled: VARIANT_NAMES.some(
-        (name) => resolved[name] !== undefined && resolved[name] !== defaultVariant(name),
-      ),
-    };
-  }, [version]);
-  const target = parseSettingsHash(useLocation().hash)?.id;
-  const targeted = target?.startsWith("theme-variant-") === true || target === THEME_STYLE_ENTRY.id;
-  const [open, setOpen] = useState(styled || targeted);
-  useEffect(() => {
-    if (targeted) setOpen(true);
-  }, [targeted, target]);
+function ThemeSettingsJsonControl() {
   return (
-    <div data-testid="theme-variants" className="flex flex-col border-b border-border/70 px-4 py-3">
-      <SettingsItem
-        entry={THEME_STYLE_ENTRY}
-        className="flex items-center justify-between gap-4 py-1"
+    <SettingsItem
+      entry={SETTINGS_JSON_ENTRY}
+      data-testid="theme-settings-json"
+      className="flex flex-col gap-3 px-4 py-4 sm:flex-row sm:items-center sm:justify-between"
+    >
+      <SettingsEntryLabel entry={SETTINGS_JSON_ENTRY} />
+      <Button
+        {...settingsControlProps(SETTINGS_JSON_ENTRY)}
+        variant="outline"
+        size="sm"
+        className="shrink-0"
+        data-testid="theme-settings-json-edit"
+        onClick={openSettingsJsonEditor}
+        componentId="settings.appearance.settings_json_open"
       >
-        <SettingsEntryLabel entry={THEME_STYLE_ENTRY} />
-        <Button
-          {...settingsControlProps(THEME_STYLE_ENTRY, "toggle")}
-          variant="outline"
-          size="sm"
-          aria-expanded={open}
-          aria-controls="theme-variants-panel"
-          data-testid="theme-style-toggle"
-          onClick={() => setOpen(!open)}
-          componentId="settings.appearance.theme_style_toggle"
-        >
-          {open ? <ChevronDownIcon aria-hidden="true" /> : <ChevronRightIcon aria-hidden="true" />}
-          {open ? "Hide" : "Show"}
-        </Button>
-      </SettingsItem>
-      {open && (
-        <div id="theme-variants-panel" className="flex flex-col pt-1">
-          {VARIANT_NAMES.map((name) => (
-            <ThemeVariantRow
-              key={name}
-              entry={THEME_VARIANT_ENTRIES.entry(name)}
-              name={name}
-              value={user[name]}
-              themeValue={theme[name] ?? defaultVariant(name)}
-              lockedValue={locked[name]}
-            />
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ThemeVariantRow({
-  entry,
-  name,
-  value,
-  themeValue,
-  lockedValue,
-}: {
-  entry: SettingsEntry;
-  name: VariantName;
-  value: string | undefined;
-  themeValue: string;
-  /** The product's value: shown, not changeable. */
-  lockedValue: string | undefined;
-}) {
-  const valueLabels = VARIANT_LABELS[name].values as Record<string, string>;
-  const locked = lockedValue !== undefined;
-  return (
-    <SettingsItem entry={entry} className="flex items-center justify-between gap-4 py-2">
-      <div className="min-w-0 flex-1">
-        <SettingsLabel
-          labelId={settingsLabelId(entry)}
-          descriptionId={settingsDescriptionId(entry)}
-          label={entry.label}
-          description={entry.description}
-        />
-        {/* The theme's own value, which "Theme default" keeps, or the product's lock. */}
-        <div
-          aria-hidden="true"
-          data-testid={locked ? `theme-variant-${name}-locked` : undefined}
-          className="text-muted-foreground text-xs"
-        >
-          {locked
-            ? `${SET_BY_PRODUCT_LABEL}: ${valueLabels[lockedValue]}`
-            : `${THEME_DEFAULT_VARIANT_LABEL}: ${valueLabels[themeValue]}`}
-        </div>
-      </div>
-      <Select
-        value={locked ? lockedValue : (value ?? THEME_DEFAULT_VARIANT)}
-        onValueChange={(next) =>
-          themeService.setVariant(name, next === THEME_DEFAULT_VARIANT ? null : next)
-        }
-        disabled={locked}
-        componentId="settings.appearance.theme_variant"
-        valueHasNoPii
-      >
-        <SelectTrigger
-          {...settingsControlProps(entry)}
-          data-testid={`theme-variant-${name}`}
-          className="w-40 shrink-0 sm:w-60"
-        >
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent {...settingsOverlayProps(entry)}>
-          <SelectItem value={THEME_DEFAULT_VARIANT}>{THEME_DEFAULT_VARIANT_LABEL}</SelectItem>
-          {(VARIANTS[name] as readonly string[]).map((choice) => (
-            <SelectItem key={choice} value={choice}>
-              {valueLabels[choice]}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-    </SettingsItem>
-  );
-}
-
-/** The theme service's change counter, for components that read it. */
-function useThemeServiceVersion(): number {
-  return useSyncExternalStore(
-    (listener) => themeService.onDidChange(listener),
-    () => themeService.getVersion(),
-    () => 0,
-  );
-}
-
-/** The Advanced editor's cap (the theme service's), checked before any parse. */
-const MAX_CUSTOMIZATIONS_LENGTH = 65_536;
-/** How long typing pauses before the Advanced editor checks the text. */
-const CUSTOMIZATIONS_CHECK_DELAY_MS = 250;
-
-/** Advanced: colour customizations as JSON, global and per theme, checked as typed. */
-function ColorCustomizationsControl() {
-  const [open, setOpen] = useState(false);
-  const [text, setText] = useState("");
-  const [problems, setProblems] = useState<CustomizationProblem[]>([]);
-  const [saved, setSaved] = useState(false);
-  const pendingCheck = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  useEffect(() => () => clearTimeout(pendingCheck.current), []);
-  const errors = problems.filter((problem) => problem.severity !== "warning");
-  const toggle = () => {
-    if (!open) {
-      setText(themeService.getCustomizationsText());
-      setProblems([]);
-      setSaved(false);
-    }
-    setOpen(!open);
-  };
-  // Checked once typing pauses; an oversized text fails at once, without parsing it.
-  const scheduleCheck = (next: string) => {
-    clearTimeout(pendingCheck.current);
-    if (next.length > MAX_CUSTOMIZATIONS_LENGTH) {
-      setProblems([{ key: "", message: `longer than ${MAX_CUSTOMIZATIONS_LENGTH} characters` }]);
-      return;
-    }
-    pendingCheck.current = setTimeout(
-      () => setProblems(themeService.checkCustomizations(next)),
-      CUSTOMIZATIONS_CHECK_DELAY_MS,
-    );
-  };
-  const apply = () => {
-    clearTimeout(pendingCheck.current);
-    const found = themeService.setCustomizations(text);
-    setProblems(found);
-    setSaved(found.every((problem) => problem.severity === "warning"));
-  };
-  return (
-    <SettingsItem entry={COLOR_CUSTOMIZATIONS_ENTRY} className="px-4 py-4">
-      <div className="flex items-center justify-between gap-4">
-        <SettingsEntryLabel entry={COLOR_CUSTOMIZATIONS_ENTRY} />
-        <Button
-          {...settingsControlProps(COLOR_CUSTOMIZATIONS_ENTRY)}
-          variant="outline"
-          size="sm"
-          aria-expanded={open}
-          aria-controls="color-customizations-panel"
-          data-testid="color-customizations-toggle"
-          onClick={toggle}
-          componentId="settings.appearance.color_customizations_toggle"
-        >
-          {open ? <ChevronDownIcon aria-hidden="true" /> : <ChevronRightIcon aria-hidden="true" />}
-          {open ? "Hide" : "Edit"}
-        </Button>
-      </div>
-      {open && (
-        <div id="color-customizations-panel" className="mt-3 flex flex-col gap-2">
-          <Textarea
-            {...settingsControlProps(COLOR_CUSTOMIZATIONS_ENTRY, "editor")}
-            data-testid="color-customizations-editor"
-            value={text}
-            spellCheck={false}
-            rows={8}
-            aria-invalid={errors.length > 0 || undefined}
-            aria-errormessage={errors.length > 0 ? "color-customizations-errors" : undefined}
-            onChange={(event) => {
-              setText(event.target.value);
-              setSaved(false);
-              scheduleCheck(event.target.value);
-            }}
-            className="font-mono text-xs"
-          />
-          {problems.length > 0 && (
-            <ul
-              id="color-customizations-errors"
-              data-testid="color-customizations-errors"
-              className="text-xs"
-            >
-              {problems.slice(0, 20).map((problem) => (
-                <li
-                  key={`${problem.key}:${problem.message}`}
-                  data-severity={problem.severity ?? "error"}
-                  className={
-                    problem.severity === "warning" ? "text-muted-foreground" : "text-destructive"
-                  }
-                >
-                  {problem.key ? `${problem.key}: ` : ""}
-                  {problem.message}
-                </li>
-              ))}
-            </ul>
-          )}
-          <div className="flex items-center gap-3">
-            <Button
-              {...settingsControlProps(COLOR_CUSTOMIZATIONS_ENTRY, "apply")}
-              size="sm"
-              disabled={errors.length > 0}
-              onClick={apply}
-              data-testid="color-customizations-apply"
-              componentId="settings.appearance.color_customizations_apply"
-            >
-              Apply
-            </Button>
-            {saved && <span className="text-muted-foreground text-xs">Applied</span>}
-          </div>
-        </div>
-      )}
+        <BracesIcon aria-hidden="true" />
+        Edit in settings JSON
+      </Button>
     </SettingsItem>
   );
 }

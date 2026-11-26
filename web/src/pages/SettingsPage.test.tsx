@@ -1,3 +1,4 @@
+import { closeSettingsJsonEditor, useSettingsJsonEditorStore } from "@/store/settingsJsonEditor";
 import "@/test/withBuiltInThemes";
 
 // Tests for the Settings content panel. The section nav lives in the sidebar
@@ -2592,24 +2593,21 @@ describe("Color theme with contributed themes", () => {
     expect(screen.queryByText(/Set by theme/)).toBeNull();
   });
 
-  it("shows the chosen theme's options under the picker and switches them", () => {
+  it("keeps only the picker: options, style and colors open the settings JSON", () => {
     act(() => themeService.select(`${FIXTURE_EXTENSION_ID}/full-dark`));
     renderPage("/settings/appearance");
-    const options = screen.getByTestId("theme-options");
-    expect(options).toHaveTextContent("Theme options");
-    const accent = screen.getByTestId("theme-option-accent") as HTMLSelectElement;
-    expect(accent).toHaveAttribute("aria-label", "Theme option: Accent");
-    expect(accent.value).toBe("orange");
-    act(() => {
-      fireEvent.change(accent, { target: { value: "lava" } });
-    });
-    expect(JSON.parse(localStorage.getItem("omnigent:ui-theme-options")!)).toEqual({
-      [`${FIXTURE_EXTENSION_ID}/fixture`]: { accent: "lava" },
-    });
-    expect((screen.getByTestId("theme-option-accent") as HTMLSelectElement).value).toBe("lava");
-    // A theme without options shows none.
-    act(() => themeService.select("nord"));
     expect(screen.queryByTestId("theme-options")).toBeNull();
+    expect(screen.queryByTestId("theme-variants")).toBeNull();
+    expect(screen.queryByTestId("color-customizations-toggle")).toBeNull();
+    const row = screen.getByTestId("theme-settings-json");
+    expect(row).toHaveTextContent("Options, style and colors");
+    expect(useSettingsJsonEditorStore.getState().open).toBe(false);
+    fireEvent.click(screen.getByTestId("theme-settings-json-edit"));
+    expect(useSettingsJsonEditorStore.getState().open).toBe(true);
+    act(() => closeSettingsJsonEditor());
+    // A built-in palette has the row too (its colour customizations, the style variants).
+    act(() => themeService.select("nord"));
+    expect(screen.getByTestId("theme-settings-json")).toBeInTheDocument();
   });
 
   it("shows a chosen theme whose extension is missing as unavailable, keeping the choice", () => {
@@ -2639,22 +2637,20 @@ describe("Color theme with contributed themes", () => {
     });
     renderPage("/settings/appearance");
     expect(screen.queryByTestId("color-theme-select")).toBeNull();
-    // The theme's options and Advanced stay; the palette editor (which picks Custom) goes.
-    expect(screen.getByTestId("theme-options")).toBeInTheDocument();
-    expect(screen.getByTestId("color-customizations-toggle")).toBeInTheDocument();
+    // The settings JSON stays; the palette editor (which picks Custom) goes.
+    expect(screen.getByTestId("theme-settings-json")).toBeInTheDocument();
     act(() => themeService.select("nord"));
     expect(screen.queryByTestId("custom-theme-accent")).toBeNull();
   });
 
-  it("hides the options and Advanced when the product hides customizations", () => {
+  it("hides the settings JSON row when the product hides customizations", () => {
     act(() => {
       themeService.select(`${FIXTURE_EXTENSION_ID}/full-dark`);
       themeService.setProductPolicy({ hideCustomizations: true });
     });
     renderPage("/settings/appearance");
     expect(screen.getByTestId("color-theme-select")).toBeInTheDocument();
-    expect(screen.queryByTestId("theme-options")).toBeNull();
-    expect(screen.queryByTestId("color-customizations-toggle")).toBeNull();
+    expect(screen.queryByTestId("theme-settings-json")).toBeNull();
     act(() => themeService.setProductPolicy({ hideCustomizations: true, hidePicker: true }));
     expect(screen.queryByTestId("color-theme-editor")).toBeNull();
   });
@@ -2672,90 +2668,8 @@ describe("Color theme with contributed themes", () => {
     expect(screen.getByText("Set by product: light.")).toBeInTheDocument();
     expect(screen.getByTestId("theme-light")).toBeDisabled();
     expect(screen.getByTestId("theme-light")).toHaveAttribute("aria-checked", "true");
-    const accent = screen.getByTestId("theme-option-accent") as HTMLSelectElement;
-    expect(accent).toBeDisabled();
-    expect(accent.value).toBe("lava");
-    expect(screen.getByTestId("theme-option-accent-locked")).toHaveTextContent("Set by product");
-    expect(screen.getByTestId("theme-option-corners")).not.toBeDisabled();
-    const density = screen.getByTestId("theme-variant-density") as HTMLSelectElement;
-    expect(density).toBeDisabled();
-    expect(density.value).toBe("compact");
-    expect(screen.getByTestId("theme-variant-density-locked")).toHaveTextContent(
-      "Set by product: Compact",
-    );
-    expect(screen.getByTestId("theme-variant-cta")).toBeDisabled();
-    expect(screen.getByTestId("theme-variant-label")).not.toBeDisabled();
+    // The locked options and variants show in the settings JSON and the quick picks.
     act(() => themeService.setProductPolicy(null));
-    expect(screen.getByTestId("theme-variant-density")).not.toBeDisabled();
     expect(screen.queryByText(/Set by product/)).toBeNull();
-  });
-
-  it("holds the style variants in a Style disclosure, open when one isn't at its default", () => {
-    act(() => themeService.select("nord"));
-    const first = renderPage("/settings/appearance");
-    const toggle = screen.getByTestId("theme-style-toggle");
-    expect(toggle).toHaveAttribute("aria-expanded", "false");
-    expect(screen.queryByTestId("theme-variant-density")).toBeNull();
-    fireEvent.click(toggle);
-    expect(toggle).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByTestId("theme-variant-density")).toBeInTheDocument();
-    first.unmount();
-    // The fixture theme sets compact density: open at first.
-    act(() => themeService.select(`${FIXTURE_EXTENSION_ID}/full-dark`));
-    const second = renderPage("/settings/appearance");
-    expect(screen.getByTestId("theme-style-toggle")).toHaveAttribute("aria-expanded", "true");
-    second.unmount();
-    // A search result in it opens it.
-    act(() => themeService.select("nord"));
-    renderPage("/settings/appearance#theme-variant-scrollbar");
-    expect(screen.getByTestId("theme-style-toggle")).toHaveAttribute("aria-expanded", "true");
-    expect(screen.getByTestId("theme-variant-scrollbar")).toBeInTheDocument();
-  });
-
-  it("edits the colour customizations as JSON under Advanced, with inline errors", async () => {
-    renderPage("/settings/appearance");
-    expect(screen.queryByTestId("color-customizations-editor")).toBeNull();
-    const toggle = screen.getByTestId("color-customizations-toggle");
-    expect(toggle).toHaveAttribute("aria-expanded", "false");
-    fireEvent.click(toggle);
-    expect(toggle).toHaveAttribute("aria-expanded", "true");
-    const editor = screen.getByTestId("color-customizations-editor") as HTMLTextAreaElement;
-    expect(editor.value).toBe("{}");
-    fireEvent.change(editor, {
-      target: { value: '{"background": "url(x)", "[nord]": {"primary": "#123456"}}' },
-    });
-    // Checked once typing pauses.
-    expect(screen.queryByTestId("color-customizations-errors")).toBeNull();
-    expect(await screen.findByTestId("color-customizations-errors")).toHaveTextContent(
-      'background: "url(" is not allowed',
-    );
-    expect(screen.getByTestId("color-customizations-apply")).toBeDisabled();
-    // An unknown theme id is an error; a missing extension's theme only a warning.
-    fireEvent.change(editor, { target: { value: '{"[nrod]": {}, "[acme.gone/x]": {}}' } });
-    await waitFor(() =>
-      expect(screen.getByTestId("color-customizations-errors")).toHaveTextContent(
-        "[nrod]: no theme nrod",
-      ),
-    );
-    expect(screen.getByText(/acme\.gone\/x is installed/).closest("li")).toHaveAttribute(
-      "data-severity",
-      "warning",
-    );
-    fireEvent.change(editor, { target: { value: "x".repeat(70_000) } });
-    expect(screen.getByTestId("color-customizations-errors")).toHaveTextContent("longer than");
-    fireEvent.change(editor, {
-      target: { value: '{"background": "#101010", "[nord]": {"primary": "#123456"}}' },
-    });
-    await waitFor(() => expect(screen.queryByTestId("color-customizations-errors")).toBeNull());
-    fireEvent.click(screen.getByTestId("color-customizations-apply"));
-    expect(JSON.parse(localStorage.getItem("omnigent:ui-color-customizations")!)).toEqual({
-      background: "#101010",
-      "[nord]": { primary: "#123456" },
-    });
-    expect(screen.getByText("Applied")).toBeInTheDocument();
-    expect(document.getElementById("omnigent-theme-runtime")?.textContent).toContain(
-      "--background: #101010;",
-    );
-    act(() => themeService.setCustomizations("{}"));
   });
 });

@@ -1,3 +1,4 @@
+import { themeService } from "@/theme/themeService";
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CODE_BLOCK_WORD_WRAP_STORAGE_KEY, useCodeBlockWordWrap } from "./codeWrapPreferences";
@@ -129,12 +130,14 @@ it.each([
 });
 
 describe("theme settings portability", () => {
-  it("round-trips the theme, its options, variants and customizations, never the cache", () => {
+  it("round-trips the theme and the settings document, never the cache", () => {
     const stored = {
       "omnigent:ui-theme-palette": JSON.stringify("acme.x/dark"),
-      "omnigent:ui-theme-options": JSON.stringify({ "acme.x/family": { accent: "lava" } }),
-      "omnigent:ui-variants": JSON.stringify({ density: "compact" }),
-      "omnigent:ui-color-customizations": JSON.stringify({ "[acme.x/dark]": { primary: "#123" } }),
+      "omnigent:ui-settings": JSON.stringify({
+        version: 1,
+        text: '{ "omnigent.style.density": "compact" } // kept',
+        values: { "omnigent.style.density": "compact" },
+      }),
     };
     for (const [key, value] of Object.entries(stored)) localStorage.setItem(key, value);
     localStorage.setItem("omnigent:ui-theme-cache", JSON.stringify({ version: 1 }));
@@ -147,6 +150,30 @@ describe("theme settings portability", () => {
       expect(localStorage.getItem(key), key).toBe(value);
     }
     expect(localStorage.getItem("omnigent:ui-theme-cache")).toBeNull();
+  });
+
+  it("imports an older export's options, variants and customizations, migrated on first read", () => {
+    const legacy = {
+      "omnigent:ui-theme-options": JSON.stringify({ "acme.x/family": { accent: "lava" } }),
+      "omnigent:ui-variants": JSON.stringify({ density: "compact" }),
+      "omnigent:ui-color-customizations": JSON.stringify({ "[acme.x/dark]": { primary: "#123" } }),
+    };
+    localStorage.setItem(
+      "omnigent:ui-settings",
+      JSON.stringify({ version: 1, text: "{}", values: {} }),
+    );
+    applyImportedSettings({ version: 1, settings: legacy });
+    // The import overwrites: the old document goes, the older file's keys are written.
+    expect(localStorage.getItem("omnigent:ui-settings")).toBeNull();
+    expect(themeService.getUserVariants()).toEqual({ density: "compact" });
+    for (const key of Object.keys(legacy)) expect(localStorage.getItem(key), key).toBeNull();
+    expect(JSON.parse(themeService.getSettingsText())).toEqual({
+      "omnigent.themeOptions": { "[acme.x/family]": { accent: "lava" } },
+      "omnigent.style.density": "compact",
+      "workbench.colorCustomizations": { "[acme.x/dark]": { primary: "#123" } },
+    });
+    // The document is what a new export carries.
+    expect(Object.keys(collectSettings()!.settings)).toEqual(["omnigent:ui-settings"]);
   });
 });
 
