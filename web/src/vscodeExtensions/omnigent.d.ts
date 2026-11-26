@@ -188,6 +188,8 @@ declare module "omnigent" {
     readonly id: string;
     readonly label: string;
     readonly kind: ColorThemeKind;
+    /** The chosen theme's option choices (choice id by option id); empty for a built-in palette. */
+    readonly options: Readonly<Record<string, string>>;
     /** The style variants that apply (the theme's, the user's over them), by name. */
     readonly variants: Readonly<Record<string, string>>;
   }
@@ -708,15 +710,16 @@ declare module "omnigent" {
 
   export namespace window {
     /**
-     * The colour theme on screen. While the theme picker previews another theme, this
-     * reads the preview; {@link onDidChangeActiveColorTheme} fires for committed changes only.
+     * The committed colour theme: the chosen theme in the chosen mode. A picker's preview
+     * of another theme or mode is never reflected, as {@link onDidChangeActiveColorTheme}
+     * never fires for one.
      */
     export const activeColorTheme: ColorTheme;
 
     /**
      * Fires after a committed change of {@link activeColorTheme} is applied: another
-     * theme chosen, its option or a variant changed, or the mode switched. Never for a
-     * picker's preview of a theme or a mode.
+     * theme chosen, an option, a variant or a colour customization changed, or the mode
+     * switched. Never for a picker's preview of a theme or a mode.
      */
     export const onDidChangeActiveColorTheme: Event<ColorTheme>;
 

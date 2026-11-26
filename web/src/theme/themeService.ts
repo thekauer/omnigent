@@ -166,6 +166,15 @@ export interface ActiveThemeOption {
   readonly choices: readonly { readonly id: string; readonly label: string }[];
 }
 
+/** What is applied for the chosen theme, previews aside ({@link ThemeService.committedState}). */
+export interface CommittedThemeState {
+  /** The chosen theme's option choices, by option id (none for a built-in palette). */
+  readonly options: Readonly<Record<string, string>>;
+  readonly variants: Readonly<Record<string, string>>;
+  /** Changes with anything applied: the choice and a hash of the theme CSS written. */
+  readonly key: string;
+}
+
 /** The chosen theme, as {@link ThemeService.getActive} reports it. */
 export interface ActiveTheme extends ThemeInfo {
   /** The mode a single-mode theme forces; undefined for a family, which follows the mode. */
@@ -413,6 +422,11 @@ export class ThemeService implements ThemeContributionSink {
   private fontKey = "";
   private brandKey = "";
   private stopWatchingRoots: (() => void) | null = null;
+  private committed: CommittedThemeState = Object.freeze({
+    options: Object.freeze(nullMap<string>()),
+    variants: Object.freeze(nullMap<string>()),
+    key: "",
+  });
 
   /** Registers an extension's themes, colours and fonts; returns their removal. */
   addExtension(extension: ThemeExtension): () => void {
@@ -563,6 +577,14 @@ export class ThemeService implements ThemeContributionSink {
     const builtIn = this.builtInMember(palette, mode);
     if (builtIn) return { id: builtIn.theme.fullId, label: builtIn.theme.label };
     return { id: palette, label: palette };
+  }
+
+  /**
+   * The chosen theme's option choices, variants and applied key as last applied outside a
+   * preview: what the plugin read API reports and compares.
+   */
+  committedState(): CommittedThemeState {
+    return this.committed;
   }
 
   /** Reads the choice again after something else stored it (a settings import, a reset). */
@@ -1355,8 +1377,28 @@ export class ThemeService implements ThemeContributionSink {
           `${contributed} is not installed; using the default theme`,
         );
     }
+    if (this.previewing === undefined) this.recordCommitted(choice, css, resolution);
     this.watchRoots();
     this.emit();
+  }
+
+  private recordCommitted(
+    choice: string | null,
+    css: string,
+    resolution: Resolution | undefined,
+  ): void {
+    const options = nullMap<string>();
+    for (const option of resolution?.options ?? []) options[option.id] = option.value;
+    const variants = nullMap<string>();
+    Object.assign(
+      variants,
+      resolution ? resolution.variants : (this.active?.variants ?? this.getVariants()),
+    );
+    this.committed = Object.freeze({
+      options: Object.freeze(options),
+      variants: Object.freeze(variants),
+      key: `${choice ?? DEFAULT_PALETTE}#${hashText(css)}`,
+    });
   }
 
   private writeStyle(css: string): void {

@@ -68,6 +68,7 @@ describe("window.activeColorTheme", () => {
       id: "omnigent.themes/omni-dark",
       label: expect.any(String),
       kind: ColorThemeKind.Dark,
+      options: {},
       variants: {},
     });
     service.select("nord");
@@ -88,9 +89,54 @@ describe("window.activeColorTheme", () => {
     document.documentElement.classList.remove("dark");
     expect(api.window.activeColorTheme).toMatchObject({ id: LIGHT, kind: ColorThemeKind.Light });
   });
+  it("reports the committed theme, options and mode, never a preview", async () => {
+    const { api } = setup();
+    service.select(DARK);
+    expect(api.window.activeColorTheme).toMatchObject({
+      id: DARK,
+      options: { accent: "orange", corners: "square" },
+      variants: { density: "compact", label: "mono-upper" },
+    });
+    service.preview("nord");
+    expect(api.window.activeColorTheme).toMatchObject({
+      id: DARK,
+      variants: { density: "compact" },
+    });
+    service.preview(undefined);
+    // A mode preview: the roots switch, the committed mode stays what it reports.
+    setThemeModePreview("light");
+    document.documentElement.classList.remove("dark");
+    expect(api.window.activeColorTheme).toMatchObject({ id: DARK, kind: ColorThemeKind.Dark });
+    setThemeModePreview(null);
+    document.documentElement.classList.add("dark");
+    await new Promise((resolve) => {
+      setTimeout(resolve, 150);
+    });
+    expect(api.window.activeColorTheme).toMatchObject({ id: DARK, kind: ColorThemeKind.Dark });
+  });
 });
 
 describe("window.onDidChangeActiveColorTheme", () => {
+  it("fires for an option, a variant and a customization change", () => {
+    const { api } = setup();
+    service.select(DARK);
+    const seen: omnigent.ColorTheme[] = [];
+    api.window.onDidChangeActiveColorTheme((theme) => seen.push(theme));
+    service.setOption("accent", "lava");
+    expect(seen.map((theme) => theme.options)).toEqual([{ accent: "lava", corners: "square" }]);
+    service.setOption("accent", "lava");
+    expect(seen).toHaveLength(1);
+    service.setVariant("density", "comfortable");
+    expect(seen[1]?.variants).toMatchObject({ density: "comfortable" });
+    service.setCustomizations(JSON.stringify({ primary: "#123456" }));
+    expect(seen).toHaveLength(3);
+    expect(seen[2]).toEqual(seen[1]);
+    // A preview of another option's theme doesn't fire.
+    service.preview("nord");
+    service.preview(undefined);
+    expect(seen).toHaveLength(3);
+  });
+
   it("fires after a committed change is applied, never for a preview", async () => {
     const { api } = setup();
     const seen: omnigent.ColorTheme[] = [];
@@ -179,6 +225,11 @@ describe("ThemeColor in SessionHeaderItem.color", () => {
     item.color = new api.ThemeColor("acme.other.secret");
     expect(color()).toBeUndefined();
     expect(warn).toHaveBeenCalledWith(expect.stringContaining("acme.other.secret"));
+    // A structured clone of a ThemeColor (a Worker host's) is a plain `{ id }`.
+    item.color = { id: "muted-foreground" } as never;
+    expect(color()).toBe("var(--muted-foreground)");
+    item.color = { id: "muted-foreground", extra: 1 } as never;
+    expect(color()).toBeUndefined();
     item.color = "#ff0000";
     expect(color()).toBe("#ff0000");
     item.color = "url(https://evil.example/x)";

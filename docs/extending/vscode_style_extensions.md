@@ -727,16 +727,19 @@ limitHit, message }`; a cancelled token aborts the request and rejects
       A non-built-in extension under the `omnigent` publisher, or with the id of
       one already loaded, is skipped with a warning.
     - The plugin read API (theming plan M8): `window.activeColorTheme`
-      (`{ id, label, kind, variants }`, plain data: the member theme on screen,
+      (`{ id, label, kind, options, variants }`, plain data: the committed
+      theme and mode, never a picker's preview; the member theme on screen,
       `omnigent.themes/<palette>-<mode>` for a built-in, the default's while the
       chosen theme's extension is missing; `kind` a `ColorThemeKind`, VS Code's
       values, Light or Dark for now), `window.onDidChangeActiveColorTheme`
-      (after a committed change is applied: a theme chosen, an option or variant,
-      the mode; never for the picker's preview of a theme or a mode),
+      (after a committed change is applied: a theme chosen, an option, a variant
+      or a colour customization, the mode; never for the picker's preview of a
+      theme or a mode),
       `window.getThemeToken(id)` (the computed value on the innermost theme root,
       `""` when unset; registry ids and the caller's own colours only, else
       undefined with a warning) and `ThemeColor` (`new ThemeColor(id)`, the same
-      ids), taken by `SessionHeaderItem.color` and drawn as `var(--<token>)`;
+      ids; a plain `{ id }` object, as a Worker's structured clone carries one,
+      too), taken by `SessionHeaderItem.color` and drawn as `var(--<token>)`;
       a colour string there must pass the theme validator (registry `var()`s
       only). Unknown colours are dropped with a warning (`theme/colorThemes.ts`). The dev plugin reads the
       theme files at scan time and inlines them into the virtual module
@@ -1214,7 +1217,7 @@ Plain ESM with `// @ts-check`; no build step.
 | `CancellationTokenSource`                                            | same                                                          |                                                     |
 | `contributes.keybindings`                                            | same, a subset                                                | One chord; letters, digits, F-keys                  |
 | `contributes.themes`, `contributes.colors`                           | same, plus `family` and `brand`; colours as `--x-*` variables  | Tokens, not workbench colours; VS Code ids aliased  |
-| `window.activeColorTheme`, `onDidChangeActiveColorTheme`, `ColorThemeKind` | same, plus `id`, `label` and `variants`                    | Not fired for the picker's previews                 |
+| `window.activeColorTheme`, `onDidChangeActiveColorTheme`, `ColorThemeKind` | same, plus `id`, `label`, `options` and `variants`         | Committed theme only; not fired for previews        |
 | `ThemeColor`, `StatusBarItem.color`                                  | `ThemeColor`, `SessionHeaderItem.color`                       | Registry tokens and the extension's own colours     |
 | (none; webviews read `--vscode-*`)                                   | `window.getThemeToken(id)`                                    | A computed value as a string                        |
 | (none; product icon and font themes are separate in VS Code)         | `contributes.fonts`                                           | `.woff2` only, namespaced families                  |
