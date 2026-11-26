@@ -158,7 +158,7 @@ describe("theme settings quick picks", () => {
   });
 
   it("greys the values out while the settings JSON doesn't parse", async () => {
-    themeService.saveSettings('{ "omnigent.style.header": ');
+    themeService.saveSettingsText('{ "omnigent.style.header": ');
     await openCommand(
       "style variant",
       /Preferences: Select Style Variant…/,

@@ -1,6 +1,8 @@
 // The settings editor's language service (theming plan M10b): diagnostics, completions and
 // hovers for the settings document against its schema, as VS Code's JSON language service
 // does for `settings.json`. Offsets only; the Monaco adapter turns them into positions. Pure.
+// Loaded with the settings dialog, not at boot. Validity is the document reader's
+// (`parseSettingsText`); jsonc-parser only words syntax errors and reads unfinished text.
 
 import {
   findNodeAtLocation,
@@ -10,9 +12,10 @@ import {
   type Node as JsonNode,
   type ParseError,
   parseTree,
+  printParseErrorCode,
 } from "jsonc-parser";
 
-import { parseSettingsText } from "./settingsDocument";
+import { parseSettingsText, SET_BY_PRODUCT } from "./settingsDocument";
 import { childSchema, type SettingsSchemaNode, schemaAt } from "./settingsSchema";
 
 export type SettingsSeverity = "error" | "warning" | "info";
@@ -28,7 +31,7 @@ export interface SettingsDiagnostic {
   readonly path?: readonly string[];
 }
 
-export const SET_BY_PRODUCT = "Set by product";
+export { SET_BY_PRODUCT };
 
 /** What a locked key's diagnostic and hover say. */
 export function lockedMessage(node: SettingsSchemaNode): string {
@@ -55,9 +58,13 @@ export function settingsDiagnostics(
 ): SettingsDiagnostic[] {
   const parsed = parseSettingsText(text);
   if (!parsed.ok) {
-    return parsed.errors.map((error) => ({ ...error, severity: "error" as const }));
+    const errors = syntaxErrors(text) ?? parsed.errors;
+    return errors.map((error) => ({ ...error, severity: "error" as const }));
   }
-  const out: SettingsDiagnostic[] = [];
+  const out: SettingsDiagnostic[] = parsed.problems.map((problem) => ({
+    ...problem,
+    severity: "error" as const,
+  }));
   const check = (value: JsonNode, node: SettingsSchemaNode, path: string[]) => {
     if (node.checkedByService && node.type === "object" && value.type === "object") {
       // Token values are the theme service's to check; only the duplicates are ours.
@@ -156,8 +163,35 @@ export function settingsDiagnostics(
       seen.add(key.value);
     }
   };
-  if (parsed.root) check(parsed.root, schema, []);
+  if (parsed.root) check(parsed.root as JsonNode, schema, []);
   return out;
+}
+
+/** A syntax message as VS Code words it ("Comma expected"). */
+function syntaxMessage(error: ParseError): string {
+  return printParseErrorCode(error.error)
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .toLowerCase()
+    .replace(/^./, (first) => first.toUpperCase());
+}
+
+/**
+ * Every syntax error of a text the reader refused, as jsonc-parser recovers past each; null
+ * when it finds none (the reader's own error stands) or can't read the text.
+ */
+function syntaxErrors(text: string): { offset: number; length: number; message: string }[] | null {
+  const errors: ParseError[] = [];
+  try {
+    parseTree(text, errors, PARSE_OPTIONS);
+  } catch {
+    return null;
+  }
+  if (errors.length === 0) return null;
+  return errors.map((error) => ({
+    offset: error.offset,
+    length: error.length,
+    message: syntaxMessage(error),
+  }));
 }
 
 function span(node: JsonNode): { offset: number; length: number } {
@@ -166,8 +200,15 @@ function span(node: JsonNode): { offset: number; length: number } {
 
 /** The tree of a text, even one with errors (for completions and hovers while typing). */
 function looseTree(text: string): JsonNode | undefined {
+  const parsed = parseSettingsText(text);
+  if (parsed.ok) return parsed.root as JsonNode | undefined;
   const errors: ParseError[] = [];
-  return parseTree(text, errors, PARSE_OPTIONS);
+  try {
+    return parseTree(text, errors, PARSE_OPTIONS);
+  } catch {
+    // Nested past the stack: nothing to complete or describe.
+    return undefined;
+  }
 }
 
 /**
@@ -218,7 +259,12 @@ export function settingsCompletions(
   offset: number,
   schema: SettingsSchemaNode,
 ): SettingsCompletion[] {
-  const location = getLocation(text, offset);
+  let location: ReturnType<typeof getLocation>;
+  try {
+    location = getLocation(text, offset);
+  } catch {
+    return [];
+  }
   const previous = location.previousNode;
   if (location.isAtPropertyKey) {
     const objectPath = location.path.slice(0, -1);
@@ -275,6 +321,14 @@ export function settingsHover(
   offset: number,
   schema: SettingsSchemaNode,
 ): SettingsHover | null {
+  try {
+    return hoverAt(text, offset, schema);
+  } catch {
+    return null;
+  }
+}
+
+function hoverAt(text: string, offset: number, schema: SettingsSchemaNode): SettingsHover | null {
   const root = looseTree(text);
   const node = root ? findNodeAtOffset(root, offset) : undefined;
   if (!node || node.parent?.type !== "property") return null;

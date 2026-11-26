@@ -8,7 +8,7 @@ import { Editor, type OnMount } from "@monaco-editor/react";
 import { useResolvedThemeMode } from "@/components/theme/useResolvedThemeMode";
 import { codeFontFamilyForEditor, readCodeFont } from "@/lib/codeFontPreferences";
 import type { SettingsDiagnostic } from "@/theme/settingsLanguage";
-import { themeService } from "@/theme/themeService";
+import { getSettingsSchema } from "@/theme/settingsEditor";
 
 import { ensureLanguage, ensureMonacoReady, type MonacoModule } from "../monacoSetup";
 import { useMonacoTheme } from "../monacoTheme";
@@ -93,7 +93,7 @@ export function SettingsJsonEditor({
   const handleMount: OnMount = (editor, monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
-    installSettingsJsonLanguage(monaco, () => themeService.getSettingsSchema());
+    installSettingsJsonLanguage(monaco, () => getSettingsSchema());
     const model = editor.getModel();
     if (model) {
       const unmark = markSettingsModel(model);

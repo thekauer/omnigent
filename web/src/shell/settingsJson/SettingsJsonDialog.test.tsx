@@ -79,7 +79,7 @@ describe("SettingsJsonDialog", () => {
   });
 
   it("stores a text with syntax errors, keeping the last good values", async () => {
-    themeService.saveSettings('{ "omnigent.style.header": "solid" }');
+    themeService.saveSettingsText('{ "omnigent.style.header": "solid" }');
     render(<SettingsJsonDialog />);
     act(() => openSettingsJsonEditor());
     fireEvent.change(await text(), { target: { value: '{ "omnigent.style.header": "glass", ' } });
@@ -93,7 +93,7 @@ describe("SettingsJsonDialog", () => {
   });
 
   it("lists a locked key as set by product", async () => {
-    themeService.saveSettings('{ "omnigent.style.header": "solid" }');
+    themeService.saveSettingsText('{ "omnigent.style.header": "solid" }');
     themeService.setProductPolicy({ lockedVariants: { header: "glass" } });
     render(<SettingsJsonDialog />);
     act(() => openSettingsJsonEditor());
@@ -123,6 +123,22 @@ describe("SettingsJsonDialog", () => {
     expect(screen.getByTestId("settings-json-dialog")).toBeInTheDocument();
     await clickOn(document.body);
     await waitFor(() => expect(screen.queryByTestId("settings-json-dialog")).toBeNull());
+  });
+
+  it("checks and saves a hostile, deeply nested document", async () => {
+    const deep = `{ "omnigent.style.header": "solid", "x": ${"[".repeat(3000)}${"]".repeat(3000)} }`;
+    localStorage.setItem(
+      "omnigent:ui-settings",
+      JSON.stringify({ version: 1, text: deep, values: {} }),
+    );
+    render(<SettingsJsonDialog />);
+    act(() => openSettingsJsonEditor());
+    const area = await text();
+    expect(problems()).toContain("Ln 1, Col 37: Nested too deeply");
+    fireEvent.change(area, { target: { value: `${deep} ` } });
+    fireEvent.click(screen.getByTestId("settings-json-save"));
+    expect(screen.getByTestId("settings-json-status")).toHaveTextContent("Saved.");
+    expect(themeService.getUserVariants()).toEqual({ header: "solid" });
   });
 
   it("shows nothing under hideCustomizations", () => {

@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { closeSettingsJsonEditor, useSettingsJsonEditorStore } from "@/store/settingsJsonEditor";
 import type { SettingsDiagnostic } from "@/theme/settingsLanguage";
+import { checkSettings, saveSettings } from "@/theme/settingsEditor";
 import { themeService, useThemeCustomizationsHidden } from "@/theme/themeService";
 
 const SettingsJsonEditor = lazy(() =>
@@ -54,7 +55,7 @@ function SettingsJsonDialogBody() {
   const [text, setText] = useState(initial);
   const [saved, setSaved] = useState(initial);
   const [diagnostics, setDiagnostics] = useState<SettingsDiagnostic[]>(() =>
-    themeService.checkSettings(initial),
+    checkSettings(initial),
   );
   const [status, setStatus] = useState<string | null>(null);
   const pending = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -66,7 +67,7 @@ function SettingsJsonDialogBody() {
       themeService.onDidChange(() => {
         clearTimeout(pending.current);
         pending.current = setTimeout(
-          () => setDiagnostics(themeService.checkSettings(latestText.current)),
+          () => setDiagnostics(checkSettings(latestText.current)),
           CHECK_DELAY_MS,
         );
       }),
@@ -79,15 +80,12 @@ function SettingsJsonDialogBody() {
     setText(next);
     setStatus(null);
     clearTimeout(pending.current);
-    pending.current = setTimeout(
-      () => setDiagnostics(themeService.checkSettings(next)),
-      CHECK_DELAY_MS,
-    );
+    pending.current = setTimeout(() => setDiagnostics(checkSettings(next)), CHECK_DELAY_MS);
   };
   const save = () => {
     clearTimeout(pending.current);
     const current = latestText.current;
-    const result = themeService.saveSettings(current);
+    const result = saveSettings(current);
     setDiagnostics(result.diagnostics);
     if (!result.saved) {
       setStatus("Not saved: the settings are too long.");

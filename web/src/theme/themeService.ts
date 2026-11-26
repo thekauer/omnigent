@@ -53,12 +53,8 @@ import {
   COLOR_CUSTOMIZATIONS_SETTING,
   editSettingsText,
   EMPTY_SETTINGS_TEXT,
-  LEGACY_COLOR_CUSTOMIZATIONS_STORAGE_KEY,
   LEGACY_SETTINGS_STORAGE_KEYS,
-  LEGACY_THEME_OPTIONS_STORAGE_KEY,
-  LEGACY_VARIANTS_STORAGE_KEY,
   migrateLegacySettings,
-  parseSettingsText,
   readStoredSettings,
   serializeSettings,
   SETTINGS_STORAGE_KEY,
@@ -69,13 +65,8 @@ import {
   STYLE_SETTING_PREFIX,
   THEME_OPTIONS_SETTING,
 } from "./settingsDocument";
-import {
-  type SettingsDiagnostic,
-  settingsDiagnostics,
-  SET_BY_PRODUCT,
-  spanOfPath,
-} from "./settingsLanguage";
-import { buildSettingsSchema, type SettingsSchemaNode } from "./settingsSchema";
+// The settings editor's schema and language service load with its dialog (settingsEditor.ts).
+import type { SettingsSchemaInput } from "./settingsSchema";
 import { getToken, TOKENS } from "./tokens/registry";
 import {
   checkVariants,
@@ -400,41 +391,71 @@ export class SettingsWriteError extends Error {
   override readonly name = "SettingsWriteError";
 }
 
-// The last document read, by its stored text: reads happen several times per refresh.
-let documentCache: { raw: string | null; settings: StoredSettings } | null = null;
+// The last document read, by the stored texts it came from: reads happen several times per
+// refresh.
+let documentCache: { stored: readonly (string | null)[]; settings: StoredSettings } | null = null;
 
-/** Reads the stored settings document, first carrying any pre-M10b keys into it. */
+/** The stored document's and the legacy keys' texts, as the cache keys on them. */
+function storedTexts(): (string | null)[] {
+  return [SETTINGS_STORAGE_KEY, ...LEGACY_SETTINGS_STORAGE_KEYS].map(readStorage);
+}
+
+function readStorage(key: string): string | null {
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+/** A legacy key's value: its JSON, or nothing when it isn't JSON. */
+function parseLegacy(raw: string | null): unknown {
+  if (raw === null) return undefined;
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Reads the stored settings document, first carrying any pre-M10b keys into it. Never
+ * throws: a document it can't read is the defaults. The legacy keys are removed only once
+ * their values are in the document's text (while the text doesn't parse they stay, and
+ * their values apply over the last good ones).
+ */
 function readSettingsDocument(): StoredSettings {
-  let raw: string | null;
-  try {
-    raw = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
-  } catch {
-    return readStoredSettings(null);
+  const stored = storedTexts();
+  if (documentCache && documentCache.stored.every((text, index) => text === stored[index])) {
+    return documentCache.settings;
   }
-  const current =
-    documentCache && documentCache.raw === raw ? documentCache.settings : readStoredSettings(raw);
-  documentCache = { raw, settings: current };
-  let legacyPresent: boolean;
+  const [raw = null, ...legacyRaw] = stored;
+  let settings: StoredSettings;
   try {
-    legacyPresent = LEGACY_SETTINGS_STORAGE_KEYS.some(
-      (key) => window.localStorage.getItem(key) !== null,
-    );
-  } catch {
-    legacyPresent = false;
+    settings = readStoredSettings(raw);
+    if (legacyRaw.some((value) => value !== null)) {
+      const [options, variants, customizations] = legacyRaw.map(parseLegacy);
+      const migration = migrateLegacySettings(settings, { options, variants, customizations });
+      try {
+        if (migration.settings !== settings) {
+          window.localStorage.setItem(SETTINGS_STORAGE_KEY, serializeSettings(migration.settings));
+        }
+        if (migration.complete) {
+          for (const legacyKey of LEGACY_SETTINGS_STORAGE_KEYS) {
+            window.localStorage.removeItem(legacyKey);
+          }
+        }
+      } catch {
+        // Quota or access errors: the legacy keys stay, and are read again next time.
+      }
+      settings = migration.settings;
+    }
+  } catch (error) {
+    console.warn("[theme] the settings document can't be read; the defaults apply", error);
+    settings = readStoredSettings(null);
   }
-  if (!legacyPresent) return current;
-  const migrated = migrateLegacySettings(current, {
-    options: readJson(LEGACY_THEME_OPTIONS_STORAGE_KEY),
-    variants: readJson(LEGACY_VARIANTS_STORAGE_KEY),
-    customizations: readJson(LEGACY_COLOR_CUSTOMIZATIONS_STORAGE_KEY),
-  });
-  try {
-    window.localStorage.setItem(SETTINGS_STORAGE_KEY, serializeSettings(migrated));
-    for (const key of LEGACY_SETTINGS_STORAGE_KEYS) window.localStorage.removeItem(key);
-  } catch {
-    // Quota or access errors: the legacy keys stay, and are read again next time.
-  }
-  return migrated;
+  documentCache = { stored: storedTexts(), settings };
+  return settings;
 }
 
 function writeSettingsDocument(settings: StoredSettings): void {
@@ -518,7 +539,6 @@ export class ThemeService implements ThemeContributionSink {
   private fontKey = "";
   private brandKey = "";
   private stopWatchingRoots: (() => void) | null = null;
-  private schemaCache: { version: number; schema: SettingsSchemaNode } | null = null;
   private committed: CommittedThemeState = Object.freeze({
     options: Object.freeze(nullMap<string>()),
     variants: Object.freeze(nullMap<string>()),
@@ -889,7 +909,7 @@ export class ThemeService implements ThemeContributionSink {
     return checkVariants(this.themeVariants());
   }
 
-  /** The user's style variant choices (`omnigent:ui-variants`), "Theme default" left out. */
+  /** The user's style variant choices (the `omnigent.style.*` settings), "Theme default" left out. */
   getUserVariants(): VariantValues {
     const values = this.settingsValues();
     const stored = nullMap<unknown>();
@@ -1079,11 +1099,11 @@ export class ThemeService implements ThemeContributionSink {
   }
 
   /**
-   * The settings document's schema: every registered theme's options, the style variants
-   * and the tokens, with the product's locks (`locked`) and `hideCustomizations` (`hidden`).
+   * What the settings document's schema is built from: every registered theme's options,
+   * the style variants and the tokens, with the product's locks and `hideCustomizations`.
+   * The settings editor (`settingsEditor.ts`) builds the schema from it.
    */
-  getSettingsSchema(): SettingsSchemaNode {
-    if (this.schemaCache?.version === this.version) return this.schemaCache.schema;
+  getSettingsSchemaInput(): SettingsSchemaInput {
     const policy = this.policy;
     const choice = this.getChoice();
     const extension = isContributedThemeId(choice) ? this.find(choice)?.extension : undefined;
@@ -1122,7 +1142,7 @@ export class ThemeService implements ThemeContributionSink {
       }
     }
     const themeVariants = this.getThemeVariants() as Record<string, string>;
-    const schema = buildSettingsSchema({
+    return {
       tokens: [
         ...TOKENS.filter((token) => !TOKEN_CONSTRAINTS[token.id]?.internal).map((token) => ({
           id: token.id,
@@ -1163,50 +1183,19 @@ export class ThemeService implements ThemeContributionSink {
         variants: this.getLockedVariants() as Record<string, string>,
       },
       hideCustomizations: policy?.hideCustomizations === true,
-    });
-    this.schemaCache = { version: this.version, schema };
-    return schema;
-  }
-
-  /**
-   * Checks a settings text as the editor shows it: syntax, the schema's keys and values,
-   * the colour customizations' token values and the product's locks.
-   */
-  checkSettings(text: string): SettingsDiagnostic[] {
-    const schema = this.getSettingsSchema();
-    const diagnostics = settingsDiagnostics(text, schema);
-    const parsed = parseSettingsText(text);
-    if (!parsed.ok || this.policy?.hideCustomizations) return diagnostics;
-    const customizations = parsed.values[COLOR_CUSTOMIZATIONS_SETTING];
-    if (customizations === undefined) return diagnostics;
-    for (const problem of this.checkCustomizationsValue(customizations)) {
-      const path = [COLOR_CUSTOMIZATIONS_SETTING, ...customizationPath(problem.key)];
-      const locked =
-        problem.severity === "warning" && problem.message.startsWith("set by the product");
-      diagnostics.push({
-        ...spanOfPath(text, path),
-        severity: locked ? "info" : problem.severity === "warning" ? "warning" : "error",
-        message: locked
-          ? `${SET_BY_PRODUCT}: this value doesn't apply.`
-          : problem.message.replace(/^./, (first) => first.toUpperCase()),
-        ...(locked ? { unnecessary: true } : {}),
-        path,
-      });
-    }
-    return diagnostics;
+    };
   }
 
   /**
    * Stores the settings text as the editor saves it. A text that parses applies (keys it
    * gets wrong are left out); one with syntax errors is stored, and the last good values
-   * keep applying. Returns the problems the editor shows; nothing is stored over the size cap.
+   * keep applying. Nothing is stored over the size cap (false).
    */
-  saveSettings(text: string): { saved: boolean; diagnostics: SettingsDiagnostic[] } {
-    const diagnostics = this.checkSettings(text);
-    if (text.length > SETTINGS_TEXT_LIMIT) return { saved: false, diagnostics };
+  saveSettingsText(text: string): boolean {
+    if (text.length > SETTINGS_TEXT_LIMIT) return false;
     writeSettingsDocument(storeSettings(text, this.settingsDocument().values));
     this.refresh();
-    return { saved: true, diagnostics };
+    return true;
   }
 
   /** Why the settings can't be written now (they don't parse), or null. */
@@ -2132,14 +2121,6 @@ function hostTokens(values: Readonly<Record<string, string>>): ThemeTokens {
 }
 
 /** The keys of colour customizations in order: `id`, and `[scope].id` for scoped ones. */
-/** A customization problem's key (`[acme.x/dark].primary`, `background`) as a path. */
-function customizationPath(key: string): string[] {
-  if (!key) return [];
-  const scoped = /^(\[[^\]]*\])(?:\.(.*))?$/.exec(key);
-  if (scoped) return scoped[2] === undefined ? [scoped[1]!] : [scoped[1]!, scoped[2]];
-  return [key];
-}
-
 function customizationKeys(record: unknown): string[] {
   if (!isRecord(record)) return [];
   return Object.entries(record).flatMap(([key, value]) =>

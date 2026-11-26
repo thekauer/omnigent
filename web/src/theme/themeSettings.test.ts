@@ -10,6 +10,7 @@ import {
   SETTINGS_STORAGE_KEY,
   SETTINGS_WRITE_BLOCKED,
 } from "./settingsDocument";
+import { checkSettings, getSettingsSchema, saveSettings } from "./settingsEditor";
 import { schemaAt } from "./settingsSchema";
 import { SettingsWriteError, ThemeService } from "./themeService";
 
@@ -19,6 +20,7 @@ const style = () => document.getElementById("omnigent-theme-runtime")?.textConte
 const stored = () => readStoredSettings(localStorage.getItem(SETTINGS_STORAGE_KEY));
 
 let service: ThemeService;
+const save = (text: string) => saveSettings(text, service);
 let warn: ReturnType<typeof vi.spyOn>;
 
 beforeEach(() => {
@@ -46,7 +48,7 @@ describe("the settings document in the theme service", () => {
   "workbench.colorCustomizations": { "foreground": "#123456" },
 }
 `;
-    expect(service.saveSettings(text)).toEqual({ saved: true, diagnostics: [] });
+    expect(save(text)).toEqual({ saved: true, diagnostics: [] });
     expect(service.getActive()?.options.find((option) => option.id === "accent")?.value).toBe(
       "lava",
     );
@@ -57,9 +59,9 @@ describe("the settings document in the theme service", () => {
   });
 
   it("keeps the last good values, and the theme, while the text doesn't parse", () => {
-    service.saveSettings('{ "omnigent.style.header": "solid" }');
+    save('{ "omnigent.style.header": "solid" }');
     const before = style();
-    const result = service.saveSettings('{ "omnigent.style.header": "glass", ');
+    const result = save('{ "omnigent.style.header": "glass", ');
     expect(result.saved).toBe(true);
     expect(result.diagnostics[0]).toMatchObject({ severity: "error" });
     expect(service.getVariants()).toMatchObject({ header: "solid" });
@@ -75,7 +77,7 @@ describe("the settings document in the theme service", () => {
   });
 
   it("leaves a key with a wrong value out and applies the others", () => {
-    const { diagnostics } = service.saveSettings(
+    const { diagnostics } = save(
       '{ "omnigent.style.header": "chrome", "omnigent.style.cta": "light-square", "workbench.colorCustomizations": { "foreground": "url(x)" } }',
     );
     expect(diagnostics.map((entry) => [entry.severity, entry.path?.join(" > ")])).toEqual([
@@ -87,7 +89,7 @@ describe("the settings document in the theme service", () => {
   });
 
   it("writes Settings' and the quick picks' choices into the text, keeping its comments", () => {
-    service.saveSettings('// keep me\n{\n  "omnigent.style.header": "solid" // and me\n}\n');
+    save('// keep me\n{\n  "omnigent.style.header": "solid" // and me\n}\n');
     service.setOption("accent", "lava");
     service.setVariant("density", "comfortable");
     service.setVariant("header", null);
@@ -102,7 +104,7 @@ describe("the settings document in the theme service", () => {
   });
 
   it("lists the registered themes' options, the variants and the tokens in its schema", () => {
-    const schema = service.getSettingsSchema();
+    const schema = getSettingsSchema(service);
     expect(schemaAt(schema, ["omnigent.themeOptions", SCOPE, "corners"])).toMatchObject({
       enum: ["square", "soft"],
       enumDescriptions: ["Square", "Soft"],
@@ -116,7 +118,7 @@ describe("the settings document in the theme service", () => {
     expect(schemaAt(schema, ["workbench.colorCustomizations", `[${DARK}]`])).toBeDefined();
     // Without the extension, its options leave the schema.
     const bare = new ThemeService();
-    expect(schemaAt(bare.getSettingsSchema(), ["omnigent.themeOptions", SCOPE])?.warning).toMatch(
+    expect(schemaAt(getSettingsSchema(bare), ["omnigent.themeOptions", SCOPE])?.warning).toMatch(
       /No installed theme/,
     );
   });
@@ -124,7 +126,7 @@ describe("the settings document in the theme service", () => {
 
 describe("product locks in the settings document", () => {
   beforeEach(() => {
-    service.saveSettings(
+    save(
       `{ "omnigent.themeOptions": { "${SCOPE}": { "accent": "orange" } }, "omnigent.style.density": "regular", "workbench.colorCustomizations": { "primary": "#111111" } }`,
     );
     service.setProductPolicy({
@@ -145,9 +147,11 @@ describe("product locks in the settings document", () => {
   });
 
   it("marks them 'Set by product' in the editor and refuses writes to them", () => {
-    const messages = service
-      .checkSettings(service.getSettingsText())
-      .map((entry) => [entry.severity, entry.unnecessary, entry.message]);
+    const messages = checkSettings(service.getSettingsText(), service).map((entry) => [
+      entry.severity,
+      entry.unnecessary,
+      entry.message,
+    ]);
     expect(messages).toEqual([
       ["info", true, "Set by product (Lava): this value doesn't apply."],
       ["info", true, "Set by product (Comfortable): this value doesn't apply."],
@@ -155,7 +159,7 @@ describe("product locks in the settings document", () => {
     ]);
     expect(() => service.setVariant("density", "compact")).toThrow(SettingsWriteError);
     expect(() => service.setOption("accent", "orange")).toThrow(SettingsWriteError);
-    expect(schemaAt(service.getSettingsSchema(), ["omnigent.style.density"])?.locked?.value).toBe(
+    expect(schemaAt(getSettingsSchema(service), ["omnigent.style.density"])?.locked?.value).toBe(
       "comfortable",
     );
   });
@@ -166,7 +170,7 @@ describe("product locks in the settings document", () => {
     expect(service.getVariants()).toMatchObject({ density: "compact" });
     expect(style()).not.toContain("#111111");
     expect(
-      service.checkSettings(service.getSettingsText()).every((entry) => entry.unnecessary),
+      checkSettings(service.getSettingsText(), service).every((entry) => entry.unnecessary),
     ).toBe(true);
   });
 });
@@ -202,12 +206,75 @@ describe("migration of the pre-M10b keys", () => {
     });
   });
 
+  it("keeps the legacy keys while the text doesn't parse, and moves them in once it does", () => {
+    save('{ "omnigent.style.header": "solid" }');
+    save('{ "omnigent.style.header": "glass", ');
+    localStorage.setItem(LEGACY_VARIANTS_STORAGE_KEY, JSON.stringify({ density: "comfortable" }));
+    expect(service.getUserVariants()).toEqual({ header: "solid", density: "comfortable" });
+    expect(localStorage.getItem(LEGACY_VARIANTS_STORAGE_KEY)).not.toBeNull();
+    expect(service.getSettingsText()).toBe('{ "omnigent.style.header": "glass", ');
+    save('{ "omnigent.style.header": "glass" }');
+    expect(service.getUserVariants()).toEqual({ header: "glass", density: "comfortable" });
+    expect(localStorage.getItem(LEGACY_VARIANTS_STORAGE_KEY)).toBeNull();
+    expect(stored().values).toEqual({
+      "omnigent.style.header": "glass",
+      "omnigent.style.density": "comfortable",
+    });
+  });
+
   it("clears the document and the old keys on reset", () => {
-    service.saveSettings('{ "omnigent.style.header": "solid" }');
+    save('{ "omnigent.style.header": "solid" }');
     localStorage.setItem(LEGACY_VARIANTS_STORAGE_KEY, JSON.stringify({ cta: "light-square" }));
     service.resetAppearance();
     expect(localStorage.getItem(SETTINGS_STORAGE_KEY)).toBeNull();
     expect(localStorage.getItem(LEGACY_VARIANTS_STORAGE_KEY)).toBeNull();
     expect(service.getUserVariants()).toEqual({});
+  });
+});
+
+describe("a hostile stored settings document", () => {
+  const deep = (depth: number, close = true) =>
+    `{"x":${"[".repeat(depth)}${close ? "]".repeat(depth) : ""}}`;
+  const store = (text: string, values: Record<string, unknown> = {}) =>
+    localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify({ version: 1, text, values }));
+
+  it("boots, with the deep key left out and the rest applying", () => {
+    store(`{ "omnigent.style.header": "solid", ${deep(3000).slice(1)}`);
+    const booted = new ThemeService();
+    booted.addExtension(fixtureThemeExtension());
+    booted.markStarted();
+    expect(() => booted.select(DARK)).not.toThrow();
+    expect(booted.isSettingsTextValid()).toBe(true);
+    expect(booted.getUserVariants()).toEqual({ header: "solid" });
+    const problems = checkSettings(booted.getSettingsText(), booted);
+    expect(problems).toContainEqual(
+      expect.objectContaining({
+        offset: '{ "omnigent.style.header": "solid", '.length,
+        length: 3,
+        severity: "error",
+        message: expect.stringMatching(/^Nested too deeply/),
+      }),
+    );
+    booted.select(null);
+  });
+
+  it("boots on the last good values when the deep text doesn't parse either", () => {
+    store(deep(65_000, false), { "omnigent.style.header": "solid" });
+    const booted = new ThemeService();
+    booted.addExtension(fixtureThemeExtension());
+    booted.markStarted();
+    expect(() => booted.select(DARK)).not.toThrow();
+    expect(booted.isSettingsTextValid()).toBe(false);
+    expect(booted.getUserVariants()).toEqual({ header: "solid" });
+    expect(checkSettings(booted.getSettingsText(), booted)[0]).toMatchObject({ severity: "error" });
+    booted.select(null);
+  });
+
+  it("boots on the defaults when even the stored values are hostile", () => {
+    const values = `{"omnigent.style.header":${"[".repeat(65_000)}"solid"${"]".repeat(65_000)}}`;
+    localStorage.setItem(SETTINGS_STORAGE_KEY, `{"version":1,"text":"{","values":${values}}`);
+    const booted = new ThemeService();
+    expect(() => booted.markStarted()).not.toThrow();
+    expect(booted.getUserVariants()).toEqual({});
   });
 });
