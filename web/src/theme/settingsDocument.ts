@@ -852,7 +852,8 @@ export function legacySettingsWrites(
       writes.push([path, value]);
     }
   }
-  return writes;
+  // A `__proto__` key is never a setting (the reader leaves it out).
+  return writes.filter(([path]) => !path.includes("__proto__"));
 }
 
 /** A migration's result: the document, and whether every legacy value is now in its text. */
@@ -883,12 +884,13 @@ export function migrateLegacySettings(
     }
     return { settings: storeSettings(text, current.values), complete };
   }
-  const values = { ...current.values } as Record<string, unknown>;
+  const copyOf = (record: unknown) =>
+    Object.assign(nullMap<unknown>(), isRecord(record) ? record : {});
+  const values = copyOf(current.values);
   for (const [path, value] of writes) {
     let target = values;
     for (const segment of path.slice(0, -1)) {
-      const existing = target[segment];
-      const copy = isRecord(existing) ? { ...existing } : {};
+      const copy = copyOf(target[segment]);
       target[segment] = copy;
       target = copy;
     }

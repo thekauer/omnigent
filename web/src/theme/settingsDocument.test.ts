@@ -463,6 +463,29 @@ describe("migrateLegacySettings", () => {
     expect(plain(settings.values)).toEqual({ "omnigent.style.density": "compact" });
   });
 
+  it("never takes a __proto__ key, nor loses the last good values to one", () => {
+    const legacyProto = {
+      options: JSON.parse('{ "__proto__": { "a": "b" }, "s": { "__proto__": "x", "ok": "y" } }'),
+      customizations: JSON.parse('{ "__proto__": { "primary": "red" }, "ring": "#123456" }'),
+    } as const;
+    const broken = {
+      text: "{",
+      values: storeSettings('{ "omnigent.style.header": "solid" }', EMPTY_STORED_SETTINGS.values)
+        .values,
+      valid: false,
+    };
+    const { settings } = migrateLegacySettings(broken, legacyProto);
+    expect(plain(settings.values)).toEqual({
+      "omnigent.style.header": "solid",
+      // A scope named __proto__ is only a name in brackets.
+      "omnigent.themeOptions": { "[__proto__]": { a: "b" }, "[s]": { ok: "y" } },
+      "workbench.colorCustomizations": { ring: "#123456" },
+    });
+    const valid = migrateLegacySettings(EMPTY_STORED_SETTINGS, legacyProto).settings;
+    expect(valid.text).not.toMatch(/"__proto__"/);
+    expect(({} as Record<string, unknown>).primary).toBeUndefined();
+  });
+
   it("changes nothing without legacy values, and drops unreadable ones", () => {
     expect(migrateLegacySettings(EMPTY_STORED_SETTINGS, {})).toEqual({
       settings: EMPTY_STORED_SETTINGS,
