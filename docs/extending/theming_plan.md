@@ -21,16 +21,18 @@ the same commit that lands each milestone.
 | M6 | Done | Part A (M5 follow-ups): the raw colour guard also finds hex after `_`, named colours in colour contexts, any-case, interpolated and `color()` colour functions, every colour utility prefix, Tailwind 4.2's hues (checked against the installed `theme.css`) and `--color-<hue>-<n>`/`theme()` reads, scans `.js`/`.jsx`, skips only the test-only directories, and narrows `lib/customTheme.ts` and `theme/tokens/` to `raw-colors-data` blocks (before 104 hex, 101 palette, 53, 76, 39 colour functions in 120 files; after 108, 101, 53, 76, 49 and 13 named in 123); `UPDATE_RAW_COLOR_ALLOWLIST=1` refuses increases without `ALLOW_RAW_COLOR_INCREASE=1` and keeps the file's layout. BrandLogo sends credentials only to host paths; empty brand names are unset, capped and stripped; the title and favicon return to the page's own. `snapshotPlainData` (one read, no holes, null-prototype maps, size caps) in front of `sanitizeSyntaxTheme`. Monaco syncs on every apply. Harness: every selection's `session.png` is masked (light masks from a clean `67bab53eaa` capture), a narrowed compare skips missing dumps. M6: the theme contribution API (Theme contribution API above): `theme/themeContributions.ts`, `themeFile.ts` (with `vscodeColorAliases.ts`), `validate.ts` token kinds, `brandAssets.ts`, `themeCss.ts` and `themeService.ts` (`list`, `select`, `getActive`, `setOption`, `omnigent.selectColorTheme`, `window.omnigentDevThemes` on the dev server); the dev plugin inlines theme files (`ExtensionDescription.files`), serves fonts and brand images by exact allow-list and sends edits over HMR. Runtime selectors `:is([data-omni-theme], #omnigent-theme-runtime-root)` (ID specificity, above every generated block; `.omnigent-app`-scoped in the embed). `onboarding-modal-shadow` removed. Harness (my-extensions): dumps refreshed from the Part A commit `d579200b2b` (dump-only); against them 0 px on all 219 screens and the dumps change only by the removed token. `verify.sh --only-themes` (fixture `verify/fixtures/theme-fixture`): 20/20. |
 | M7 Part A | Done | M6 review fixes, each with an attack reproduction in `theme/themeSecurity.test.ts`: asset URLs only from this origin under `/__omnigent/extension-assets/` or the bundle's `assets/` (`isHostAssetUrl`; a forged `omnigent:ui-theme-cache` with `//evil.example` assets loaded them in an M6 production build); the cache left out of settings export (skipped on import) and rewritten when its content differs from the live theme; `applyCached` no longer paints over a settled or registered theme (in production builds the built-ins settle first, so a missing extension never fell back); runtime selectors anchored to `:root` and to the embed's scope root and its direct child; an injective `extensionCssPrefix` (`x-acme__theme_2dfixture`) and `var()` of the theme's own extension's colours only; font lists check the `var()` they read; brand SVGs lose `style` and CSS image functions; app names and theme labels lose `\p{Cf}`; length ranges (0..10000px, tighter per token), capped `calc()` literals, CSS-wide keywords rejected; `__proto__` keys dropped with a warning by the dev plugin and the page (the virtual module inlines JSON text). Raw colour guard: escaped and template hex, system colours, `.json`/`.scss`/`.html`; it found 4 existing cases (allowlist raised with the increase flag). Harness (my-extensions `6317d22`): `dark-fixture` screens (Appearance and the picker with a contributed theme, baselines from `5551e93249`), anchoring checks and a production-build fallback check; against the baselines 0 px except `dark-omni/dialog-new-project` (1 px, delta 1, identical on the unmodified M6 commit: environment drift), dumps changed only by M6's removed `onboarding-modal-shadow`; `--only-themes` 24/24 (on M6: 18/24, failing the four new checks and the two that read the renamed fixture names). |
 | M7 | Done | The built-in palettes are the `omnigent.themes` built-in extension (`builtinExtensions/builtInThemes.ts` generates its contributions and static theme files from `lib/themePalette.ts`; a light and dark family per palette and Custom). Their files name `omnigent.palette` (built-ins only): the service applies the precompiled `data-theme` CSS, no runtime stylesheet, and stores the palette id as before. `themeService.entries()` is the one list of the ⌘K picker and Settings > Appearance > Color theme: built-ins first (same rows, labels and chips as before), then each extension's themes under its `displayName`, families as one entry, single-mode themes "Dark only"/"Light only", swatches from `omnigent.swatch` or the resolved colours and option choices, a missing extension's chosen theme greyed "Unavailable" with the choice kept; `preview()` drives the picker's live preview (Escape reverts, nothing stored, no cache written); `setProductPolicy` (`allowed`, `hidePicker`) is wired for M10. Settings shows, under the picker, the chosen theme's options and an Advanced row (colour customizations as JSON, global and `[<theme id>]`, checked per key with inline errors, applied over built-in palettes too); the palette editor shows for built-in themes only; the mode control shows "Set by theme" and is disabled under a single-mode theme. Variants: stored (`omnigent:ui-variants`, `setVariant`, `getVariants`, `useThemeVariants`, resolved over the theme's in `getActive().variants`), their control hidden until M9 applies them (a control that changes nothing would mislead). Settings search: built-in theme names searchable, extensions' themes runtime choices, new Theme options and Advanced entries; import/export round-trips the theme, options, variants and customizations, never the cache. A declarative extension (no activation events) contributes without a warning. Harness (my-extensions `fd2248e`): `--only-themes` 30/30 through the real picker and Settings; against the baselines, the dumps change only by M6's removed token, 0 px on every screen but `settings-appearance` (all 11 selections: the Advanced row), `dark-fixture/settings-appearance` and `dark-fixture/theme-picker` (the contributed theme shown), refreshed from `273cc3feb9`, and the pre-existing 1 px of `dark-omni/dialog-new-project`. |
-| M8 Part A | Done | M7 follow-ups, each with a test: per-theme customization keys apply to what is on screen (`[<extension id>/<family>]` in both modes, then `[<member id>]` in its mode; built-ins also `[nord]` below `[omnigent.themes/nord]` and `[omnigent.themes/nord-<mode>]`), unknown ids inline errors in Advanced (a missing extension's theme a warning), the editor checks the length first and parses once typing pauses (250 ms); brand SVGs lose backslashes, `xml:base`, `requiredExtensions`, foreign namespaces and any prefix but `xlink:`/`xml:`, and the dev plugin serves them with `default-src 'none'; style-src 'none'; sandbox` (checked in Chrome: opened as a document, injected `<image>`, `<style>` and `<script>` load, style and run nothing; the backend's `/v1` extension assets already sent `default-src 'none'; sandbox`); `isHostAssetUrl` takes exactly `/__omnigent/extension-assets/` and the bundle's `BASE_URL` + `assets/`; `calc()` evaluated as an interval (Validation above), colour channels and gradients capped; `allowed` binds `select()`, `preview()` and `omnigent.selectColorTheme`, `hidePicker` hides only the picker row (and the built-in palette editor), new `hideCustomizations` hides the options and Advanced; the embed's scope root carries a per-page nonce marker (`data-omnigent-scope`) and its inner root `data-omnigent-inner`, which the runtime selectors name; a non-built-in extension under the `omnigent` publisher or with a loaded id is skipped with a warning; cached labels lose `\p{Cf}`; the open picker closes (reverting its preview) when the path changes. UI polish: "Current theme" (search part label too), the theme select sized 15 to 20rem to its label, `familyLabel` from any member (and cached), the Unavailable tile and chips show the default with a marker and the explanation wraps, the locked mode control dimmed, option selects a fixed width on phones. Tests: built-in themes registered only where listed (`src/test/withBuiltInThemes.ts`): full vitest 539 s wall (setup 369 s summed) before, 530 s (setup 267 s) after, so about 9 s of wall time on 8 workers, not the 50 to 65 s expected. |
+| M8 Part A | Done | M7 follow-ups, each with a test: per-theme customization keys apply to what is on screen (`[<extension id>/<family>]` in both modes, then `[<member id>]` in its mode; built-ins also `[nord]` below `[omnigent.themes/nord]` and `[omnigent.themes/nord-<mode>]`), unknown ids inline errors in Advanced (a missing extension's theme a warning), the editor checks the length first and parses once typing pauses (250 ms); brand SVGs lose backslashes, `xml:base`, `requiredExtensions`, foreign namespaces and any prefix but `xlink:`/`xml:`, and the dev plugin serves them with `default-src 'none'; style-src 'none'; sandbox` (checked in Chrome: opened as a document, injected `<image>`, `<style>` and `<script>` load, style and run nothing; the backend's `/v1` extension assets already sent `default-src 'none'; sandbox`); `isHostAssetUrl` takes exactly `/__omnigent/extension-assets/` and the bundle's `BASE_URL` + `assets/`; `calc()` evaluated as an interval (Validation above), colour channels and gradients capped; `allowed` binds `select()`, `preview()` and `omnigent.selectColorTheme`, `hidePicker` hides only the picker row (and the built-in palette editor), new `hideCustomizations` hides the options and Advanced; the embed's scope root carries a per-page nonce marker (`data-omnigent-scope`) and its inner root `data-omnigent-inner`, which the runtime selectors name; a non-built-in extension under the `omnigent` publisher or with a loaded id is skipped with a warning; cached labels lose `\p{Cf}`; the open picker closes (reverting its preview) when the path changes. UI polish: "Current theme" (search part label too), the theme select sized 15 to 20rem to its label, `familyLabel` from any member (and cached), the Unavailable tile and chips show the default with a marker and the explanation wraps, the locked mode control dimmed, option selects 10rem wide on phones and 15rem from `sm` up. Tests: built-in themes registered only where listed (`src/test/withBuiltInThemes.ts`): full vitest 539 s wall (setup 369 s summed) before, 530 s (setup 267 s) after, so about 9 s of wall time on 8 workers, not the 50 to 65 s expected. |
 | M8 | Done | The plugin read API (Plugin read API above, `theme/colorThemes.ts`): `window.activeColorTheme`, `onDidChangeActiveColorTheme`, `getThemeToken`, `ThemeColor` and `ColorThemeKind`, `SessionHeaderItem.color`; `contributes.colors` takes `<extension id>.<camelCaseName>` ids; api tests in `vscodeExtensions/colorThemeApi.test.ts`; vendored typings updated. my-extensions: `thekauer.dev`'s session cost item uses `new ThemeColor("thekauer.dev.costBadge")` (default the muted foreground) and logs theme changes. Harness (my-extensions `d262ad9`): against the baselines the dumps change only by M6's removed token, 0 px on every screen but `settings-appearance` (all 11 selections and `dark-fixture`: the polish above), refreshed from `86ac03ff40`; after the refresh 0 px except `light-github/session` (15 px of delta 1 inside the copy-button spot mask, the known flake). `--only-themes` 31/31 (the new M8 check: one change event on select, none on preview). |
-| M9 to M11 | Queued | |
+| M9 Part A | Done | M8 follow-ups, each with a test: `activeColorTheme` gains `options` and is committed-only (theme and mode; a mode preview reads the mode the roots had when it began), and the change event compares it with the service's applied key (`committedState()`), so an option or customization fires it; `calc()` reads a token at its range widened by its width, clamped to 10000 (numbers absolute), so the report's doubling chain stops at its second step, with em capped at 4 for font sizes, durations in ms and the pill's operands bounded (Validation above); the reserved publisher and duplicate id checks are case-insensitive (host and dev plugin); `select(null)` and `preview(null)` take the first allowed theme when `allowed` leaves the default out; the dev plugin's colour map has `fullId` and every asset gets the CSP; the embed nonce is documented as no defence against scripts; `cssColor` takes plain `{ id }`. Tests: 325 pure-logic `.test.ts` files run in the node environment (`// @vitest-environment node`, kept only where they passed with the same counts under node and jsdom and name no DOM global; `test-setup.ts` guards its DOM stubs): full vitest 549 s wall (environment 1134 s summed) before, 489 s (environment 769 s) after, at a load average near 16 both times. |
+| M9 | Done | Variants as built (Variants above). Harness (my-extensions): against the baselines the dumps change only by additions (the 9 `ui-bubble-*`, `ui-sheet-*`, `ui-cta-*` tokens) and M6's removed token, 0 px on every screen but `settings-appearance` (all 11 selections: the Style rows) and `dark-fixture`'s two (the fixture's own compact density and mono labels now apply), refreshed from the M9 commit; new `variants-dark` (24 screens, one per non-default value) and `variants-light` (5) baselines, the scrollbar ones from a Chrome that draws scrollbars. `--only-themes` 33/33 (new: the fixture's variants as theme default, a Settings override, one change event each; the brackets out of the accessible name). |
+| M10 to M11 | Queued | |
 
 Resume notes:
 
 - For M8 (done): `colorThemes.ts` builds on `themeService.appliedTheme(mode)` and
   `isPreviewing()`, the roots' `.dark` class (through `subscribeThemeTokens`) and the
   mode preview store, and fires only when the snapshot differs from the last one fired.
-- For M9: `getVariants()` (and `useThemeVariants`) are the resolved variants (theme's,
+- For M9 (done): `getVariants()` (and `useThemeVariants`) are the resolved variants (theme's,
   then the user's); write them as `data-omni-<name>` on the theme roots and add the
   Appearance control under the theme options (each with "Theme default"; `VARIANT_LABELS`
   in `theme/variants.ts`, its catalog entry with one part per variant). The audit's
@@ -39,8 +41,18 @@ Resume notes:
   `onDidChangeActiveColorTheme` once it is applied (the event compares the variants too).
   More plain-data fields can take a `ThemeColor` through `colorThemes.cssColor`; the
   header item is the pattern (the registry gets a resolver bound to the extension).
-- For M10: `select(null)` (Settings' reset) still chooses the default palette even when
-  `allowed` leaves it out; `OmnigentAppProps.product.theme.default` should take its place.
+- For M10: `select(null)` (Settings' reset) chooses the first allowed entry when `allowed`
+  leaves the default palette out (M9 Part A); `OmnigentAppProps.product.theme.default`
+  should take precedence over that. Product variant locks go after the user's in
+  `resolveVariants` (themeService `resolve` and the built-in branch of `refresh`), and a
+  locked variant's Settings row should show disabled. `hideCustomizations` hides the Style
+  rows too.
+- For M11: DevHub sets `omnigent.variants` (Console and Paper: label bracketed, scrollbar
+  rail, userBubble square, workingIndicator square-pulse, workingVerbs cycle, composer
+  flat, contextStrip attached, header solid, cta accent-square; Vercel: userBubble soft,
+  cta light-square, sheet floating, label plain) and tunes them with the `ui-bubble-*`,
+  `ui-cta-*`, `ui-sheet-*` and scrollbar tokens; density stays its 34px tokens (or
+  comfortable). The preview's CSS for these goes once Console matches.
   `themeService.setProductPolicy({ allowed, hidePicker, hideCustomizations })` already filters
   `entries()` (the chosen theme always kept) and hides the picker command and the Settings
   row; `lockMode`/`lockedTokens` go last in `ThemeService.resolve`'s layers.
@@ -399,10 +411,16 @@ Defaults must match today exactly.
   at 16px; tighter per token: borders 32px, scrollbars 64px, rows and bars 400px, label
   sizes 200px, letter spacing -100..100px), percentages within 0..100, and every literal in a
   `calc()` at most 10000. A `calc()` (and `min()`, `max()`, `clamp()`) is evaluated as an
-  interval with each `var()` at its token's range: of literals only it must lie in the
-  token's range, reading tokens within the range widened by its own width, and never past
-  10000; it divides only by a number range that excludes zero, and `infinity` only where
-  the registry allows it (`allowInfinity`: `ui-radius-pill`). Colour channels are capped
+  interval: of literals only it must lie in the token's range, reading tokens within the
+  range widened by its own width, and never past 10000. Each `var()` counts at what a
+  theme may set its token to: its range widened by its width, clamped to 10000 (a
+  number's range, such as `ui-elevation`'s, is absolute and never widens), so a chain of
+  tokens that each double the last stops at its second step (M9 Part A; adding to a
+  token read at that bound fails too, so `calc(var(--ui-row-line) + 8px)` no longer
+  passes for a row height). Font sizes cap an `em` multiplier at 4; durations compare in
+  ms (`s` scaled) within their range. It divides only by a number range that excludes
+  zero, and `infinity` only where the registry allows it (`allowInfinity`:
+  `ui-radius-pill`), its other operands still bounded. Colour channels are capped
   (numbers and angles within -1000..1000, percentages -100..100, alpha 0..1 or 0..100%),
   gradients at 32 stops of at most 10000px or 1000%.
 - **Other kinds:** numbers in range, durations, `cubic-bezier`, enums, shadow lists.
@@ -451,11 +469,15 @@ As built (M8, `theme/colorThemes.ts`):
   for the mode, `omnigent.themes/<palette>-<mode>` for a built-in, the default's while
   the chosen theme's extension is missing), its `label`, `kind` (`ColorThemeKind`,
   VS Code's values `Light=1, Dark=2, HighContrast=3, HighContrastLight=4`; only 1 and 2
-  are used) and the resolved `variants`. While the picker previews, it reads the preview.
+  are used), the chosen theme's `options` (choice by option id; M9 Part A) and the
+  resolved `variants`. It is always the committed theme and mode: a picker's preview of
+  a theme or a mode never shows in it (the mode as the roots had it when a mode preview
+  began, until its end settles).
 - `onDidChangeActiveColorTheme` fires after a committed change is applied (the theme,
-  an option or variant, the mode): the theme service's changes and the roots' `.dark`
-  class, compared with the last state it fired; never while the picker previews a theme
-  or a mode, and not when a preview ends where it began.
+  an option, a variant or a colour customization, the mode): the theme service's changes
+  and the roots' `.dark` class, compared with the last state it fired and the service's
+  applied key (`committedState()`); never while the picker previews a theme or a mode,
+  and not when a preview ends where it began.
 - `getThemeToken(id)` takes registry ids (not internal ones) and the caller's own
   `contributes.colors` (by id or `<extension id>.<id>`); others are undefined with a
   warning. It reads the innermost theme root, as `tokenValues.ts` does, and returns a
@@ -487,6 +509,40 @@ Host enums live in `web/src/theme/variants.ts`, with a store and a `useVariant` 
 | header | glass, solid | ChatHeader |
 | cta | default, accent-square, light-square | Share and Stop (`data-slot`); `--cta-*` tokens |
 | sheet | none, floating (Vercel) | `.app-shell` main; `--ui-sheet-margin/radius/shadow` |
+
+As built (M9, `theme/variants.ts`, `theme/variants.css`, `theme/useVariant.ts`):
+
+- Two sub-variants joined the table: `workingVerbs` (rotate, static, cycle: today's many
+  rotating verbs, "Working…" only, or the design's Working, Tinkering, Noodling every
+  2.6 s) and `contextStrip` (inline, attached).
+- The theme service resolves them (`resolveVariants`: the theme's, the user's over them;
+  product locks join in M10) and, for each value other than the default, sets
+  `data-omni-<kebab name>` on every theme root (`stampVariants`, both of the embed's), also
+  from the first-paint cache, which now carries the theme's own variants. At every default
+  no attribute and no CSS: the stock look.
+- Token variants: `VARIANT_TOKENS` (density: compact 24px rows, comfortable 34px with 52px
+  bars and 46px view titles; labels: the mono font, uppercase, no tracking) join the
+  theme's layers above its tokens and options and below the colour customizations, so a
+  variant beats a theme's own rows and a user's customization beats the variant. "Regular"
+  is the theme's own density. Built-in palettes get a runtime block only when a variant
+  sets tokens.
+- CSS variants (variants.css, every rule under its attribute): bracketed labels
+  (`content: "[" / ""`, out of the accessibility tree; on `[data-label-text]` where a label
+  holds more than its text), the five scrollbars on `.ui-scroll` (WebKit's styled bar,
+  with `scrollbar-width`/`-color` auto) and the transcript's bar, document messages,
+  soft and square bubbles (`ui-bubble-background/-border/-radius`), a flat or crossed
+  composer (the crosses one `::after` of eight gradients), the attached context strip,
+  labelled panel tabs (the tab's own `sr-only` label shown), a solid header, square
+  accent or light Share and Stop (`ui-cta-background/-foreground/-hover`), and the
+  floating sheet on the new `main-area` hook (`ui-sheet-gap/-radius/-shadow`). Colours
+  are tokens or palette fallbacks.
+- DOM variants: only the working indicator (`WorkingIndicatorBody` in chatBubbleParts):
+  the square pulse or the dots instead of Otto, the verbs. Their animation stops under
+  reduced motion; the verbs keep changing, as the stock label does (a text swap is not
+  motion). The row stays `aria-hidden`; its status region still says "Working…".
+- Settings: under the theme options, one row per variant (`THEME_VARIANT_ENTRIES`, a
+  catalog entry family), each a select of "Theme default" and the values, with the
+  theme's own value shown; hidden with the options under `hideCustomizations`.
 
 ## Layer 0 core refactor
 
