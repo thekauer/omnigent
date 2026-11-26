@@ -471,6 +471,7 @@
   --ui-bubble-border: initial;
   --ui-bubble-radius: calc(var(--ui-radius-base) * 1.5);
   --ui-sheet-gap: calc(var(--spacing) * 2);
+  --ui-sheet-gap-top: var(--ui-sheet-gap);
   --ui-sheet-radius: calc(var(--ui-radius-base) * 1.5);
   /* prettier-ignore */
   --ui-sheet-shadow: initial;
@@ -1424,6 +1425,7 @@
   --file-tree-icon-media: var(--color-indigo-500);
   --ui-bubble-radius: calc(var(--ui-radius-base) * 1.5);
   --ui-sheet-gap: calc(var(--spacing) * 2);
+  --ui-sheet-gap-top: var(--ui-sheet-gap);
   --ui-sheet-radius: calc(var(--ui-radius-base) * 1.5);
 }
 
@@ -1591,6 +1593,7 @@
   --file-tree-icon-media: var(--color-indigo-400);
   --ui-bubble-radius: calc(var(--ui-radius-base) * 1.5);
   --ui-sheet-gap: calc(var(--spacing) * 2);
+  --ui-sheet-gap-top: var(--ui-sheet-gap);
   --ui-sheet-radius: calc(var(--ui-radius-base) * 1.5);
 }
 

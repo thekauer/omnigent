@@ -35,7 +35,7 @@ hook only for what no token covers yet.
 | `transcript-scrollbar` | The transcript's own scrollbar track (it reads the scrollbar colour tokens). |
 | `transcript-scrollbar-thumb` | Its thumb. |
 | `rail-tab` | A fixed tab of the right panel's tab strip (`data-workspace-tab` names it, `data-state="active"` marks the open one). |
-| `main-area` | The main column beside the left sidebar: the session header, the page and the right panel (the floating sheet variant's sheet). |
+| `main-area` | The main column beside the left sidebar: the session header, the page and the right panel, or the session grid on a grid's route (the floating sheet variant's sheet). |
 
 The shadcn primitives' own slots (`button`, `tabs-trigger`, `dropdown-menu-content`,
 `tooltip-content`, `kbd`, `avatar`, ...) are stable too.

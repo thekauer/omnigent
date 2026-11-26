@@ -478,6 +478,7 @@ export function GridWorkspace({
       "This grid isn’t saved on this device. Open a session and drag another session into it to create a grid.";
   return (
     <section
+      data-slot="main-area"
       className="flex min-h-0 min-w-0 flex-1 flex-col"
       aria-label="Session grid"
       onDragOver={preventLinkDrop}

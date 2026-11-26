@@ -392,16 +392,23 @@
   text-transform: uppercase;
 }
 
-/* ---- Sheet: Floating sets the main area (header, transcript, right panel) on a
- * rounded sheet inset from the window's edges. */
-[data-omni-sheet="floating"] [data-slot="main-area"] {
-  margin: var(--ui-sheet-gap) var(--ui-sheet-gap) var(--ui-sheet-gap) 0;
-  overflow: hidden;
-  border-radius: var(--ui-sheet-radius);
-  background: var(--background);
-  box-shadow: var(
-    --ui-sheet-shadow,
-    0 0 0 1px color-mix(in oklab, var(--foreground) 7%, transparent),
-    var(--ui-shadow-2xl)
-  );
+/* ---- Sheet: Floating sets the main area (header, transcript, right panel, or the
+ * session grid) on a rounded sheet inset from the window's edges: beside the sidebar
+ * with no left margin, symmetric while it is collapsed. Below `md` (phones, where the
+ * sidebar is a drawer) the main area stays full bleed. */
+@media (width >= 73.8125rem) {
+  [data-omni-sheet="floating"] [data-slot="main-area"] {
+    margin: var(--ui-sheet-gap-top) var(--ui-sheet-gap) var(--ui-sheet-gap) 0;
+    overflow: hidden;
+    border-radius: var(--ui-sheet-radius);
+    background: var(--background);
+    box-shadow: var(
+      --ui-sheet-shadow,
+      0 0 0 1px color-mix(in oklab, var(--foreground) 7%, transparent),
+      var(--ui-shadow-2xl)
+    );
+  }
+  [data-omni-sheet="floating"] .app-shell:not([data-sidebar-open]) [data-slot="main-area"] {
+    margin-left: var(--ui-sheet-gap);
+  }
 }

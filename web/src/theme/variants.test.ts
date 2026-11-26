@@ -210,6 +210,15 @@ describe("variants.css", () => {
     expect(variantsCss).toContain('content: "]" / "";');
   });
 
+  it("insets the floating sheet only from md up, and on all sides with the sidebar collapsed", () => {
+    expect(variantsCss).toMatch(
+      /@media \(width >= 73\.8125rem\) \{\s*\[data-omni-sheet="floating"\] \[data-slot="main-area"\] \{\s*margin: var\(--ui-sheet-gap-top\)/,
+    );
+    expect(variantsCss).toContain(
+      '[data-omni-sheet="floating"] .app-shell:not([data-sidebar-open]) [data-slot="main-area"]',
+    );
+  });
+
   it("stills the working indicator's motion under reduced motion", () => {
     expect(variantsCss).toMatch(
       /@media \(prefers-reduced-motion: reduce\) \{\s*\.ui-working-pulse,\s*\.ui-working-dots > span \{\s*animation: none;/,

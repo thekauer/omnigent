@@ -29,8 +29,16 @@ export const VARIANT_SURFACE_TOKENS = defineTokens("variant", [
   {
     id: "ui-sheet-gap",
     kind: "length",
-    description: "The floating sheet's margin from the window's right and bottom edges, 8px.",
+    description:
+      "The floating sheet's margin from the window's edges (the left one too while the sidebar is collapsed), 8px.",
     default: { light: "calc(var(--spacing) * 2)" },
+  },
+  {
+    id: "ui-sheet-gap-top",
+    kind: "length",
+    description:
+      "The floating sheet's margin from the top edge, `ui-sheet-gap` (a layout with a top bar sets its own).",
+    default: { light: "var(--ui-sheet-gap)" },
   },
   {
     id: "ui-sheet-radius",
