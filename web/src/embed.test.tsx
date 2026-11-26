@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { scopeCss } from "../vite.embed.config";
 import { OmnigentApp, type ProductConfig } from "./embed";
 import { themeService } from "./theme/themeService";
-import { getEmbedRoot } from "./lib/host";
+import { getEmbedRoot, getEmbedScopeRoot } from "./lib/host";
 
 // Exercise the embed's real providers and native detection without loading
 // routed pages, editors, or terminals unrelated to the window chrome.
@@ -290,6 +290,24 @@ describe("embed product theme", () => {
     unmount();
     expect(themeService.getProductPolicy()).toBeNull();
     expect(themeService.getChoice()).toBe("omni");
+  });
+
+  it("applies it only to the embed's roots, never the host page's, while mounting", () => {
+    const observer = new MutationObserver(() => {});
+    observer.observe(document.documentElement, { attributes: true });
+    const product: ProductConfig = {
+      theme: { default: "nord", lockedVariants: { density: "comfortable" } },
+    };
+    const { unmount } = render(app(product));
+    const touched = observer.takeRecords().map((record) => record.attributeName);
+    observer.disconnect();
+
+    expect(getEmbedRoot()).toHaveAttribute("data-theme", "nord");
+    expect(getEmbedScopeRoot()).toHaveAttribute("data-omni-density", "comfortable");
+    expect(touched).not.toContain("data-theme");
+    expect(touched).not.toContain("data-omni-density");
+    expect(document.documentElement).not.toHaveAttribute("data-theme");
+    unmount();
   });
 });
 

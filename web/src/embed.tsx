@@ -29,7 +29,15 @@ import { APP_QUERY_DEFAULTS } from "./lib/queryRetry";
 import { routeQueryBackgroundWorkThroughHost } from "./lib/queryBackgroundTasks";
 import { ThemeProvider } from "./components/theme/ThemeProvider";
 import { useResolvedThemeMode } from "./components/theme/useResolvedThemeMode";
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import App from "./App";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { ImageLightboxProvider } from "./components/ImageLightbox";
@@ -290,19 +298,21 @@ function plainDataKey(value: unknown): string {
 }
 
 /**
- * The product theme from the props: set before the first paint (so the scope root's first
- * apply has it, with the build's file), kept in step with the props, cleared on unmount.
+ * The product theme from the props, with the build's file: recorded on the first render
+ * and applied once the scope root has mounted (before the first paint), so nothing lands
+ * on the host page's root; kept in step with the props, cleared on unmount.
  */
 function useEmbedProductTheme(product: ProductConfig | undefined) {
   const key = plainDataKey(product?.theme);
   const latest = useRef(product);
   latest.current = product;
   useState(() => {
-    applyBuildProductTheme();
-    setProductTheme("embed", parseProductTheme(product?.theme, "embed"));
+    applyBuildProductTheme({ apply: false });
+    setProductTheme("embed", parseProductTheme(product?.theme, "embed"), { apply: false });
     return null;
   });
-  useEffect(() => {
+  // A layout effect runs after the scope root's ref (a descendant's) in the same commit.
+  useLayoutEffect(() => {
     setProductTheme("embed", parseProductTheme(latest.current?.theme, "embed"));
     return () => setProductTheme("embed", undefined);
   }, [key]);

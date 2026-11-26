@@ -185,14 +185,17 @@ let appliedKey = "null";
 
 /**
  * Sets one source's configuration (undefined clears it) and gives the theme service the
- * merged one, the single path into `themeService.setProductPolicy`.
+ * merged one, the single path into `themeService.setProductPolicy`. With `apply: false`
+ * it only records the source, for the next call that applies.
  */
 export function setProductTheme(
   source: ProductThemeSource,
   config: ProductThemeConfig | undefined,
+  options: { apply?: boolean } = {},
 ): void {
   if (config) configured.set(source, config);
   else configured.delete(source);
+  if (options.apply === false) return;
   const merged = mergeProductThemes(PRODUCT_THEME_SOURCES.map((entry) => configured.get(entry)));
   const key = JSON.stringify(merged);
   if (key === appliedKey) return;
@@ -217,11 +220,12 @@ export function applyServerProductTheme(info: ServerInfo): void {
 }
 
 /** Reads the build's product file into its source; call once, before the theme first applies. */
-export function applyBuildProductTheme(): void {
+export function applyBuildProductTheme(options: { apply?: boolean } = {}): void {
   const file = Object.values(BUILD_FILES)[0];
   if (file === undefined) return;
   setProductTheme(
     "build",
     parseProductTheme(isRecord(file) ? file.theme : undefined, "product.json"),
+    options,
   );
 }
