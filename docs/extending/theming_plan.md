@@ -411,16 +411,33 @@ Defaults must match today exactly.
   at 16px; tighter per token: borders 32px, scrollbars 64px, rows and bars 400px, label
   sizes 200px, letter spacing -100..100px), percentages within 0..100, and every literal in a
   `calc()` at most 10000. A `calc()` (and `min()`, `max()`, `clamp()`) is evaluated as an
-  interval: of literals only it must lie in the token's range, reading tokens within the
-  range widened by its own width, and never past 10000. Each `var()` counts at what a
-  theme may set its token to: its range widened by its width, clamped to 10000 (a
-  number's range, such as `ui-elevation`'s, is absolute and never widens), so a chain of
-  tokens that each double the last stops at its second step (M9 Part A; adding to a
-  token read at that bound fails too, so `calc(var(--ui-row-line) + 8px)` no longer
-  passes for a row height). Font sizes cap an `em` multiplier at 4; durations compare in
+  interval (`min`/`max`/`clamp` as the hull of their arguments). Parsing (`validateTokenValue`,
+  also the dev plugin's) checks the syntax, units, functions, the `em` cap and literal-only
+  math against the token's range; a length, number, duration or percentage whose math reads
+  tokens is range-checked at resolve time (M10 Part A, `theme/resolveTokens.ts`): for each
+  mode, the final layers (theme tokens, the syntax theme name, option choices, the variant
+  layer, the colour customizations, the product's locked tokens) over the registry defaults
+  are checked per token from the highest layer down. `var()` cycles (Tarjan over the layered
+  graph, and a fallback that closes one) are left out, as CSS makes them invalid. Every other
+  value's interval is computed from what each token it reads resolved to, dependencies first,
+  and must lie in the token's absolute range and the 10000 cap, with no widening; a value that
+  doesn't is left out with a warning, and the next layer's value (or the default) applies and
+  is what its readers then read. Defaults are trusted formulas: their intervals are computed,
+  not checked. Inputs that aren't theme values take their worst case: an `em` 0..64px (4rem),
+  Tailwind's `--spacing` 0..16px, the text sizes (the user's font size setting) 0..200px; a
+  `%` counts as its number, since its base is a box, not a theme value; `rem` is 16px (the app
+  sets no root font size). So `calc(var(--ui-row-line) + 8px)`, the registry's own formulas
+  and `calc(var(--ui-radius-base) * 1.5)` pass, and a doubling chain stops at the step past the
+  range or cap. Read through a `var()`, the pill radius is unbounded, so no other token takes
+  it. `checkCache` runs the same pass over the cached blocks, and Settings' Advanced editor
+  reports what it would leave out inline. Lengths are written as given, not wrapped in
+  `clamp()`: the pass is sound, the default look keeps its text, `getThemeToken` and the
+  unregistered embed tokens keep reading the value written, and a px clamp would cut a `%`
+  radius on a large box. Font sizes cap an `em` multiplier at 4; durations compare in
   ms (`s` scaled) within their range. It divides only by a number range that excludes
-  zero, and `infinity` only where the registry allows it (`allowInfinity`:
-  `ui-radius-pill`), its other operands still bounded. Colour channels are capped
+  zero (a token at its absolute range), and `infinity` only where the registry allows it
+  (`allowInfinity`: `ui-radius-pill`), its other operands still bounded. Colour channels,
+  shadows and gradients read tokens at their absolute ranges at parse time. Colour channels are capped
   (numbers and angles within -1000..1000, percentages -100..100, alpha 0..1 or 0..100%),
   gradients at 32 stops of at most 10000px or 1000%.
 - **Other kinds:** numbers in range, durations, `cubic-bezier`, enums, shadow lists.

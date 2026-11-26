@@ -14,12 +14,14 @@ import { themeSelectors } from "./themeCss";
 import { parseThemeFile } from "./themeFile";
 import {
   checkCache,
+  COLOR_CUSTOMIZATIONS_STORAGE_KEY,
   isHostAssetUrl,
   THEME_CACHE_STORAGE_KEY,
   ThemeService,
   type ThemeExtension,
 } from "./themeService";
 import { getToken } from "./tokens/registry";
+import { type LayerValue, resolveTokenLayers } from "./resolveTokens";
 import { TOKEN_CONSTRAINTS, validateTokenValue, type ValueContext } from "./validate";
 
 const DARK = `${FIXTURE_EXTENSION_ID}/full-dark`;
@@ -425,51 +427,82 @@ describe("M7 follow-up: calc() can't get around the ranges", () => {
     expect(check("ui-label-size", "min(1px, 9000px)").ok).toBe(false);
   });
 
-  it("bounds a calc() of tokens near the range, and never past the cap", () => {
-    // A scale of another token passes. A token read is taken at the most a theme may set
-    // it to (its range widened by its width), so adding to one at that bound doesn't.
-    expect(check("ui-radius-sm", "calc(var(--ui-radius-base) * 0.5)").ok).toBe(true);
-    expect(check("ui-row-height", "calc(var(--ui-row-line) * 0.5 + 8px)").ok).toBe(true);
-    expect(check("ui-row-height", "calc(var(--ui-row-line) + calc(var(--spacing) * 2))").ok).toBe(
-      false,
-    );
-    expect(check("ui-border-width", "calc(var(--ui-border-width) * 300)").ok).toBe(false);
-    expect(check("ui-radius-base", "calc(var(--ui-radius-base) * 9 * 9 * 9)").ok).toBe(false);
+  // Parsed as a theme writes them, then resolved over the registry defaults in dark.
+  const resolveValues = (values: Record<string, string>) => {
+    const layer: Record<string, LayerValue> = {};
+    for (const [id, value] of Object.entries(values)) {
+      const result = check(id, value);
+      if (!result.ok) throw new Error(`${id}: ${result.reason}`);
+      layer[id] = { value: result.value, references: result.references };
+    }
+    const { rejected } = resolveTokenLayers([layer], "dark");
+    return rejected.map((entry) => entry.token);
+  };
+
+  it("bounds a calc() of tokens at what they resolve to, never past the cap", () => {
+    // Read at their resolved values: the registry's own formulas and offsets from them pass.
+    expect(
+      resolveValues({
+        "ui-radius-sm": "calc(var(--ui-radius-base) * 0.5)",
+        "ui-row-height": "calc(var(--ui-row-line) + calc(var(--spacing) * 2))",
+        "ui-control-h-md": "calc(var(--ui-row-line) + 8px)",
+      }),
+    ).toEqual([]);
+    // What reaches past its range, or reads itself, is left out.
+    expect(resolveValues({ "ui-row-height": "calc(var(--ui-radius-base) * 100)" })).toEqual([
+      "ui-row-height",
+    ]);
+    expect(resolveValues({ "ui-border-width": "calc(var(--ui-border-width) * 300)" })).toEqual([
+      "ui-border-width",
+    ]);
+    expect(resolveValues({ "ui-radius-base": "calc(var(--ui-radius-base) * 9 * 9 * 9)" })).toEqual([
+      "ui-radius-base",
+    ]);
   });
 
-  it("stops a chain of tokens that each double the last before the cap", () => {
-    // Each step is within its own range read at the last one's: the second step is not.
-    const chain: [string, string][] = [
-      ["ui-label-size", "200px"],
-      ["ui-row-line", "calc(var(--ui-label-size) * 2)"],
-      ["ui-row-height", "calc(var(--ui-row-line) * 2)"],
-      ["ui-control-h-md", "calc(var(--ui-row-height) * 2)"],
-      ["ui-header-height", "calc(var(--ui-control-h-md) * 2)"],
-      ["ui-radius-base", "calc(var(--ui-header-height) * 2)"],
-    ];
-    expect(chain.map(([id, value]) => check(id, value).ok)).toEqual([
-      true,
-      true,
-      false,
-      false,
-      false,
-      true,
-    ]);
-    // Whatever passes stays within the cap: the base's reach is the cap at most.
-    expect(check("ui-radius-base", "calc(var(--ui-header-height) * 13)").ok).toBe(false);
+  it("stops a chain of tokens that each double the last at the step past the range", () => {
+    // Each step reads the last one's resolved value; one past its range falls back to its
+    // default, which the next step then reads.
+    expect(
+      resolveValues({
+        "ui-label-size": "200px",
+        "ui-row-line": "calc(var(--ui-label-size) * 2)",
+        "ui-row-height": "calc(var(--ui-row-line) * 2)",
+        "ui-control-h-md": "calc(var(--ui-row-height) * 2)",
+        "ui-header-height": "calc(var(--ui-control-h-md) * 2)",
+      }),
+    ).toEqual(["ui-row-height", "ui-control-h-md"]);
+    expect(
+      resolveValues({
+        "ui-radius-base": "1250px",
+        "ui-radius-xs": "calc(var(--ui-radius-base) * 2)",
+        "ui-radius-sm": "calc(var(--ui-radius-xs) * 2)",
+        "ui-radius-md": "calc(var(--ui-radius-sm) * 2)",
+        "ui-radius-lg": "calc(var(--ui-radius-md) * 2)",
+      }),
+    ).toEqual(["ui-radius-lg"]);
   });
 
   it("scales em and durations, and checks the pill's other operands", () => {
     expect(check("ui-label-size", "1.2em").ok).toBe(true);
     expect(check("ui-label-size", "12em").ok).toBe(false);
     expect(check("ui-label-size", "calc(12em * 1)").ok).toBe(false);
+    // An em is taken at its worst case, 64px.
+    expect(check("ui-row-height", "6em").ok).toBe(true);
+    expect(check("ui-row-height", "7em").ok).toBe(false);
     expect(validateTokenValue("duration", "calc(2s * 3)", registryOnly).ok).toBe(true);
     expect(validateTokenValue("duration", "calc(100s * 1)", registryOnly).ok).toBe(false);
     expect(validateTokenValue("duration", "calc(9000ms + 2s)", registryOnly).ok).toBe(false);
     expect(
-      check("ui-radius-pill", "calc(var(--ui-radius-base) * infinity + 9000px * 9000)").ok,
-    ).toBe(false);
-    expect(check("ui-radius-pill", "calc(var(--ui-radius-base) * infinity)").ok).toBe(true);
+      resolveValues({
+        "ui-radius-pill": "calc(var(--ui-radius-base) * infinity + 9000px * 9000)",
+      }),
+    ).toEqual(["ui-radius-pill"]);
+    expect(resolveValues({ "ui-radius-pill": "calc(var(--ui-radius-base) * infinity)" })).toEqual(
+      [],
+    );
+    // Read through a var(), the pill is unbounded: no other token may take it.
+    expect(resolveValues({ "ui-radius-xl": "var(--ui-radius-pill)" })).toEqual(["ui-radius-xl"]);
   });
 
   it("rejects division by zero, by a token and infinity but the pill's", () => {
@@ -495,5 +528,57 @@ describe("M7 follow-up: calc() can't get around the ranges", () => {
     expect(check("ui-glass-sheen", stops(32)).ok).toBe(true);
     expect(check("ui-glass-sheen", stops(33)).ok).toBe(false);
     expect(check("ui-glass-sheen", "linear-gradient(red 1e6px, blue)").ok).toBe(false);
+  });
+});
+
+describe("calc() ranges are checked once the tokens they read resolve", () => {
+  it("leaves a theme's out-of-range value out and falls back to the layer below", () => {
+    const service = new ThemeService();
+    service.addExtension(fixture());
+    service.select(DARK);
+    // The fixture's compact density sets 24px rows; a customization past 400px is left out.
+    localStorage.setItem(
+      COLOR_CUSTOMIZATIONS_STORAGE_KEY,
+      JSON.stringify({ "ui-row-height": "calc(var(--ui-row-line) * 30)" }),
+    );
+    service.reload();
+    const css = document.getElementById("omnigent-theme-runtime")?.textContent ?? "";
+    expect(css).toContain("--ui-row-height: 24px");
+    expect(css).not.toContain("* 30");
+    expect(warn.mock.calls.map((call: unknown[]) => String(call[0])).join("\n")).toMatch(
+      /--ui-row-height is out of range in dark/,
+    );
+    // The Advanced editor reports it inline, and refuses to store it.
+    const text = '{"ui-row-height": "calc(var(--ui-row-line) + 500px)", "ui-row-line": "24px"}';
+    const problems = service.checkCustomizations(text);
+    expect(problems).toEqual([
+      {
+        key: "ui-row-height",
+        message: expect.stringMatching(/^out of range in (light|dark): .*524/),
+      },
+    ]);
+    expect(service.setCustomizations(text)).toEqual(problems);
+    expect(
+      service.checkCustomizations('{"ui-row-height": "calc(var(--ui-row-line) + 8px)"}'),
+    ).toEqual([]);
+  });
+
+  it("checks the first-paint cache the same way", () => {
+    const cache = checkCache(
+      forgedCache({
+        blocks: {
+          dark: {
+            "ui-radius-base": "5000px",
+            "ui-radius-sm": "calc(var(--ui-radius-base) * 3)",
+            "ui-row-line": "calc(var(--ui-radius-base) * 0.01)",
+          },
+          probes: {},
+        },
+      }),
+    )!;
+    expect(cache.blocks.dark).toEqual({
+      "ui-radius-base": "5000px",
+      "ui-row-line": "calc(var(--ui-radius-base) * 0.01)",
+    });
   });
 });

@@ -375,27 +375,17 @@ export interface TokenConstraint {
   fontSize?: boolean;
 }
 
-/** The values a math expression can take, `var()`s at their tokens' ranges. */
-interface Interval {
+/**
+ * The values an expression can take (lengths in px, durations in ms): `var()`s at what
+ * their tokens resolve to, or at their absolute ranges before resolving.
+ */
+export interface Interval {
   readonly lo: number;
   readonly hi: number;
-  /** Whether it reads a variable (its exact value unknown). */
+  /** Whether it reads a variable or a non-static unit (`em`): its exact value unknown. */
   readonly vars: boolean;
   /** Whether it multiplies by `infinity`. */
   readonly infinite: boolean;
-}
-
-/**
- * The range a calc() that reads tokens may reach for a token of `range`: the range widened
- * by its own width, within the calc() cap. A token's absolute bounds (`ui-elevation`'s 0..1)
- * are a `range` of their own and widen the same way.
- */
-function widenedRange(range: readonly [number, number]): readonly [number, number] {
-  const width = range[1] - range[0];
-  return [
-    Math.max(range[0] - width, -MATH_LITERAL_LIMIT),
-    Math.min(range[1] + width, MATH_LITERAL_LIMIT),
-  ];
 }
 
 function multiply(a: Interval, b: Interval): Interval {
@@ -434,11 +424,39 @@ const TEXT_SIZE_RANGE = [0, 200] as const;
 const TRACKING_RANGE = [-100, 100] as const;
 /** The largest `em` multiplier a font size token may use (its parent's size times this). */
 const FONT_SIZE_EM_LIMIT = 4;
-/** A dimension in the unit calc() compares: px for lengths (16px per rem and em), ms for durations. */
+/**
+ * What one `em` can be, in px: the font size where the token is used, not a theme input,
+ * so taken at its worst case, up to 4rem (the UI's largest text step).
+ */
+const EM_PX_RANGE = [0, 64] as const;
+/** The bounds of Tailwind's `--spacing` step (0.25rem) and of the text sizes the user's font size sets. */
+const SPACING_RANGE = [0, 16] as const;
+/** A dimension in the unit calc() compares: px for lengths (16px per rem), ms for durations. */
 function unitScale(unit: string): number {
-  if (unit === "rem" || unit === "em") return 16;
+  if (unit === "rem") return 16;
   if (unit === "s") return 1000;
   return 1;
+}
+
+/** The kinds whose value has a range checked once the tokens it reads are resolved. */
+export const INTERVAL_KINDS: ReadonlySet<ValueKind> = new Set([
+  "length",
+  "number",
+  "duration",
+  "percentage",
+]);
+
+/**
+ * The absolute range of a token of `kind` (lengths in px, durations in ms): what every
+ * value it resolves to must lie in, and what a `var()` of it is taken at when unresolved.
+ */
+export function tokenRange(id: string, kind: ValueKind | undefined): readonly [number, number] {
+  const constraint = TOKEN_CONSTRAINTS[id];
+  if (kind === "length") return constraint?.lengthRange ?? DEFAULT_LENGTH_RANGE;
+  if (kind === "percentage") return [0, 100];
+  if (kind === "duration") return constraint?.range ?? DURATION_RANGE;
+  if (kind === "alpha") return [0, 100];
+  return constraint?.range ?? [-MATH_LITERAL_LIMIT, MATH_LITERAL_LIMIT];
 }
 // CSS-wide keywords: they would make a token take its parent's or initial value instead of a theme value.
 const CSS_WIDE_KEYWORDS = new Set(["initial", "inherit", "unset", "revert", "revert-layer"]);
@@ -754,14 +772,37 @@ const STEP_POSITIONS = new Set([
   "end",
 ]);
 
+/** Fails unless `interval` lies in `range` (a pill's infinity counted as 1). */
+function checkRange(interval: Interval, range: readonly [number, number], what: string): void {
+  if (interval.lo < range[0] - 1e-9 || interval.hi > range[1] + 1e-9) {
+    fail(
+      `${what} can reach ${formatNumber(interval.lo)}..${formatNumber(interval.hi)}, outside ${formatNumber(range[0])}..${formatNumber(range[1])}`,
+    );
+  }
+}
+
 /** Checks one kind's grammar over parsed nodes, collecting `var()` references. */
 class ValueChecker {
   readonly references: string[] = [];
   private readonly context: ValueContext;
   private readonly constraint: TokenConstraint;
-  constructor(context: ValueContext, constraint: TokenConstraint) {
+  private readonly bounds: ((id: string) => Interval | undefined) | undefined;
+  private readonly deferRanges: boolean;
+  /**
+   * `bounds`: what each token read resolves to (resolve time), or undefined to check the
+   * syntax only and take a token read at its absolute range. `deferRanges`: a math
+   * expression that reads tokens is checked against its range at resolve time only.
+   */
+  constructor(
+    context: ValueContext,
+    constraint: TokenConstraint,
+    bounds?: (id: string) => Interval | undefined,
+    deferRanges = false,
+  ) {
     this.context = context;
     this.constraint = constraint;
+    this.bounds = bounds;
+    this.deferRanges = deferRanges && bounds === undefined;
   }
 
   /** `var(--id[, fallback])`: a known token, or a readable host variable. */
@@ -788,21 +829,30 @@ class ValueChecker {
   }
 
   /**
-   * The values `var(--id)` can hold inside a calc(): what {@link boundedMath} lets a
-   * theme set it to, so its token's range widened by its own width (a calc() of tokens
-   * may reach that far), clamped to the cap. A chain of tokens that each double the
-   * last so stops at its second step instead of reaching past the cap.
+   * The values `var(--id)` can hold: what the token resolved to, else its absolute range
+   * ({@link tokenRange}), which resolving guarantees. Tailwind's spacing step and the text
+   * sizes (the user's font size setting) are not theme inputs: their worst case.
    */
   private variableBound(id: string): Interval {
-    if (/^spacing$/.test(id)) return { lo: 0, hi: 16, vars: true, infinite: false };
+    if (id === "spacing")
+      return { lo: SPACING_RANGE[0], hi: SPACING_RANGE[1], vars: true, infinite: false };
     if (/^text-/.test(id)) return { lo: 0, hi: TEXT_SIZE_RANGE[1], vars: true, infinite: false };
+    const resolved = this.bounds?.(id);
+    if (resolved) return { ...resolved, vars: true };
     const constraint = TOKEN_CONSTRAINTS[id];
-    // A number's range (`ui-elevation`'s 0..1, the weights) is absolute: it never widens.
-    if (constraint?.range && !constraint.lengthRange) {
-      return { lo: constraint.range[0], hi: constraint.range[1], vars: true, infinite: false };
-    }
-    const [lo, hi] = widenedRange(constraint?.lengthRange ?? DEFAULT_LENGTH_RANGE);
+    const [lo, hi] = constraint?.lengthRange ??
+      constraint?.range ?? [-MATH_LITERAL_LIMIT, MATH_LITERAL_LIMIT];
     return { lo, hi, vars: true, infinite: false };
+  }
+
+  /** A literal's interval: px for lengths, ms for durations; an `em` at its worst case. */
+  private literal(node: Extract<CssNode, { type: "number" }>): Interval {
+    if (node.unit === "em") {
+      const ends = [node.value * EM_PX_RANGE[0], node.value * EM_PX_RANGE[1]];
+      return { lo: Math.min(...ends), hi: Math.max(...ends), vars: true, infinite: false };
+    }
+    const value = node.value * unitScale(node.unit);
+    return { lo: value, hi: value, vars: false, infinite: false };
   }
 
   /** One operand of a math expression, as the interval of values it can take. */
@@ -810,11 +860,11 @@ class ValueChecker {
     if (node.type === "number") {
       if (node.unit !== "" && !units.has(node.unit)) fail(`unit ${node.unit} not allowed`);
       this.checkEm(node);
-      const value = node.value * unitScale(node.unit);
+      const value = node.value * (node.unit === "em" ? 16 : unitScale(node.unit));
       if (Math.abs(value) > MATH_LITERAL_LIMIT) {
         fail(`${formatNumber(node.value)}${node.unit} is too large for calc()`);
       }
-      return { lo: value, hi: value, vars: false, infinite: false };
+      return this.literal(node);
     }
     if (node.type === "ident" && /^-?infinity$/i.test(node.value)) {
       // `calc(var(--ui-radius-base) * infinity)`, the pill radius; nowhere else.
@@ -910,27 +960,23 @@ class ValueChecker {
   }
 
   /**
-   * A math function whose result must lie in `range`: exactly when it reads only
-   * literals, within the range widened by its own width when it reads tokens (each read
-   * at {@link variableBound}, so a half of another token plus 8px passes and a chain of
-   * doublings stops), and never beyond the calc() cap. Infinity only where the token
-   * allows it. An absolute range (`widen` false: a number's, a duration's) holds for every calc().
+   * A math function whose result must lie in `range`, with every token it reads at what it
+   * resolved to (no widening), never beyond the calc() cap. Before resolving, one that
+   * reads tokens is checked for its syntax only when its kind's range waits for resolving
+   * (`deferRanges`), else at the tokens' absolute ranges. Infinity only where the token
+   * allows it, its other operands bounded.
    */
   private boundedMath(
     node: Extract<CssNode, { type: "function" }>,
     units: ReadonlySet<string>,
     range: readonly [number, number] = [-MATH_LITERAL_LIMIT, MATH_LITERAL_LIMIT],
-    widen = true,
-  ): void {
+  ): Interval {
     // An `infinity` factor counts as 1 here, so the pill's other operands are bounded too.
     const result = this.mathFunction(node, units);
     if (!Number.isFinite(result.lo) || !Number.isFinite(result.hi)) fail("calc() is not finite");
-    const [lo, hi] = result.vars && widen ? widenedRange(range) : range;
-    if (result.lo < lo - 1e-9 || result.hi > hi + 1e-9) {
-      fail(
-        `${node.name}() can reach ${formatNumber(result.lo)}..${formatNumber(result.hi)}, outside ${formatNumber(lo)}..${formatNumber(hi)}`,
-      );
-    }
+    if (result.vars && this.deferRanges) return result;
+    checkRange(result, range, node.name);
+    return result;
   }
 
   /** A font size's `em` multiplier stays within {@link FONT_SIZE_EM_LIMIT}. */
@@ -945,12 +991,7 @@ class ValueChecker {
   }
 
   /** A number, dimension or math in `units` (and unitless). */
-  private numeric(
-    node: CssNode,
-    units: ReadonlySet<string>,
-    range?: readonly [number, number],
-    widen = true,
-  ) {
+  private numeric(node: CssNode, units: ReadonlySet<string>, range?: readonly [number, number]) {
     if (node.type === "number") {
       if (node.unit !== "" && !units.has(node.unit))
         fail(`unit ${node.unit || "none"} not allowed`);
@@ -960,7 +1001,7 @@ class ValueChecker {
       return;
     }
     if (node.type === "function" && MATH_FUNCTIONS.has(node.name)) {
-      this.boundedMath(node, units, range, widen);
+      this.boundedMath(node, units, range);
       return;
     }
     if (!this.variable(node)) fail("expected a number");
@@ -1083,13 +1124,28 @@ class ValueChecker {
       return;
     }
     this.checkEm(node);
-    const px = node.value * unitScale(node.unit);
-    if (px < min || px > max)
-      fail(`${formatNumber(node.value)}${node.unit} is outside ${min}..${max}px`);
+    const literal = this.literal(node);
+    if (literal.lo < min || literal.hi > max) {
+      const reach = node.unit === "em" ? ` (an em up to ${EM_PX_RANGE[1]}px)` : "";
+      fail(`${formatNumber(node.value)}${node.unit} is outside ${min}..${max}px${reach}`);
+    }
+  }
+
+  /**
+   * The interval a value of an {@link INTERVAL_KINDS} kind takes, with the tokens it reads
+   * at their {@link bounds}: a literal, a `var()` or a math function (already checked).
+   */
+  valueInterval(nodes: readonly CssNode[], units: ReadonlySet<string>): Interval {
+    const node = this.single(nodes, "value");
+    if (node.type === "number") return this.literal(node);
+    if (node.type === "function" && MATH_FUNCTIONS.has(node.name)) {
+      return this.mathFunction(node, units);
+    }
+    return this.mathOperand(node, units);
   }
 
   number(nodes: readonly CssNode[]): void {
-    this.numeric(this.single(nodes, "number"), new Set(), this.constraint.range, false);
+    this.numeric(this.single(nodes, "number"), new Set(), this.constraint.range);
   }
 
   alpha(nodes: readonly CssNode[]): void {
@@ -1128,7 +1184,7 @@ class ValueChecker {
       return;
     }
     // In ms (`s` scales by 1000), within the duration range.
-    this.numeric(node, new Set(["ms", "s"]), this.constraint.range ?? DURATION_RANGE, false);
+    this.numeric(node, new Set(["ms", "s"]), this.constraint.range ?? DURATION_RANGE);
   }
 
   easing(nodes: readonly CssNode[]): void {
@@ -1329,7 +1385,7 @@ export function validateTokenValue(
   try {
     const nodes = parseValue(value);
     rejectCssWideKeywords(nodes);
-    const checker = new ValueChecker(context, constraint);
+    const checker = new ValueChecker(context, constraint, undefined, INTERVAL_KINDS.has(kind));
     let output = nodes;
     switch (kind) {
       case "color":
@@ -1370,6 +1426,78 @@ export function validateTokenValue(
         break;
     }
     return { ok: true, value: serialize(output), references: [...new Set(checker.references)] };
+  } catch (error) {
+    if (error instanceof ValueError) return { ok: false, reason: error.message };
+    throw error;
+  }
+}
+
+/** A resolved value's interval, or why it leaves its token's range. */
+export type MeasureResult = { ok: true; interval: Interval } | { ok: false; reason: string };
+
+const INTERVAL_UNITS: Readonly<Partial<Record<ValueKind, ReadonlySet<string>>>> = {
+  length: LENGTH_UNITS,
+  number: new Set(),
+  duration: new Set(["ms", "s"]),
+  percentage: new Set(["%"]),
+};
+
+/**
+ * Checks a value of an {@link INTERVAL_KINDS} kind once the tokens it reads are resolved
+ * (`bounds`: each one's interval, undefined for its absolute range): every math function
+ * in it against its range, and the whole against the token's absolute range
+ * ({@link tokenRange}) and the calc() cap, without widening. `value` is one
+ * {@link validateTokenValue} accepted (or a registry default).
+ *
+ * @returns The value's interval, for the tokens that read it.
+ */
+export function measureTokenValue(
+  id: string,
+  kind: ValueKind,
+  value: string,
+  bounds: (id: string) => Interval | undefined,
+  check = true,
+): MeasureResult {
+  const units = INTERVAL_UNITS[kind];
+  if (!units) return { ok: false, reason: `${kind} has no interval` };
+  const constraint = TOKEN_CONSTRAINTS[id] ?? {};
+  try {
+    const nodes = parseValue(value);
+    // `check` false (a registry default, trusted): its interval only, for its readers.
+    const checker = new ValueChecker({ isKnownToken: () => true }, constraint, bounds);
+    switch (check ? kind : undefined) {
+      case "length":
+        checker.length(nodes);
+        break;
+      case "number":
+        checker.number(nodes);
+        break;
+      case "duration":
+        checker.duration(nodes);
+        break;
+      case "percentage":
+        checker.percentage(nodes);
+        break;
+    }
+    const interval = checker.valueInterval(nodes, units);
+    if (!check) {
+      return {
+        ok: true,
+        interval: interval.infinite ? { ...interval, hi: Number.POSITIVE_INFINITY } : interval,
+      };
+    }
+    if (interval.infinite && !constraint.allowInfinity) fail("infinity is not allowed here");
+    const range = tokenRange(id, kind);
+    const limit: readonly [number, number] = [
+      Math.max(range[0], -MATH_LITERAL_LIMIT),
+      Math.min(range[1], MATH_LITERAL_LIMIT),
+    ];
+    checkRange(interval, limit, `--${id}`);
+    // Read through a var(), an infinite value (the pill) is unbounded.
+    return {
+      ok: true,
+      interval: interval.infinite ? { ...interval, hi: Number.POSITIVE_INFINITY } : interval,
+    };
   } catch (error) {
     if (error instanceof ValueError) return { ok: false, reason: error.message };
     throw error;

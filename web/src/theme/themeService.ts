@@ -45,6 +45,7 @@ import {
   type UiTheme,
 } from "./themeContributions";
 import { parseThemeFile, SWATCH_KEYS, type ParsedTheme, type ThemeTokens } from "./themeFile";
+import { type RejectedToken, resolveTokenLayers } from "./resolveTokens";
 import { getToken, TOKENS } from "./tokens/registry";
 import {
   checkVariants,
@@ -60,7 +61,6 @@ import {
 import {
   nullMap,
   type PlainData,
-  referenceCycles,
   snapshotPlainData,
   SYNTAX_THEME_NAME,
   TOKEN_CONSTRAINTS,
@@ -373,14 +373,6 @@ export function hashText(text: string): string {
 
 const PER_MODE_TOKENS = new Set(TOKENS.filter((token) => token.perMode).map((token) => token.id));
 
-/** The registry default's references in a mode, for the cycle check. */
-function defaultReferences(id: string, mode: UiTheme): string[] {
-  const token = getToken(id);
-  const value =
-    mode === "dark" ? (token?.default?.dark ?? token?.default?.light) : token?.default?.light;
-  return [...(value ?? "").matchAll(/var\(\s*--([A-Za-z0-9-]+)/g)].map((match) => match[1]!);
-}
-
 interface ResolvedMember {
   readonly theme: ThemeContribution;
   readonly parsed: ParsedTheme;
@@ -401,6 +393,15 @@ interface Resolution {
   readonly brand: BrandOverride | undefined;
   readonly syntax: readonly TokenSyntaxTheme[];
   readonly key: string;
+  /** The colour customizations left out at resolve time (out of range, or on a cycle). */
+  readonly customizationRejections: readonly CustomizationRejection[];
+}
+
+/** A customization the resolve-time check left out, in one mode. */
+interface CustomizationRejection {
+  readonly token: string;
+  readonly mode: UiTheme;
+  readonly reason: string;
 }
 
 /** The window's theme service; one per page ({@link themeService}). */
@@ -826,7 +827,34 @@ export class ThemeService implements ThemeContributionSink {
       }
     };
     check(snapshot.value, "");
+    if (problems.some((problem) => problem.severity !== "warning")) return problems;
+    // The resolve-time check, as applying them would run it.
+    for (const rejection of this.customizationRejections(snapshot.value)) {
+      const key =
+        customizationKeys(snapshot.value)
+          .filter((entry) => entry === rejection.token || entry.endsWith(`].${rejection.token}`))
+          .pop() ?? rejection.token;
+      if (problems.some((problem) => problem.key === key)) continue;
+      problems.push({ key, message: rejection.reason.replace(/^is /, "") });
+    }
     return problems;
+  }
+
+  /** The customizations in `draft` the resolve-time check would leave out, for the choice on screen. */
+  private customizationRejections(draft: unknown): CustomizationRejection[] {
+    const choice = this.getChoice();
+    if (isContributedThemeId(choice)) {
+      return this.resolve(choice, draft)?.customizationRejections.slice() ?? [];
+    }
+    const context = this.valueContext(undefined, []);
+    const variants = hostTokens(variantTokens(this.getVariants()));
+    const out: CustomizationRejection[] = [];
+    for (const mode of ["light", "dark"] as const) {
+      const custom = this.customizations(this.customizationScopes(choice, mode), context, draft);
+      const { rejected } = this.resolveLayers(choice, [variants, custom], mode, true);
+      for (const entry of rejected) if (entry.layer === 1) out.push({ ...entry, mode });
+    }
+    return out;
   }
 
   /**
@@ -1158,10 +1186,14 @@ export class ThemeService implements ThemeContributionSink {
   }
 
   /** The colour customizations: global ones, then those of each `[scope]` in order. */
-  private customizations(scopes: readonly string[], context: ValueContext): ThemeTokens {
+  private customizations(
+    scopes: readonly string[],
+    context: ValueContext,
+    draft?: unknown,
+  ): ThemeTokens {
     const tokens = nullMap<{ value: string; references: readonly string[] }>();
     const snapshot = snapshotPlainData(
-      readJson(COLOR_CUSTOMIZATIONS_STORAGE_KEY) ?? null,
+      draft ?? readJson(COLOR_CUSTOMIZATIONS_STORAGE_KEY) ?? null,
       CUSTOMIZATION_LIMITS,
     );
     if (!snapshot.ok || !isRecord(snapshot.value)) return tokens;
@@ -1182,7 +1214,11 @@ export class ThemeService implements ThemeContributionSink {
     return tokens;
   }
 
-  private resolve(id: string): Resolution | undefined {
+  /**
+   * The chosen theme's values. `draft`: colour customizations to resolve instead of the
+   * stored ones, quietly (the Advanced editor's check).
+   */
+  private resolve(id: string, draft?: unknown): Resolution | undefined {
     const found = this.find(id);
     if (!found) return undefined;
     const { theme, extension } = found;
@@ -1224,18 +1260,10 @@ export class ThemeService implements ThemeContributionSink {
     const blocks: { light?: Record<string, string>; dark?: Record<string, string> } = {};
     const probes: { light?: Record<string, string>; dark?: Record<string, string> } = {};
     const syntax: TokenSyntaxTheme[] = [];
+    const customizationRejections: CustomizationRejection[] = [];
     for (const mode of modes) {
       const member = members[mode]!;
-      const layered = nullMap<{ value: string; references: readonly string[] }>();
       const layers: ThemeTokens[] = [member.parsed.tokens];
-      for (const option of options) {
-        const definition = member.parsed.options.find((entry) => entry.id === option.id);
-        const choice = definition?.choices.find((entry) => entry.id === option.value);
-        if (choice) layers.push(choice.tokens);
-      }
-      layers.push(variantLayer);
-      layers.push(this.customizations(this.customizationScopes(id, mode), context));
-      for (const layer of layers) Object.assign(layered, layer);
       if (member.syntaxName && member.parsed.syntax) {
         syntax.push({
           name: member.syntaxName,
@@ -1245,24 +1273,20 @@ export class ThemeService implements ThemeContributionSink {
         });
         const token = `syntax-theme-${mode}`;
         if (!(token in member.parsed.tokens)) {
-          layered[token] = { value: member.syntaxName, references: [] };
+          layers.push({ [token]: { value: member.syntaxName, references: [] } });
         }
       }
-      // Reference cycles: the theme's values over the registry's defaults.
-      const graph = new Map<string, readonly string[]>();
-      for (const token of TOKENS) graph.set(token.id, defaultReferences(token.id, mode));
-      for (const [token, value] of Object.entries(layered)) graph.set(token, value.references);
-      const cycles = referenceCycles(graph);
-      const values = nullMap<string>();
-      for (const [token, value] of Object.entries(layered)) {
-        if (cycles.has(token)) {
-          this.warnOnce(
-            `${id}:cycle:${token}`,
-            `${id}: --${token} is on a reference cycle; left out`,
-          );
-          continue;
-        }
-        values[token] = value.value;
+      for (const option of options) {
+        const definition = member.parsed.options.find((entry) => entry.id === option.id);
+        const choice = definition?.choices.find((entry) => entry.id === option.value);
+        if (choice) layers.push(choice.tokens);
+      }
+      layers.push(variantLayer);
+      const customizationLayer = layers.length;
+      layers.push(this.customizations(this.customizationScopes(id, mode), context, draft));
+      const { values, rejected } = this.resolveLayers(id, layers, mode, draft !== undefined);
+      for (const entry of rejected) {
+        if (entry.layer === customizationLayer) customizationRejections.push({ ...entry, mode });
       }
       blocks[mode] = values;
       const probe = nullMap<string>();
@@ -1327,7 +1351,25 @@ export class ThemeService implements ThemeContributionSink {
       brand,
       syntax,
       key,
+      customizationRejections,
     };
+  }
+
+  /** {@link resolveTokenLayers}, warning once about each value it leaves out. */
+  private resolveLayers(
+    id: string,
+    layers: readonly ThemeTokens[],
+    mode: UiTheme,
+    quiet = false,
+  ): { values: Record<string, string>; rejected: readonly RejectedToken[] } {
+    const { values, rejected } = resolveTokenLayers(layers, mode);
+    for (const entry of quiet ? [] : rejected) {
+      this.warnOnce(
+        `${id}:${mode}:${entry.token}:${entry.layer}:${hashText(entry.value)}`,
+        `${id}: --${entry.token} ${entry.reason}; left out`,
+      );
+    }
+    return { values, rejected };
   }
 
   /** The extensions' colour defaults: always present, below any theme. */
@@ -1362,15 +1404,11 @@ export class ThemeService implements ThemeContributionSink {
     else if (choice === null || isThemeSelection(choice)) {
       const context = this.valueContext(undefined, []);
       const block: { light?: Record<string, string>; dark?: Record<string, string> } = {};
-      const variants = variantTokens(this.getVariants());
+      const variants = hostTokens(variantTokens(this.getVariants()));
+      const palette = choice ?? DEFAULT_PALETTE;
       for (const mode of ["light", "dark"] as const) {
-        const custom = this.customizations(
-          this.customizationScopes(choice ?? DEFAULT_PALETTE, mode),
-          context,
-        );
-        const values = nullMap<string>();
-        Object.assign(values, variants);
-        for (const [token, value] of Object.entries(custom)) values[token] = value.value;
+        const custom = this.customizations(this.customizationScopes(palette, mode), context);
+        const { values } = this.resolveLayers(palette, [variants, custom], mode);
         if (Object.keys(values).length > 0) block[mode] = values;
       }
       if (block.light || block.dark) layers.push(block);
@@ -1636,10 +1674,22 @@ export function checkCache(raw: unknown): ThemeCache | undefined {
   };
   if (!isRecord(blocks)) return undefined;
   const probes = isRecord(blocks.probes) ? blocks.probes : {};
+  // The same resolve-time pass as a live theme's: ranges and cycles over the defaults.
+  const checkBlock = (values: unknown, mode: UiTheme): Record<string, string> | undefined => {
+    const checked = checkTokens(values);
+    if (!checked) return undefined;
+    const layer = nullMap<{ value: string; references: readonly string[] }>();
+    for (const [token, value] of Object.entries(checked)) {
+      layer[token] = { value, references: valueReferences(value) };
+    }
+    const out = nullMap<string>();
+    Object.assign(out, resolveTokenLayers([layer], mode).values);
+    return out;
+  };
   const checkedBlocks: ThemeBlocks = {
-    ...(blocks.light !== undefined ? { light: checkTokens(blocks.light) } : {}),
-    ...(blocks.dark !== undefined ? { dark: checkTokens(blocks.dark) } : {}),
-    probes: { light: checkTokens(probes.light), dark: checkTokens(probes.dark) },
+    ...(blocks.light !== undefined ? { light: checkBlock(blocks.light, "light") } : {}),
+    ...(blocks.dark !== undefined ? { dark: checkBlock(blocks.dark, "dark") } : {}),
+    probes: { light: checkBlock(probes.light, "light"), dark: checkBlock(probes.dark, "dark") },
   };
   const checkedFonts: CachedFont[] = Array.isArray(fonts)
     ? fonts.flatMap((font) =>
@@ -1724,10 +1774,26 @@ export function checkCache(raw: unknown): ThemeCache | undefined {
 function hostTokens(values: Readonly<Record<string, string>>): ThemeTokens {
   const out = nullMap<{ value: string; references: readonly string[] }>();
   for (const [token, value] of Object.entries(values)) {
-    const references = [...value.matchAll(/var\(--([a-z0-9-]+)/g)].map((match) => match[1]!);
-    out[token] = { value, references };
+    out[token] = { value, references: valueReferences(value) };
   }
   return out;
+}
+
+/** The keys of colour customizations in order: `id`, and `[scope].id` for scoped ones. */
+function customizationKeys(record: unknown): string[] {
+  if (!isRecord(record)) return [];
+  return Object.entries(record).flatMap(([key, value]) =>
+    key.startsWith("[")
+      ? isRecord(value)
+        ? Object.keys(value).map((id) => `${key}.${id}`)
+        : []
+      : [key],
+  );
+}
+
+/** The tokens a value the host wrote reads. */
+function valueReferences(value: string): string[] {
+  return [...value.matchAll(/var\(\s*--([A-Za-z0-9-]+)/g)].map((match) => match[1]!);
 }
 
 /** The window's theme service. */
