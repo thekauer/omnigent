@@ -80,9 +80,20 @@ export const THEME_OPTIONS_ENTRY = settingsEntry({
 /** The style variants' select: "Theme default" first, then the values as Settings names them. */
 export const THEME_DEFAULT_VARIANT_LABEL = "Theme default";
 
+/** The "Style" disclosure under the color theme picker, which holds the style variant rows. */
+export const THEME_STYLE_ENTRY = settingsEntry({
+  id: "theme-style",
+  section: "appearance",
+  label: "Style",
+  description: "Density, labels, scrollbars, messages and other style variants.",
+  keywords: ["style", "variants", "density", "theme"],
+  parts: { toggle: "Show style variants" },
+  revealedBy: "color-theme",
+});
+
 /**
- * One row per style variant (density, labels, ...), under the color theme picker: a select
- * of "Theme default" and the variant's values.
+ * One row per style variant (density, labels, ...), in the Style disclosure under the color
+ * theme picker: a select of "Theme default" and the variant's values.
  */
 export const THEME_VARIANT_ENTRIES = settingsEntryFamily({
   key: "theme-variants",
@@ -96,6 +107,8 @@ export const THEME_VARIANT_ENTRIES = settingsEntryFamily({
       label: labels.label,
       description: labels.description,
       keywords: ["style", "variant", "theme"],
+      // In the Style disclosure, which opens for a search result.
+      revealedBy: "theme-style",
       choices: [
         THEME_DEFAULT_VARIANT_LABEL,
         ...(VARIANTS[name] as readonly string[]).map((value) => values[value]!),
@@ -334,6 +347,7 @@ export const APPEARANCE_SETTINGS = [
   TERMINAL_THEME_ENTRY,
   COLOR_THEME_ENTRY,
   THEME_OPTIONS_ENTRY,
+  THEME_STYLE_ENTRY,
   ...THEME_VARIANT_ENTRIES.entries,
   COLOR_CUSTOMIZATIONS_ENTRY,
   UI_FONT_SIZE_ENTRY,

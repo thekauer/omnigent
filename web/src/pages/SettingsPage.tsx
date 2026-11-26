@@ -92,6 +92,7 @@ import {
 } from "@/pages/settings/search/catalog/updates";
 import { SettingsEntryLabel, SettingsItem } from "@/pages/settings/search/SettingsItem";
 import {
+  parseSettingsHash,
   settingsControlProps,
   settingsFileInputProps,
   settingsDescriptionId,
@@ -128,6 +129,7 @@ import {
   COLOR_THEME_ENTRY,
   HIDE_UNCONFIGURED_HARNESSES_ENTRY,
   THEME_OPTIONS_ENTRY,
+  THEME_STYLE_ENTRY,
   THEME_VARIANT_ENTRIES,
   THEME_DEFAULT_VARIANT_LABEL,
   PEER_SESSION_MESSAGES_ENTRY,
@@ -229,7 +231,7 @@ import {
 } from "@/hooks/useConversations";
 import { conversationDisplayLabel } from "@/shell/sidebarNav";
 import { absoluteTime } from "@/lib/relativeTime";
-import { useNavigate } from "@/lib/routing";
+import { useLocation, useNavigate } from "@/lib/routing";
 import { useSettingsRoute } from "@/shell/settingsNav";
 import { ImportSessionsPanel } from "@/shell/ImportSessionsPanel";
 import { isThemeMode, normalizeThemeMode, type ThemeMode } from "@/components/theme/themeMode";
@@ -387,7 +389,9 @@ import {
   type ThemeListEntry,
   themeService,
   useThemeCustomizationsHidden,
+  useLockedThemeVariants,
   useThemeForcedMode,
+  useThemeModeLock,
   useThemePickerHidden,
 } from "@/theme/themeService";
 import {
@@ -658,19 +662,23 @@ function ModeControl() {
   const mode = normalizeThemeMode(theme);
   const followsHost = useHostTheme() !== undefined;
   const themeSettingsUrl = followsHost ? getOmnigentThemeSettingsUrl() : undefined;
-  // A single-mode theme sets the mode while it's chosen: shown, not changeable.
+  // The product's lock, or a single-mode theme while it's chosen, sets the mode: shown,
+  // not changeable.
   const forcedMode = useThemeForcedMode();
+  const modeLock = useThemeModeLock();
   return (
     <SettingsItem entry={THEME_MODE_ENTRY} className="flex items-center justify-between gap-4">
       <div className="flex-1">
         <SettingsEntryLabel
           entry={THEME_MODE_ENTRY}
           description={
-            forcedMode
-              ? `Set by theme: ${forcedMode === "dark" ? "dark" : "light"} while it's chosen.`
-              : followsHost
-                ? "Follow Databricks, or force light or dark."
-                : undefined
+            modeLock
+              ? `${SET_BY_PRODUCT_LABEL}: ${modeLock}.`
+              : forcedMode
+                ? `Set by theme: ${forcedMode === "dark" ? "dark" : "light"} while it's chosen.`
+                : followsHost
+                  ? "Follow Databricks, or force light or dark."
+                  : undefined
           }
         />
         {themeSettingsUrl && (
@@ -1203,12 +1211,21 @@ function ThemeOptionsControl() {
       <SettingsEntryLabel entry={THEME_OPTIONS_ENTRY} className="py-1" />
       {options.map((option) => (
         <div key={option.id} className="flex items-center justify-between gap-4 py-2">
-          <span aria-hidden="true" className="min-w-0 flex-1 truncate text-sm">
-            {option.label}
-          </span>
+          <div aria-hidden="true" className="min-w-0 flex-1">
+            <div className="truncate text-sm">{option.label}</div>
+            {option.locked && (
+              <div
+                data-testid={`theme-option-${option.id}-locked`}
+                className="text-muted-foreground text-xs"
+              >
+                {SET_BY_PRODUCT_LABEL}
+              </div>
+            )}
+          </div>
           <Select
             value={option.value}
             onValueChange={(next) => themeService.setOption(option.id, next)}
+            disabled={option.locked === true}
             componentId="settings.appearance.theme_option"
             valueHasNoPii
           >
@@ -1237,33 +1254,72 @@ function ThemeOptionsControl() {
   );
 }
 
+/** What a row the product's theme configuration locks says. */
+const SET_BY_PRODUCT_LABEL = "Set by product";
+
 /** The select value of "Theme default" (no user choice), outside every variant's values. */
 const THEME_DEFAULT_VARIANT = "theme-default";
 
 /**
- * The style variants (density, labels, ...), each a select of "Theme default" and its values:
- * the user's choice over the theme's, which the theme service applies to every theme.
+ * The style variants (density, labels, ...) in a "Style" disclosure, each a select of "Theme
+ * default" and its values: the user's choice over the theme's, the product's locks over both.
+ * Open at first when any variant isn't at its default, and for a search result in it.
  */
 function ThemeVariantsControl() {
   const version = useThemeServiceVersion();
-  const { user, theme } = useMemo(
-    () =>
-      version >= 0
-        ? { user: themeService.getUserVariants(), theme: themeService.getThemeVariants() }
-        : { user: {}, theme: {} },
-    [version],
-  );
+  const locked = useLockedThemeVariants();
+  const { user, theme, styled } = useMemo(() => {
+    if (version < 0) return { user: {}, theme: {}, styled: false };
+    const resolved = themeService.getVariants();
+    return {
+      user: themeService.getUserVariants(),
+      theme: themeService.getThemeVariants(),
+      styled: VARIANT_NAMES.some(
+        (name) => resolved[name] !== undefined && resolved[name] !== defaultVariant(name),
+      ),
+    };
+  }, [version]);
+  const target = parseSettingsHash(useLocation().hash)?.id;
+  const targeted = target?.startsWith("theme-variant-") === true || target === THEME_STYLE_ENTRY.id;
+  const [open, setOpen] = useState(styled || targeted);
+  useEffect(() => {
+    if (targeted) setOpen(true);
+  }, [targeted, target]);
   return (
     <div data-testid="theme-variants" className="flex flex-col border-b border-border/70 px-4 py-3">
-      {VARIANT_NAMES.map((name) => (
-        <ThemeVariantRow
-          key={name}
-          entry={THEME_VARIANT_ENTRIES.entry(name)}
-          name={name}
-          value={user[name]}
-          themeValue={theme[name] ?? defaultVariant(name)}
-        />
-      ))}
+      <SettingsItem
+        entry={THEME_STYLE_ENTRY}
+        className="flex items-center justify-between gap-4 py-1"
+      >
+        <SettingsEntryLabel entry={THEME_STYLE_ENTRY} />
+        <Button
+          {...settingsControlProps(THEME_STYLE_ENTRY, "toggle")}
+          variant="outline"
+          size="sm"
+          aria-expanded={open}
+          aria-controls="theme-variants-panel"
+          data-testid="theme-style-toggle"
+          onClick={() => setOpen(!open)}
+          componentId="settings.appearance.theme_style_toggle"
+        >
+          {open ? <ChevronDownIcon aria-hidden="true" /> : <ChevronRightIcon aria-hidden="true" />}
+          {open ? "Hide" : "Show"}
+        </Button>
+      </SettingsItem>
+      {open && (
+        <div id="theme-variants-panel" className="flex flex-col pt-1">
+          {VARIANT_NAMES.map((name) => (
+            <ThemeVariantRow
+              key={name}
+              entry={THEME_VARIANT_ENTRIES.entry(name)}
+              name={name}
+              value={user[name]}
+              themeValue={theme[name] ?? defaultVariant(name)}
+              lockedValue={locked[name]}
+            />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -1273,13 +1329,17 @@ function ThemeVariantRow({
   name,
   value,
   themeValue,
+  lockedValue,
 }: {
   entry: SettingsEntry;
   name: VariantName;
   value: string | undefined;
   themeValue: string;
+  /** The product's value: shown, not changeable. */
+  lockedValue: string | undefined;
 }) {
   const valueLabels = VARIANT_LABELS[name].values as Record<string, string>;
+  const locked = lockedValue !== undefined;
   return (
     <SettingsItem entry={entry} className="flex items-center justify-between gap-4 py-2">
       <div className="min-w-0 flex-1">
@@ -1289,16 +1349,23 @@ function ThemeVariantRow({
           label={entry.label}
           description={entry.description}
         />
-        {/* The theme's own value, which "Theme default" keeps. */}
-        <div aria-hidden="true" className="text-muted-foreground text-xs">
-          {THEME_DEFAULT_VARIANT_LABEL}: {valueLabels[themeValue]}
+        {/* The theme's own value, which "Theme default" keeps, or the product's lock. */}
+        <div
+          aria-hidden="true"
+          data-testid={locked ? `theme-variant-${name}-locked` : undefined}
+          className="text-muted-foreground text-xs"
+        >
+          {locked
+            ? `${SET_BY_PRODUCT_LABEL}: ${valueLabels[lockedValue]}`
+            : `${THEME_DEFAULT_VARIANT_LABEL}: ${valueLabels[themeValue]}`}
         </div>
       </div>
       <Select
-        value={value ?? THEME_DEFAULT_VARIANT}
+        value={locked ? lockedValue : (value ?? THEME_DEFAULT_VARIANT)}
         onValueChange={(next) =>
           themeService.setVariant(name, next === THEME_DEFAULT_VARIANT ? null : next)
         }
+        disabled={locked}
         componentId="settings.appearance.theme_variant"
         valueHasNoPii
       >

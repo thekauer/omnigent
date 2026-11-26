@@ -2659,6 +2659,59 @@ describe("Color theme with contributed themes", () => {
     expect(screen.queryByTestId("color-theme-editor")).toBeNull();
   });
 
+  it("shows what the product locks as set by product, disabled", () => {
+    act(() => {
+      themeService.select(`${FIXTURE_EXTENSION_ID}/full-dark`);
+      themeService.setProductPolicy({
+        lockMode: "light",
+        lockedOptions: { accent: "lava" },
+        lockedVariants: { density: "compact", cta: "light-square" },
+      });
+    });
+    renderPage("/settings/appearance");
+    expect(screen.getByText("Set by product: light.")).toBeInTheDocument();
+    expect(screen.getByTestId("theme-light")).toBeDisabled();
+    expect(screen.getByTestId("theme-light")).toHaveAttribute("aria-checked", "true");
+    const accent = screen.getByTestId("theme-option-accent") as HTMLSelectElement;
+    expect(accent).toBeDisabled();
+    expect(accent.value).toBe("lava");
+    expect(screen.getByTestId("theme-option-accent-locked")).toHaveTextContent("Set by product");
+    expect(screen.getByTestId("theme-option-corners")).not.toBeDisabled();
+    const density = screen.getByTestId("theme-variant-density") as HTMLSelectElement;
+    expect(density).toBeDisabled();
+    expect(density.value).toBe("compact");
+    expect(screen.getByTestId("theme-variant-density-locked")).toHaveTextContent(
+      "Set by product: Compact",
+    );
+    expect(screen.getByTestId("theme-variant-cta")).toBeDisabled();
+    expect(screen.getByTestId("theme-variant-label")).not.toBeDisabled();
+    act(() => themeService.setProductPolicy(null));
+    expect(screen.getByTestId("theme-variant-density")).not.toBeDisabled();
+    expect(screen.queryByText(/Set by product/)).toBeNull();
+  });
+
+  it("holds the style variants in a Style disclosure, open when one isn't at its default", () => {
+    act(() => themeService.select("nord"));
+    const first = renderPage("/settings/appearance");
+    const toggle = screen.getByTestId("theme-style-toggle");
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByTestId("theme-variant-density")).toBeNull();
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByTestId("theme-variant-density")).toBeInTheDocument();
+    first.unmount();
+    // The fixture theme sets compact density: open at first.
+    act(() => themeService.select(`${FIXTURE_EXTENSION_ID}/full-dark`));
+    const second = renderPage("/settings/appearance");
+    expect(screen.getByTestId("theme-style-toggle")).toHaveAttribute("aria-expanded", "true");
+    second.unmount();
+    // A search result in it opens it.
+    act(() => themeService.select("nord"));
+    renderPage("/settings/appearance#theme-variant-scrollbar");
+    expect(screen.getByTestId("theme-style-toggle")).toHaveAttribute("aria-expanded", "true");
+    expect(screen.getByTestId("theme-variant-scrollbar")).toBeInTheDocument();
+  });
+
   it("edits the colour customizations as JSON under Advanced, with inline errors", async () => {
     renderPage("/settings/appearance");
     expect(screen.queryByTestId("color-customizations-editor")).toBeNull();
