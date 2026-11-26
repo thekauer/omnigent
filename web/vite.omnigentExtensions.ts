@@ -291,6 +291,7 @@ export function readThemeFiles(
   const colorTokens = new Map(
     contributions.colors.flatMap((color) => [
       [color.id, color.token],
+      [color.fullId, color.token],
       [color.token, color.token],
     ]),
   );
@@ -379,14 +380,15 @@ export function scanDevExtensions(folders: readonly string[]): DevExtensionScan 
       scan.errors.push(result.error);
       continue;
     }
-    const previous = seen.get(result.extension.id);
+    // Ids compare case-insensitively, as VS Code's do.
+    const previous = seen.get(result.extension.id.toLowerCase());
     if (previous !== undefined) {
       scan.errors.push(
         `${folder}: invalid extension: duplicate id ${result.extension.id} (already loaded from ${previous})`,
       );
       continue;
     }
-    seen.set(result.extension.id, folder);
+    seen.set(result.extension.id.toLowerCase(), folder);
     scan.extensions.push(result.extension);
     for (const [url, asset] of result.assets) scan.assets.set(url, asset);
   }
@@ -686,10 +688,9 @@ export function omnigentExtensionsDev(options: OmnigentExtensionsDevOptions = {}
         res.setHeader("Content-Type", asset.type);
         res.setHeader("X-Content-Type-Options", "nosniff");
         res.setHeader("Cache-Control", "no-cache");
-        if (asset.type === "image/svg+xml") {
-          // Opened as a document, a brand SVG loads and styles nothing, and runs nothing.
-          res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'none'; sandbox");
-        }
+        // Opened as a document, an asset loads, styles and runs nothing: a brand SVG's
+        // markup included, and the fonts and images alike, for consistency.
+        res.setHeader("Content-Security-Policy", "default-src 'none'; style-src 'none'; sandbox");
         res.end(req.method === "HEAD" ? undefined : Buffer.from(asset.body));
       });
       server.middlewares.use(

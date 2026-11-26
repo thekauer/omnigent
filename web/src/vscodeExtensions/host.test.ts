@@ -78,9 +78,17 @@ describe("ExtensionHost", () => {
     await host.start([
       { ...describeExtension("pub.a"), builtIn: true },
       describeExtension("omnigent.themes"),
+      describeExtension("Omnigent.Themes2"),
       describeExtension("pub.a"),
+      describeExtension("Pub.A"),
     ]);
     expect(activate).toHaveBeenCalledTimes(1);
+    expect(log.warn).toHaveBeenCalledWith(
+      expect.stringContaining('Omnigent.Themes2: the "omnigent" publisher is reserved'),
+    );
+    expect(log.warn).toHaveBeenCalledWith(
+      expect.stringContaining("Pub.A: an extension with this id is already loaded"),
+    );
     expect(host.isActive("omnigent.themes")).toBe(false);
     expect(log.warn).toHaveBeenCalledWith(
       expect.stringContaining('omnigent.themes: the "omnigent" publisher is reserved'),

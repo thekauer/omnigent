@@ -549,7 +549,9 @@ export function setEmbedScopeRoot(el: HTMLElement | null): void {
 }
 
 // The scope root's marker value: markup elsewhere (the host page's, or rendered content)
-// can't guess it, so only the real scope root matches the runtime selectors.
+// can't guess it, so only the real scope root matches the runtime selectors. It keeps
+// stray markup from matching, nothing more: it is no defence against scripts on the page,
+// which can read it from the DOM like any attribute.
 const embedScopeNonce = (() => {
   const bytes = new Uint8Array(8);
   if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {

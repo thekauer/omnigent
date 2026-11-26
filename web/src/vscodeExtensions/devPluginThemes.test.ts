@@ -129,6 +129,41 @@ describe("theme files at scan time", () => {
     expect(Object.keys((data as { colors: object }).colors)).toEqual(["__proto__", "background"]);
   });
 
+  it("takes the extension's own colours by their full id in a theme", () => {
+    const own = path.join(workspace, "own-colors");
+    mkdirSync(path.join(own, "src"), { recursive: true });
+    writeFileSync(path.join(own, "src/extension.js"), "export function activate() {}\n");
+    writeFileSync(
+      path.join(own, "package.json"),
+      JSON.stringify({
+        name: "own-colors",
+        publisher: "acme",
+        version: "1.0.0",
+        engines: { omnigent: "^0.24.0" },
+        browser: "./src/extension.js",
+        activationEvents: ["onStartupFinished"],
+        contributes: {
+          colors: [{ id: "cost-badge", defaults: { light: "#111", dark: "#eee" } }],
+          themes: [{ id: "o", uiTheme: "dark", path: "./o.json" }],
+        },
+      }),
+    );
+    writeFileSync(
+      path.join(own, "o.json"),
+      JSON.stringify({
+        omnigent: {
+          tokens: {
+            "acme.own-colors.cost-badge": "#123456",
+            primary: "var(--x-acme__own_2dcolors-cost-badge)",
+          },
+        },
+      }),
+    );
+    const result = readDevExtension(own);
+    if ("error" in result) throw new Error(result.error);
+    expect(result.warnings).toEqual([]);
+  });
+
   it("keeps out what the folder doesn't really hold, and assets that fail their checks", () => {
     const escape = path.join(workspace, "escape");
     mkdirSync(path.join(escape, "src"), { recursive: true });
@@ -197,6 +232,9 @@ describe("the dev server", () => {
     const fontResponse = await globalThis.fetch(`${baseUrl}${font}`);
     expect(fontResponse.status).toBe(200);
     expect(fontResponse.headers.get("content-type")).toBe("font/woff2");
+    expect(fontResponse.headers.get("content-security-policy")).toBe(
+      "default-src 'none'; style-src 'none'; sandbox",
+    );
     expect(new Uint8Array(await fontResponse.arrayBuffer())).toEqual(FIXTURE_FONT_BYTES);
     const logoResponse = await globalThis.fetch(`${baseUrl}${logo}`);
     expect(logoResponse.headers.get("content-type")).toBe("image/svg+xml");

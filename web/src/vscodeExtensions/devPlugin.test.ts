@@ -185,6 +185,14 @@ describe("manifest validation", () => {
     expect(scan.errors).toEqual([expect.stringContaining("duplicate id acme.sample")]);
   });
 
+  it("rejects a duplicate id in another case", () => {
+    const first = makeExtension("dup-c", VALID_MANIFEST);
+    const second = makeExtension("dup-d", { ...VALID_MANIFEST, publisher: "ACME" });
+    const scan = scanDevExtensions([first, second]);
+    expect(scan.extensions).toHaveLength(1);
+    expect(scan.errors).toEqual([expect.stringContaining("duplicate id ACME.sample")]);
+  });
+
   it("parses the path list and engine ranges", () => {
     expect(parseDevPaths(`a${path.delimiter}${path.delimiter} /abs/b `, "/cwd")).toEqual([
       "/cwd/a",

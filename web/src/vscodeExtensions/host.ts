@@ -167,13 +167,16 @@ export class ExtensionHost {
 
   /**
    * Whether a non-built-in extension claims what only built-ins may: the `omnigent`
-   * publisher, or the id of an extension already loaded. It is skipped with a warning.
+   * publisher, or the id of an extension already loaded, in any case (ids compare
+   * case-insensitively, as VS Code's do). It is skipped with a warning.
    */
   private claimsBuiltIn(extension: ExtensionDescription): boolean {
     let reason: string | undefined;
-    if (extension.id.startsWith(`${RESERVED_PUBLISHER}.`)) {
+    const id = extension.id.toLowerCase();
+    const loaded = (other: string) => other.toLowerCase() === id;
+    if (id.startsWith(`${RESERVED_PUBLISHER}.`)) {
       reason = `the "${RESERVED_PUBLISHER}" publisher is reserved for built-in extensions`;
-    } else if (this.startedIds.has(extension.id) || this.contributed.has(extension.id)) {
+    } else if ([...this.startedIds].some(loaded) || [...this.contributed.keys()].some(loaded)) {
       reason = "an extension with this id is already loaded";
     }
     if (reason) this.log.warn(`[omnigent-extensions] ${extension.id}: ${reason}; not loading it`);
