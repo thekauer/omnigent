@@ -8,8 +8,16 @@ const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 function subscribe(callback: () => void): () => void {
   if (typeof window === "undefined" || !window.matchMedia) return () => {};
   const mql = window.matchMedia(REDUCED_MOTION_QUERY);
-  mql.addEventListener("change", callback);
-  return () => mql.removeEventListener("change", callback);
+  // Safari before 14 has only the deprecated addListener/removeListener.
+  if (typeof mql.addEventListener === "function") {
+    mql.addEventListener("change", callback);
+    return () => mql.removeEventListener("change", callback);
+  }
+  if (typeof mql.addListener === "function") {
+    mql.addListener(callback);
+    return () => mql.removeListener(callback);
+  }
+  return () => {};
 }
 
 function getSnapshot(): boolean {
