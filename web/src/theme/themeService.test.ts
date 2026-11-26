@@ -443,3 +443,99 @@ describe("ThemeService: per-theme customization keys, product policy, applied th
     expect(service.appliedTheme("dark").id).toBe("omnigent.themes/omni-dark");
   });
 });
+
+describe("ThemeService: extension fonts", () => {
+  const ID = "acme.font-themes";
+  const assets = `/__omnigent/extension-assets/${ID}/0`;
+  const theme = (font?: string) => ({
+    type: "dark",
+    colors: { background: "#101010" },
+    ...(font ? { omnigent: { tokens: { "ui-font-ui": `${font}, sans-serif` } } } : {}),
+  });
+  const extension = (): ThemeExtension => ({
+    id: ID,
+    version: "1.0.0",
+    contributions: parseThemeContributions(
+      ID,
+      {
+        themes: [
+          { id: "one", label: "One", uiTheme: "dark", path: "./themes/one.json" },
+          { id: "two", label: "Two", uiTheme: "dark", path: "./themes/two.json" },
+          { id: "plain", label: "Plain", uiTheme: "dark", path: "./themes/plain.json" },
+        ],
+        fonts: [
+          { family: "One Sans", src: "./fonts/one.woff2" },
+          { family: "Two Sans", src: "./fonts/two.woff2" },
+        ],
+      },
+      { isKnownToken: (id) => getToken(id) !== undefined },
+    ).contributions,
+    files: {
+      "themes/one.json": { kind: "json", data: theme("One Sans") },
+      "themes/two.json": { kind: "json", data: theme("Two Sans") },
+      "themes/plain.json": { kind: "json", data: theme() },
+      "fonts/one.woff2": { kind: "asset", url: `${assets}/fonts/one.woff2`, type: "font/woff2" },
+      "fonts/two.woff2": { kind: "asset", url: `${assets}/fonts/two.woff2`, type: "font/woff2" },
+    },
+  });
+
+  const loaded: string[] = [];
+  const faces = new Set<{ family: string }>();
+  class FakeFontFace {
+    readonly family: string;
+    constructor(family: string) {
+      this.family = family;
+    }
+    load() {
+      loaded.push(this.family);
+      return Promise.resolve(this);
+    }
+  }
+
+  beforeEach(() => {
+    loaded.length = 0;
+    faces.clear();
+    vi.stubGlobal("FontFace", FakeFontFace);
+    Object.defineProperty(document, "fonts", {
+      configurable: true,
+      value: {
+        add: (face: { family: string }) => faces.add(face),
+        delete: (face: { family: string }) => faces.delete(face),
+      },
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete (document as { fonts?: unknown }).fonts;
+  });
+
+  const families = () => [...faces].map((face) => face.family).sort();
+
+  it("loads only the families the chosen theme's values name, and the new ones on a change", () => {
+    service.addExtension(extension());
+    service.markStarted();
+    service.select(`${ID}/one`);
+    expect(loaded).toEqual([families()[0]]);
+    expect(families()).toHaveLength(1);
+    expect(families()[0]).toMatch(/one-sans$/);
+    service.select(`${ID}/two`);
+    expect(families()).toHaveLength(1);
+    expect(families()[0]).toMatch(/two-sans$/);
+    expect(loaded).toHaveLength(2);
+    expect(loaded[1]).toMatch(/two-sans$/);
+    service.select(`${ID}/plain`);
+    expect(families()).toEqual([]);
+    expect(loaded).toHaveLength(2);
+  });
+
+  it("loads a family a colour customization names", () => {
+    service.addExtension(extension());
+    service.markStarted();
+    service.select(`${ID}/plain`);
+    expect(loaded).toEqual([]);
+    expect(service.setCustomizations('{ "ui-font-ui": "Two Sans, sans-serif" }')).toEqual([]);
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0]).toMatch(/two-sans$/);
+  });
+});

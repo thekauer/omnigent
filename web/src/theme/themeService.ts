@@ -1645,7 +1645,12 @@ export class ThemeService implements ThemeContributionSink {
       const other = forcedMode === "dark" ? "light" : "dark";
       if (probes[forcedMode]) probes[other] = probes[forcedMode];
     }
+    // Only the families the resolved values name load: an extension's other fonts never
+    // download (a family appears in a value as the quoted name the value check maps it to).
+    const values = [blocks.light, blocks.dark].flatMap((block) => Object.values(block ?? {}));
     const fonts: CachedFont[] = extension.contributions.fonts.flatMap((font) => {
+      const quoted = JSON.stringify(font.cssFamily);
+      if (!values.some((value) => value.includes(quoted))) return [];
       const asset = extension.files[font.src];
       if (asset?.kind !== "asset" || !isHostAssetUrl(asset.url)) {
         this.warnOnce(
