@@ -67,6 +67,7 @@ import { cn } from "./lib/utils";
 import "katex/dist/katex.min.css";
 import "streamdown/styles.css";
 import "./index.css";
+import "./theme/variants.css";
 import { QueueFlushProvider } from "./hooks/QueueFlushProvider";
 import { ExtensionProvider } from "./extensions/ExtensionProvider";
 import { SessionUpdatesProvider } from "./hooks/SessionUpdatesProvider";

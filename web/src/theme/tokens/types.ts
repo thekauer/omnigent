@@ -36,7 +36,8 @@ export type TokenGroup =
   | "terminal"
   | "diff"
   | "fileTree"
-  | "brand";
+  | "brand"
+  | "variant";
 
 /**
  * An `@property` syntax for a token registered with the browser. A registered token

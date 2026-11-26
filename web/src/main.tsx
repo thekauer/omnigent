@@ -47,6 +47,7 @@ import { startExtensionHost } from "./vscodeExtensions/extensionHost";
 import "katex/dist/katex.min.css";
 import "streamdown/styles.css";
 import "./index.css";
+import "./theme/variants.css";
 
 // Start tracing before any request fires so fetch/XHR are patched in time
 // and a trace begins in the browser. No-op unless a collector endpoint is

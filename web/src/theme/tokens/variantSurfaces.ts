@@ -1,0 +1,64 @@
+// Tokens the style variants read (`theme/variants.css`): the user bubble, the floating
+// sheet and the square Share and Stop buttons. Nothing reads them while every variant is
+// at its default, so the stock look stays as it is; a theme that turns a variant on may
+// tune it through them. The colours are unset: each falls back to a palette colour.
+
+import { defineTokens } from "./types.ts";
+
+const UNSET = {};
+
+export const VARIANT_SURFACE_TOKENS = defineTokens("variant", [
+  {
+    id: "ui-bubble-background",
+    default: UNSET,
+    description:
+      "Your message bubbles' background under the Soft and Square variants. Unset: `muted`.",
+  },
+  {
+    id: "ui-bubble-border",
+    default: UNSET,
+    description:
+      "Your message bubbles' 1px outline under the Soft and Square variants. Unset: the border colour at 60%.",
+  },
+  {
+    id: "ui-bubble-radius",
+    kind: "length",
+    description: "Your message bubbles' corner radius under the Soft variant, 12px.",
+    default: { light: "calc(var(--ui-radius-base) * 1.5)" },
+  },
+  {
+    id: "ui-sheet-gap",
+    kind: "length",
+    description: "The floating sheet's margin from the window's right and bottom edges, 8px.",
+    default: { light: "calc(var(--spacing) * 2)" },
+  },
+  {
+    id: "ui-sheet-radius",
+    kind: "length",
+    description: "The floating sheet's corner radius, 12px.",
+    default: { light: "calc(var(--ui-radius-base) * 1.5)" },
+  },
+  {
+    id: "ui-sheet-shadow",
+    kind: "shadow",
+    default: UNSET,
+    description: "The floating sheet's shadow. Unset: `ui-shadow-2xl` with a hairline ring.",
+  },
+  {
+    id: "ui-cta-background",
+    default: UNSET,
+    description:
+      "Share and Stop's background under the square variants. Unset: `primary` (Accent) or `foreground` (Light).",
+  },
+  {
+    id: "ui-cta-foreground",
+    default: UNSET,
+    description:
+      "Share and Stop's text and glyph colour under the square variants. Unset: `primary-foreground` (Accent) or `background` (Light).",
+  },
+  {
+    id: "ui-cta-hover",
+    default: UNSET,
+    description: "Share and Stop's hover background under the square variants. Unset: darkened.",
+  },
+]);

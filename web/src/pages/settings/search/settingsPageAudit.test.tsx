@@ -5,6 +5,7 @@ import "@/test/withBuiltInThemes";
 // it renders answers to the catalog, and every row of an audited section renders somewhere.
 // What's left out, and why, is listed below rather than skipped silently.
 
+import { VARIANT_LABELS, VARIANT_NAMES, VARIANTS } from "@/theme/variants";
 import { writeRetentionDays } from "@/lib/retentionPreferences";
 import { EmbeddedProvider } from "@/lib/embedded";
 import { writeThemePalette } from "@/lib/themePalette";
@@ -959,8 +960,22 @@ const SCENARIOS: readonly SettingsAuditScenario[] = [
       removeFixtureThemes = themeService.addExtension(fixtureThemeExtension());
       themeService.select(`${FIXTURE_EXTENSION_ID}/full-dark`);
     },
-    ready: ["Theme options"],
+    ready: ["Theme options", "Style"],
     states: { "project-folder-pagination": ["collapsed"] },
+    // Each style variant's select lists "Theme default" and its values; the fixture theme
+    // sets density and labels itself.
+    actions: VARIANT_NAMES.map((name) => ({
+      name: `${VARIANT_LABELS[name].label} variant list`,
+      open: () =>
+        userEvent.click(
+          within(
+            document.querySelector<HTMLElement>(`[data-settings-item="theme-variant-${name}"]`)!,
+          ).getByRole("combobox"),
+        ),
+      witness: {
+        option: (VARIANT_LABELS[name].values as Record<string, string>)[VARIANTS[name].at(-1)!]!,
+      },
+    })),
     inlineActions: [
       {
         name: "color customizations editor",

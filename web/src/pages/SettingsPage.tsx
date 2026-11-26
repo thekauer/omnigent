@@ -81,6 +81,7 @@ import { useTheme } from "next-themes";
 import { PageScroll } from "@/components/PageScroll";
 import { SettingsGroup } from "@/components/SettingsGroup";
 import { SettingsLabel } from "@/components/SettingsLabel";
+import type { SettingsEntry } from "@/pages/settings/search/catalog/types";
 import { ProactiveAgentSettingControl } from "@/components/ProactiveAgentSettingControl";
 import { LOCAL_CLI_ENTRY } from "@/pages/settings/search/catalog/cli";
 import {
@@ -127,6 +128,8 @@ import {
   COLOR_THEME_ENTRY,
   HIDE_UNCONFIGURED_HARNESSES_ENTRY,
   THEME_OPTIONS_ENTRY,
+  THEME_VARIANT_ENTRIES,
+  THEME_DEFAULT_VARIANT_LABEL,
   PEER_SESSION_MESSAGES_ENTRY,
   SHOW_FINAL_ANSWER_ENTRY,
   TERMINAL_THEME_ENTRY,
@@ -387,6 +390,13 @@ import {
   useThemeForcedMode,
   useThemePickerHidden,
 } from "@/theme/themeService";
+import {
+  defaultVariant,
+  VARIANT_LABELS,
+  VARIANT_NAMES,
+  VARIANTS,
+  type VariantName,
+} from "@/theme/variants";
 import { entrySwatch, forcedModeLabel, UNAVAILABLE_LABEL } from "@/shell/themePickerItems";
 import {
   applyCustomTheme,
@@ -1078,6 +1088,7 @@ function ColorThemeControl() {
           )}
 
           {!customizationsHidden && <ThemeOptionsControl />}
+          {!customizationsHidden && <ThemeVariantsControl />}
 
           {palette !== null && !pickerHidden && (
             <div className="border-b border-border/70 px-4">
@@ -1222,6 +1233,91 @@ function ThemeOptionsControl() {
           </Select>
         </div>
       ))}
+    </SettingsItem>
+  );
+}
+
+/** The select value of "Theme default" (no user choice), outside every variant's values. */
+const THEME_DEFAULT_VARIANT = "theme-default";
+
+/**
+ * The style variants (density, labels, ...), each a select of "Theme default" and its values:
+ * the user's choice over the theme's, which the theme service applies to every theme.
+ */
+function ThemeVariantsControl() {
+  const version = useThemeServiceVersion();
+  const { user, theme } = useMemo(
+    () =>
+      version >= 0
+        ? { user: themeService.getUserVariants(), theme: themeService.getThemeVariants() }
+        : { user: {}, theme: {} },
+    [version],
+  );
+  return (
+    <div data-testid="theme-variants" className="flex flex-col border-b border-border/70 px-4 py-3">
+      {VARIANT_NAMES.map((name) => (
+        <ThemeVariantRow
+          key={name}
+          entry={THEME_VARIANT_ENTRIES.entry(name)}
+          name={name}
+          value={user[name]}
+          themeValue={theme[name] ?? defaultVariant(name)}
+        />
+      ))}
+    </div>
+  );
+}
+
+function ThemeVariantRow({
+  entry,
+  name,
+  value,
+  themeValue,
+}: {
+  entry: SettingsEntry;
+  name: VariantName;
+  value: string | undefined;
+  themeValue: string;
+}) {
+  const valueLabels = VARIANT_LABELS[name].values as Record<string, string>;
+  return (
+    <SettingsItem entry={entry} className="flex items-center justify-between gap-4 py-2">
+      <div className="min-w-0 flex-1">
+        <SettingsLabel
+          labelId={settingsLabelId(entry)}
+          descriptionId={settingsDescriptionId(entry)}
+          label={entry.label}
+          description={entry.description}
+        />
+        {/* The theme's own value, which "Theme default" keeps. */}
+        <div aria-hidden="true" className="text-muted-foreground text-xs">
+          {THEME_DEFAULT_VARIANT_LABEL}: {valueLabels[themeValue]}
+        </div>
+      </div>
+      <Select
+        value={value ?? THEME_DEFAULT_VARIANT}
+        onValueChange={(next) =>
+          themeService.setVariant(name, next === THEME_DEFAULT_VARIANT ? null : next)
+        }
+        componentId="settings.appearance.theme_variant"
+        valueHasNoPii
+      >
+        <SelectTrigger
+          {...settingsControlProps(entry)}
+          data-testid={`theme-variant-${name}`}
+          className="w-40 shrink-0 sm:w-60"
+        >
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent {...settingsOverlayProps(entry)}>
+          <SelectItem value={THEME_DEFAULT_VARIANT}>{THEME_DEFAULT_VARIANT_LABEL}</SelectItem>
+          {(VARIANTS[name] as readonly string[]).map((choice) => (
+            <SelectItem key={choice} value={choice}>
+              {valueLabels[choice]}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
     </SettingsItem>
   );
 }

@@ -186,6 +186,7 @@ describe("theme token registry", () => {
       "status",
       "workbench",
       "brand",
+      "variant",
     ]);
     expect(
       [...new Set(added.map((token) => token.group))].filter((group) => !allowed.has(group)),

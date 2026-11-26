@@ -35,6 +35,7 @@ hook only for what no token covers yet.
 | `transcript-scrollbar` | The transcript's own scrollbar track (it reads the scrollbar colour tokens). |
 | `transcript-scrollbar-thumb` | Its thumb. |
 | `rail-tab` | A fixed tab of the right panel's tab strip (`data-workspace-tab` names it, `data-state="active"` marks the open one). |
+| `main-area` | The main column beside the left sidebar: the session header, the page and the right panel (the floating sheet variant's sheet). |
 
 The shadcn primitives' own slots (`button`, `tabs-trigger`, `dropdown-menu-content`,
 `tooltip-content`, `kbd`, `avatar`, ...) are stable too.
@@ -53,6 +54,14 @@ The shadcn primitives' own slots (`button`, `tabs-trigger`, `dropdown-menu-conte
 | `.ui-label` | A label that reads the label tokens: font `ui-font-label` (under the Appearance font setting), `ui-label-transform` and `ui-label-tracking`; size and weight `ui-label-size`/`-weight` (section labels and the fold row), `ui-view-title-size`/`-weight` (view titles), `ui-fold-label-size`. |
 | `.ui-scroll` | A scroll container with a themed thin scrollbar: `ui-scrollbar-width`, `-size`, `-thumb`, `-thumb-hover`, `-track`. |
 | `.ui-scroll-hidden` | A scroll container whose scrollbar stays hidden (tab strips, the turn rail). |
+
+## Variant attributes
+
+A style variant (`web/src/theme/variants.ts`) not at its default sets
+`data-omni-<name>` (kebab case: `data-omni-density`, `data-omni-user-bubble`) to its
+value on the theme roots (the document root; in the embed, its scope root and inner
+root). At every default none is set. A stylesheet may key on them, as the host's
+`theme/variants.css` does.
 
 ## Custom properties
 

@@ -3437,6 +3437,7 @@ function AppShellImpl() {
             renders inline in main (via MainTerminalView) and the
             workspace card stays visible alongside. */}
               <div
+                data-slot="main-area"
                 data-workspace-panel-resizing={inlinePanelResizing || undefined}
                 data-workspace-panel-animate={rightPanelVisibilityAnimating || undefined}
                 className={cn(

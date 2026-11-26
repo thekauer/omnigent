@@ -1,0 +1,407 @@
+/* Style variants (theme/variants.ts): each rule applies under the `data-omni-<name>`
+ * attribute the theme service sets on the theme roots for a value other than the
+ * default, so at every default none applies and the stock look is untouched. Token
+ * variants (density, labels) arrive as theme tokens instead; these rules cover the rest.
+ * Colours come from tokens, with palette colours as fallbacks. */
+
+/* ---- Labels: brackets around the label text, fixed host strings that assistive
+ * technology skips (`/ ""` is their alternative text). */
+[data-omni-label="bracketed"] .ui-label:not(:has([data-label-text]))::before,
+[data-omni-label="bracketed"] .ui-label [data-label-text]::before {
+  content: "[" / "";
+}
+[data-omni-label="bracketed"] .ui-label:not(:has([data-label-text]))::after,
+[data-omni-label="bracketed"] .ui-label [data-label-text]::after {
+  content: "]" / "";
+}
+
+/* ---- Scrollbars: the design's five bars on `.ui-scroll` containers, drawn by WebKit's
+ * styled bar (which Chrome draws only while `scrollbar-width` and `scrollbar-color` are
+ * auto), and on the transcript's own bar. Elsewhere the thin standard bar in the accent. */
+[data-omni-scrollbar] .ui-scroll {
+  scrollbar-width: auto;
+  scrollbar-color: auto;
+}
+@supports not selector(::-webkit-scrollbar) {
+  [data-omni-scrollbar] .ui-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--ui-scrollbar-thumb, var(--border)) transparent;
+  }
+  :is([data-omni-scrollbar="signal"], [data-omni-scrollbar="bracket"]) .ui-scroll {
+    scrollbar-color: var(--ui-scrollbar-thumb-hover, var(--primary)) transparent;
+  }
+}
+[data-omni-scrollbar] .ui-scroll::-webkit-scrollbar-corner {
+  background: transparent;
+}
+[data-omni-scrollbar] .ui-scroll::-webkit-scrollbar-button {
+  display: none;
+}
+[data-omni-scrollbar] .ui-scroll::-webkit-scrollbar-thumb,
+[data-omni-scrollbar] .ui-scroll::-webkit-scrollbar-thumb:hover,
+[data-omni-scrollbar] .ui-scroll::-webkit-scrollbar-track {
+  border-radius: 0;
+  background-color: transparent;
+}
+
+/* Hairline: 6px, shown on hover only, in the line colour. */
+[data-omni-scrollbar="hairline"] .ui-scroll::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+[data-omni-scrollbar="hairline"] .ui-scroll:hover::-webkit-scrollbar-thumb {
+  background: var(--ui-scrollbar-thumb, var(--border));
+}
+[data-omni-scrollbar="hairline"] .ui-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--ui-scrollbar-thumb-hover, var(--muted-foreground));
+}
+
+/* Rail: 12px, a panel track with a 1px rule, a raised thumb inset by borders; accent on
+ * hover. */
+[data-omni-scrollbar="rail"] .ui-scroll::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+[data-omni-scrollbar="rail"] .ui-scroll::-webkit-scrollbar-track {
+  background: var(--ui-scrollbar-track, var(--sidebar));
+  box-shadow: inset 1px 0 0 var(--border);
+}
+[data-omni-scrollbar="rail"] .ui-scroll::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-left-width: 4px;
+  border-radius: var(--ui-radius-xs);
+  background: var(--ui-scrollbar-thumb, var(--muted)) padding-box;
+}
+[data-omni-scrollbar="rail"] .ui-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--ui-scrollbar-thumb-hover, var(--primary)) padding-box;
+}
+
+/* Signal: 5px, a centred 1px track, a solid accent thumb. */
+[data-omni-scrollbar="signal"] .ui-scroll::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+[data-omni-scrollbar="signal"] .ui-scroll::-webkit-scrollbar-track {
+  background: linear-gradient(var(--border), var(--border)) center / 1px 100% no-repeat;
+}
+[data-omni-scrollbar="signal"] .ui-scroll::-webkit-scrollbar-thumb {
+  background: var(--ui-scrollbar-thumb-hover, var(--primary));
+}
+
+/* Ruler: 14px, a tick every 8px, an outlined accent thumb. */
+[data-omni-scrollbar="ruler"] .ui-scroll::-webkit-scrollbar {
+  width: 14px;
+  height: 14px;
+}
+[data-omni-scrollbar="ruler"] .ui-scroll::-webkit-scrollbar-track {
+  background: repeating-linear-gradient(to bottom, var(--border) 0 1px, transparent 1px 8px) right
+    2px top 0 / 5px 100% no-repeat;
+  box-shadow: inset 1px 0 0 var(--border);
+}
+[data-omni-scrollbar="ruler"] .ui-scroll::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-left-width: 4px;
+  background-clip: padding-box;
+  box-shadow: inset 0 0 0 1px var(--ui-scrollbar-thumb-hover, var(--primary));
+}
+[data-omni-scrollbar="ruler"] .ui-scroll::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--ui-scrollbar-thumb-hover, var(--primary)) 22%, transparent)
+    padding-box;
+}
+
+/* Bracket: 10px, a 2px muted line capped by 6px accent bars. */
+[data-omni-scrollbar="bracket"] .ui-scroll::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+[data-omni-scrollbar="bracket"] .ui-scroll::-webkit-scrollbar-thumb {
+  background:
+    linear-gradient(var(--primary), var(--primary)) center top / 6px 2px no-repeat,
+    linear-gradient(var(--primary), var(--primary)) center bottom / 6px 2px no-repeat,
+    linear-gradient(
+        var(--ui-scrollbar-thumb, var(--muted-foreground)),
+        var(--ui-scrollbar-thumb, var(--muted-foreground))
+      )
+      center / 2px 100% no-repeat;
+}
+[data-omni-scrollbar="bracket"] .ui-scroll::-webkit-scrollbar-thumb:hover {
+  background:
+    linear-gradient(var(--primary), var(--primary)) center top / 6px 2px no-repeat,
+    linear-gradient(var(--primary), var(--primary)) center bottom / 6px 2px no-repeat,
+    linear-gradient(var(--primary), var(--primary)) center / 2px 100% no-repeat;
+}
+
+/* The transcript's own bar, in the same five looks (it is always drawn). */
+[data-omni-scrollbar] [data-slot="transcript-scrollbar-thumb"] {
+  right: 0;
+  border-radius: 0;
+  transition: none;
+}
+[data-omni-scrollbar="hairline"] [data-slot="transcript-scrollbar"] {
+  width: 6px;
+}
+[data-omni-scrollbar="hairline"] [data-slot="transcript-scrollbar-thumb"],
+[data-omni-scrollbar="hairline"] [data-slot="transcript-scrollbar-thumb"]:hover {
+  width: 6px;
+  background: var(--ui-scrollbar-thumb, var(--border));
+}
+[data-omni-scrollbar="rail"] [data-slot="transcript-scrollbar"] {
+  width: 12px;
+  background: var(--ui-scrollbar-track, var(--sidebar));
+  box-shadow: inset 1px 0 0 var(--border);
+}
+[data-omni-scrollbar="rail"] [data-slot="transcript-scrollbar-thumb"],
+[data-omni-scrollbar="rail"] [data-slot="transcript-scrollbar-thumb"]:hover {
+  right: 3px;
+  width: 5px;
+  border-radius: var(--ui-radius-xs);
+  background: var(--ui-scrollbar-thumb, var(--muted));
+}
+[data-omni-scrollbar="rail"] [data-slot="transcript-scrollbar-thumb"]:hover {
+  background: var(--ui-scrollbar-thumb-hover, var(--primary));
+}
+[data-omni-scrollbar="signal"] [data-slot="transcript-scrollbar"] {
+  width: 5px;
+  background: linear-gradient(var(--border), var(--border)) center / 1px 100% no-repeat;
+}
+[data-omni-scrollbar="signal"] [data-slot="transcript-scrollbar-thumb"],
+[data-omni-scrollbar="signal"] [data-slot="transcript-scrollbar-thumb"]:hover {
+  width: 5px;
+  background: var(--ui-scrollbar-thumb-hover, var(--primary));
+}
+[data-omni-scrollbar="ruler"] [data-slot="transcript-scrollbar"] {
+  width: 14px;
+  background: repeating-linear-gradient(to bottom, var(--border) 0 1px, transparent 1px 8px) right
+    2px top 0 / 5px 100% no-repeat;
+  box-shadow: inset 1px 0 0 var(--border);
+}
+[data-omni-scrollbar="ruler"] [data-slot="transcript-scrollbar-thumb"],
+[data-omni-scrollbar="ruler"] [data-slot="transcript-scrollbar-thumb"]:hover {
+  right: 3px;
+  width: 7px;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--ui-scrollbar-thumb-hover, var(--primary));
+}
+[data-omni-scrollbar="bracket"] [data-slot="transcript-scrollbar"] {
+  width: 10px;
+}
+[data-omni-scrollbar="bracket"] [data-slot="transcript-scrollbar-thumb"],
+[data-omni-scrollbar="bracket"] [data-slot="transcript-scrollbar-thumb"]:hover {
+  width: 10px;
+  background:
+    linear-gradient(var(--primary), var(--primary)) center top / 6px 2px no-repeat,
+    linear-gradient(var(--primary), var(--primary)) center bottom / 6px 2px no-repeat,
+    linear-gradient(
+        var(--ui-scrollbar-thumb, var(--muted-foreground)),
+        var(--ui-scrollbar-thumb, var(--muted-foreground))
+      )
+      center / 2px 100% no-repeat;
+}
+
+/* ---- Message style: Document sets replies as wider, looser prose and keeps your
+ * messages to the right at most 82% wide. */
+[data-omni-message-style="document"] .group.is-assistant {
+  max-width: 100%;
+}
+[data-omni-message-style="document"] .group.is-assistant > [class*="text-ui"] {
+  gap: 0.75rem;
+  line-height: 1.65;
+  text-wrap: pretty;
+}
+[data-omni-message-style="document"] .group.is-user {
+  max-width: 82%;
+}
+
+/* ---- Your messages: Soft and Square bubbles, with their colour tokens. */
+:is([data-omni-user-bubble="soft"], [data-omni-user-bubble="square"]) [data-slot="user-bubble"] {
+  background-color: var(--ui-bubble-background, var(--muted));
+  box-shadow: 0 0 0 1px var(--ui-bubble-border, color-mix(in oklab, var(--border) 60%, transparent));
+}
+[data-omni-user-bubble="soft"] [data-slot="user-bubble"] {
+  border-radius: var(--ui-bubble-radius);
+}
+[data-omni-user-bubble="square"] [data-slot="user-bubble"] {
+  border-radius: 0;
+}
+
+/* ---- Working indicator: the square pulse and the dots (components in
+ * chatBubbleParts.tsx), still under reduced motion. */
+.ui-working-pulse {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  background: var(--primary);
+  animation: ui-working-pulse 1.2s ease-in-out infinite;
+}
+@keyframes ui-working-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: rotate(0);
+  }
+  50% {
+    opacity: 0.35;
+    transform: rotate(45deg);
+  }
+}
+.ui-working-dots {
+  display: inline-flex;
+  flex: none;
+  gap: 3px;
+}
+.ui-working-dots > span {
+  width: 4px;
+  height: 4px;
+  border-radius: var(--ui-radius-pill);
+  background: var(--primary);
+  animation: ui-working-dot 1.2s ease-in-out infinite;
+}
+.ui-working-dots > span:nth-child(2) {
+  animation-delay: 0.15s;
+}
+.ui-working-dots > span:nth-child(3) {
+  animation-delay: 0.3s;
+}
+@keyframes ui-working-dot {
+  0%,
+  80%,
+  100% {
+    opacity: 0.3;
+  }
+  40% {
+    opacity: 1;
+  }
+}
+.ui-working-verb {
+  color: var(--muted-foreground);
+  font-family: var(--ui-font-family, var(--ui-font-label));
+  letter-spacing: var(--ui-label-tracking);
+  text-transform: var(--ui-label-transform);
+}
+@media (prefers-reduced-motion: reduce) {
+  .ui-working-pulse,
+  .ui-working-dots > span {
+    animation: none;
+  }
+}
+
+/* ---- Composer: Flat (a hairline, no shadow) and Crosses (square, with registration
+ * marks just outside its corners). */
+:is([data-omni-composer="flat"], [data-omni-composer="crosses"]) .composer-reference-surface,
+:is([data-omni-composer="flat"], [data-omni-composer="crosses"]) .composer-reference-surface:hover {
+  border-width: 1px;
+  border-color: var(--border);
+  box-shadow: none;
+}
+[data-omni-composer="crosses"] .composer-reference-surface {
+  border-radius: 0;
+}
+[data-omni-composer="crosses"] .composer-reference-surface::after {
+  position: absolute;
+  inset: -8px;
+  pointer-events: none;
+  background:
+    linear-gradient(var(--muted-foreground), var(--muted-foreground)) left 0 top 7px / 15px 1px
+      no-repeat,
+    linear-gradient(var(--muted-foreground), var(--muted-foreground)) left 7px top 0 / 1px 15px
+      no-repeat,
+    linear-gradient(var(--muted-foreground), var(--muted-foreground)) right 0 top 7px / 15px 1px
+      no-repeat,
+    linear-gradient(var(--muted-foreground), var(--muted-foreground)) right 7px top 0 / 1px 15px
+      no-repeat,
+    linear-gradient(var(--muted-foreground), var(--muted-foreground)) left 0 bottom 7px / 15px 1px
+      no-repeat,
+    linear-gradient(var(--muted-foreground), var(--muted-foreground)) left 7px bottom 0 / 1px 15px
+      no-repeat,
+    linear-gradient(var(--muted-foreground), var(--muted-foreground)) right 0 bottom 7px / 15px 1px
+      no-repeat,
+    linear-gradient(var(--muted-foreground), var(--muted-foreground)) right 7px bottom 0 / 1px 15px
+      no-repeat;
+  content: "";
+}
+
+/* Context strip, Attached: a hairline tab joined to the composer's top edge, in the
+ * label font. */
+[data-omni-context-strip="attached"] [data-slot="composer-context-strip"] {
+  width: calc(100% - 28px);
+  margin-inline: 14px;
+  border: 1px solid var(--border);
+  border-bottom: 0;
+  border-radius: var(--ui-radius-sm) var(--ui-radius-sm) 0 0;
+  background-color: var(--sidebar);
+  color: var(--muted-foreground);
+  font-family: var(--ui-font-label);
+  font-size: 11.5px;
+}
+
+/* ---- Panel tabs: Icons and labels shows each tab's name beside its icon. */
+[data-omni-panel-tabs="icons-labels"] [data-slot="rail-tab"] {
+  width: auto;
+  gap: 6px;
+  padding-inline: 8px;
+}
+[data-omni-panel-tabs="icons-labels"] [data-slot="rail-tab"] > .sr-only {
+  position: static;
+  width: auto;
+  height: auto;
+  margin: 0;
+  overflow: visible;
+  clip-path: none;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+/* ---- Header: Solid replaces the frosted glass with the page colour and a hairline. */
+[data-omni-header="solid"] .session-header-glass::before {
+  inset: 0;
+  background: var(--background);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  -webkit-mask-image: none;
+  mask-image: none;
+  box-shadow: inset 0 -1px 0 var(--border);
+}
+
+/* ---- Share and Stop: square buttons in the accent or a light colour, with a mono
+ * uppercase Share. */
+:is([data-omni-cta="accent-square"], [data-omni-cta="light-square"])
+  :is([data-slot="share-button"], [data-slot="composer-stop"]) {
+  border: 0;
+  border-radius: 0;
+  background: var(--ui-cta-background, var(--cta-fallback-background));
+  color: var(--ui-cta-foreground, var(--cta-fallback-foreground));
+  box-shadow: none;
+}
+[data-omni-cta="accent-square"] :is([data-slot="share-button"], [data-slot="composer-stop"]) {
+  --cta-fallback-background: var(--primary);
+  --cta-fallback-foreground: var(--primary-foreground);
+}
+[data-omni-cta="light-square"] :is([data-slot="share-button"], [data-slot="composer-stop"]) {
+  --cta-fallback-background: var(--foreground);
+  --cta-fallback-foreground: var(--background);
+}
+:is([data-omni-cta="accent-square"], [data-omni-cta="light-square"])
+  :is([data-slot="share-button"], [data-slot="composer-stop"]):hover:not(:disabled) {
+  background: var(--ui-cta-hover, var(--ui-cta-background, var(--cta-fallback-background)));
+  filter: var(--cta-hover-filter, brightness(0.9));
+}
+:is([data-omni-cta="accent-square"], [data-omni-cta="light-square"]) [data-slot="share-button"] {
+  font-family: var(--ui-font-mono);
+  font-size: 12px;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+/* ---- Sheet: Floating sets the main area (header, transcript, right panel) on a
+ * rounded sheet inset from the window's edges. */
+[data-omni-sheet="floating"] [data-slot="main-area"] {
+  margin: var(--ui-sheet-gap) var(--ui-sheet-gap) var(--ui-sheet-gap) 0;
+  overflow: hidden;
+  border-radius: var(--ui-sheet-radius);
+  background: var(--background);
+  box-shadow: var(
+    --ui-sheet-shadow,
+    0 0 0 1px color-mix(in oklab, var(--foreground) 7%, transparent),
+    var(--ui-shadow-2xl)
+  );
+}

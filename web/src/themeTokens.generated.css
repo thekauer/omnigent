@@ -467,6 +467,16 @@
   --brand-otto-shade: #e60c7f;
   --brand-otto-eye: #fefefe;
   --brand-otto-pupil: black;
+  --ui-bubble-background: initial;
+  --ui-bubble-border: initial;
+  --ui-bubble-radius: calc(var(--ui-radius-base) * 1.5);
+  --ui-sheet-gap: calc(var(--spacing) * 2);
+  --ui-sheet-radius: calc(var(--ui-radius-base) * 1.5);
+  /* prettier-ignore */
+  --ui-sheet-shadow: initial;
+  --ui-cta-background: initial;
+  --ui-cta-foreground: initial;
+  --ui-cta-hover: initial;
 }
 
 .dark {
@@ -1412,6 +1422,9 @@
   --file-tree-icon-code: var(--color-purple-500);
   --file-tree-icon-image: var(--color-pink-500);
   --file-tree-icon-media: var(--color-indigo-500);
+  --ui-bubble-radius: calc(var(--ui-radius-base) * 1.5);
+  --ui-sheet-gap: calc(var(--spacing) * 2);
+  --ui-sheet-radius: calc(var(--ui-radius-base) * 1.5);
 }
 
 :root.dark,
@@ -1576,6 +1589,9 @@
   --file-tree-icon-code: var(--color-purple-400);
   --file-tree-icon-image: var(--color-pink-400);
   --file-tree-icon-media: var(--color-indigo-400);
+  --ui-bubble-radius: calc(var(--ui-radius-base) * 1.5);
+  --ui-sheet-gap: calc(var(--spacing) * 2);
+  --ui-sheet-radius: calc(var(--ui-radius-base) * 1.5);
 }
 
 [data-token-mode="light"] {

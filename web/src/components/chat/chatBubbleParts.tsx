@@ -70,6 +70,7 @@ import {
 } from "@/lib/systemMessage";
 import { Button } from "@/components/ui/button";
 import { BrandLogo } from "@/components/BrandLogo";
+import { useVariant } from "@/theme/useVariant";
 import { RunningDot } from "@/components/RunningDot";
 import { formatMessageTimestamp } from "@/lib/relativeTime";
 import { cn } from "@/lib/utils";
@@ -732,15 +733,67 @@ export function WorkingIndicator() {
         aria-hidden="true"
       >
         <MessageContent>
-          <div className="flex items-center gap-1.5 py-0.5">
-            <BrandLogo variant="icon" className="otto-working h-4 w-auto shrink-0" />
-            <Shimmer className="text-sm" duration={1.5}>
-              {label}
-            </Shimmer>
-          </div>
+          <WorkingIndicatorBody label={label} blocked={blockedOn !== null} />
         </MessageContent>
       </Message>
     </>
+  );
+}
+
+/** The design's working verbs, cycled every {@link WORKING_CYCLE_MS} by the "cycle" variant. */
+export const WORKING_CYCLE_VERBS = ["Working…", "Tinkering…", "Noodling…"] as const;
+export const WORKING_CYCLE_MS = 2600;
+
+/** A tick every `ms` while `enabled` (the cycling verbs); 0 otherwise. */
+function useCycleTick(enabled: boolean, ms: number): number {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    if (!enabled) return;
+    const id = setInterval(() => setTick((value) => value + 1), ms);
+    return () => clearInterval(id);
+  }, [enabled, ms]);
+  return enabled ? tick : 0;
+}
+
+/**
+ * The working row's mark and label, as the working indicator variants draw them: Otto
+ * with the shimmering label (the default), or the accent square pulse or dots with a
+ * plain label in the label font. The verbs variant picks the words while unblocked.
+ */
+function WorkingIndicatorBody({ label, blocked }: { label: string; blocked: boolean }) {
+  const indicator = useVariant("workingIndicator");
+  const verbs = useVariant("workingVerbs");
+  const cycleTick = useCycleTick(verbs === "cycle" && !blocked, WORKING_CYCLE_MS);
+  const shown = blocked
+    ? label
+    : verbs === "static"
+      ? WORKING_MESSAGES[0]
+      : verbs === "cycle"
+        ? WORKING_CYCLE_VERBS[cycleTick % WORKING_CYCLE_VERBS.length]!
+        : label;
+  if (indicator === "otto") {
+    return (
+      <div className="flex items-center gap-1.5 py-0.5">
+        <BrandLogo variant="icon" className="otto-working h-4 w-auto shrink-0" />
+        <Shimmer className="text-sm" duration={1.5}>
+          {shown}
+        </Shimmer>
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center gap-2.5 py-0.5" data-working-indicator={indicator}>
+      {indicator === "square-pulse" ? (
+        <span className="ui-working-pulse" />
+      ) : (
+        <span className="ui-working-dots">
+          <span />
+          <span />
+          <span />
+        </span>
+      )}
+      <span className="ui-working-verb text-sm">{shown}</span>
+    </div>
   );
 }
 

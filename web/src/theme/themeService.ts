@@ -48,9 +48,13 @@ import { parseThemeFile, SWATCH_KEYS, type ParsedTheme, type ThemeTokens } from 
 import { getToken, TOKENS } from "./tokens/registry";
 import {
   checkVariants,
+  defaultVariant,
   isVariantName,
   isVariantValue,
   resolveVariants,
+  VARIANT_NAMES,
+  variantAttribute,
+  variantTokens,
   type VariantValues,
 } from "./variants";
 import {
@@ -200,6 +204,8 @@ interface ThemeCache {
   readonly fonts: readonly CachedFont[];
   readonly brand?: BrandOverride;
   readonly syntax?: readonly TokenSyntaxTheme[];
+  /** The theme's own variants (the user's apply over them from storage). */
+  readonly variants?: Readonly<Record<string, string>>;
 }
 
 interface CachedFont {
@@ -388,6 +394,8 @@ interface Resolution {
   readonly forcedMode: UiTheme | undefined;
   readonly options: readonly ActiveThemeOption[];
   readonly variants: Readonly<Record<string, string>>;
+  /** The theme's own variants, before the user's. */
+  readonly themeVariants: Readonly<Record<string, string>>;
   readonly blocks: ThemeBlocks;
   readonly fonts: readonly CachedFont[];
   readonly brand: BrandOverride | undefined;
@@ -739,6 +747,11 @@ export class ThemeService implements ThemeContributionSink {
     return entries;
   }
 
+  /** The variants the theme on screen sets itself ("Theme default"), before the user's. */
+  getThemeVariants(): VariantValues {
+    return checkVariants(this.themeVariants());
+  }
+
   /** The user's style variant choices (`omnigent:ui-variants`), "Theme default" left out. */
   getUserVariants(): VariantValues {
     return checkVariants(readJson(VARIANTS_STORAGE_KEY));
@@ -931,6 +944,8 @@ export class ThemeService implements ThemeContributionSink {
     this.appliedKey = cache.key;
     this.cacheWritten = false;
     this.stamp(choice);
+    const cachedVariants = resolveVariants(cache.variants ?? {}, this.getUserVariants());
+    this.stampVariants(cachedVariants as Readonly<Record<string, string>>);
     this.forcedMode = cache.forcedMode ?? null;
     this.applyFonts(cache.fonts);
     this.applyBrand(cache.brand);
@@ -944,7 +959,7 @@ export class ThemeService implements ThemeContributionSink {
       available: true,
       forcedMode: cache.forcedMode,
       options: [],
-      variants: nullMap<string>(),
+      variants: cachedVariants as Readonly<Record<string, string>>,
       fromCache: true,
     };
     this.watchRoots();
@@ -1203,6 +1218,8 @@ export class ThemeService implements ThemeContributionSink {
         choices: option.choices.map((choice) => ({ id: choice.id, label: choice.label })),
       };
     });
+    const variants = resolveVariants(primary?.parsed.variants ?? {}, this.getUserVariants());
+    const variantLayer = hostTokens(variantTokens(variants));
     const context = this.valueContext(extension, []);
     const blocks: { light?: Record<string, string>; dark?: Record<string, string> } = {};
     const probes: { light?: Record<string, string>; dark?: Record<string, string> } = {};
@@ -1216,6 +1233,7 @@ export class ThemeService implements ThemeContributionSink {
         const choice = definition?.choices.find((entry) => entry.id === option.value);
         if (choice) layers.push(choice.tokens);
       }
+      layers.push(variantLayer);
       layers.push(this.customizations(this.customizationScopes(id, mode), context));
       for (const layer of layers) Object.assign(layered, layer);
       if (member.syntaxName && member.parsed.syntax) {
@@ -1300,7 +1318,8 @@ export class ThemeService implements ThemeContributionSink {
       members,
       forcedMode,
       options,
-      variants: resolveVariants(primary?.parsed.variants ?? {}, this.getUserVariants()) as Readonly<
+      variants: variants as Readonly<Record<string, string>>,
+      themeVariants: checkVariants(primary?.parsed.variants ?? {}) as Readonly<
         Record<string, string>
       >,
       blocks: themeBlocks,
@@ -1343,12 +1362,14 @@ export class ThemeService implements ThemeContributionSink {
     else if (choice === null || isThemeSelection(choice)) {
       const context = this.valueContext(undefined, []);
       const block: { light?: Record<string, string>; dark?: Record<string, string> } = {};
+      const variants = variantTokens(this.getVariants());
       for (const mode of ["light", "dark"] as const) {
         const custom = this.customizations(
           this.customizationScopes(choice ?? DEFAULT_PALETTE, mode),
           context,
         );
         const values = nullMap<string>();
+        Object.assign(values, variants);
         for (const [token, value] of Object.entries(custom)) values[token] = value.value;
         if (Object.keys(values).length > 0) block[mode] = values;
       }
@@ -1357,6 +1378,7 @@ export class ThemeService implements ThemeContributionSink {
     const css = buildThemeCss(layers, selectors);
     this.writeStyle(css);
     this.stamp(css ? (contributed ?? "") : null);
+    this.stampVariants(resolution ? resolution.variants : this.getVariants());
     if (resolution) {
       this.applySyntax(resolution.syntax);
       this.applyFonts(resolution.fonts);
@@ -1443,6 +1465,21 @@ export class ThemeService implements ThemeContributionSink {
       if (value === null) root.removeAttribute(THEME_ROOT_ATTRIBUTE);
       else if (root.getAttribute(THEME_ROOT_ATTRIBUTE) !== value) {
         root.setAttribute(THEME_ROOT_ATTRIBUTE, value);
+      }
+    }
+  }
+
+  /** `data-omni-<name>` on the theme roots for each variant not at its default. */
+  private stampVariants(variants: Readonly<Record<string, string>>): void {
+    for (const root of getThemeRoots()) {
+      for (const name of VARIANT_NAMES) {
+        const attribute = variantAttribute(name);
+        const value = variants[name];
+        if (value === undefined || value === defaultVariant(name)) {
+          root.removeAttribute(attribute);
+        } else if (root.getAttribute(attribute) !== value) {
+          root.setAttribute(attribute, value);
+        }
       }
     }
   }
@@ -1538,6 +1575,9 @@ export class ThemeService implements ThemeContributionSink {
       fonts: resolution.fonts,
       ...(resolution.brand ? { brand: resolution.brand } : {}),
       syntax: resolution.syntax,
+      ...(Object.keys(resolution.themeVariants).length > 0
+        ? { variants: resolution.themeVariants }
+        : {}),
     };
     let text = JSON.stringify(cache);
     if (text.length > CACHE_LIMIT) text = JSON.stringify({ ...cache, syntax: [] });
@@ -1565,6 +1605,7 @@ export class ThemeService implements ThemeContributionSink {
  */
 export function checkCache(raw: unknown): ThemeCache | undefined {
   if (!isRecord(raw) || raw.version !== 1) return undefined;
+  const { variants } = raw;
   const { id, key, label, uiTheme, family, familyLabel, forcedMode, blocks, fonts, brand, syntax } =
     raw;
   if (!isContributedThemeId(id) || typeof key !== "string" || key.length > 300) return undefined;
@@ -1673,7 +1714,20 @@ export function checkCache(raw: unknown): ThemeCache | undefined {
     fonts: checkedFonts,
     ...(checkedBrand ? { brand: checkedBrand } : {}),
     syntax: checkedSyntax,
+    ...(Object.keys(checkVariants(variants)).length > 0
+      ? { variants: checkVariants(variants) as Readonly<Record<string, string>> }
+      : {}),
   };
+}
+
+/** Host token values (a variant's) as a theme layer, with the tokens each reads. */
+function hostTokens(values: Readonly<Record<string, string>>): ThemeTokens {
+  const out = nullMap<{ value: string; references: readonly string[] }>();
+  for (const [token, value] of Object.entries(values)) {
+    const references = [...value.matchAll(/var\(--([a-z0-9-]+)/g)].map((match) => match[1]!);
+    out[token] = { value, references };
+  }
+  return out;
 }
 
 /** The window's theme service. */

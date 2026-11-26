@@ -1,6 +1,7 @@
 import { builtInThemeContributions } from "@/builtinExtensions/builtInThemes";
+import { VARIANT_LABELS, VARIANT_NAMES, VARIANTS, type VariantName } from "@/theme/variants";
 
-import { settingsEntry } from "./types";
+import { settingsEntry, settingsEntryFamily } from "./types";
 
 // The built-in themes' names, as the colour theme select lists them (one per family),
 // from the built-in theme extension's contributions: they follow its list.
@@ -74,6 +75,33 @@ export const THEME_OPTIONS_ENTRY = settingsEntry({
   overlays: { option: { runtimeChoices: {} } },
   // Shown only for a theme with options, under the color theme picker.
   revealedBy: "color-theme",
+});
+
+/** The style variants' select: "Theme default" first, then the values as Settings names them. */
+export const THEME_DEFAULT_VARIANT_LABEL = "Theme default";
+
+/**
+ * One row per style variant (density, labels, ...), under the color theme picker: a select
+ * of "Theme default" and the variant's values.
+ */
+export const THEME_VARIANT_ENTRIES = settingsEntryFamily({
+  key: "theme-variants",
+  members: VARIANT_NAMES,
+  build: (name: VariantName) => {
+    const labels = VARIANT_LABELS[name];
+    const values = labels.values as Record<string, string>;
+    return settingsEntry({
+      id: `theme-variant-${name}`,
+      section: "appearance",
+      label: labels.label,
+      description: labels.description,
+      keywords: ["style", "variant", "theme"],
+      choices: [
+        THEME_DEFAULT_VARIANT_LABEL,
+        ...(VARIANTS[name] as readonly string[]).map((value) => values[value]!),
+      ],
+    });
+  },
 });
 
 export const COLOR_CUSTOMIZATIONS_ENTRY = settingsEntry({
@@ -306,6 +334,7 @@ export const APPEARANCE_SETTINGS = [
   TERMINAL_THEME_ENTRY,
   COLOR_THEME_ENTRY,
   THEME_OPTIONS_ENTRY,
+  ...THEME_VARIANT_ENTRIES.entries,
   COLOR_CUSTOMIZATIONS_ENTRY,
   UI_FONT_SIZE_ENTRY,
   UI_FONT_FAMILY_ENTRY,

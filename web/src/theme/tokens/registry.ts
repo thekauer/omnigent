@@ -19,6 +19,7 @@ import { STATUS_TOKENS } from "./status.ts";
 import { TERMINAL_TOKENS } from "./terminal.ts";
 import type { TokenDef } from "./types.ts";
 import { TYPOGRAPHY_TOKENS } from "./typography.ts";
+import { VARIANT_SURFACE_TOKENS } from "./variantSurfaces.ts";
 import { PALETTE_TOKENS, WORKBENCH_TOKENS } from "./workbench.ts";
 
 export {
@@ -69,6 +70,7 @@ export const TOKENS: readonly TokenDef[] = [
   ...DIFF_TOKENS,
   ...FILE_TREE_TOKENS,
   ...BRAND_TOKENS,
+  ...VARIANT_SURFACE_TOKENS,
 ];
 
 /** Tokens with host defaults (no palette sets them), in registry order. */
