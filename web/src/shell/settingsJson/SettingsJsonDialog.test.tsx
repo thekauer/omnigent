@@ -10,23 +10,40 @@ import { themeService } from "@/theme/themeService";
 
 import { SettingsJsonDialog } from "./SettingsJsonDialog";
 
-vi.mock("./SettingsJsonEditor", () => ({
-  SettingsJsonEditor: ({
-    defaultValue,
-    onChange,
-  }: {
-    defaultValue: string;
-    onChange: (text: string) => void;
-  }) => (
-    <textarea
-      data-testid="settings-json-text"
-      defaultValue={defaultValue}
-      onChange={(event) => onChange(event.target.value)}
-    />
-  ),
-}));
+// With the real overflow widgets node, holding a stand-in for an open hover.
+vi.mock("./SettingsJsonEditor", async () => {
+  const { OverflowWidgets } = await import("./OverflowWidgets");
+  const holdHover = (node: HTMLDivElement | null) => {
+    if (node && !node.firstChild) {
+      const hover = node.appendChild(document.createElement("div"));
+      hover.dataset.testid = "overflow-hover";
+    }
+  };
+  return {
+    SettingsJsonEditor: ({
+      defaultValue,
+      onChange,
+    }: {
+      defaultValue: string;
+      onChange: (text: string) => void;
+    }) => (
+      <>
+        <OverflowWidgets onNode={holdHover} />
+        <textarea
+          data-testid="settings-json-text"
+          defaultValue={defaultValue}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      </>
+    ),
+  };
+});
 
 const text = () => screen.findByTestId("settings-json-text");
+const nextTick = () =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, 0);
+  });
 const problems = () => screen.queryByTestId("settings-json-problems")?.textContent ?? "";
 
 beforeEach(() => {
@@ -86,6 +103,26 @@ describe("SettingsJsonDialog", () => {
       "data-severity",
       "info",
     );
+  });
+
+  it("stays open for a click in the editor's overflow widgets, and closes for one outside", async () => {
+    render(<SettingsJsonDialog />);
+    act(() => openSettingsJsonEditor());
+    await text();
+    const hover = screen.getByTestId("overflow-hover");
+    expect(screen.getByTestId("settings-json-dialog").contains(hover)).toBe(false);
+    // The dialog listens for outside pointers from the next tick, and dismisses on the click.
+    await act(nextTick);
+    const clickOn = async (target: Element) => {
+      fireEvent.pointerDown(target, { button: 0, pointerType: "mouse" });
+      fireEvent.pointerUp(target, { button: 0, pointerType: "mouse" });
+      fireEvent.click(target, { button: 0 });
+      await act(nextTick);
+    };
+    await clickOn(hover);
+    expect(screen.getByTestId("settings-json-dialog")).toBeInTheDocument();
+    await clickOn(document.body);
+    await waitFor(() => expect(screen.queryByTestId("settings-json-dialog")).toBeNull());
   });
 
   it("shows nothing under hideCustomizations", () => {

@@ -18,6 +18,7 @@ import {
   SETTINGS_JSON_LANGUAGE,
   setSettingsMarkers,
 } from "./settingsJsonMonaco";
+import { OverflowWidgets } from "./OverflowWidgets";
 
 type EditorInstance = Parameters<OnMount>[0];
 
@@ -44,6 +45,8 @@ export function SettingsJsonEditor({
   const [failed, setFailed] = useState(false);
   const editorRef = useRef<EditorInstance | null>(null);
   const monacoRef = useRef<MonacoModule | null>(null);
+  // The hover and suggestions render outside the dialog's box (OverflowWidgets.tsx).
+  const [overflowWidgets, setOverflowWidgets] = useState<HTMLDivElement | null>(null);
   const latest = useRef({ onSave, onChange });
   latest.current = { onSave, onChange };
 
@@ -82,8 +85,10 @@ export function SettingsJsonEditor({
       // Keys and values are strings: suggest inside them as VS Code's settings.json does.
       quickSuggestions: { other: true, strings: true, comments: false },
       ariaLabel: "Settings JSON",
+      fixedOverflowWidgets: true,
+      overflowWidgetsDomNode: overflowWidgets ?? undefined,
     } as const;
-  }, []);
+  }, [overflowWidgets]);
 
   const handleMount: OnMount = (editor, monaco) => {
     editorRef.current = editor;
@@ -106,30 +111,38 @@ export function SettingsJsonEditor({
     editor.focus();
   };
 
+  let content;
   if (failed) {
-    return (
+    content = (
       <div className="flex h-full items-center justify-center text-destructive text-ui">
         Failed to load the editor.
       </div>
     );
-  }
-  if (!ready) {
-    return (
+  } else if (!ready || !overflowWidgets) {
+    content = (
       <div className="flex h-full items-center justify-center text-muted-foreground text-ui">
         Loading…
       </div>
     );
+  } else {
+    content = (
+      <Editor
+        height="100%"
+        theme={theme}
+        language={SETTINGS_JSON_LANGUAGE}
+        path="omnigent-settings/settings.json"
+        defaultValue={defaultValue}
+        options={options}
+        onMount={handleMount}
+        onChange={(value) => latest.current.onChange(value ?? "")}
+      />
+    );
   }
+  // The node first, at a fixed place, so it stays the one the editor was created with.
   return (
-    <Editor
-      height="100%"
-      theme={theme}
-      language={SETTINGS_JSON_LANGUAGE}
-      path="omnigent-settings/settings.json"
-      defaultValue={defaultValue}
-      options={options}
-      onMount={handleMount}
-      onChange={(value) => latest.current.onChange(value ?? "")}
-    />
+    <>
+      <OverflowWidgets onNode={setOverflowWidgets} />
+      {content}
+    </>
   );
 }
