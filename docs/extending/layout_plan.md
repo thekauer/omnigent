@@ -1,0 +1,384 @@
+# Layout plan: workbench parts, view containers, activity bar, title bar (Stage 2)
+
+Draft for review. Nothing here is implemented. Stage 1 (theming) is
+[theming_plan.md](theming_plan.md); the extension API is
+[vscode_style_extensions.md](vscode_style_extensions.md); stable selectors are
+[theme_hooks.md](theme_hooks.md).
+
+## Status
+
+The durable state to resume from. Update it in the same commit that lands each milestone.
+
+| # | State | Notes |
+|---|---|---|
+| Plan | Draft | Waiting for the user's decisions (end of this doc). |
+| L0 to L11 | Not started | |
+
+Paths are relative to the omnigent repo root unless they start with `my-extensions/`.
+
+## Context
+
+- Roadmap after theming: **layout** (this plan), then menus everywhere, product config, and the
+  trusted React tier (Theia-style: products and built-ins may supply React, third-party
+  extensions stay plain data).
+- Design driver: the DevHub redesign (`my-extensions/designs/omnigent-session-redesign/`). Its
+  layout items left unmatched by M11: an icon rail (activity bar), a product top bar, a narrower
+  sidebar, a hidden "New session" row; also the Inbox, Automations and Canvas sidebar views, the
+  right panel's close and wide buttons, its auto-hide under 1180px and the Files tab removed.
+- User preferences that shape every choice below: VS Code's model and names; generic,
+  product-level mechanisms; settings in the settings JSON (M10b), no new Settings UI rows;
+  built-in UI as extensions; development cost carries little weight.
+
+## Findings: the layout today
+
+| Area | Today | Where |
+|---|---|---|
+| Shell | One flex row: `aside.conversations-sidebar`, then a group with `[data-slot=main-area]` (chat header, the route's page, overlays) and the right rail | `web/src/shell/AppShell.tsx` (3900 lines; root ~3339, main area ~3439) |
+| Left sidebar | Header row (brand, search, actions); a fixed primary nav (New session, Automations, Workflows, Inbox, Canvas, V1 extension pages, Usage); the conversation list (My sessions/Shared, Projects); the server picker footer (profile, settings) | `shell/Sidebar.tsx`, `extensions/ExtensionPrimaryNavigation.tsx` |
+| Sidebar width | 320px default, min 220, max 50% of the window; dragged width in `omnigent:panel-size-preferences` | `hooks/useResizableSidebar.ts`, `lib/panelSizePreferences.ts` |
+| Sidebar open | Not persisted; open on desktop, closed below md; narrowing closes and widening restores; canvas collapses it | `AppShell.tsx` ~469, ~529; `canvas/useCanvasSidebar.ts` |
+| Chat header | `header.chat-header`, absolute over the main area; session header items (extension slot, desktop only), the panel toggle; hidden when a V1 extension page owns it | `shell/ChatHeader.tsx`, `vscodeExtensions/SessionHeaderItems.tsx` |
+| Composer | Inside the chat page, not a shell part | `pages/ChatPage.tsx` ~1927 |
+| Right rail (classic) | `aside[data-slot=workspace-panel]`, `.workspace-tab-strip` of `rail-tab`s; width (about 36vw, 420 to 600) and open state per session in `omnigent:session-workspace-state`; new sessions follow `omnigent:default-workspace-panel` | `shell/WorkspacePanel.tsx`, `hooks/useResizableInlinePanel.ts`, `lib/sessionWorkspaceState.ts` |
+| Right rail (v2) | Behind the `workspace_sidebar_v2` server flag and not on touch clients: browser-like tabs of "places" (files, changes, pulls, terminal, agents, tasks, search, web...); reuses the extension views for Agents, Tasks, Search and the PR list | `shell/useTabsSidebar.ts`, `shell/workspaceTabs/`, `docs/workspace-sidebar-v2.md` |
+| Other panels | Terminals push panel, execution logs, phone drawers per tab | `shell/AppShellWorkspacePanels.tsx`, `shell/MobilePanelDrawer.tsx` |
+| Pages | Every route renders into the main area's `Outlet`; sidebar and header stay. The grid replaces the main area with its own `main-area` section; canvas draws its own split | `App.tsx` 243-352, `grid/GridWorkspace.tsx`, `canvas/CanvasWorkspace.tsx` |
+| Floating sheet | The `sheet` variant (`data-omni-sheet="floating"`) at md and up; tokens `ui-sheet-gap`, `ui-sheet-gap-top` (its description already anticipates a top bar), `ui-sheet-radius` | `theme/variants.css` 401-418, `theme/tokens/variantSurfaces.ts` |
+| Contributable | One view container, `omnigent.rightPanel` (others warn and are ignored); no `viewsContainers`; no `when` on views (`view.<id>.available` is host-set); menus only `view/title`; session header items; built-in tabs replaced by views through `builtInTab` | `vscodeExtensions/contributions.ts` 15, 371; `shell/railViews.ts`, `shell/railTabs.ts` |
+| Layout commands | `toggle-left-sidebar`, `toggle-right-sidebar`; shortcuts `sidebar.left` (Ctrl/Cmd+B native, Cmd+Alt+[ browser), `sidebar.right` | `shell/appCommands.ts` 95-110, `lib/shortcuts/registry.ts` 131-144 |
+| Narrow | md = 73.8125rem (1181px in JS); sidebar becomes a drawer (side by side from 600px at aspect 3/4); the right rail is drawers opened from the header's phone menu; the Electron app keeps the desktop layout | `hooks/useIsMobileViewport.ts`, `hooks/useIsSideBySideSidebarViewport.ts`, `ChatHeader.tsx` 243 |
+| Embed | Same routes and AppShell. `OmnigentAppProps`: `sidebarConfig` (polling and paging only), `basename`, `routing`, `isDarkMode`, `product.theme`. No layout props | `embed.tsx` 115-147, `appConfig.ts` |
+| Settings JSON | `omnigent:ui-settings`; keys `workbench.colorCustomizations`, `omnigent.themeOptions`, `omnigent.style.*`. The document and parser are generic, the schema and apply are theme-specific (`additionalProperties: false`). `omnigent.files.*` (`workspace.getConfiguration`) is a separate map in other storage | `theme/settingsDocument.ts`, `theme/settingsSchema.ts`, `vscodeExtensions/workspaceService.ts` 95-103 |
+| Product config | `theme` only, three sources: embed prop, `web/product.json`, server `product: theme:` on `GET /v1/info` | `theme/productTheme.ts`, `omnigent/server/server_config.py`, `omnigent/server/app.py` |
+
+## Findings: VS Code and Theia
+
+VS Code ([custom layout](https://code.visualstudio.com/docs/configure/custom-layout),
+[contribution points](https://code.visualstudio.com/api/references/contribution-points),
+[UX guidelines](https://code.visualstudio.com/api/ux-guidelines/overview)):
+
+| Concept | VS Code | Use here |
+|---|---|---|
+| Parts | Title Bar, Activity Bar, Primary Side Bar, Editor, Panel, Secondary Side Bar (internally `auxiliarybar`), Status Bar | Same names |
+| `contributes.viewsContainers` | Keys `activitybar` and `panel`; entries `id`, `title`, `icon`. The secondary side bar has no key: views get there by moving | Same, plus a `secondarySidebar` key (decision 2) |
+| `contributes.views` | Keyed by container id (`explorer`, `scm`, custom); entries `id`, `name`, `when`, `icon`, `contextualTitle`, `visibility` (`visible`/`collapsed`/`hidden`), `initialSize`, `type` | Add `when`, `visibility`, `contextualTitle`, `initialSize` |
+| `contributes.viewsWelcome` | `view`, `contents` (markdown with command links), `when` | Same; replaces ad hoc empty states over time |
+| Activity bar | One icon per container, badges from views, drag to reorder, right-click to hide; Accounts and Manage at the bottom. Clicking the active one hides the side bar | Same behaviour (it is also DevHub's) |
+| Layout settings | `workbench.activityBar.location` (`default`, `top`, `bottom`, `hidden`), `workbench.sideBar.location` (`left`, `right`), `workbench.panel.defaultLocation`, `workbench.secondarySideBar.defaultVisibility`, `workbench.statusBar.visible`, `window.commandCenter`, `workbench.layoutControl.enabled` | Same keys in the settings JSON |
+| Layout state | Sizes, visibility, active container, moved and hidden views live in storage, not settings; "Reset View Locations" | Same split (decision 4) |
+| Moving views | Drag and drop between containers and parts; "Move View" command; moving creates a container in the target | Same, in a later milestone |
+| Title bar | Menu, command center (search and command entry), layout controls, account | Regions with contributable items |
+| Commands | `workbench.action.toggleSidebarVisibility`, `togglePanel`, `toggleAuxiliaryBar`, `toggleActivityBarVisibility`, `workbench.view.<container>`, `<view>.focus` | Same ids as aliases of today's commands |
+
+Theia (`packages/core/src/browser/shell/application-shell.ts`,
+[widgets](https://theia-ide.org/docs/widgets/)): `ApplicationShell` areas `top` (menu bar),
+`left`, `main`, `right`, `bottom`, plus the status bar and secondary windows. Left and right are
+`SidePanelHandler`s (a tab bar, which is the activity bar, over a dock panel).
+`AbstractViewContribution` gives a widget `defaultWidgetOptions: { area, rank }` and a toggle
+command; `ShellLayoutRestorer` persists the layout through `StorageService`;
+`FrontendApplicationContribution.initializeLayout` builds the first layout. What to take: parts
+are named areas a trusted contribution can target with a React widget and a rank; layout state
+is one serializable document restored at start. This plan's part ids and view registry are
+those areas and that document.
+
+## Goals
+
+1. The app shell becomes a workbench of named parts, each with a stable hook, a visibility, a
+   size and (where it makes sense) a location.
+2. Every sidebar and right-panel surface is a view in a view container, contributed through
+   `contributes.viewsContainers` and `contributes.views`, built-ins included.
+3. An activity bar switches the primary side bar's containers.
+4. A title bar with regions and contributable items.
+5. Layout settings live in the settings JSON, on a general configuration registry; layout state
+   lives in one layout state store.
+6. A product sets layout defaults, locks keys and hides parts, containers and views, through the
+   same three sources as the product theme, embed included.
+7. Today's look is the default: every refactor milestone is 0 px on the harness.
+8. The part ids and view registry are the seam the trusted React tier, menus everywhere and
+   product config later fill.
+
+## Non-goals
+
+- Replacing another product's UI, or any App Builder work.
+- The trusted React tier itself (React slots from products). This plan reserves its seams only.
+- Menus beyond the ones a part needs (`viewContainer/title`, the title bar's items). Item context
+  menus and the "..." overflow are the menus stage.
+- Editor groups, split chats, tabs in the main area (the grid stays as it is).
+- Moving terminals into a bottom Panel; the part id is reserved.
+- Reworking the v2 tabs sidebar's places; it keeps rendering inside the secondary side bar.
+- New Settings UI rows.
+
+## Proposed model
+
+### Parts
+
+| Part id | VS Code | Contents | Hook | Default |
+|---|---|---|---|---|
+| `workbench.parts.titlebar` | Title Bar | Regions `left`, `center`, `right` | `[data-part="titlebar"]` | Hidden (decision 7) |
+| `workbench.parts.activitybar` | Activity Bar | One item per primary side bar container, global items at the bottom | `[data-part="activitybar"]` | Hidden (decision 3) |
+| `workbench.parts.sidebar` | Primary Side Bar | The active container's views | `[data-part="sidebar"]`, keeps `.conversations-sidebar` | Visible, left |
+| `workbench.parts.main` | Editor | The chat header, the route's page, the composer; the grid and canvas | `[data-part="main"]`, keeps `[data-slot=main-area]` | Visible |
+| `workbench.parts.auxiliarybar` | Secondary Side Bar | `omnigent.rightPanel` and other containers; the v2 tabs sidebar when its flag is on | `[data-part="auxiliarybar"]`, keeps `[data-slot=workspace-panel]` | Per session, as today |
+| `workbench.parts.panel` | Panel | Reserved (terminals later) | | Not rendered |
+| `workbench.parts.statusbar` | Status Bar | Reserved (decision 8) | | Not rendered |
+
+A `layoutService` (web, plain data) owns them: `isVisible(part)`, `setPartHidden(hidden, part)`,
+`getSize(part)`, `setSize`, `getLocation(part)`, `onDidChangePartVisibility`,
+`onDidChangeLayout`. AppShell reads it instead of its own state. The extension API exposes the
+read side and the commands, as VS Code does (no direct `setSize` for extensions).
+
+### View containers and locations
+
+| Container | Location | Built-in extension | Views |
+|---|---|---|---|
+| `omnigent.conversations` | activitybar | `omnigent.conversations` | `omnigent.conversations.navigation` (the primary nav), `omnigent.conversations.list` (sessions, projects) |
+| `omnigent.inbox` | activitybar | `omnigent.inbox` | `omnigent.inbox.list` |
+| `omnigent.automations` | activitybar | `omnigent.automations` | `omnigent.automations.list` |
+| `omnigent.canvas` | activitybar | `omnigent.canvas` | `omnigent.canvas.list` |
+| `omnigent.rightPanel` (kept) | secondarySidebar | the existing tab extensions | Files, Changes, Pull Requests, Agents, Tasks, Content search, extension views |
+
+- `contributes.viewsContainers`: `{ "activitybar": [ { id, title, icon } ], "secondarySidebar": [...], "panel": [...] }`.
+  Container ids start with the extension id, as view ids do. Icons from the Lucide allowlist.
+- `contributes.views[<container>][]` gains `when`, `visibility`, `contextualTitle`,
+  `initialSize`. A container's views stack (sidebar, VS Code style, collapsible with headers when
+  more than one) or tab (secondary side bar, as the rail's strip today).
+- `builtInView` (built-ins only, as `builtInTab`): the view's body is a host React component from
+  an allowlisted registry (the conversation list, the inbox list). This is the trusted tier's
+  first seam: the trusted stage opens the same registry to products.
+- `contributes.viewsWelcome`: plain-data empty states with command links, for every view.
+- A container with no visible view is not shown in the activity bar (VS Code's rule).
+- Context keys: `activeViewlet`, `sideBarVisible`, `auxiliaryBarVisible`, `activityBarVisible`,
+  `view.<id>.visible` (on screen) next to today's `view.<id>.available`.
+
+### Activity bar
+
+- Settings: `workbench.activityBar.location`: `default` (vertical rail beside the side bar),
+  `top` (icons in the side bar's header row), `hidden`. `bottom` too if cheap (VS Code has it).
+- Behaviour: click selects the container and shows the side bar; clicking the active item hides
+  the side bar; badges from a view's `badge` (already in the TreeView API) roll up to the
+  container; drag to reorder and "Hide" from a right-click (layout state); keyboard focus with
+  arrows.
+- Global items at the bottom: Accounts (the profile and server picker, today's sidebar footer)
+  and Manage (settings). When the bar is visible they leave the side bar's footer, as DevHub
+  wants; when hidden the footer stays.
+- Commands: `workbench.view.<container>`, `workbench.action.toggleActivityBarVisibility`,
+  `workbench.action.focusActivityBar`.
+
+### Side bars
+
+| Setting | Values | Default |
+|---|---|---|
+| `workbench.sideBar.location` | `left`, `right` (the secondary side bar takes the other side) | `left` |
+| `workbench.secondarySideBar.defaultVisibility` | `hidden`, `visible`, `visibleInWorkspace` (here: a session) | today's `omnigent:default-workspace-panel` value, migrated |
+| `omnigent.secondarySideBar.autoHideBelow` | px window width, or `0` | `0` (DevHub: 1180) |
+
+- Widths: themes and products set them as tokens (decision 5): `ui-sidebar-width` (default
+  320px), `ui-sidebar-min-width` (220px), `ui-sidebar-max-width` (50vw), the same three for the
+  auxiliary bar, `ui-activitybar-width`, `ui-titlebar-height`. A drag stores a width in layout
+  state; double-click or "Reset Layout" returns to the token. DevHub's `clamp(220px, 20vw, 280px)`
+  is a token value.
+- The side bar's open state becomes persisted layout state (today it isn't), per window.
+- The secondary side bar keeps per-session open state and width (today's behaviour), plus a
+  close button and maximize ("wide") in its container title (`viewContainer/title` menu).
+- View moving: "Move View..." and drag and drop of a view between containers and the two side
+  bars, "Reset View Locations"; moved and hidden views are layout state.
+
+### Title bar
+
+- Regions `left`, `center`, `right`. Built-in items (each a contribution of a built-in
+  extension): brand (the theme's brand logo and app name), command center (opens Cmd+K, VS Code's
+  `window.commandCenter`), layout controls (toggle side bars), account.
+- Plain-data items: `contributes.menus["titleBar/left" | "titleBar/center" | "titleBar/right"]`
+  (command buttons with `icon`, `when`, `group`, order) and `window.createTitleBarItem` modelled
+  on `createStatusBarItem` (text, tooltip, command, color) (decision 6).
+- Product items that need React (a workspace switcher, an app grid) are trusted-tier slots on the
+  same region ids; until that stage a product picks built-in kinds only.
+- Settings: `window.titleBar.visible` (Omnigent key; VS Code's custom title bar is always there),
+  `window.commandCenter`, `workbench.layoutControl.enabled`. When visible, `ui-sheet-gap-top`
+  takes its top-bar value.
+- On phones the title bar's items fold into the chat header's phone menu; the bar is hidden.
+
+### Status bar (decision 8)
+
+Reserved part id, `window.createStatusBarItem` reserved as an alias target of
+`createSessionHeaderItem`. No design asks for one.
+
+### Settings and layout state
+
+| Kind | Store | Examples |
+|---|---|---|
+| Settings (user intent, in the settings JSON) | `omnigent:ui-settings` | `workbench.activityBar.location`, `workbench.sideBar.location`, `workbench.secondarySideBar.defaultVisibility`, `window.titleBar.visible`, `window.commandCenter`, `omnigent.secondarySideBar.autoHideBelow` |
+| Layout state (what the user dragged and toggled) | one versioned `omnigent:layout-state` document (Theia's restorer, VS Code's storage) | side bar open, widths, active container, activity bar order and hidden items, moved and hidden views, collapsed view sections |
+| Per-session state (unchanged) | `omnigent:session-workspace-state` | the secondary side bar's open state and width per session |
+
+- L1 turns the settings document into a general **configuration registry**
+  (`contributes.configuration`, `contributes.configurationDefaults`, `workspace.getConfiguration`
+  over the same document). The theme keys register on it; layout keys register on it;
+  `omnigent.files.*` moves into the document (migrated from `omnigent:files-panel-preferences`).
+  The schema becomes the union of registered properties, so the M10b editor's completions,
+  hover and "Set by product" work for every key.
+- Existing localStorage keys (`panel-size-preferences`, `sidebar-view`, collapsed sections) are
+  migrated once into layout state, as M10b migrated its keys.
+- "View: Reset Layout" clears layout state; settings stay.
+
+### Product control
+
+Mirrors `ProductThemeConfig`, same three sources (embed prop over `web/product.json` over the
+server's `product:` block on `GET /v1/info`), merged field by field:
+
+```ts
+interface ProductConfig {
+  theme?: ProductThemeConfig;
+  settings?: {
+    defaults?: Record<string, unknown>; // any registered key: first run and reset
+    locked?: Record<string, unknown>;   // applied last, refused on write, "Set by product"
+  };
+  layout?: {
+    hiddenParts?: string[];       // e.g. "workbench.parts.titlebar"
+    hiddenContainers?: string[];  // ids or `*` patterns
+    hiddenViews?: string[];
+    containerOrder?: string[];    // activity bar default order
+    lockViewLocations?: boolean;  // no moving or hiding views
+  };
+}
+```
+
+`settings` is generic (decision 9): the layout stage is its first user, product config later adds
+nothing but keys. Hiding is removal (like `allowed` for themes): a hidden view's commands and
+`<view>.focus` don't run and its context key is false.
+
+### Embed
+
+- The embed shows the same workbench. A host page usually has its own chrome, so the title bar
+  default stays hidden and the product's `layout.hiddenParts` can drop more.
+- Part sizes clamp to the embed's scope root, not the window: the layout service measures the
+  root (ResizeObserver), and the md breakpoint logic reads the root's width for parts. This is a
+  behaviour change for embeds narrower than the window; tested separately.
+- Layout state is keyed by the embed's `basename` so two embeds on one origin don't share it.
+
+### Narrow and mobile
+
+| Width | Activity bar | Side bar | Secondary side bar | Title bar |
+|---|---|---|---|---|
+| md and up | per setting | in flow | in flow, per session | per setting |
+| side-by-side band (600px, aspect 3/4) | `top` inside the side bar | in flow | drawer | hidden, items in the phone menu |
+| phone | `top` inside the drawer | drawer, as today | drawers from the phone menu, which lists the container's views | hidden |
+
+The Electron app keeps the desktop layout, as today. Touch clients keep the classic rail drawers.
+
+## Built-ins: migration
+
+| Today | Becomes | Milestone |
+|---|---|---|
+| `Sidebar.tsx` nav rows | `omnigent.conversations.navigation`: a host-drawn list of entries from a `sidebar/navigation` menu (New session, Automations, Workflows, Inbox, Canvas, V1 extension pages, Usage), each with `when`, hideable through layout state and `layout.hiddenViews`-style ids (decision 10) | L5 |
+| `ConversationList` | `omnigent.conversations.list` (`builtInView`) with its header actions as `view/title` items | L3 |
+| Sidebar header row | The container's title bar: title (or brand when the title bar is hidden), `viewContainer/title` items (search, back, forward, collapse) | L3 |
+| Server picker footer | The activity bar's Accounts and Manage items when the bar shows; the footer otherwise | L4 |
+| Inbox, Automations, Canvas pages | Stay routes; new compact list views (`builtInView`) in their own containers | L4 |
+| Right rail tabs | Views of `omnigent.rightPanel` in the secondary side bar: no change in their extensions; `builtInTab` stays; the strip draws from the container | L3 |
+| Rail gating in code (`showGithubTab`...) | View `when` clauses on host context keys | L3 |
+| v2 tabs sidebar | Drawn inside the secondary side bar part when the flag is on; its places untouched | L2 |
+| `toggle-left-sidebar`, `toggle-right-sidebar` | Commands `workbench.action.toggleSidebarVisibility` and `workbench.action.toggleAuxiliaryBar` (old ids kept as aliases); shortcuts unchanged | L2 |
+
+## DevHub's layout items
+
+All in `my-extensions/dev` (`thekauer.dev`), no fork code beyond the mechanisms:
+
+| Design item | Expressed as |
+|---|---|
+| Icon rail, 48px, Projects and Automations (Inbox, Canvas with `navInRail`) | `configurationDefaults`: `workbench.activityBar.location: "default"`; theme token `ui-activitybar-width: 48px`; activity bar item tokens (size, active bar width and colour) |
+| Active item: accent icon, `sel` background, 2px accent bar | New activity bar colour tokens (`activitybar-foreground`, `-active-foreground`, `-active-background`, `-active-border`, `-badge-*`) with VS Code aliases (`activityBar.*`) |
+| Clicking the active item collapses the sidebar | Built-in behaviour |
+| Avatar with popover, Settings at the bottom; footer gone | Accounts and Manage global items |
+| Top bar 48px: logo, workspace switcher, app grid, avatar | `window.titleBar.visible: true`; brand and account built-in items; the switcher and grid wait for trusted-tier slots (a product's, not an extension's) |
+| Sidebar `clamp(220px, 20vw, 280px)` | Theme token `ui-sidebar-width` |
+| "New session" gone from the nav | The nav entry `omnigent.newSession` hidden (decision 10) |
+| Inbox, Canvas, Automations sidebar views | The built-in containers |
+| Right panel 280-400px, wide mode `min(720px, 50vw)` | `ui-auxiliarybar-width`, `-max-width` tokens; maximize in `viewContainer/title` |
+| Auto-hidden under 1180px | `omnigent.secondarySideBar.autoHideBelow: 1180` in `configurationDefaults` |
+| Close (x) and Expand in the tab bar | Built-in container title actions |
+| Files tab gone | Hidden view in layout state seeded by `configurationDefaults` (decision 11) |
+| Title bar under the tab bar with meta and refresh | Exists (`view-title`, `TreeView.description`, `view/title`); restyle only |
+| Segmented Chat / Terminal toggle in the header | Not this stage (menus everywhere: `chat/title`) |
+
+## Milestones
+
+Each is one or more commits on a worktree of `extensible-ui`, landed as in the theming plan.
+"0 px" means `verify.sh --screens --token-dump --embed --compare verify/baselines` with the
+theming plan's tolerances.
+
+| # | Milestone | Verified by |
+|---|---|---|
+| L0 | Harness: a layout dump (each part's box, visibility and hook, per screen) next to the token dump; new screens: sidebar collapsed, rail open and closed, narrow band, phone drawer, grid, canvas, embed narrower than the window; baselines of today | Two runs: 0 px, identical layout dumps |
+| L1 | Configuration registry: `contributes.configuration`, `configurationDefaults`, the theme keys and `omnigent.files.*` on it, `getConfiguration` over the settings document, migration | Vitest: registry, schema union, defaults layering, migration, locks; settings JSON harness checks; 0 px |
+| L2 | Workbench parts and `layoutService`; `data-part` hooks; layout state store with migration of the old keys; the toggle commands under VS Code ids; side bar open state persisted | Vitest: service, migration, commands; RTL on AppShell; 0 px and identical layout dumps (hooks additions only) |
+| L3 | View containers: `viewsContainers`, the view registry generalized from `railViews`, `when`/`visibility`/`viewsWelcome`, `builtInView`; `omnigent.conversations` and `omnigent.rightPanel` as containers; rail gating as `when` | Vitest: parsing, ordering, `when`, welcome; the built-in tab tests unchanged; 0 px |
+| L4 | Activity bar part (`default`, `top`, `hidden`), badges, order and hide, global items; Inbox, Automations, Canvas containers and views | Vitest and RTL; new screens per location; defaults 0 px; `--only-layout` checks (click, collapse, badge, keyboard) |
+| L5 | Side bars: `sideBar.location`, width tokens, the navigation view and its menu, hide entries, `autoHideBelow`, close and maximize | Unit; screens left and right, narrow band; defaults 0 px |
+| L6 | Moving views: "Move View...", drag and drop, hide and reset; `lockViewLocations` | Unit for state; `--only-layout` drag checks |
+| L7 | Title bar: part, regions, built-in items, `titleBar/*` menus, `createTitleBarItem`, the sheet's top gap | Unit; screens with the bar on; defaults 0 px |
+| L8 | Product layout: `product.settings` and `product.layout` from the three sources, server block and `/v1/info` (`openapi.json`), embed sizing to the scope root, state keyed by basename | Vitest, `embed.test.tsx`, pytest for the server block; harness embed checks |
+| L9 | Narrow and mobile pass per the table above | Narrow and phone screens; RTL on drawers |
+| L10 | Extension API read side: `window.onDidChangeLayout`-style events, context keys, the vendored typings and docs (`vscode_style_extensions.md` mapping rows, `theme_hooks.md` part hooks) | API tests; typings check |
+| L11 | DevHub layout in `my-extensions/dev`: `configurationDefaults`, tokens, side-by-sides with the design | `--only-layout` DevHub checks; new `devhub-*-layout` baselines; side-by-sides |
+
+Order: L0 > L1 > L2 > L3 > L4. L5 and L7 need L3. L6 needs L5. L8 needs L1 and L2. L9 needs L4,
+L5 and L7. L10 can follow each part. L11 needs L4, L5, L7 and L8.
+
+## Risks
+
+| Risk | Mitigation |
+|---|---|
+| AppShell is 3900 lines with many tests; the parts refactor touches all of it | L2 moves state, not markup, first; 0 px and the layout dump on each commit |
+| Two right-rail implementations (classic and v2) | Both render inside one part; containers drive the classic one only until v2 adopts views |
+| Per-session rail state against per-window container state | Keep per-session open and width; container and view state per window |
+| Activity bar and title bar shift every pixel when on | Defaults keep both off; new baselines only for screens that turn them on |
+| Embeds narrower than the window change behaviour | Its own L8 screens; a product can keep window-based breakpoints if needed |
+| Extensions hiding or moving built-in views | Only the user (layout state) and products hide; third-party extensions may only add; `configurationDefaults` for layout keys limited to user-overridable defaults |
+| A settings registry over three owners (theme, layout, files) | One schema union; the theme service keeps applying its keys |
+| Keybinding clashes (Cmd+B and browser shortcuts) | Keep today's chords; new commands without defaults |
+| localStorage migrations losing state | Migrate once, keep the old keys until the new document is written (the M10b rule) |
+| Scope creep into menus and the trusted tier | Only the menus a part needs; React slots stay reserved ids |
+
+## Decisions for the user
+
+1. **Part names.** (a) VS Code's: Title Bar, Activity Bar, Primary/Secondary Side Bar, Panel,
+   Status Bar, ids `workbench.parts.*`; (b) Omnigent names (left sidebar, right panel).
+   Recommend (a), with today's hooks kept.
+2. **Contributing to the right panel.** VS Code has no `viewsContainers` key for the secondary
+   side bar. (a) Add `secondarySidebar` (a deviation, documented); (b) only `activitybar` and
+   `panel`, with `omnigent.rightPanel` the one built-in secondary container and other containers
+   moved there by the user or a product. Recommend (a).
+3. **Activity bar default.** (a) `hidden`, today's look, one container in the side bar;
+   (b) `default` (VS Code's), a new rail for everyone. Recommend (a); products and extensions set
+   (b) through `configurationDefaults` or `product.settings.defaults`.
+4. **Where layout lives.** (a) Intent in the settings JSON, drags and toggles in a layout state
+   store (VS Code's split); (b) everything, widths and open states included, in the settings
+   JSON. Recommend (a): (b) rewrites the user's JSON on every drag.
+5. **Sidebar widths.** (a) Theme tokens for default, min and max, product-lockable, drags in
+   layout state; (b) settings keys; (c) both. Recommend (a): the width belongs to the design
+   (DevHub sets it), and `lockedTokens` already locks it.
+6. **Title bar items from extensions.** (a) `titleBar/*` menus (commands) plus
+   `window.createTitleBarItem` (text items); (b) menus only; (c) none until the trusted tier.
+   Recommend (a).
+7. **Title bar default.** (a) Hidden everywhere; (b) visible standalone, hidden in the embed.
+   Recommend (a), 0 px.
+8. **Status bar.** (a) Reserve the id only; (b) build the part and `createStatusBarItem` now.
+   Recommend (a): no design needs it.
+9. **Product config shape.** (a) Generic `product.settings.{defaults, locked}` over the
+   configuration registry plus `product.layout.hidden*`; (b) a layout-only
+   `ProductLayoutConfig` like `ProductThemeConfig`. Recommend (a).
+10. **Hiding the "New session" row.** (a) The nav becomes a view drawn from a
+    `sidebar/navigation` menu, entries hideable by the user and by products; (b) a setting
+    listing hidden nav entries; (c) a theme variant. Recommend (a).
+11. **How an extension sets layout (DevHub).** (a) `contributes.configurationDefaults` for
+    settings and tokens in its themes, always on while it is installed; (b) a theme `layout`
+    section applied only while the theme is active; (c) both. Recommend (a), VS Code's way:
+    layout does not change with the colour theme.
+12. **New sidebar containers.** (a) Built-in Inbox, Automations and Canvas containers with
+    compact host views, as DevHub shows; (b) only `omnigent.conversations`, others later.
+    Recommend (a).
+13. **The v2 tabs sidebar.** (a) Leave it inside the secondary side bar, untouched; (b) make its
+    places views of containers in this stage. Recommend (a).
+14. **Embed breakpoints.** (a) Parts size and collapse against the embed's root; (b) against the
+    window, as today. Recommend (a).
