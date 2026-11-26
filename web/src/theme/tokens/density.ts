@@ -92,4 +92,11 @@ export const DENSITY_TOKENS = defineTokens("density", [
     description: "Gap between the items of a view's title bar, 2px.",
     default: { light: "2px" },
   },
+  {
+    id: "ui-chat-column-width",
+    kind: "length",
+    default: {},
+    description:
+      "Width of the chat column (transcript, composer and indicators) at every window size. Unset: 48rem, 56rem from 1921px and up to 100rem from 2561px.",
+  },
 ]);

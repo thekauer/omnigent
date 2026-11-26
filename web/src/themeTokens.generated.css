@@ -267,6 +267,7 @@
   --ui-weight-medium: 500;
   --ui-weight-strong: 600;
   --ui-letter-spacing: 0em;
+  --ui-code-letter-spacing: initial;
   --ui-label-size: var(--text-sm);
   --ui-label-transform: none;
   --ui-label-tracking: var(--ui-letter-spacing);
@@ -274,6 +275,10 @@
   --ui-view-title-size: var(--text-ui);
   --ui-view-title-weight: var(--ui-weight-medium);
   --ui-fold-label-size: var(--text-ui);
+  --ui-app-name-font: initial;
+  --ui-app-name-size: 15px;
+  --ui-app-name-weight: var(--ui-weight-strong);
+  --ui-app-name-tracking: -0.025em;
   --ui-elevation: 1;
   --omnigent-elevation: var(--ui-elevation);
   --ui-shadow-neutral-rgb: 0 0 0;
@@ -346,6 +351,10 @@
   /* prettier-ignore */
   --ui-omni-glass-glow: light-dark(color-mix(in oklch, white, transparent 72%), color-mix(in oklch, white, transparent 95%));
   --ui-omni-glass-border: color-mix(in oklab, var(--color-black) 8%, transparent);
+  --ui-shell-image: initial;
+  --ui-panel-background: initial;
+  /* prettier-ignore */
+  --ui-sidebar-active-ring: var(--ui-shadow-none);
   --ui-row-line: 20px;
   --ui-row-height: calc(var(--ui-row-line) + calc(var(--spacing) * 2));
   --ui-control-h-xs: calc(var(--spacing) * 6);
@@ -360,10 +369,15 @@
   --ui-view-title-height: calc(var(--spacing) * 11);
   --ui-view-title-padding-x: calc(var(--spacing) * 2);
   --ui-view-title-gap: 2px;
+  --ui-chat-column-width: initial;
   --ui-border-width: 1px;
   --ui-border-style: solid;
   --ui-divider-style: solid;
   --ui-divider-dashed-style: dashed;
+  --ui-sidebar-surface: initial;
+  --ui-sidebar-edge: initial;
+  --ui-sidebar-header-rule: initial;
+  --ui-panel-edge: initial;
   --ui-scrollbar-width: thin;
   --ui-scrollbar-size: calc(var(--spacing) * 2);
   --ui-scrollbar-thumb: initial;
@@ -385,6 +399,10 @@
   --viewer-cited-line: rgba(254, 240, 138, 0.4);
   --viewer-model-background: #ffffff;
   --viewer-model-surface: #9aa0a6;
+  --code-block-body-background: initial;
+  --code-inline-bg: var(--code-bg);
+  --code-inline-border: initial;
+  --code-inline-radius: var(--ui-radius-sm);
   --viewer-shiki-background: #ffffff;
   --viewer-mark-cited: color-mix(in oklab, var(--color-yellow-200) 40%, transparent);
   --viewer-mark-icon: var(--color-yellow-500);
@@ -478,6 +496,14 @@
   --ui-cta-background: initial;
   --ui-cta-foreground: initial;
   --ui-cta-hover: initial;
+  --ui-cta-radius: 0px;
+  --ui-cta-font: var(--ui-font-mono);
+  --ui-cta-size: 12px;
+  --ui-cta-transform: uppercase;
+  --ui-cta-tracking: 0px;
+  --ui-working-pulse-radius: initial;
+  --ui-context-strip-background: initial;
+  --ui-context-strip-radius: var(--ui-radius-sm);
 }
 
 .dark {
@@ -1334,6 +1360,7 @@
   --ui-view-title-size: var(--text-ui);
   --ui-view-title-weight: var(--ui-weight-medium);
   --ui-fold-label-size: var(--text-ui);
+  --ui-app-name-weight: var(--ui-weight-strong);
   --omnigent-elevation: var(--ui-elevation);
   --ui-shadow-xs-alpha: calc(0.08 * var(--omnigent-elevation));
   /* prettier-ignore */
@@ -1381,6 +1408,8 @@
   /* prettier-ignore */
   --ui-shadow-onboarding: 0 24px 80px 8px rgb(var(--ui-shadow-neutral-rgb) / var(--ui-shadow-onboarding-alpha));
   --ui-omni-glass-border: color-mix(in oklab, var(--color-black) 8%, transparent);
+  /* prettier-ignore */
+  --ui-sidebar-active-ring: var(--ui-shadow-none);
   --ui-row-height: calc(var(--ui-row-line) + calc(var(--spacing) * 2));
   --ui-control-h-xs: calc(var(--spacing) * 6);
   --ui-control-h-sm: calc(var(--spacing) * 7);
@@ -1398,6 +1427,8 @@
   --viewer-search-match: color-mix(in oklch, var(--warning) 30%, transparent);
   --viewer-search-match-selected: color-mix(in oklch, var(--warning) 70%, transparent);
   --viewer-selection-match: color-mix(in oklch, var(--primary) 16%, transparent);
+  --code-inline-bg: var(--code-bg);
+  --code-inline-radius: var(--ui-radius-sm);
   --viewer-mark-cited: color-mix(in oklab, var(--color-yellow-200) 40%, transparent);
   --viewer-mark-icon: var(--color-yellow-500);
   --viewer-mark-line: color-mix(in oklab, var(--color-yellow-500) 10%, transparent);
@@ -1427,6 +1458,8 @@
   --ui-sheet-gap: calc(var(--spacing) * 2);
   --ui-sheet-gap-top: var(--ui-sheet-gap);
   --ui-sheet-radius: calc(var(--ui-radius-base) * 1.5);
+  --ui-cta-font: var(--ui-font-mono);
+  --ui-context-strip-radius: var(--ui-radius-sm);
 }
 
 :root.dark,
@@ -1502,6 +1535,7 @@
   --ui-view-title-size: var(--text-ui);
   --ui-view-title-weight: var(--ui-weight-medium);
   --ui-fold-label-size: var(--text-ui);
+  --ui-app-name-weight: var(--ui-weight-strong);
   --omnigent-elevation: var(--ui-elevation);
   --ui-shadow-xs-alpha: calc(0.08 * var(--omnigent-elevation));
   /* prettier-ignore */
@@ -1549,6 +1583,8 @@
   /* prettier-ignore */
   --ui-shadow-onboarding: 0 24px 80px 8px rgb(var(--ui-shadow-neutral-rgb) / var(--ui-shadow-onboarding-alpha));
   --ui-omni-glass-border: color-mix(in oklab, var(--color-black) 8%, transparent);
+  /* prettier-ignore */
+  --ui-sidebar-active-ring: var(--ui-shadow-none);
   --ui-row-height: calc(var(--ui-row-line) + calc(var(--spacing) * 2));
   --ui-control-h-xs: calc(var(--spacing) * 6);
   --ui-control-h-sm: calc(var(--spacing) * 7);
@@ -1566,6 +1602,8 @@
   --viewer-search-match: color-mix(in oklch, var(--warning) 30%, transparent);
   --viewer-search-match-selected: color-mix(in oklch, var(--warning) 70%, transparent);
   --viewer-selection-match: color-mix(in oklch, var(--primary) 16%, transparent);
+  --code-inline-bg: var(--code-bg);
+  --code-inline-radius: var(--ui-radius-sm);
   --viewer-mark-cited: color-mix(in oklab, var(--color-yellow-700) 30%, transparent);
   --viewer-mark-icon: var(--color-yellow-400);
   --viewer-mark-line: color-mix(in oklab, var(--color-yellow-400) 15%, transparent);
@@ -1595,6 +1633,8 @@
   --ui-sheet-gap: calc(var(--spacing) * 2);
   --ui-sheet-gap-top: var(--ui-sheet-gap);
   --ui-sheet-radius: calc(var(--ui-radius-base) * 1.5);
+  --ui-cta-font: var(--ui-font-mono);
+  --ui-context-strip-radius: var(--ui-radius-sm);
 }
 
 [data-token-mode="light"] {

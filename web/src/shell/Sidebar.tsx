@@ -1383,7 +1383,7 @@ function SidebarImpl({
           [data-electron-mac] rules in index.css). Browsers and other platforms
           keep the standard single row. */}
             {/* Mobile Search shares the floating chat controls' 16px edge inset. */}
-            <div className="sidebar-header-row flex shrink-0 items-center justify-between p-4 md:h-(--ui-header-height) md:py-0 md:pr-3">
+            <div className="sidebar-header-row flex shrink-0 items-center justify-between p-4 shadow-[inset_0_-1px_0_var(--ui-sidebar-header-rule)] md:h-(--ui-header-height) md:py-0 md:pr-3">
               {/* Brand mark doubles as the "home" affordance: clicking it
             returns to `/`, the new-session composer. Without this there
             is no way back to the landing composer once you're inside a
@@ -1398,7 +1398,7 @@ function SidebarImpl({
                 className="sidebar-brand rounded-none transition-opacity duration-200 ease-[var(--ease-otto)] hover:opacity-70"
               >
                 {branding.app_name ? (
-                  <span className="text-[15px] font-semibold tracking-tight">
+                  <span className="font-(family-name:--ui-app-name-font) text-(length:--ui-app-name-size) font-(weight:--ui-app-name-weight) tracking-(--ui-app-name-tracking)">
                     {branding.app_name}
                   </span>
                 ) : (

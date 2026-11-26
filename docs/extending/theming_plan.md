@@ -300,8 +300,9 @@ Defaults must match today exactly.
   viewer-gutter-{background,foreground,active-foreground} and code-block-background (unset:
   each surface's own), viewer-highlight-rgb (channels) and viewer-cited-line, the Shiki
   viewer's viewer-shiki-background and viewer-mark-{cited,icon,line,active,range}, and
-  viewer-model-{background,surface} (hex, read by three.js). code-inline-bg and
-  code-inline-border come with the DevHub themes (M11).
+  viewer-model-{background,surface} (hex, read by three.js). M11: code-inline-bg (`code-bg`),
+  code-inline-border (unset: none; an inset ring, so the text does not move), code-inline-radius
+  (`ui-radius-sm`) and code-block-body-background (unset: `background`).
 - **Terminal** (M4, `terminal.ts`, `perMode`): terminal-{background,foreground,cursor,cursor-accent,selection},
   terminal-ansi-* (16, `black` to `bright-white`) and terminal-tone-{subtle,input,emphasis}
   (Codex's input box). An unset slot is left out of xterm's theme, so xterm's default applies.
@@ -351,6 +352,19 @@ Defaults must match today exactly.
   labels, the fold row's weight), ui-view-title-size/-weight and ui-fold-label-size, each
   defaulting to that site's current value. Public hooks: `theme_hooks.md`.
 - **Motion:** ui-duration-fast/base, ui-ease, ui-motion.
+- **Surfaces** (M11, for full-look themes; unset or at their defaults each is today's
+  look): ui-shell-image (the dark shell's glow; `none` for a flat canvas), ui-panel-background
+  (the right panel in dark, transparent by default), ui-sidebar-active-ring (`ui-shadow-none`),
+  in `elevation.ts`; ui-sidebar-surface (the sidebar's own background apart from `sidebar`),
+  ui-sidebar-edge, ui-sidebar-header-rule and ui-panel-edge in `border.ts`;
+  ui-app-name-font/-size/-weight/-tracking (the sidebar's app name when the branding sets one)
+  and ui-code-letter-spacing (`pre`, `code`, `kbd`, `samp`, in the base layer so tracking
+  utilities win) in `typography.ts`; ui-chat-column-width (unset: the three responsive widths)
+  in `density.ts`; ui-cta-radius/-font/-size/-transform/-tracking (the square Share and Stop,
+  defaults the M9 values), ui-context-strip-background/-radius and ui-working-pulse-radius in
+  `variantSurfaces.ts`. An unset colour in a shorthand (`border-right: 1px solid var(--x)`,
+  `box-shadow: inset ... var(--x)`) makes the declaration invalid, so nothing is drawn; an
+  unset inherited property (`font-family`, `letter-spacing`) inherits as before.
 
 ## Theme contribution API (VS Code-shaped)
 

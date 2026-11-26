@@ -1058,14 +1058,14 @@
 }
 
 :root:not(.dark) .conversations-sidebar {
-  background: var(--sidebar-background, var(--sidebar));
+  background: var(--ui-sidebar-surface, var(--sidebar-background, var(--sidebar)));
 }
 
 .dark .app-shell {
   --sidebar-edge-border: color-mix(in srgb, var(--foreground) 4%, transparent);
 
   background-color: var(--app-shell-bg) !important;
-  background-image: url("./assets/omnigent-center-glow.svg") !important;
+  background-image: var(--ui-shell-image, url("./assets/omnigent-center-glow.svg")) !important;
   background-position: right center;
   background-repeat: no-repeat;
   background-size: calc(100% - var(--app-sidebar-width, 0px)) 100%;
@@ -1073,7 +1073,7 @@
 
 .dark .omnigent-native-sidebar-surface,
 .dark .omnigent-sidebar-panel {
-  background-color: var(--sidebar);
+  background-color: var(--ui-sidebar-surface, var(--sidebar));
   background-image: var(--sidebar-surface-image);
   background-position: 0 0;
   background-size: auto;
@@ -1089,16 +1089,17 @@
 
 /* Edge treatment is mode-specific but palette-independent. */
 html:not(.dark) .conversations-sidebar:not(.is-peek) {
-  border-right: none;
+  /* Unset, the edge token makes the declaration invalid: no border. */
+  border-right: 1px solid var(--ui-sidebar-edge);
   box-shadow: inset -4px 0 6px -4px rgb(0 0 0 / calc(5% * var(--omnigent-elevation)));
 }
 .dark .conversations-sidebar {
-  border-right: 1px solid var(--sidebar-edge-border);
+  border-right: 1px solid var(--ui-sidebar-edge, var(--sidebar-edge-border));
   box-shadow: inset -4px 0 6px -4px rgb(0 0 0 / calc(5% * var(--omnigent-elevation)));
 }
 
 .dark .workspace-panel-motion {
-  --workspace-panel-border: rgb(255 255 255 / 8%);
+  --workspace-panel-border: var(--ui-panel-edge, rgb(255 255 255 / 8%));
 
   border-left-color: var(--workspace-panel-border);
 }
@@ -1237,7 +1238,9 @@ html:not(.dark) .conversations-sidebar:not(.is-peek) {
  * (FilesPanel/TerminalsPanel/SubagentsPanel + the graph surface).
  * Skip when maximized — the panel covers the full content area and needs an
  * opaque background so the chat beneath doesn't bleed through. */
-.dark aside[aria-label="Workspace"]:not([data-maximized]),
+.dark aside[aria-label="Workspace"]:not([data-maximized]) {
+  background: var(--ui-panel-background, transparent) !important;
+}
 .dark
   aside[aria-label="Workspace"]:not([data-maximized])
   :is([data-workspace-panel-content] > *, [data-workspace-panel-surface]) {
@@ -1802,6 +1805,15 @@ html[data-electron-mac] .breadcrumb-folder {
   .xterm {
     font-family: var(--ui-font-code);
   }
+  /* Code text's letter-spacing, where a theme sets one apart from the interface's
+   * (unset, the declaration is invalid and the element inherits as before). In the
+   * base layer, so a tracking utility on the element still wins. */
+  pre,
+  code,
+  kbd,
+  samp {
+    letter-spacing: var(--ui-code-letter-spacing);
+  }
   ::selection {
     background: var(--selection-background);
     color: var(--selection-foreground);
@@ -1911,7 +1923,10 @@ body {
  * work without needing a foreground tint or extra border. */
 [data-streamdown="inline-code"] {
   font-size: 0.875em;
-  background-color: var(--code-bg);
+  /* The inline code tokens (theme/tokens/code.ts); an unset border draws nothing. */
+  background-color: var(--code-inline-bg);
+  border-radius: var(--code-inline-radius);
+  box-shadow: inset 0 0 0 1px var(--code-inline-border);
 }
 [data-streamdown="code-block-body"] {
   font-size: 0.875em;
@@ -1987,6 +2002,12 @@ body {
 
 .text-message [data-streamdown="heading-5"] {
   font-size: 1em;
+}
+
+/* The code itself, inside the frame: Streamdown's `bg-background` unless a theme sets
+ * code-block-body-background. */
+[data-streamdown="code-block-body"] {
+  background-color: var(--code-block-body-background, var(--background));
 }
 
 /* The frame around a chat code block, Streamdown's `bg-sidebar` unless a theme sets

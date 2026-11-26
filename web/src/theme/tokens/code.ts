@@ -97,6 +97,31 @@ export const CODE_TOKENS = defineTokens("code", [
     description: "The 3D model viewer's default material for STL meshes (a hex colour).",
     default: { light: "#9aa0a6", dark: "#c4c9ce" },
   },
+  {
+    id: "code-block-body-background",
+    default: {},
+    description:
+      "The code inside a chat code block's frame (`[data-streamdown=code-block-body]`). Unset: `background`.",
+  },
+  // Inline code in chat (`[data-streamdown="inline-code"]`, index.css).
+  {
+    id: "code-inline-bg",
+    description: "Inline code's background in chat, `code-bg`.",
+    default: { light: "var(--code-bg)" },
+  },
+  {
+    id: "code-inline-border",
+    default: {},
+    description:
+      "Inline code's 1px outline in chat, drawn inside it (an inset ring, so the text does not move). Unset: none.",
+  },
+  {
+    id: "code-inline-radius",
+    kind: "length",
+    description:
+      "Inline code's corner radius in chat, `ui-radius-sm`; a square theme can keep inline code rounded.",
+    default: { light: "var(--ui-radius-sm)" },
+  },
   // The Shiki code viewer's marks (shell/CodeViewer.tsx): comments, citations, matches.
   {
     id: "viewer-shiki-background",

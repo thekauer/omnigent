@@ -268,5 +268,25 @@ export const ELEVATION_TOKENS = defineTokens("elevation", [
     description: "The app's glass panels' border in light mode (none in dark).",
     default: { light: `color-mix(in oklab, ${tw("black")} 8%, transparent)` },
   },
+  {
+    id: "ui-shell-image",
+    kind: "image",
+    default: {},
+    description:
+      "The dark app shell's background image. Unset: Omnigent's centre glow; `none` paints the plain `app-shell-bg`.",
+  },
+  {
+    id: "ui-panel-background",
+    default: {},
+    description:
+      "The right panel's background in dark, where it is transparent over the app shell. Unset: transparent.",
+  },
+  {
+    id: "ui-sidebar-active-ring",
+    kind: "shadow",
+    description:
+      "A shadow on the sidebar's active row, e.g. an inset hairline that sets it apart. `ui-shadow-none` (nothing drawn).",
+    default: { light: "var(--ui-shadow-none)" },
+  },
 ]);
 // raw-colors-data-end

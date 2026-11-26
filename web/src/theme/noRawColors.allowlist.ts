@@ -153,7 +153,7 @@ export const RAW_COLOR_ALLOWLIST: Readonly<Record<string, RawCounts>> = {
   "shell/PullRequestLabels.tsx": { hex: 1 },
   "shell/PullRequestPanelDetails.tsx": { hex: 1, textPx: 1, colorFunction: 1 },
   "shell/railTabs.ts": { textPx: 1 },
-  "shell/Sidebar.tsx": { palette: 1, rounded: 4, textPx: 4 },
+  "shell/Sidebar.tsx": { palette: 1, rounded: 4, textPx: 3 },
   "shell/SidebarEditRow.tsx": { rounded: 1 },
   "shell/SidebarServerPicker.tsx": { rounded: 2 },
   "shell/sidebarStyles.ts": { rounded: 1 },

@@ -227,7 +227,9 @@ describe("palette-aware surface composition", () => {
     expect(darkTokens).toContain("--app-shell-bg: var(--background)");
     expect(darkTokens).toContain("--session-composer-mask-bg: var(--app-shell-bg)");
     expect(appShellRule).toContain("background-color: var(--app-shell-bg)");
-    expect(appShellRule).toContain('background-image: url("./assets/omnigent-center-glow.svg")');
+    expect(appShellRule).toContain(
+      'background-image: var(--ui-shell-image, url("./assets/omnigent-center-glow.svg"))',
+    );
     const stopColors = [...centerGlowSvgSource.matchAll(/stop-color="([^"]+)"/g)].map(
       (match) => match[1],
     );
@@ -248,7 +250,7 @@ describe("palette-aware surface composition", () => {
     expect(darkTokens).toContain("--menu-surface-bg: var(--composer-surface-bg)");
     expect(darkTokens).toContain("color-mix(in srgb, var(--card) 95%, white)");
     expect(darkTokens).not.toContain("#5c306c");
-    expect(sidebarRule).toContain("background-color: var(--sidebar)");
+    expect(sidebarRule).toContain("background-color: var(--ui-sidebar-surface, var(--sidebar))");
     expect(composerRule).toContain("background-color: var(--composer-surface-bg)");
     expect(menuRule).toContain("background-color: var(--menu-surface-bg)");
     expect(cardRule).toContain("background-color: var(--card-surface-bg)");
@@ -894,8 +896,10 @@ describe("index.css sidebar canvas", () => {
   )?.[0];
 
   it("uses palette-owned bases in both modes", () => {
-    expect(lightCanvasRule).toContain("background: var(--sidebar-background, var(--sidebar))");
-    expect(darkCanvasRule).toContain("background-color: var(--sidebar)");
+    expect(lightCanvasRule).toContain(
+      "background: var(--ui-sidebar-surface, var(--sidebar-background, var(--sidebar)))",
+    );
+    expect(darkCanvasRule).toContain("background-color: var(--ui-sidebar-surface, var(--sidebar))");
     expect(darkCanvasRule).toContain("background-image: var(--sidebar-surface-image)");
     expect(darkCanvasRule).not.toMatch(/\bbackground\s*:/);
   });
@@ -910,8 +914,12 @@ describe("index.css sidebar canvas", () => {
     const shadow = "inset -4px 0 6px -4px rgb(0 0 0 / calc(5% * var(--omnigent-elevation)))";
     expect(lightEdgeRule).toContain(`box-shadow: ${shadow}`);
     expect(darkEdgeRule).toContain(`box-shadow: ${shadow}`);
-    expect(lightEdgeRule).toContain("border-right: none");
-    expect(darkEdgeRule).toContain("border-right: 1px solid var(--sidebar-edge-border)");
+    // Light has no border until a theme sets ui-sidebar-edge (unset, the declaration
+    // is invalid); dark keeps its hairline under it.
+    expect(lightEdgeRule).toContain("border-right: 1px solid var(--ui-sidebar-edge)");
+    expect(darkEdgeRule).toContain(
+      "border-right: 1px solid var(--ui-sidebar-edge, var(--sidebar-edge-border))",
+    );
   });
 
   it("backs floating peek cards in both modes with the opaque card color", () => {

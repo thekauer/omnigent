@@ -68,6 +68,13 @@ export const TYPOGRAPHY_TOKENS = defineTokens("typography", [
     default: { light: "0em" },
   },
   {
+    id: "ui-code-letter-spacing",
+    kind: "length",
+    default: {},
+    description:
+      "Letter-spacing of code text (`pre`, `code`, `kbd`, `samp`), e.g. 0 under a tracked interface. Unset: inherited.",
+  },
+  {
     id: "ui-label-size",
     kind: "length",
     description: "Section label font size.",
@@ -112,5 +119,31 @@ export const TYPOGRAPHY_TOKENS = defineTokens("typography", [
     description:
       "Font size of the transcript's fold row label, `Worked for 5s` (`[data-slot=fold-label]`). Its weight is ui-label-weight.",
     default: { light: "var(--text-ui)" },
+  },
+  // The app name the sidebar header shows when the branding (a theme's `brand.appName`
+  // or the server's) sets one, in place of the wordmark image.
+  {
+    id: "ui-app-name-font",
+    kind: "font",
+    default: {},
+    description: "Font of the sidebar's app name. Unset: the interface font.",
+  },
+  {
+    id: "ui-app-name-size",
+    kind: "length",
+    description: "Font size of the sidebar's app name, 15px.",
+    default: { light: "15px" },
+  },
+  {
+    id: "ui-app-name-weight",
+    kind: "number",
+    description: "Font weight of the sidebar's app name, `ui-weight-strong`.",
+    default: { light: "var(--ui-weight-strong)" },
+  },
+  {
+    id: "ui-app-name-tracking",
+    kind: "length",
+    description: "Letter-spacing of the sidebar's app name, -0.025em.",
+    default: { light: "-0.025em" },
   },
 ]);

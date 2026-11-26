@@ -743,7 +743,14 @@ limitHit, message }`; a cancelled token aborts the request and rejects
       the picker command and Settings' picker row (and the built-in palette
       editor, which chooses Custom), keeping the chosen theme's options and
       settings JSON; `hideCustomizations` hides the settings JSON and its quick
-      picks, and the stored values stop applying.
+      picks, and the stored values stop applying. Full-look themes also reach the
+      chrome's surfaces through tokens (theming plan M11,
+      `theme/surfaceTokens.test.ts`): inline code and the code block body, the dark
+      shell's image, the sidebar's surface, edge, header rule, active row ring and
+      app name type, the right panel's dark background and edge, the chat column
+      width, code letter-spacing, and the square Share and Stop's, attached context
+      strip's and square pulse's shape and type. Unset or at their defaults, each
+      keeps today's look.
       A non-built-in extension under the `omnigent` publisher, or with the id of
       one already loaded, is skipped with a warning.
     - The plugin read API (theming plan M8): `window.activeColorTheme`

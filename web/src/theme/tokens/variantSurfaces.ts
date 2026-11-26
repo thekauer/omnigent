@@ -1,7 +1,8 @@
 // Tokens the style variants read (`theme/variants.css`): the user bubble, the floating
-// sheet and the square Share and Stop buttons. Nothing reads them while every variant is
-// at its default, so the stock look stays as it is; a theme that turns a variant on may
-// tune it through them. The colours are unset: each falls back to a palette colour.
+// sheet, the square Share and Stop buttons and the square pulse. Nothing reads them while
+// every variant is at its default, so the stock look stays as it is; a theme that turns a
+// variant on may tune it through them. The colours are unset: each falls back to a
+// palette colour.
 
 import { defineTokens } from "./types.ts";
 
@@ -68,5 +69,53 @@ export const VARIANT_SURFACE_TOKENS = defineTokens("variant", [
     id: "ui-cta-hover",
     default: UNSET,
     description: "Share and Stop's hover background under the square variants. Unset: darkened.",
+  },
+  {
+    id: "ui-cta-radius",
+    kind: "length",
+    description: "Share and Stop's corner radius under the square variants, 0.",
+    default: { light: "0px" },
+  },
+  {
+    id: "ui-cta-font",
+    kind: "font",
+    description: "Share's font under the square variants, `ui-font-mono`.",
+    default: { light: "var(--ui-font-mono)" },
+  },
+  {
+    id: "ui-cta-size",
+    kind: "length",
+    description: "Share's font size under the square variants, 12px.",
+    default: { light: "12px" },
+  },
+  {
+    id: "ui-cta-transform",
+    kind: "keyword",
+    description: "Share's text-transform under the square variants, `uppercase`.",
+    default: { light: "uppercase" },
+  },
+  {
+    id: "ui-cta-tracking",
+    kind: "length",
+    description: "Share's letter-spacing under the square variants, 0.",
+    default: { light: "0px" },
+  },
+  {
+    id: "ui-working-pulse-radius",
+    kind: "length",
+    default: {},
+    description:
+      "The square pulse working indicator's corner radius (50% makes it a dot). Unset: square.",
+  },
+  {
+    id: "ui-context-strip-background",
+    default: {},
+    description: "The attached context strip's background. Unset: `sidebar`.",
+  },
+  {
+    id: "ui-context-strip-radius",
+    kind: "length",
+    description: "The attached context strip's top corner radius, `ui-radius-sm`.",
+    default: { light: "var(--ui-radius-sm)" },
   },
 ]);

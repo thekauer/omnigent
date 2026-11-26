@@ -231,6 +231,7 @@
   width: 8px;
   height: 8px;
   flex: none;
+  border-radius: var(--ui-working-pulse-radius);
   background: var(--primary);
   animation: omnigent-working-pulse 1.2s ease-in-out infinite;
 }
@@ -328,8 +329,8 @@
   margin-inline: 14px;
   border: 1px solid var(--border);
   border-bottom: 0;
-  border-radius: var(--ui-radius-sm) var(--ui-radius-sm) 0 0;
-  background-color: var(--sidebar);
+  border-radius: var(--ui-context-strip-radius) var(--ui-context-strip-radius) 0 0;
+  background-color: var(--ui-context-strip-background, var(--sidebar));
   color: var(--muted-foreground);
   font-family: var(--ui-font-label);
   font-size: 11.5px;
@@ -364,11 +365,11 @@
 }
 
 /* ---- Share and Stop: square buttons in the accent or a light colour, with a mono
- * uppercase Share. */
+ * uppercase Share (its shape and type are the ui-cta-* tokens). */
 :is([data-omni-cta="accent-square"], [data-omni-cta="light-square"])
   :is([data-slot="share-button"], [data-slot="composer-stop"]) {
   border: 0;
-  border-radius: 0;
+  border-radius: var(--ui-cta-radius);
   background: var(--ui-cta-background, var(--cta-fallback-background));
   color: var(--ui-cta-foreground, var(--cta-fallback-foreground));
   box-shadow: none;
@@ -387,10 +388,10 @@
   filter: var(--cta-hover-filter, brightness(0.9));
 }
 :is([data-omni-cta="accent-square"], [data-omni-cta="light-square"]) [data-slot="share-button"] {
-  font-family: var(--ui-font-mono);
-  font-size: 12px;
-  letter-spacing: 0;
-  text-transform: uppercase;
+  font-family: var(--ui-cta-font);
+  font-size: var(--ui-cta-size);
+  letter-spacing: var(--ui-cta-tracking);
+  text-transform: var(--ui-cta-transform);
 }
 
 /* ---- Sheet: Floating sets the main area (header, transcript, right panel, or the
