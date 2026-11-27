@@ -2,6 +2,7 @@ import { EXPANDED_PROJECT_SECTIONS_STORAGE_KEY } from "@/shell/sidebarNav";
 import { conversationPage } from "@/test/sidebarMockHelpers";
 import { renderSidebar } from "@/test/sidebarTestHelpers";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { storedLegacyLayoutValue } from "@/test/layoutStateTestHelpers";
 
 vi.mock("@/hooks/useScopeCache", () => import("@/test/mockScopeCache"));
 import { act, cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
@@ -214,9 +215,7 @@ describe("project folder header context menu", () => {
     fireEvent.click(screen.getByTestId("rename-project-confirm"));
 
     await waitFor(() =>
-      expect(JSON.parse(localStorage.getItem(EXPANDED_PROJECT_SECTIONS_STORAGE_KEY)!)).toEqual([
-        "Sprint 43",
-      ]),
+      expect(storedLegacyLayoutValue(EXPANDED_PROJECT_SECTIONS_STORAGE_KEY)).toEqual(["Sprint 43"]),
     );
   });
 

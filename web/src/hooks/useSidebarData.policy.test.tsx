@@ -7,6 +7,7 @@ import {
 import { act, cleanup, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
+import { storedLegacyLayoutValue } from "@/test/layoutStateTestHelpers";
 import { CapabilitiesProvider } from "@/lib/CapabilitiesContext";
 import { FALLBACK_SERVER_INFO } from "@/lib/capabilities";
 import { sidebarConfig, type SidebarConfig } from "@/lib/sidebarConfig";
@@ -531,7 +532,7 @@ it("gates Created ordering and separates its pagination from Updated caches", as
     result.current.updateView({ ordering: "updated" });
   });
   expect(result.current.sortBy).toBe("updated_at");
-  expect(JSON.parse(localStorage.getItem("omnigent:sidebar-view")!).ordering).toBe("updated");
+  expect(storedLegacyLayoutValue("omnigent:sidebar-view").ordering).toBe("updated");
 });
 
 it.each([false, true])(
@@ -685,10 +686,7 @@ it("keeps Custom on its base's caches and saves cutoff-second arrivals through s
   expect(result.current.sortBy).toBe("created_at");
   act(() => result.current.updateView({ ordering: "custom" }));
   expect(result.current.sortBy).toBe("updated_at");
-  expect(JSON.parse(localStorage.getItem("omnigent:sidebar-view")!).custom.ids).toEqual([
-    "arrival",
-    "mine",
-  ]);
+  expect(storedLegacyLayoutValue("omnigent:sidebar-view").custom.ids).toEqual(["arrival", "mine"]);
 });
 
 it("lists every loaded Shared row on All only while Shared with me is its own section", async () => {

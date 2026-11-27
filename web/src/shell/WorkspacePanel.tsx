@@ -1,4 +1,5 @@
 import { type FilePosition, FileViewerContext, type OpenFileOptions } from "./FileViewerContext";
+import { partHook, Parts } from "@/workbench/layoutService";
 import {
   BotIcon,
   CheckIcon,
@@ -1684,6 +1685,7 @@ function WorkspacePanelImpl({
     <aside
       aria-label="Workspace"
       data-slot="workspace-panel"
+      data-part={partHook(Parts.AUXILIARYBAR_PART)}
       ref={railInertRef}
       aria-hidden={!open}
       // The resize hook can starve the rail to width 0 while it stays mounted;

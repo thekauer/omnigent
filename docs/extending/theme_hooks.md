@@ -40,6 +40,18 @@ hook only for what no token covers yet.
 The shadcn primitives' own slots (`button`, `tabs-trigger`, `dropdown-menu-content`,
 `tooltip-content`, `kbd`, `avatar`, ...) are stable too.
 
+## `data-part` hooks
+
+`[data-part="<name>"]` on the element that draws a workbench part (layout plan L2), named as
+VS Code's parts (`workbench.parts.<name>` in the layout service). The titlebar, activitybar,
+panel and statusbar parts are reserved: nothing draws them yet.
+
+| Hook | Element |
+|---|---|
+| `sidebar` | The primary side bar (`aside.conversations-sidebar`), open or closed. |
+| `main` | The main area (`[data-slot="main-area"]`): the chat header, the route's page and, on a session, the workspace rail beside it; the grid's own main area on a grid route. |
+| `auxiliarybar` | The secondary side bar: the workspace rail (`[data-slot="workspace-panel"]`), classic or tabs. |
+
 ## Classes
 
 | Hook | Element |

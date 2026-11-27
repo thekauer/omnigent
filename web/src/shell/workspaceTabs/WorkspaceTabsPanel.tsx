@@ -1,5 +1,6 @@
 // The workspace sidebar's tab strip and the selected place's content.
 
+import { partHook, Parts } from "@/workbench/layoutService";
 import { WorkspacePlaceView } from "./placeViews/WorkspacePlaceView";
 import { TerminalTabStatus } from "./TerminalTabStatus";
 import { type TerminalTabConnection, terminalTabSpins } from "./terminalTabConnection";
@@ -1009,6 +1010,7 @@ function WorkspaceTabsPanelImpl({
     <aside
       aria-label="Workspace"
       data-slot="workspace-panel"
+      data-part={partHook(Parts.AUXILIARYBAR_PART)}
       {...commandRegionProps("workspace")}
       ref={railInertRef}
       aria-hidden={!open}

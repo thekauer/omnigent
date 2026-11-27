@@ -1246,6 +1246,7 @@ Plain ESM with `// @ts-check`; no build step.
 | `TreeView.visible`, `onDidChangeVisibility`                          | same                                                          | Visible while a drawn copy is on screen             |
 | `workspace.getConfiguration`, `onDidChangeConfiguration`             | same, plus `inspect`; every registered setting                | `config.*` context keys as in VS Code               |
 | `contributes.configuration`, `contributes.configurationDefaults`     | same (layout plan L1), keys under the extension's id          | Values in the settings JSON; no language overrides  |
+| `workbench.action.toggleSidebarVisibility`, `toggleAuxiliaryBar`, `closeSidebar`, `closeAuxiliaryBar`; `sideBarVisible`, `auxiliaryBarVisible` | same (layout plan L2) | Through `commands.executeCommand`; no default keys of their own |
 | `contributes.submenus` and submenu menus                             | same, in `view/title`                                         | Drawn as a dropdown naming the toggled entry        |
 | `TreeView.message` as a `MarkdownString` with command links          | `[text](command:id)` in a plain string                        | No other markdown                                   |
 | `SourceControl.inputBox`                                             | `TreeView.searchInput` with `contributes.views[].searchInput` | Query, toggles and fields; per chat session         |

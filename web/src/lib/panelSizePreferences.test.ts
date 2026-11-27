@@ -6,6 +6,7 @@ import {
   writePanelSharePreference,
   writePanelSizePreference,
 } from "./panelSizePreferences";
+import { LAYOUT_STATE_STORAGE_KEY } from "@/workbench/layoutState";
 
 const STORAGE_KEY = "omnigent:panel-size-preferences";
 
@@ -86,5 +87,16 @@ describe("panelSizePreferences", () => {
     writePanelSharePreference("changesReviewTreeShare", Number.NaN);
     expect(readPanelSharePreference("filesTreeShare")).toBeNull();
     expect(readPanelSharePreference("changesReviewTreeShare")).toBeNull();
+  });
+
+  it("reads the widths from the layout state, carrying the old key into it once", () => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ sidebarWidthPx: 280 }));
+    expect(readPanelSizePreference("sidebarWidthPx")).toBe(280);
+    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+    writePanelSizePreference("inlinePanelWidthPx", 500);
+    expect(JSON.parse(localStorage.getItem(LAYOUT_STATE_STORAGE_KEY)!)).toEqual({
+      version: 1,
+      state: { "workbench.panelSizes": { sidebarWidthPx: 280, inlinePanelWidthPx: 500 } },
+    });
   });
 });

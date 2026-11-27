@@ -2,7 +2,10 @@
 //
 // The resize hooks keep live width in module-level stores so panels do not
 // jump while switching views. This file snapshots only explicit user choices
-// to localStorage so a full page refresh restores the same layout.
+// into the layout state (`workbench.panelSizes`) so a full page refresh restores
+// the same layout.
+
+import { LAYOUT_SLOTS, layoutState } from "@/workbench/layoutState";
 
 export interface PanelSizePreferences {
   /** Shared width for right-side push panels such as file viewer/terminals. */
@@ -45,8 +48,6 @@ export type PanelSizePreferenceKey = (typeof WIDTH_KEYS)[number];
 /** A panel remembered as its share of the container it's in. */
 export type PanelSharePreferenceKey = (typeof SHARE_KEYS)[number];
 
-const STORAGE_KEY = "omnigent:panel-size-preferences";
-
 function isValidWidth(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
@@ -64,25 +65,19 @@ function isValidShare(value: unknown): value is number {
  */
 export function readPanelSizePreferences(): PanelSizePreferences {
   if (typeof window === "undefined") return {};
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return {};
-    const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
-    const record = parsed as Record<string, unknown>;
-    const prefs: PanelSizePreferences = {};
-    for (const key of WIDTH_KEYS) {
-      const value = record[key];
-      if (isValidWidth(value)) prefs[key] = value;
-    }
-    for (const key of SHARE_KEYS) {
-      const value = record[key];
-      if (isValidShare(value)) prefs[key] = value;
-    }
-    return prefs;
-  } catch {
-    return {};
+  const parsed = layoutState.get(LAYOUT_SLOTS.panelSizes);
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
+  const record = parsed as Record<string, unknown>;
+  const prefs: PanelSizePreferences = {};
+  for (const key of WIDTH_KEYS) {
+    const value = record[key];
+    if (isValidWidth(value)) prefs[key] = value;
   }
+  for (const key of SHARE_KEYS) {
+    const value = record[key];
+    if (isValidShare(value)) prefs[key] = value;
+  }
+  return prefs;
 }
 
 /**
@@ -97,11 +92,8 @@ export function readPanelSizePreference(key: PanelSizePreferenceKey): number | n
 
 function writePanelSizePreferences(prefs: PanelSizePreferences): void {
   if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
-  } catch {
-    // Storage quota/access errors should not break resize interactions.
-  }
+  // Storage quota/access errors keep the window's value (the layout state holds it).
+  layoutState.set(LAYOUT_SLOTS.panelSizes, prefs);
 }
 
 /**

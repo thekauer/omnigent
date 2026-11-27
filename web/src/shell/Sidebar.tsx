@@ -292,15 +292,14 @@ import { SessionImportStatus } from "./SessionImportStatus";
 import { useSessionImportStore } from "@/store/sessionImport";
 import { useSettingsRoute, useTrackSettingsReturn } from "./settingsNav";
 import { SettingsSidebar } from "./settingsSearch/SettingsSidebar";
+import { LAYOUT_SLOTS, layoutState } from "@/workbench/layoutState";
+import { partHook, Parts } from "@/workbench/layoutService";
 import {
   type ActiveChatOverride,
   clearLegacyPinnedConversationIds,
-  COLLAPSED_SESSION_FAMILIES_STORAGE_KEY,
-  COLLAPSED_SIDEBAR_SECTIONS_STORAGE_KEY,
   computeNextActiveOverride,
   conversationDisplayLabel,
   dedupeConversationsById,
-  EXPANDED_PROJECT_SECTIONS_STORAGE_KEY,
   groupConversations,
   MAX_STORED_COLLAPSED_SESSION_FAMILIES,
   moveCustomOrder,
@@ -1253,6 +1252,7 @@ function SidebarImpl({
         />
       )}
       <aside
+        data-part={partHook(Parts.SIDEBAR_PART)}
         ref={sidebarInertRef}
         aria-label="Conversations"
         onAnimationEnd={(event) => {
@@ -2278,11 +2278,11 @@ function ConversationList({
   const nestedDrafts = useNestedSessionDrafts();
   const draftQueryClient = useQueryClient();
   const [collapsedFamilies, setCollapsedFamilies] = useState<Set<string>>(
-    () => new Set(readStoredStringList(COLLAPSED_SESSION_FAMILIES_STORAGE_KEY)),
+    () => new Set(readStoredStringList(LAYOUT_SLOTS.collapsedFamilies)),
   );
   useEffect(() => {
     writeStoredStringList(
-      COLLAPSED_SESSION_FAMILIES_STORAGE_KEY,
+      LAYOUT_SLOTS.collapsedFamilies,
       [...collapsedFamilies].slice(-MAX_STORED_COLLAPSED_SESSION_FAMILIES),
     );
   }, [collapsedFamilies]);
@@ -8437,41 +8437,34 @@ export function isMobileViewport(): boolean {
 // Settings page). Once the user toggles any header, the stored array (even an
 // empty one) becomes the preference and persists across reloads.
 function readCollapsedSidebarSections(): string[] {
-  return readStoredStringList(COLLAPSED_SIDEBAR_SECTIONS_STORAGE_KEY);
+  return readStoredStringList(LAYOUT_SLOTS.collapsedSections);
 }
 
 function writeCollapsedSidebarSections(titles: string[]) {
-  writeStoredStringList(COLLAPSED_SIDEBAR_SECTIONS_STORAGE_KEY, titles);
+  writeStoredStringList(LAYOUT_SLOTS.collapsedSections, titles);
 }
 
 // Project folders default to collapsed, so the persisted set is the EXPANDED
 // names (empty by default = every project starts collapsed).
 function readExpandedProjectSections(): string[] {
-  return readStoredStringList(EXPANDED_PROJECT_SECTIONS_STORAGE_KEY);
+  return readStoredStringList(LAYOUT_SLOTS.expandedProjects);
 }
 
 function writeExpandedProjectSections(names: string[]) {
-  writeStoredStringList(EXPANDED_PROJECT_SECTIONS_STORAGE_KEY, names);
+  writeStoredStringList(LAYOUT_SLOTS.expandedProjects, names);
 }
 
 // Same contract as pins: corrupt storage means "back to defaults", never a
-// broken sidebar.
-function readStoredStringList(storageKey: string): string[] {
+// broken sidebar. The lists live in the layout state (`layoutState.ts`).
+function readStoredStringList(slot: string): string[] {
   if (typeof window === "undefined") return [];
-  try {
-    const parsed: unknown = JSON.parse(window.localStorage.getItem(storageKey) ?? "null");
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((value): value is string => typeof value === "string");
-  } catch {
-    return [];
-  }
+  const parsed = layoutState.get(slot);
+  if (!Array.isArray(parsed)) return [];
+  return parsed.filter((value): value is string => typeof value === "string");
 }
 
-function writeStoredStringList(storageKey: string, values: readonly string[]) {
+function writeStoredStringList(slot: string, values: readonly string[]) {
   if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(storageKey, JSON.stringify(values));
-  } catch {
-    // Collapse state is a local navigation preference; losing it is fine.
-  }
+  // Collapse state is a local navigation preference; losing it is fine.
+  layoutState.set(slot, [...values]);
 }

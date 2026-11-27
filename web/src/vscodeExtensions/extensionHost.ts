@@ -3,6 +3,8 @@
 // host. Built-ins load from the bundle, so their views register before the first
 // render and core tabs never show a blank panel.
 import { builtInExtensions } from "@/builtinExtensions";
+import { registerLayoutCommands } from "@/workbench/layoutCommands";
+import { type LayoutService, layoutService } from "@/workbench/layoutService";
 import {
   type ConfigurationService,
   configurationService,
@@ -48,6 +50,8 @@ export interface ExtensionRuntimeOptions {
   hostOptions?: Partial<ExtensionHostOptions>;
   /** Where contributed keybindings dispatch; the whole window by default. */
   keybindingScope?: KeybindingScope;
+  /** The workbench the layout commands change; the window's by default. */
+  layout?: LayoutService;
   /** Where contributed settings go; the window's configuration service by default. */
   configuration?: ConfigurationService;
   /** Where contributed themes go; the window's theme service by default. */
@@ -67,6 +71,12 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
     workspace: bridge,
     themes: "select" in themes ? (themes as typeof themeService) : undefined,
   });
+  // VS Code's layout commands and the parts' visibility context keys.
+  const layoutCommands = registerLayoutCommands(
+    commands,
+    options.layout ?? layoutService,
+    contextKeys,
+  );
   // `config.<setting>` context keys, as in VS Code, so `when` and `toggled` can read settings.
   let settingKeys = new Set<string>();
   const syncSettings = () => {
@@ -157,6 +167,7 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
       bridge.setCommandRunner(null);
       await host.dispose();
       builtInCommands.dispose();
+      layoutCommands.dispose();
       settingsSubscription.dispose();
       railSubscription.dispose();
       keybindings.dispose();

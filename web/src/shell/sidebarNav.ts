@@ -96,6 +96,9 @@ export function setLegacyPinnedConversationId(id: string, pinned: boolean): void
   writeLegacyPinnedConversationIdsOrThrow(pinned ? [id, ...rest] : rest);
 }
 
+// The keys below held the conversation list's collapse state before the layout state
+// (`workbench/layoutState.ts`), which reads them in once.
+
 // Titles of sidebar sections the user has collapsed, e.g. ["Archived"].
 // Keyed by display title — stable identifiers for these fixed groups.
 export const COLLAPSED_SIDEBAR_SECTIONS_STORAGE_KEY = "omnigent:collapsed-sidebar-sections";

@@ -48,6 +48,12 @@ import type { Session, SessionStatus } from "@/lib/types";
 import { useApproveHotkey } from "@/hooks/useApproveHotkey";
 import { useFloatingComposerSupport } from "@/hooks/useFloatingComposerSupport";
 import { useSidebarToggleHotkeys } from "@/hooks/useSidebarToggleHotkeys";
+import { partHook, Parts } from "@/workbench/layoutService";
+import {
+  readSidebarVisible,
+  useRememberSidebarVisible,
+  useWorkbenchPart,
+} from "./useWorkbenchParts";
 import { useCommandPaletteHotkey } from "@/hooks/useCommandPaletteHotkey";
 import { useHistoryNavigation } from "@/hooks/useHistoryNavigation";
 import { useNewSessionHotkey } from "@/hooks/useNewSessionHotkey";
@@ -3283,6 +3289,31 @@ function AppShellImpl() {
     !executionLogsOpen &&
     !filesPanelOpen,
   );
+  // The parts this shell draws, for the layout service (commands, context keys) to read and
+  // change through the shell's own handlers.
+  useWorkbenchPart(Parts.SIDEBAR_PART, {
+    visible: sidebarOpen || sidebarPeek,
+    setHidden: (hidden) => (hidden ? handleSidebarClose() : handleSidebarOpen()),
+    toggle: toggleLeftSidebar,
+  });
+  useWorkbenchPart(Parts.MAIN_PART, { visible: true, setHidden: () => {} });
+  // A grid route draws its own workspace, with its own toggle.
+  useWorkbenchPart(
+    Parts.AUXILIARYBAR_PART,
+    {
+      visible: workspacePanelVisible,
+      setHidden: (hidden) => {
+        if (hidden === workspacePanelVisible) toggleRightPanelFromHotkey();
+      },
+      toggle: toggleRightPanelFromHotkey,
+    },
+    !gridRoute,
+  );
+  // The side bar's desktop open state outlives the window (layout state).
+  useRememberSidebarVisible(
+    sidebarOpen,
+    !mobileViewport && !inSettings && !canvasMode && !rightPanelMaximized && !sidebarPeek,
+  );
   // WIP(session_overview): docks beside chat when a wide window leaves the right side
   // free; otherwise it opens as a popover from the header cost.
   const sessionOverviewEnabled =
@@ -3457,6 +3488,7 @@ function AppShellImpl() {
             workspace card stays visible alongside. */}
               <div
                 data-slot="main-area"
+                data-part={partHook(Parts.MAIN_PART)}
                 data-workspace-panel-resizing={inlinePanelResizing || undefined}
                 data-workspace-panel-animate={rightPanelVisibilityAnimating || undefined}
                 className={cn(
@@ -3917,11 +3949,12 @@ function AppShellImpl() {
 }
 
 /**
- * Initial sidebar open state — open on desktop, closed on mobile. SSR-
+ * Initial sidebar open state — on desktop as the layout state remembers it (open by
+ * default), closed on mobile. SSR-
  * safe (returns false when window is undefined). The threshold is
  * Tailwind's `md` breakpoint, used in the Sidebar's responsive classes.
  */
 function initialSidebarOpen(): boolean {
   if (typeof window === "undefined") return false;
-  return isDesktopLayout();
+  return isDesktopLayout() && (readSidebarVisible() ?? true);
 }

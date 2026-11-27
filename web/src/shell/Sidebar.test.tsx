@@ -5,6 +5,7 @@ import {
 } from "@/lib/nestedSessionDrafts";
 import type { Session } from "@/lib/types";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
+import { storedLegacyLayoutValue } from "@/test/layoutStateTestHelpers";
 
 vi.mock("@/hooks/useScopeCache", () => import("@/test/mockScopeCache"));
 import { SidebarDataProvider } from "@/hooks/useSidebarData";
@@ -2698,7 +2699,7 @@ describe("Sidebar sections", () => {
     renderSidebar();
     fireEvent.click(screen.getByRole("button", { name: "Collapse session family" }));
 
-    expect(JSON.parse(localStorage.getItem(COLLAPSED_SESSION_FAMILIES_STORAGE_KEY)!)).toEqual([
+    expect(storedLegacyLayoutValue(COLLAPSED_SESSION_FAMILIES_STORAGE_KEY)).toEqual([
       ...stale.slice(1),
       "family",
     ]);
@@ -4175,9 +4176,7 @@ describe("Sidebar auto-expand Pinned on pin", () => {
     // The Pinned section auto-expands so the freshly-pinned session is visible,
     // and the expansion is persisted (dropped from the collapsed list).
     expect(screen.getByRole("button", { name: /Pinned/ })).toHaveAttribute("aria-expanded", "true");
-    expect(JSON.parse(localStorage.getItem("omnigent:collapsed-sidebar-sections")!)).not.toContain(
-      "Pinned",
-    );
+    expect(storedLegacyLayoutValue("omnigent:collapsed-sidebar-sections")).not.toContain("Pinned");
   });
 });
 
@@ -4441,7 +4440,8 @@ describe("Sidebar collapsed marker", () => {
     expect(openAside).not.toHaveAttribute("data-collapsed");
   });
 });
-
+// About 2.4 s of the default 5 s budget even unloaded: a busy runner needs more.
+// Close to the default 5 s budget even unloaded: about 2.4 s on a busy runner.
 it("caps Shared display independently of Mine while revealing cached rows", async () => {
   isServerLocalMock.mockReturnValue(false);
   const owned = Array.from({ length: 40 }, (_, i) => conv(`owned-${i}`, "agent"));
@@ -4469,7 +4469,7 @@ it("caps Shared display independently of Mine while revealing cached rows", asyn
   expect(screen.getByText("owned-39", { exact: true })).toBeInTheDocument();
   showSharedTab();
   expect(screen.queryByText("shared-30", { exact: true })).toBeNull();
-});
+}, 20_000);
 
 /** Render the sidebar with the sidebar_grouping_ui release flag on. */
 function renderGroupingSidebar(config?: SidebarConfig) {
@@ -4903,7 +4903,7 @@ describe("Sidebar view options", () => {
     expect(screen.getByTestId("sidebar-conversation-list")).not.toContainElement(created);
     fireEvent.mouseOver(created);
     fireEvent.click(created);
-    expect(JSON.parse(localStorage.getItem("omnigent:sidebar-view")!).ordering).toBe("created");
+    expect(storedLegacyLayoutValue("omnigent:sidebar-view").ordering).toBe("created");
     const links = within(groupSection("Sessions")).getAllByRole("link", { name: /^conv_/ });
     expect(links.map((link) => link.textContent)).toEqual([
       "conv_done_new",
@@ -4965,7 +4965,7 @@ describe("Sidebar view options", () => {
       fireEvent.click(within(menu).getByTestId("session-ordering-menu"));
       fireEvent.click(within(menu).getByRole("menuitemradio", { name: "Created" }));
       expect(screen.queryByRole("menu")).toBeNull();
-      expect(JSON.parse(localStorage.getItem("omnigent:sidebar-view")!)).toMatchObject({
+      expect(storedLegacyLayoutValue("omnigent:sidebar-view")).toMatchObject({
         ordering: "created",
         show: ["branch"],
       });
@@ -5048,7 +5048,7 @@ describe("Sidebar view options", () => {
     const bare = screen.getByText("conv_no_branch").closest("li")!;
     expect(within(bare).getByTestId("session-row-meta")).toHaveTextContent(/^Local machine$/);
     expect(within(bare).getByText("Local machine")).toHaveClass("sr-only");
-    expect(JSON.parse(localStorage.getItem("omnigent:sidebar-view")!).show).toEqual([
+    expect(storedLegacyLayoutValue("omnigent:sidebar-view").show).toEqual([
       "updated",
       "environment",
       "branch",
@@ -5077,7 +5077,7 @@ describe("Sidebar view options", () => {
     const link = claude.getByTestId("session-row-harness").closest("a");
     expect(link).toHaveClass("items-center");
     expect(link).not.toHaveClass("flex-col");
-    expect(JSON.parse(localStorage.getItem("omnigent:sidebar-view")!).show).toEqual(["harness"]);
+    expect(storedLegacyLayoutValue("omnigent:sidebar-view").show).toEqual(["harness"]);
   });
 
   it("resolves an unrecorded branch only when Branch is shown, without a GitHub lookup", () => {

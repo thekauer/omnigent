@@ -1,5 +1,6 @@
 import { conversationPage } from "@/test/sidebarMockHelpers";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { storedLegacyLayoutValue } from "@/test/layoutStateTestHelpers";
 import { type ReactNode, Suspense } from "react";
 
 vi.mock("@/hooks/useScopeCache", () => import("@/test/mockScopeCache"));
@@ -87,7 +88,7 @@ function renderAt(initialEntry: string, config = sidebarConfig) {
 }
 
 function expandedProjects(): unknown {
-  return JSON.parse(localStorage.getItem(EXPANDED_PROJECT_SECTIONS_STORAGE_KEY) ?? "[]");
+  return storedLegacyLayoutValue(EXPANDED_PROJECT_SECTIONS_STORAGE_KEY) ?? [];
 }
 
 beforeEach(() => {

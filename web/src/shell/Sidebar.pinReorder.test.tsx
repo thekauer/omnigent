@@ -2,6 +2,7 @@ import { renderSidebar } from "@/test/sidebarTestHelpers";
 import { conversation as conv, conversationPage } from "@/test/sidebarMockHelpers";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { storedLegacyLayoutValue } from "@/test/layoutStateTestHelpers";
 
 vi.mock("@/hooks/useScopeCache", () => import("@/test/mockScopeCache"));
 
@@ -496,7 +497,7 @@ describe("Custom session order", () => {
     [...document.querySelectorAll("li[data-sidebar-session-id]")].map((row) =>
       row.getAttribute("data-sidebar-session-id"),
     );
-  const saved = () => JSON.parse(localStorage.getItem("omnigent:sidebar-view") ?? "{}");
+  const saved = () => storedLegacyLayoutValue("omnigent:sidebar-view") ?? {};
   const link = (id: string) => screen.getByRole("link", { name: id });
   const renderGrouping = () => renderSidebar({ features: { sidebar_grouping_ui: true } });
   const listRows = (...extra: ReturnType<typeof conv>[]) =>

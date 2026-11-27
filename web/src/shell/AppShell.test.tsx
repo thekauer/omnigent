@@ -35,6 +35,8 @@ import { setEmbedRoot } from "@/lib/host";
 import { EmbeddedProvider } from "@/lib/embedded";
 import { RoutingProvider, reactRouterRouting, type RoutingApi } from "@/lib/routing";
 import { configurationService } from "@/configuration/configurationService";
+import { LAYOUT_SLOTS, layoutState } from "@/workbench/layoutState";
+import { layoutService, Parts } from "@/workbench/layoutService";
 import { readStoredSettings, SETTINGS_STORAGE_KEY } from "@/configuration/settingsDocument";
 import { FileViewerContext, useFileViewer } from "./FileViewerContext";
 import { ShellCommandContext, ShellCommandDraftContext } from "./ShellCommandContext";
@@ -2462,6 +2464,56 @@ describe("Sidebar across the md breakpoint", () => {
         }
       });
   }
+
+  it("remembers the desktop sidebar's open state in the layout state, across a reload", () => {
+    mockViewportWidth(1280);
+    mockConversations([{ id: "conv_abc", permission_level: null }]);
+    renderShell("/c/conv_abc");
+    expect(screen.getByTestId("sidebar")).toHaveAttribute("data-open", "true");
+    // Open is the default: nothing is stored for it.
+    expect(layoutState.get(LAYOUT_SLOTS.sidebar)).toBeUndefined();
+    fireEvent.keyDown(document, { code: "BracketLeft", ctrlKey: true, altKey: true });
+    expect(screen.getByTestId("sidebar")).toHaveAttribute("data-open", "false");
+    expect(layoutState.get(LAYOUT_SLOTS.sidebar)).toEqual({ visible: false });
+    cleanup();
+    renderShell("/c/conv_abc");
+    expect(screen.getByTestId("sidebar")).toHaveAttribute("data-open", "false");
+    // Settings opens it for its Back row; that isn't the user's choice.
+    fireEvent.click(screen.getByTestId("nav-settings"));
+    expect(screen.getByTestId("sidebar")).toHaveAttribute("data-open", "true");
+    expect(layoutState.get(LAYOUT_SLOTS.sidebar)).toEqual({ visible: false });
+    fireEvent.click(screen.getByTestId("nav-home"));
+    fireEvent.keyDown(document, { code: "BracketLeft", ctrlKey: true, altKey: true });
+    expect(layoutState.get(LAYOUT_SLOTS.sidebar)).toEqual({ visible: true });
+  });
+
+  it("leaves the remembered state alone in a narrow window", () => {
+    mockViewportWidth(740);
+    mockConversations([{ id: "conv_abc", permission_level: null }]);
+    layoutState.set(LAYOUT_SLOTS.sidebar, { visible: false });
+    renderShell("/c/conv_abc");
+    fireEvent.keyDown(document, { code: "BracketLeft", ctrlKey: true, altKey: true });
+    expect(screen.getByTestId("sidebar")).toHaveAttribute("data-open", "true");
+    expect(layoutState.get(LAYOUT_SLOTS.sidebar)).toEqual({ visible: false });
+  });
+
+  it("shows its parts to the layout service, which drives them", () => {
+    mockViewportWidth(1280);
+    mockConversations([{ id: "conv_abc", permission_level: null }]);
+    renderShell("/c/conv_abc");
+    expect(layoutService.isVisible(Parts.SIDEBAR_PART)).toBe(true);
+    expect(layoutService.isVisible(Parts.MAIN_PART)).toBe(true);
+    expect(layoutService.hasPart(Parts.AUXILIARYBAR_PART)).toBe(true);
+    expect(layoutService.isVisible(Parts.TITLEBAR_PART)).toBe(false);
+    expect(document.querySelector('[data-part="main"]')).toHaveAttribute("data-slot", "main-area");
+    act(() => layoutService.togglePart(Parts.SIDEBAR_PART));
+    expect(screen.getByTestId("sidebar")).toHaveAttribute("data-open", "false");
+    expect(layoutService.isVisible(Parts.SIDEBAR_PART)).toBe(false);
+    act(() => layoutService.setPartHidden(false, Parts.SIDEBAR_PART));
+    expect(screen.getByTestId("sidebar")).toHaveAttribute("data-open", "true");
+    cleanup();
+    expect(layoutService.hasPart(Parts.SIDEBAR_PART)).toBe(false);
+  });
 
   it("leaves the session without closing a selected file in a responsive-hidden rail", () => {
     const resize = mockViewportWidth(1280);

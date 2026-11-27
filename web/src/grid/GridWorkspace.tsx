@@ -7,6 +7,7 @@ import {
   type DragEvent,
   type MouseEventHandler,
 } from "react";
+import { partHook, Parts } from "@/workbench/layoutService";
 import {
   DndContext,
   DragOverlay,
@@ -479,6 +480,7 @@ export function GridWorkspace({
   return (
     <section
       data-slot="main-area"
+      data-part={partHook(Parts.MAIN_PART)}
       className="flex min-h-0 min-w-0 flex-1 flex-col"
       aria-label="Session grid"
       onDragOver={preventLinkDrop}

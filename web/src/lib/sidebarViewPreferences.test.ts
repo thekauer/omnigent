@@ -4,6 +4,9 @@ import {
   readSidebarViewPreferences,
   writeSidebarViewPreferences,
 } from "./sidebarViewPreferences";
+import { LAYOUT_SLOTS, LAYOUT_STATE_STORAGE_KEY, layoutState } from "@/workbench/layoutState";
+
+const seed = (value: unknown) => layoutState.set(LAYOUT_SLOTS.conversationsView, value);
 
 afterEach(() => {
   localStorage.clear();
@@ -24,7 +27,7 @@ describe("sidebarViewPreferences", () => {
     },
   );
 
-  it("restores saved Status grouping while preserving ordering and metadata", () => {
+  it("restores saved Status grouping from the key it was kept in before the layout state", () => {
     localStorage.setItem(
       "omnigent:sidebar-view",
       JSON.stringify({ grouping: "status", ordering: "created", show: ["branch"] }),
@@ -34,19 +37,19 @@ describe("sidebarViewPreferences", () => {
       ordering: "created",
       show: ["branch"],
     });
+    expect(localStorage.getItem("omnigent:sidebar-view")).toBeNull();
+    expect(localStorage.getItem(LAYOUT_STATE_STORAGE_KEY)).toContain('"grouping":"status"');
   });
 
   it("falls back per field on unknown or corrupt values", () => {
-    localStorage.setItem(
-      "omnigent:sidebar-view",
-      JSON.stringify({ grouping: "project", ordering: "status", show: ["pr", "branch", 3] }),
-    );
+    seed({ grouping: "project", ordering: "status", show: ["pr", "branch", 3] });
     expect(readSidebarViewPreferences()).toEqual({
       grouping: "default",
       ordering: "updated",
       show: ["branch"],
     });
 
+    localStorage.clear();
     localStorage.setItem("omnigent:sidebar-view", "{not json");
     expect(readSidebarViewPreferences()).toEqual(DEFAULT_SIDEBAR_VIEW);
   });
@@ -56,18 +59,9 @@ describe("sidebarViewPreferences", () => {
     writeSidebarViewPreferences({ grouping: "status", ordering: "custom", show: [], custom });
     expect(readSidebarViewPreferences()).toMatchObject({ ordering: "custom", custom });
 
-    localStorage.setItem(
-      "omnigent:sidebar-view",
-      JSON.stringify({ ordering: "custom", custom: { base: "custom", since: 1, ids: [] } }),
-    );
+    seed({ ordering: "custom", custom: { base: "custom", since: 1, ids: [] } });
     expect(readSidebarViewPreferences()).toEqual(DEFAULT_SIDEBAR_VIEW);
-    localStorage.setItem(
-      "omnigent:sidebar-view",
-      JSON.stringify({
-        ordering: "custom",
-        custom: { base: "updated", since: 1, ids: ["a", 2, "a"] },
-      }),
-    );
+    seed({ ordering: "custom", custom: { base: "updated", since: 1, ids: ["a", 2, "a"] } });
     expect(readSidebarViewPreferences().custom?.ids).toEqual(["a"]);
   });
 
@@ -76,7 +70,7 @@ describe("sidebarViewPreferences", () => {
       throw new DOMException("Storage is disabled", "SecurityError");
     });
     expect(readSidebarViewPreferences()).toEqual(DEFAULT_SIDEBAR_VIEW);
-    expect(getItem).toHaveBeenCalledWith("omnigent:sidebar-view");
+    expect(getItem).toHaveBeenCalledWith(LAYOUT_STATE_STORAGE_KEY);
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new DOMException("Quota exceeded", "QuotaExceededError");
     });
@@ -84,10 +78,7 @@ describe("sidebarViewPreferences", () => {
   });
 
   it("normalizes show fields to menu order", () => {
-    localStorage.setItem(
-      "omnigent:sidebar-view",
-      JSON.stringify({ show: ["branch", "updated", "branch"] }),
-    );
+    seed({ show: ["branch", "updated", "branch"] });
     expect(readSidebarViewPreferences().show).toEqual(["updated", "branch"]);
   });
 });

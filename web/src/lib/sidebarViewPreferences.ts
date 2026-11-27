@@ -1,6 +1,7 @@
-// Device-local sidebar grouping, ordering, and row-metadata preferences.
+// Device-local sidebar grouping, ordering, and row-metadata preferences, kept in the layout
+// state (`omnigent.conversations.list.view`).
 
-const STORAGE_KEY = "omnigent:sidebar-view";
+import { LAYOUT_SLOTS, layoutState } from "@/workbench/layoutState";
 
 export type SidebarGrouping = "default" | "status" | "harness" | "created" | "updated";
 export type SidebarOrdering = "updated" | "created" | "custom";
@@ -56,14 +57,9 @@ function pick<T extends string>(allowed: readonly T[], value: unknown, fallback:
  */
 export function readSidebarViewPreferences(): SidebarViewPreferences {
   if (typeof window === "undefined") return DEFAULT_SIDEBAR_VIEW;
-  let stored: Partial<Record<keyof SidebarViewPreferences, unknown>>;
-  try {
-    const parsed: unknown = JSON.parse(window.localStorage.getItem(STORAGE_KEY) ?? "null");
-    if (typeof parsed !== "object" || parsed === null) return DEFAULT_SIDEBAR_VIEW;
-    stored = parsed;
-  } catch {
-    return DEFAULT_SIDEBAR_VIEW;
-  }
+  const parsed = layoutState.get(LAYOUT_SLOTS.conversationsView);
+  if (typeof parsed !== "object" || parsed === null) return DEFAULT_SIDEBAR_VIEW;
+  const stored = parsed as Partial<Record<keyof SidebarViewPreferences, unknown>>;
   const show = Array.isArray(stored.show) ? stored.show : [];
   const custom = parseCustomOrder(stored.custom);
   const ordering = pick(SIDEBAR_ORDERINGS, stored.ordering, DEFAULT_SIDEBAR_VIEW.ordering);
@@ -93,12 +89,8 @@ export function sidebarBaseOrdering(view: SidebarViewPreferences): "updated" | "
   return view.ordering === "custom" ? (view.custom?.base ?? "updated") : view.ordering;
 }
 
-/** Persist the view options. Swallows quota/access errors. */
+/** Persist the view options in the layout state. Swallows quota/access errors. */
 export function writeSidebarViewPreferences(value: SidebarViewPreferences): void {
   if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
-  } catch {
-    // A local view preference; losing it is harmless.
-  }
+  layoutState.set(LAYOUT_SLOTS.conversationsView, JSON.parse(JSON.stringify(value)) as unknown);
 }
