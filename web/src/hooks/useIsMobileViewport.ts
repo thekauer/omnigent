@@ -1,43 +1,34 @@
-// Reactive "is this a mobile-width viewport?" hook.
+// Reactive "is this a mobile-width layout?" hook.
 //
 // The shell's responsive layout pivots on Tailwind's `md` breakpoint
 // (`--breakpoint-md` in index.css), used both as CSS classes (`md:` / `max-md:`)
 // and as the JS threshold in AppShell's `initialSidebarOpen`. This hook exposes
 // the `max-md` side of that line to component logic that can't be expressed in
-// CSS alone (e.g. swapping a hover flyout for an in-place page on touch).
+// CSS alone (e.g. swapping a hover flyout for an in-place page on touch). The
+// width is the mount's (layout plan decision 14): the window's for the standalone
+// app, an embed's root box inside an embed (workbench/layoutViewport.ts).
 
-import { createContext, useContext, useSyncExternalStore } from "react";
+import { createContext, useCallback, useContext, useSyncExternalStore } from "react";
 
 import { keepsDesktopLayout } from "@/lib/desktopAppLayout";
+import { type LayoutService, layoutService } from "@/workbench/layoutService";
+import { MOBILE_BREAKPOINT_PX } from "@/workbench/layoutViewport";
+import { useWorkbenchScope } from "@/workbench/workbenchScope";
 
-/** Tailwind's `md` breakpoint: tablets up to an iPad Air in landscape (1180px) get the mobile layout. */
-export const MOBILE_BREAKPOINT_PX = 1181;
-/** Matches viewports at or above `md`, the desktop layout. */
-const DESKTOP_VIEWPORT_QUERY = `(min-width: ${MOBILE_BREAKPOINT_PX}px)`;
+export { MOBILE_BREAKPOINT_PX };
 
-// Mirror Tailwind's `max-md` variant exactly so this hook stays in lockstep
-// with the `max-md:` / `md:` classes already used across the shell.
-const MOBILE_QUERY = `(max-width: ${MOBILE_BREAKPOINT_PX - 0.02}px)`;
-
-function subscribe(callback: () => void): () => void {
-  if (typeof window === "undefined" || !window.matchMedia) return () => {};
-  const mql = window.matchMedia(MOBILE_QUERY);
-  mql.addEventListener("change", callback);
-  return () => mql.removeEventListener("change", callback);
-}
-
-function getSnapshot(): boolean {
-  if (typeof window === "undefined" || !window.matchMedia) return false;
-  return !keepsDesktopLayout() && window.matchMedia(MOBILE_QUERY).matches;
-}
+/** Matches windows at or above `md`, the desktop layout. */
+const DESKTOP_QUERY = `(min-width: ${MOBILE_BREAKPOINT_PX}px)`;
 
 /**
- * Non-reactive read of the layout: true at `md` and up, and at every width in
- * the desktop app. Mirrors the `md` variant in index.css.
+ * Non-reactive read of a mount's layout (the active one's, last mounted or used, by default):
+ * true at `md` and up, and at every width in the desktop app. Mirrors the `md` variant in
+ * index.css.
  */
-export function isDesktopLayout(): boolean {
-  if (typeof window === "undefined" || !window.matchMedia) return false;
-  return keepsDesktopLayout() || window.matchMedia(DESKTOP_VIEWPORT_QUERY).matches;
+export function isDesktopLayout(layout: LayoutService = layoutService): boolean {
+  if (typeof window === "undefined") return false;
+  if (layout.getRoot()) return !layout.isMobileLayout();
+  return keepsDesktopLayout() || (!!window.matchMedia && window.matchMedia(DESKTOP_QUERY).matches);
 }
 
 /**
@@ -47,14 +38,23 @@ export function isDesktopLayout(): boolean {
 export const DesktopWindowContext = createContext(false);
 
 /**
- * True when the viewport is narrower than Tailwind's `md` breakpoint (1181px)
+ * True when the mount is narrower than Tailwind's `md` breakpoint (1181px)
  * — i.e. the "mobile" layout the shell's `max-md:` classes target. Always false
  * in the desktop app, which keeps the desktop layout. Reactive: components
- * re-render when the viewport crosses the breakpoint. SSR-safe (returns `false`
+ * re-render when the width crosses the breakpoint. SSR-safe (returns `false`
  * on the server, matching `initialSidebarOpen`).
  */
 export function useIsMobileViewport(): boolean {
   const desktopWindow = useContext(DesktopWindowContext);
-  const narrow = useSyncExternalStore(subscribe, getSnapshot, () => false);
+  const narrow = useIsMobileLayout();
   return narrow && !desktopWindow;
+}
+
+/** {@link useIsMobileViewport} without the desktop window's override: the mount's width only. */
+export function useIsMobileLayout(): boolean {
+  const { layout } = useWorkbenchScope();
+  const subscribe = useCallback((listener: () => void) => layout.onDidChangeViewport(listener), [
+    layout,
+  ]);
+  return useSyncExternalStore(subscribe, () => layout.isMobileLayout(), () => false);
 }

@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { MOBILE_BREAKPOINT_PX as MD_BREAKPOINT } from "@/hooks/useIsMobileViewport";
-import { keepsDesktopLayout } from "@/lib/desktopAppLayout";
+import { useCallback, useEffect, useRef, useSyncExternalStore } from "react";
+import { useIsMobileLayout } from "@/hooks/useIsMobileViewport";
 import {
   readPanelSizePreference,
   writePanelSizePreference,
@@ -133,19 +132,8 @@ export function useResizablePanel(
   minWidthRef.current = minWidthPx;
 
   // Track whether we're on desktop — only apply inline width there.
-  const [isDesktop, setIsDesktop] = useState(
-    () =>
-      typeof window !== "undefined" && (keepsDesktopLayout() || window.innerWidth >= MD_BREAKPOINT),
-  );
-
-  useEffect(() => {
-    // The desktop app keeps the desktop layout at every window width.
-    if (keepsDesktopLayout()) return;
-    const mql = window.matchMedia(`(min-width: ${MD_BREAKPOINT}px)`);
-    const handler = (e: MediaQueryListEvent) => setIsDesktop(e.matches);
-    mql.addEventListener("change", handler);
-    return () => mql.removeEventListener("change", handler);
-  }, []);
+  // The mount's width picks the layout (the window's, or an embed's root).
+  const isDesktop = !useIsMobileLayout();
 
   // Re-clamp the stored width when the viewport resizes so a width
   // that was valid on a wider monitor doesn't push content off-screen

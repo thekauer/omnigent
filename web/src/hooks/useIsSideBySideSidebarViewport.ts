@@ -1,35 +1,30 @@
 // Reactive "should the open sidebar sit beside the chat?" hook for the mobile layout.
-
-import { useSyncExternalStore } from "react";
-import { keepsDesktopLayout } from "@/lib/desktopAppLayout";
-import { MOBILE_BREAKPOINT_PX } from "./useIsMobileViewport";
-
-// Wide mobile viewports (an unfolded foldable, a small phone in landscape) are
+//
+// Wide mobile widths (an unfolded foldable, a small phone in landscape) are
 // still below `md`, but have room to show the sidebar beside the chat instead of
 // over it: Material's "medium" width class (600dp+) at a squarish-or-wider aspect
-// ratio. Tall narrow viewports stay on the overlay drawer.
-const SIDE_BY_SIDE_QUERY = `(min-width: 600px) and (max-width: ${
-  MOBILE_BREAKPOINT_PX - 0.02
-}px) and (min-aspect-ratio: 3/4)`;
+// ratio. Tall narrow ones stay on the overlay drawer. The box is the mount's: the
+// window, or an embed's root (workbench/layoutViewport.ts).
 
-function subscribeSideBySide(callback: () => void): () => void {
-  if (typeof window === "undefined" || !window.matchMedia) return () => {};
-  const mql = window.matchMedia(SIDE_BY_SIDE_QUERY);
-  mql.addEventListener("change", callback);
-  return () => mql.removeEventListener("change", callback);
-}
+import { useCallback, useSyncExternalStore } from "react";
+import { layoutService } from "@/workbench/layoutService";
+import { useWorkbenchScope } from "@/workbench/workbenchScope";
 
-/** Non-reactive read of {@link useIsSideBySideSidebarViewport}, for event handlers. */
+/** Non-reactive read of {@link useIsSideBySideSidebarViewport} for the active mount, for event handlers. */
 export function isSideBySideSidebarViewport(): boolean {
-  if (typeof window === "undefined" || !window.matchMedia) return false;
-  return !keepsDesktopLayout() && window.matchMedia(SIDE_BY_SIDE_QUERY).matches;
+  if (typeof window === "undefined") return false;
+  return layoutService.isSideBySideLayout();
 }
 
 /**
- * True on a mobile-layout viewport wide enough that the open sidebar pushes the
+ * True on a mobile-layout width wide enough that the open sidebar pushes the
  * chat aside rather than covering it, so both stay usable at once. Always false
  * in the desktop app, which never uses the mobile layout.
  */
 export function useIsSideBySideSidebarViewport(): boolean {
-  return useSyncExternalStore(subscribeSideBySide, isSideBySideSidebarViewport, () => false);
+  const { layout } = useWorkbenchScope();
+  const subscribe = useCallback((listener: () => void) => layout.onDidChangeViewport(listener), [
+    layout,
+  ]);
+  return useSyncExternalStore(subscribe, () => layout.isSideBySideLayout(), () => false);
 }

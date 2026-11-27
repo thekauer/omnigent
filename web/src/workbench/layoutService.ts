@@ -7,6 +7,15 @@
 
 import { CONVERSATIONS_CONTAINER } from "./viewContainers";
 import { LAYOUT_SLOTS, type LayoutStateStore, standaloneLayoutState } from "./layoutState";
+import {
+  DESKTOP_VIEWPORT,
+  LAYOUT_WIDTH_ATTRIBUTE,
+  type LayoutViewport,
+  layoutWidthAttributeValue,
+  onDidChangeWindowViewport,
+  viewportOfSize,
+  windowViewport,
+} from "./layoutViewport";
 
 /** The workbench's parts, by VS Code's names (the auxiliary bar is the secondary side bar). */
 export const Parts = Object.freeze({
@@ -102,6 +111,8 @@ export class LayoutService {
   private rootSize: PartSize | undefined;
   private rootObserver: ResizeObserver | null = null;
   private readonly rootListeners = new Set<Listener<void>>();
+  private rootViewport: LayoutViewport = DESKTOP_VIEWPORT;
+  private readonly viewportListeners = new Set<() => void>();
 
   constructor(store: LayoutStateStore = standaloneLayoutState) {
     this.store = store;
@@ -120,6 +131,7 @@ export class LayoutService {
     if (root === this.root) return;
     this.rootObserver?.disconnect();
     this.rootObserver = null;
+    this.root?.removeAttribute(LAYOUT_WIDTH_ATTRIBUTE);
     this.root = root;
     this.rootSize = undefined;
     if (root && typeof ResizeObserver !== "undefined") {
@@ -138,8 +150,45 @@ export class LayoutService {
     const next = box ? Object.freeze({ width: box.width, height: box.height }) : undefined;
     if (next?.width === this.rootSize?.width && next?.height === this.rootSize?.height) return;
     this.rootSize = next;
+    const viewport = next ? viewportOfSize(next.width, next.height) : DESKTOP_VIEWPORT;
+    if (this.root && next) {
+      this.root.setAttribute(LAYOUT_WIDTH_ATTRIBUTE, layoutWidthAttributeValue(viewport));
+    }
+    const viewportChanged = viewport !== this.rootViewport;
+    this.rootViewport = viewport;
     fire(this.rootListeners, undefined);
     fire(this.layoutListeners, undefined);
+    if (viewportChanged) for (const listener of [...this.viewportListeners]) listener();
+  }
+
+  /**
+   * The layout the parts' width picks (decision 14): the root's box in an embed, the window's
+   * media queries otherwise. Always the desktop layout in the desktop app.
+   */
+  getViewport(): LayoutViewport {
+    return this.rootSize ? this.rootViewport : windowViewport();
+  }
+
+  /** True below `md`: the mobile layout. */
+  isMobileLayout(): boolean {
+    return this.getViewport().mobile;
+  }
+
+  /** True in the band where the open side bar docks beside the chat. */
+  isSideBySideLayout(): boolean {
+    return this.getViewport().sideBySide;
+  }
+
+  /** Fires when {@link getViewport} may have changed. */
+  onDidChangeViewport(listener: () => void): () => void {
+    this.viewportListeners.add(listener);
+    const offWindow = onDidChangeWindowViewport(() => {
+      if (!this.rootSize) listener();
+    });
+    return () => {
+      this.viewportListeners.delete(listener);
+      offWindow();
+    };
   }
 
   /** The service this one acts on: itself (the active mount's for the window's proxy). */
@@ -460,6 +509,18 @@ class ActiveLayoutService extends LayoutService {
       (service) => service.onDidChangeRootSize(listener),
       () => listener(undefined),
     );
+  }
+  override getViewport(): LayoutViewport {
+    return activeService.getViewport();
+  }
+  override isMobileLayout(): boolean {
+    return activeService.isMobileLayout();
+  }
+  override isSideBySideLayout(): boolean {
+    return activeService.isSideBySideLayout();
+  }
+  override onDidChangeViewport(listener: () => void): () => void {
+    return followActiveService((service) => service.onDidChangeViewport(listener), listener);
   }
 }
 

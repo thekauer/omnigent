@@ -5,7 +5,7 @@
 // into the layout state (`workbench.panelSizes`) so a full page refresh restores
 // the same layout.
 
-import { LAYOUT_SLOTS, layoutState } from "@/workbench/layoutState";
+import { LAYOUT_SLOTS, layoutState, type LayoutStateStore } from "@/workbench/layoutState";
 
 export interface PanelSizePreferences {
   /** Shared width for right-side push panels such as file viewer/terminals. */
@@ -63,9 +63,11 @@ function isValidShare(value: unknown): value is number {
  * validated independently so a bad value for one panel cannot discard the
  * others.
  */
-export function readPanelSizePreferences(): PanelSizePreferences {
+export function readPanelSizePreferences(
+  store: LayoutStateStore = layoutState,
+): PanelSizePreferences {
   if (typeof window === "undefined") return {};
-  const parsed = layoutState.get(LAYOUT_SLOTS.panelSizes);
+  const parsed = store.get(LAYOUT_SLOTS.panelSizes);
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return {};
   const record = parsed as Record<string, unknown>;
   const prefs: PanelSizePreferences = {};
@@ -86,14 +88,20 @@ export function readPanelSizePreferences(): PanelSizePreferences {
  * @param key Preference field to read, e.g. ``"inlinePanelWidthPx"``.
  * @returns The stored pixel width, or ``null`` when absent/invalid.
  */
-export function readPanelSizePreference(key: PanelSizePreferenceKey): number | null {
-  return readPanelSizePreferences()[key] ?? null;
+export function readPanelSizePreference(
+  key: PanelSizePreferenceKey,
+  store: LayoutStateStore = layoutState,
+): number | null {
+  return readPanelSizePreferences(store)[key] ?? null;
 }
 
-function writePanelSizePreferences(prefs: PanelSizePreferences): void {
+function writePanelSizePreferences(
+  prefs: PanelSizePreferences,
+  store: LayoutStateStore = layoutState,
+): void {
   if (typeof window === "undefined") return;
   // Storage quota/access errors keep the window's value (the layout state holds it).
-  layoutState.set(LAYOUT_SLOTS.panelSizes, prefs);
+  store.set(LAYOUT_SLOTS.panelSizes, prefs);
 }
 
 /**
@@ -102,18 +110,22 @@ function writePanelSizePreferences(prefs: PanelSizePreferences): void {
  * @param key Preference field to write, e.g. ``"pushPanelWidthPx"``.
  * @param width Pixel width to store. ``null`` removes that field.
  */
-export function writePanelSizePreference(key: PanelSizePreferenceKey, width: number | null): void {
-  const prefs = readPanelSizePreferences();
+export function writePanelSizePreference(
+  key: PanelSizePreferenceKey,
+  width: number | null,
+  store: LayoutStateStore = layoutState,
+): void {
+  const prefs = readPanelSizePreferences(store);
   if (width === null) {
     const { [key]: _removedPreference, ...remainingPreferences } = prefs;
-    writePanelSizePreferences(remainingPreferences);
+    writePanelSizePreferences(remainingPreferences, store);
     return;
   } else if (isValidWidth(width)) {
     prefs[key] = width;
   } else {
     return;
   }
-  writePanelSizePreferences(prefs);
+  writePanelSizePreferences(prefs, store);
 }
 
 /** One panel's remembered share of its container, or null when absent or invalid. */

@@ -31,20 +31,39 @@
 
 /* Width picks the layout: below md the mobile touch UI, md and up the mouse-driven desktop UI.
  * The desktop app marks its style root `data-desktop-app` and keeps the desktop UI at every width.
+ * An embed's root carries `data-layout-width` (its own box's layout, workbench/layoutViewport.ts),
+ * which wins over the window's width inside it.
  * Raw rules nest `@variant md` / `@variant max-md`; a selector list shares its highest specificity. */
 @custom-variant md {
   @media (width >= 73.8125rem) {
-    @slot;
+    &:where(:not([data-layout-width="mobile"], [data-layout-width="mobile"] *)) {
+      @slot;
+    }
   }
-  &:where([data-desktop-app], [data-desktop-app] *) {
+  &:where(
+    [data-desktop-app],
+    [data-desktop-app] *,
+    [data-layout-width="desktop"],
+    [data-layout-width="desktop"] *
+  ) {
     @slot;
   }
 }
 @custom-variant max-md {
   @media (width < 73.8125rem) {
-    &:where(:not([data-desktop-app], [data-desktop-app] *)) {
+    &:where(
+      :not(
+        [data-desktop-app],
+        [data-desktop-app] *,
+        [data-layout-width="desktop"],
+        [data-layout-width="desktop"] *
+      )
+    ) {
       @slot;
     }
+  }
+  &:where([data-layout-width="mobile"], [data-layout-width="mobile"] *) {
+    @slot;
   }
 }
 
@@ -1837,6 +1856,14 @@ html[data-electron-mac] .breadcrumb-folder {
   html:has(.app-shell),
   body:has(.app-shell) {
     overflow: hidden;
+    /* Horizontal swipes belong to the shell's drawers: a browser's overscroll back navigation
+     * (Chrome's, from a swipe at the edge the drawers leave to the OS) must not leave the app. */
+    overscroll-behavior-x: none;
+  }
+  /* An embed in the mobile layout is the app's viewport: its drawers, sheets and dialogs
+   * (fixed, portaled into it) stay inside its box rather than the host's window. */
+  .omnigent-app[data-layout-width="mobile"] {
+    contain: layout;
   }
   html {
     /* Font family for the whole inherited UI: the Appearance setting's

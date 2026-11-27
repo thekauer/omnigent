@@ -48,7 +48,7 @@ import type { Session, SessionStatus } from "@/lib/types";
 import { useApproveHotkey } from "@/hooks/useApproveHotkey";
 import { useFloatingComposerSupport } from "@/hooks/useFloatingComposerSupport";
 import { useSidebarToggleHotkeys } from "@/hooks/useSidebarToggleHotkeys";
-import { partHook, Parts } from "@/workbench/layoutService";
+import { type LayoutService, partHook, Parts } from "@/workbench/layoutService";
 import {
   readSidebarVisible,
   useRememberSidebarVisible,
@@ -503,7 +503,7 @@ function AppShellImpl() {
   // With two apps on a page, the window's keybindings reach the one last mounted or used.
   const isActiveMount = useCallback(() => isActiveWorkbenchScope(workbenchScope), [workbenchScope]);
   const [sidebarOpen, setSidebarOpen] = useCanvasSidebar(canvasMode, () =>
-    initialSidebarOpen(workbenchState),
+    initialSidebarOpen(workbenchState, workbenchScope.layout),
   );
   // Parts the product removed (`layout.hiddenParts`): not drawn, and nothing opens them.
   const sidebarRemoved = useProductHidesPart(Parts.SIDEBAR_PART);
@@ -4126,7 +4126,7 @@ function AppShellImpl() {
  * safe (returns false when window is undefined). The threshold is
  * Tailwind's `md` breakpoint, used in the Sidebar's responsive classes.
  */
-function initialSidebarOpen(store: LayoutStateStore): boolean {
+function initialSidebarOpen(store: LayoutStateStore, layout: LayoutService): boolean {
   if (typeof window === "undefined") return false;
-  return isDesktopLayout() && (readSidebarVisible(store) ?? true);
+  return isDesktopLayout(layout) && (readSidebarVisible(store) ?? true);
 }

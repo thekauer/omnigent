@@ -1,5 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { stubWindowMediaQueries } from "@/test/windowMediaQueries";
 import { readPanelSizePreference } from "@/lib/panelSizePreferences";
 import { resetSharedWidthStoreForTesting, useResizablePanel } from "./useResizablePanel";
 
@@ -26,6 +27,7 @@ describe("useResizablePanel layout", () => {
     ["the desktop app", true, true],
   ])("sizes the panel inline below md only in %s", (_name, desktopApp, inline) => {
     setInnerWidth(900);
+    stubWindowMediaQueries();
     if (desktopApp) vi.stubGlobal("omnigentDesktop", { kind: "electron" });
 
     const { result } = renderHook(() => useResizablePanel(true));

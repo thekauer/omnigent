@@ -3,7 +3,7 @@
 // behavior, but for a LEFT-edge panel: the drag handle lives on the sidebar's
 // right edge, so the live width tracks the cursor's distance from the
 // viewport's left edge (``e.clientX``) and ArrowRight grows / ArrowLeft
-// shrinks. It keeps its own module-level store + preference key so resizing the
+// shrinks. It keeps its own store (one per mount) + preference key so resizing the
 // sidebar never disturbs the right rail's inline-panel width (and vice versa).
 //
 // Unlike the inline panel this has no "boost" machinery — nothing auto-widens
@@ -17,7 +17,9 @@ import {
   readLengthToken,
   subscribeLayoutTokens,
 } from "@/workbench/layoutTokens";
-import { LAYOUT_SLOTS, layoutState } from "@/workbench/layoutState";
+import { LAYOUT_SLOTS, type LayoutStateStore } from "@/workbench/layoutState";
+import type { LayoutService } from "@/workbench/layoutService";
+import { useWorkbenchScope } from "@/workbench/workbenchScope";
 import { isDesktopLayout } from "@/hooks/useIsMobileViewport";
 
 // Default 320px (20rem) — wider than the old fixed ``md:w-64`` (256px) sidebar
@@ -56,77 +58,101 @@ export function clampSidebarWidth(
   return Math.max(floor, Math.min(w, ceiling));
 }
 
-function clamp(w: number): number {
+function clamp(w: number, layout: LayoutService): number {
   // No viewport available off the DOM (SSR / node test env) — this runs during
   // render, so guard before reading ``window`` to avoid a hard throw.
   const floor = readLengthToken(LayoutTokens.sidebarMinWidth, () => MIN_WIDTH_PX);
   if (typeof window === "undefined") return Math.max(floor, w);
-  const ceiling = readLengthToken(
-    LayoutTokens.sidebarMaxWidth,
-    () => window.innerWidth * MAX_WIDTH_RATIO,
-  );
+  // The mount's box: the window, or an embed's root (decision 14).
+  const rootWidth = layout.getRootSize().width;
+  const ceiling = readLengthToken(LayoutTokens.sidebarMaxWidth, () => rootWidth * MAX_WIDTH_RATIO);
   // A phone's drawer goes over the chat: only beside it does the chat need its room.
-  if (!isDesktopLayout()) return Math.max(floor, Math.min(w, ceiling));
-  return clampSidebarWidth(w, floor, ceiling, window.innerWidth, activityBarBeside());
+  if (!isDesktopLayout(layout)) return Math.max(floor, Math.min(w, ceiling));
+  return clampSidebarWidth(w, floor, ceiling, rootWidth, activityBarBeside(layout));
 }
 
-/** The activity bar's width when it sits beside the side bar (it shares the window). */
-function activityBarBeside(): number {
+/** The activity bar's width when it sits beside the side bar (it shares the mount's box). */
+function activityBarBeside(layout: LayoutService): number {
   if (typeof document === "undefined") return 0;
-  const bar = document.querySelector<HTMLElement>(
+  const bar = (layout.getRoot() ?? document).querySelector<HTMLElement>(
     '[data-part="activitybar"][data-location="default"]',
   );
   return bar ? bar.getBoundingClientRect().width : 0;
 }
 
 // ---------------------------------------------------------------------------
-// Module-level width store (independent of the inline panel / push-panel stores)
+// Width store, one per mount's layout state (independent of the inline panel /
+// push-panel stores)
 // ---------------------------------------------------------------------------
 
-// ``preferredWidth`` mirrors the persisted user choice; ``storedWidth`` is the
-// effective (viewport-clamped) width. Keeping the preference in memory lets a
-// viewport-resize re-derive the effective width from it — springing back to the
-// larger choice when space returns — without ever touching disk.
-let preferredWidth: number | null = readPanelSizePreference("sidebarWidthPx");
-let storedWidth: number | null = preferredWidth;
-const listeners = new Set<() => void>();
+/**
+ * ``preferred`` mirrors the persisted user choice; ``stored`` is the effective
+ * (viewport-clamped) width. Keeping the preference in memory lets a resize
+ * re-derive the effective width from it, springing back to the larger choice
+ * when space returns, without touching disk. Each mount's layout state has its
+ * own, so two embeds keep their own dragged width.
+ */
+class SidebarWidthStore {
+  preferred: number | null;
+  stored: number | null;
+  private readonly listeners = new Set<() => void>();
+  private readonly state: LayoutStateStore;
 
-function persistWidth(value: number | null) {
-  preferredWidth = value;
-  writePanelSizePreference("sidebarWidthPx", value);
+  constructor(state: LayoutStateStore) {
+    this.state = state;
+    this.preferred = readPanelSizePreference("sidebarWidthPx", state);
+    this.stored = this.preferred;
+    // View: Reset Layout clears the layout state: the dragged width goes with it.
+    state.subscribe((change) => {
+      if (change.slots !== undefined && !change.slots.includes(LAYOUT_SLOTS.panelSizes)) return;
+      this.reload();
+    });
+  }
+
+  persist(value: number | null): void {
+    this.preferred = value;
+    writePanelSizePreference("sidebarWidthPx", value, this.state);
+  }
+
+  setRaw(value: number | null, persist = false): void {
+    if (value === this.stored) return;
+    this.stored = value;
+    if (persist) this.persist(value);
+    for (const listener of [...this.listeners]) listener();
+  }
+
+  set(next: number | ((prev: number | null) => number), persist = false): void {
+    this.setRaw(typeof next === "function" ? next(this.stored) : next, persist);
+  }
+
+  /** Back to the token's width: the edge's double-click, and View: Reset Layout. */
+  reset = (): void => {
+    this.persist(null);
+    this.setRaw(null);
+  };
+
+  reload(): void {
+    this.preferred = readPanelSizePreference("sidebarWidthPx", this.state);
+    this.setRaw(this.preferred);
+  }
+
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  };
+
+  getSnapshot = (): number | null => this.stored;
 }
 
-function setStoredWidthRaw(value: number | null, persist = false) {
-  if (value === storedWidth) return;
-  storedWidth = value;
-  if (persist) persistWidth(value);
-  for (const l of listeners) l();
-}
+const widthStores = new Map<LayoutStateStore, SidebarWidthStore>();
 
-function setStoredWidth(next: number | ((prev: number | null) => number), persist = false) {
-  setStoredWidthRaw(typeof next === "function" ? next(storedWidth) : next, persist);
-}
-
-function subscribe(cb: () => void): () => void {
-  listeners.add(cb);
-  return () => listeners.delete(cb);
-}
-
-/** Back to the token's width: the edge's double-click, and View: Reset Layout. */
-export function resetSidebarWidth(): void {
-  persistWidth(null);
-  setStoredWidthRaw(null);
-}
-
-// View: Reset Layout clears the layout state: the dragged width goes with it.
-layoutState.subscribe((change) => {
-  if (change.slots !== undefined && !change.slots.includes(LAYOUT_SLOTS.panelSizes)) return;
-  preferredWidth = readPanelSizePreference("sidebarWidthPx");
-  setStoredWidthRaw(preferredWidth);
-});
-
-function getSnapshot(): number | null {
-  return storedWidth;
+function widthStoreOf(state: LayoutStateStore): SidebarWidthStore {
+  let store = widthStores.get(state);
+  if (!store) {
+    store = new SidebarWidthStore(state);
+    widthStores.set(state, store);
+  }
+  return store;
 }
 
 function getServerSnapshot(): number | null {
@@ -135,8 +161,7 @@ function getServerSnapshot(): number | null {
 
 /** Reset module-level state. Only for use in tests. */
 export function resetSidebarWidthStoreForTesting(): void {
-  preferredWidth = readPanelSizePreference("sidebarWidthPx");
-  setStoredWidthRaw(preferredWidth);
+  for (const store of widthStores.values()) store.reload();
 }
 
 // ---------------------------------------------------------------------------
@@ -153,12 +178,14 @@ export function resetSidebarWidthStoreForTesting(): void {
  * mobile (where the sidebar is a full-screen overlay).
  */
 export function useResizableSidebar(side: "left" | "right" = "left") {
-  const raw = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  const { layout, state } = useWorkbenchScope();
+  const store = widthStoreOf(state);
+  const raw = useSyncExternalStore(store.subscribe, store.getSnapshot, getServerSnapshot);
   // A theme setting the width tokens re-renders with their new values.
   useSyncExternalStore(subscribeLayoutTokens, layoutTokensVersion, layoutTokensVersion);
   const sideRef = useRef(side);
   sideRef.current = side;
-  const width = clamp(raw ?? defaultWidth());
+  const width = clamp(raw ?? defaultWidth(), layout);
   const dragging = useRef(false);
   // The side bar's outer edge when the drag began (its left edge on the left, its right edge
   // on the right): the width is the cursor's distance from it, whatever sits beside it.
@@ -170,13 +197,13 @@ export function useResizableSidebar(side: "left" | "right" = "left") {
   // Re-clamp on viewport resize so a shrunken window pulls the sidebar back
   // under the ceiling; widening re-derives from the persisted preference so the
   // user's chosen width springs back when space returns.
-  useEffect(() => {
-    function onResize() {
-      setStoredWidth((prev) => clamp(preferredWidth ?? prev ?? defaultWidth()));
-    }
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
+  useEffect(
+    () =>
+      layout.onDidChangeRootSize(() => {
+        store.set((prev) => clamp(store.preferred ?? prev ?? defaultWidth(), layout));
+      }),
+    [layout, store],
+  );
 
   const onMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -203,13 +230,13 @@ export function useResizableSidebar(side: "left" | "right" = "left") {
       const narrow = side === "left" ? "ArrowLeft" : "ArrowRight";
       if (e.key === widen) {
         e.preventDefault();
-        setStoredWidth((prev) => clamp((prev ?? width) + step), true);
+        store.set((prev) => clamp((prev ?? width) + step, layout), true);
       } else if (e.key === narrow) {
         e.preventDefault();
-        setStoredWidth((prev) => clamp((prev ?? width) - step), true);
+        store.set((prev) => clamp((prev ?? width) - step, layout), true);
       }
     },
-    [width, side],
+    [width, side, store, layout],
   );
 
   useEffect(() => {
@@ -218,8 +245,11 @@ export function useResizableSidebar(side: "left" | "right" = "left") {
       // Left panel: width is the cursor's distance from the viewport's left
       // edge. Update the live width only; persist once on release to avoid a
       // synchronous localStorage write per mousemove.
-      setStoredWidth(
-        clamp(sideRef.current === "left" ? e.clientX - anchor.current : anchor.current - e.clientX),
+      store.set(
+        clamp(
+          sideRef.current === "left" ? e.clientX - anchor.current : anchor.current - e.clientX,
+          layout,
+        ),
       );
     }
 
@@ -227,7 +257,7 @@ export function useResizableSidebar(side: "left" | "right" = "left") {
       if (!dragging.current) return;
       dragging.current = false;
       setResizing(false);
-      persistWidth(storedWidth);
+      store.persist(store.stored);
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
     }
@@ -243,7 +273,7 @@ export function useResizableSidebar(side: "left" | "right" = "left") {
         document.body.style.userSelect = "";
       }
     };
-  }, []);
+  }, [store, layout]);
 
   return {
     /** Current sidebar width in px (already viewport-clamped). */
@@ -254,7 +284,7 @@ export function useResizableSidebar(side: "left" | "right" = "left") {
       onMouseDown,
       onKeyDown,
       // Double-click: back to the theme's width (`ui-sidebar-width`).
-      onDoubleClick: resetSidebarWidth,
+      onDoubleClick: store.reset,
       role: "separator" as const,
       "aria-orientation": "vertical" as const,
       "aria-label": "Resize sidebar",
