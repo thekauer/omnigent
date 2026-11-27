@@ -3293,7 +3293,11 @@ function AppShellImpl() {
   // change through the shell's own handlers.
   useWorkbenchPart(Parts.SIDEBAR_PART, {
     visible: sidebarOpen || sidebarPeek,
-    setHidden: (hidden) => (hidden ? handleSidebarClose() : handleSidebarOpen()),
+    // On /settings the side bar holds the only exit: it opens, but never collapses (as the toggle).
+    setHidden: (hidden) => {
+      if (!hidden) handleSidebarOpen();
+      else if (!inSettings) handleSidebarClose();
+    },
     toggle: toggleLeftSidebar,
   });
   useWorkbenchPart(Parts.MAIN_PART, { visible: true, setHidden: () => {} });

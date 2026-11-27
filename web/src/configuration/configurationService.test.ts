@@ -147,6 +147,12 @@ describe("ConfigurationService", () => {
     expect(service.getValue("acme.layout.location")).toBe("default");
   });
 
+  it("keeps a memory value when the settings JSON refuses the write", () => {
+    service.update("acme.big.text", "short", "memory");
+    expect(() => service.update("acme.big.text", "x".repeat(140_000))).toThrow(/longer than/);
+    expect(service.getValue("acme.big.text")).toBe("short");
+  });
+
   it("fires one change with the keys whose value changed, from any layer", () => {
     service.addExtension("acme.layout", ACME);
     const events: ConfigurationChangeEvent[] = [];

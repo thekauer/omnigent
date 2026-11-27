@@ -9,6 +9,7 @@ import {
   WorkspaceBridge,
   type WorkspaceBridgeState,
 } from "@/shell/workspaceBridge";
+import { parseConfigurationContributions } from "@/configuration/configurationContributions";
 import { ConfigurationRegistry } from "@/configuration/configurationRegistry";
 import { ConfigurationService } from "@/configuration/configurationService";
 import { readStoredSettings, SETTINGS_STORAGE_KEY } from "@/configuration/settingsDocument";
@@ -473,6 +474,19 @@ describe("workspace.getConfiguration over the configuration registry", () => {
     expect(changes).toEqual(["mode"]);
     await expect(settings.update("mode", "c")).rejects.toThrow(/invalid value for pub\.ext\.mode/);
     await expect(settings.update("unknown", 1)).rejects.toThrow(/unknown setting/);
+    // Another's settings (here the host's theme) are the user's, not this extension's.
+    configuration.addExtension(
+      "omnigent.themes",
+      parseConfigurationContributions(
+        "omnigent.themes",
+        { configuration: { properties: { "omnigent.style.header": { type: "string" } } } },
+        { builtIn: true },
+      ).contributions,
+    );
+    await expect(
+      api!.workspace.getConfiguration().update("omnigent.style.header", "solid"),
+    ).rejects.toThrow(/not a setting of pub\.ext/);
+    expect(api!.workspace.getConfiguration().get("omnigent.style.header")).toBeUndefined();
     // The user's settings JSON wins over the default; a wrong value there doesn't apply.
     new SettingsStore().saveText('{ "pub.ext.count": "many" }');
     configuration.reload();

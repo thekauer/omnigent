@@ -1039,8 +1039,10 @@ declare module "omnigent" {
     inspect: (key: string) => ConfigurationInspection | undefined;
     /**
      * Writes the user's settings JSON (comments kept), or the workspace on screen for
-     * `omnigent.files.*`. Rejects for an unknown setting, a value its schema doesn't take,
-     * one set by the product, a settings JSON with syntax errors, or no workspace on screen.
+     * `omnigent.files.*`. An extension writes only its own settings (`<extension id>.*`) and
+     * the Files tab's. Rejects for an unknown setting, another's, a value its schema doesn't
+     * take, one set by the product, a settings JSON with syntax errors, or no workspace on
+     * screen.
      */
     update: (key: string, value: unknown) => Promise<void>;
   }

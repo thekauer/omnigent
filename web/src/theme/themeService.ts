@@ -1178,20 +1178,27 @@ export class ThemeService implements ThemeContributionSink {
 
   /**
    * Settings' reset: the default theme, and no options, variants or customizations. The
-   * document's other settings stay; a document with only theme keys (or one that doesn't
-   * parse) goes as a whole.
+   * document's other settings stay (a text that doesn't parse keeps them as their last good
+   * values); a document with only theme keys goes as a whole.
    */
   resetAppearance(): void {
     const current = this.settingsDocument();
     const keys = Object.keys(current.values);
-    if (current.valid && keys.some((key) => !isThemeSettingKey(key))) {
+    const others = keys.filter((key) => !isThemeSettingKey(key));
+    if (others.length === 0) {
+      this.settings.clear(this, LEGACY_THEME_SETTINGS_STORAGE_KEYS);
+    } else if (current.valid) {
       this.settings.edit(
         keys.filter(isThemeSettingKey).map((key) => [[key], undefined] as const),
         this,
       );
       for (const key of LEGACY_THEME_SETTINGS_STORAGE_KEYS) writeJson(key, undefined);
     } else {
-      this.settings.clear(this, LEGACY_THEME_SETTINGS_STORAGE_KEYS);
+      // A text that doesn't parse can't be edited: the other settings stay, as their last
+      // good values, in a fresh document.
+      const kept = Object.fromEntries(others.map((key) => [key, current.values[key]]));
+      this.settings.saveText(`${JSON.stringify(kept, null, 2)}\n`, this);
+      for (const key of LEGACY_THEME_SETTINGS_STORAGE_KEYS) writeJson(key, undefined);
     }
     this.select(null);
   }

@@ -456,9 +456,13 @@ export class WorkspaceService {
   /**
    * `workspace.getConfiguration`: the registered settings, as VS Code's. The Files tab's
    * settings read and write the workspace on screen (which keeps the sort in the user's
-   * settings); every other one reads the configuration service and writes the settings JSON.
+   * settings); every other one reads the configuration service and writes the settings JSON,
+   * a third-party `writer` only its own (`<extension id>.*`).
    */
-  getConfiguration(section = ""): omnigent.WorkspaceConfiguration {
+  getConfiguration(
+    section = "",
+    writer?: { readonly extensionId: string; readonly builtIn: boolean },
+  ): omnigent.WorkspaceConfiguration {
     const fullName = (key: string) => (section ? `${section}.${key}` : key);
     const configuration = this.configuration;
     function get<T>(key: string, defaultValue?: T): T | undefined;
@@ -498,6 +502,10 @@ export class WorkspaceService {
             return Promise.resolve();
           }
           if (!configuration.has(name)) throw new Error(`unknown setting ${JSON.stringify(name)}`);
+          // An extension writes its own settings; the host's and other extensions' are the user's.
+          if (writer && !writer.builtIn && !name.startsWith(`${writer.extensionId}.`)) {
+            throw new Error(`${name} is not a setting of ${writer.extensionId}`);
+          }
           configuration.update(name, value);
           return Promise.resolve();
         } catch (error) {

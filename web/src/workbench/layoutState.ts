@@ -132,10 +132,17 @@ export class LayoutStateStore {
     return values;
   }
 
-  /** Writes the document; false when storage refused it. */
+  /**
+   * Writes the document; false when storage refused it, or holds a newer version's document
+   * (a build rolled back keeps its changes in memory rather than erase the newer one's).
+   */
   private persist(values: LayoutStateValues): boolean {
     const text = JSON.stringify({ version: VERSION, state: values });
     if (text.length > LAYOUT_STATE_MAX_CHARS) return false;
+    const existing = parseJson(readStorage(this.storageKey));
+    if (isRecord(existing) && typeof existing.version === "number" && existing.version > VERSION) {
+      return false;
+    }
     try {
       window.localStorage.setItem(this.storageKey, text);
       return true;

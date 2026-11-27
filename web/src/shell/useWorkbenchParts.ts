@@ -51,13 +51,23 @@ export function readSidebarVisible(): boolean | undefined {
 }
 
 /**
- * Remembers the side bar's open state while `remember` holds (a desktop window, outside the
- * states that open or close it for the user: Settings, the canvas, a maximized rail, a peek).
- * The default (open) is not written, so a window that never closed it stores nothing.
+ * Remembers the side bar's open state when it changes while `remember` holds (a desktop
+ * window, outside the states that open or close it for the user: Settings, the canvas, a
+ * maximized rail, a peek). The default (open) is not written, so a window that never closed it
+ * stores nothing, and another window's choice stands until this one's user changes it.
  */
 export function useRememberSidebarVisible(open: boolean, remember: boolean): void {
+  // The state when remembering last began or changed: coming back from Settings (or a narrow
+  // window) to a state is not a choice, so only a change while remembering is written.
+  const seen = useRef<boolean | null>(null);
   useEffect(() => {
-    if (!remember) return;
+    if (!remember) {
+      seen.current = null;
+      return;
+    }
+    const previous = seen.current;
+    seen.current = open;
+    if (previous === null || previous === open) return;
     const stored = readSidebarVisible();
     if ((stored ?? true) === open) return;
     layoutState.set(LAYOUT_SLOTS.sidebar, { visible: open });

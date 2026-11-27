@@ -177,9 +177,11 @@ def test_custom_order_keeps_the_list_and_commits_on_drop(
     with page.expect_popup() as popup:
         page.evaluate("window.open('about:blank')")
     popup.value.evaluate("""() => {
-        const key = 'omnigent:sidebar-view';
-        const view = JSON.parse(localStorage.getItem(key));
-        localStorage.setItem(key, JSON.stringify({ ...view, ordering: 'updated' }));
+        const key = 'omnigent:layout-state';
+        const slot = 'omnigent.conversations.list.view';
+        const layout = JSON.parse(localStorage.getItem(key));
+        layout.state[slot] = { ...layout.state[slot], ordering: 'updated' };
+        localStorage.setItem(key, JSON.stringify(layout));
     }""")
     popup.value.close()
     choose("session-grouping-menu", "Status")

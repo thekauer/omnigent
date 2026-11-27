@@ -287,6 +287,14 @@ describe("the theme's keys among the registered settings (layout L1)", () => {
     stop();
   });
 
+  it("keeps the other settings' last good values when resetting a document that doesn't parse", () => {
+    save('{ "omnigent.style.header": "solid", "acme.layout.visible": true }');
+    save('{ "omnigent.style.header": "solid", "acme.layout.visible": true, ');
+    service.resetAppearance();
+    expect(stored()).toMatchObject({ valid: true, values: { "acme.layout.visible": true } });
+    expect(service.getUserVariants()).toEqual({});
+  });
+
   it("resets only the theme's keys when the document holds others", () => {
     save('// mine\n{ "omnigent.style.header": "solid", "acme.layout.visible": true }\n');
     service.resetAppearance();

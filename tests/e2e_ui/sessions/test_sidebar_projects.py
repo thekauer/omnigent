@@ -149,7 +149,13 @@ def test_move_session_into_new_project(
         page.mouse.up()
     assert filed.value.ok
     expect(_section(page, project).locator(f'a[href="/c/{other_id}"]')).to_be_visible()
-    view = page.evaluate('JSON.parse(localStorage.getItem("omnigent:sidebar-view"))') or {}
+    view = (
+        page.evaluate(
+            "JSON.parse(localStorage.getItem('omnigent:layout-state'))"
+            "?.state?.['omnigent.conversations.list.view']"
+        )
+        or {}
+    )
     assert view.get("ordering", "updated") == "updated"
 
     _row(page, other_id).get_by_role("link").click()

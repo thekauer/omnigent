@@ -675,7 +675,8 @@ export function createExtensionApi(
       },
       onDidChangeChangedFiles,
       onDidChangeActiveSessionId,
-      getConfiguration: (section?: string) => services.workspace.getConfiguration(section),
+      getConfiguration: (section?: string) =>
+        services.workspace.getConfiguration(section, { extensionId, builtIn }),
       onDidChangeConfiguration,
       findTextInFiles: (
         query: omnigent.TextSearchQuery,

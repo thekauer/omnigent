@@ -216,12 +216,14 @@ export class ConfigurationService {
       this.changed();
       return;
     }
+    const memoryValue = this.memory.get(key);
     const hadMemory = this.memory.delete(key);
     try {
       this.store.edit([[[key], value === undefined ? undefined : copyOf(value)]], this);
-    } finally {
-      // The store's event already ran the diff; a memory value cleared alongside needs one too.
-      if (hadMemory) this.changed();
+    } catch (error) {
+      // Refused: the window keeps what it had.
+      if (hadMemory) this.memory.set(key, memoryValue);
+      throw error;
     }
   }
 

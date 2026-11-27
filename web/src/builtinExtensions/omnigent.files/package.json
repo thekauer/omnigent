@@ -65,7 +65,7 @@
           "type": "boolean",
           "default": true,
           "scope": "resource",
-          "description": "Whether a workspace shows hidden (dot) files when it opens. The Files tab's eye toggle changes it for the workspace on screen only."
+          "description": "Whether a session's Files tab shows hidden (dot) files when it opens (a grid cell starts with them hidden). The tab's eye toggle changes it for the session on screen only."
         }
       }
     },

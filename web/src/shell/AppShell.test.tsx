@@ -2487,6 +2487,26 @@ describe("Sidebar across the md breakpoint", () => {
     expect(layoutState.get(LAYOUT_SLOTS.sidebar)).toEqual({ visible: true });
   });
 
+  it("keeps another window's remembered state through a trip to Settings", () => {
+    mockViewportWidth(1280);
+    mockConversations([{ id: "conv_abc", permission_level: null }]);
+    renderShell("/c/conv_abc");
+    // Another window closed its side bar; this one stays open and only visits Settings.
+    layoutState.set(LAYOUT_SLOTS.sidebar, { visible: false });
+    fireEvent.click(screen.getByTestId("nav-settings"));
+    fireEvent.click(screen.getByTestId("nav-home"));
+    expect(screen.getByTestId("sidebar")).toHaveAttribute("data-open", "true");
+    expect(layoutState.get(LAYOUT_SLOTS.sidebar)).toEqual({ visible: false });
+  });
+
+  it("refuses the layout service's collapse on /settings, as the toggle does", () => {
+    mockViewportWidth(1280);
+    mockConversations([]);
+    renderShell("/settings");
+    act(() => layoutService.setPartHidden(true, Parts.SIDEBAR_PART));
+    expect(screen.getByTestId("sidebar")).toHaveAttribute("data-open", "true");
+  });
+
   it("leaves the remembered state alone in a narrow window", () => {
     mockViewportWidth(740);
     mockConversations([{ id: "conv_abc", permission_level: null }]);

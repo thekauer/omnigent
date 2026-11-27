@@ -202,8 +202,12 @@ def test_collapsing_project_of_open_session_stays_collapsed(
     expect(pinned_link).to_contain_text(f"pinned-renamed-{nonce}", timeout=30_000)
 
     expect(folder_header).to_have_attribute("aria-expanded", "false")
-    assert project not in json.loads(
-        page.evaluate("localStorage.getItem('omnigent:expanded-project-sections') ?? '[]'")
+    assert project not in (
+        page.evaluate(
+            "JSON.parse(localStorage.getItem('omnigent:layout-state'))"
+            "?.state?.['omnigent.conversations.list.expandedProjects']"
+        )
+        or []
     )
     expect(_section(page, project).locator(f'a[href="/c/{member_id}"]')).to_have_count(1)
 

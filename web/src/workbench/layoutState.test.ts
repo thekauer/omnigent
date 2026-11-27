@@ -88,6 +88,15 @@ describe("LayoutStateStore", () => {
     expect(changes.at(-1)).toEqual({});
   });
 
+  it("never overwrites a newer version's document", () => {
+    const newer = JSON.stringify({ version: 2, state: { "a.b": 1 } });
+    localStorage.setItem(LAYOUT_STATE_STORAGE_KEY, newer);
+    const store = new LayoutStateStore();
+    store.set(LAYOUT_SLOTS.sidebar, { visible: false });
+    expect(store.get(LAYOUT_SLOTS.sidebar)).toEqual({ visible: false });
+    expect(localStorage.getItem(LAYOUT_STATE_STORAGE_KEY)).toBe(newer);
+  });
+
   it("reads an unreadable or other-version document as empty", () => {
     for (const raw of [null, "nope", "[]", '{"version":2,"state":{"a":1}}', '{"version":1}']) {
       expect(readLayoutStateText(raw)).toEqual({});
