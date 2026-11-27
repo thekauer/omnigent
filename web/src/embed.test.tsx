@@ -449,7 +449,8 @@ describe("embed mode tests", () => {
     }
     dom = roots(false);
     expect(dom.menu.matches(light[0]!)).toBe(true);
-    for (const selector of sidebar) {
+    // The side bar on the right has rules of its own; this side bar is on the left.
+    for (const selector of sidebar.filter((rule) => !rule.includes("data-sidebar-location"))) {
       expect(dom.sidebar.matches(selector), selector).toBe(true);
     }
   });

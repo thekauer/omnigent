@@ -504,6 +504,14 @@
   --ui-working-pulse-radius: initial;
   --ui-context-strip-background: initial;
   --ui-context-strip-radius: var(--ui-radius-sm);
+  --ui-sidebar-width: 320px;
+  --ui-sidebar-min-width: 220px;
+  --ui-sidebar-max-width: 50vw;
+  --ui-auxiliarybar-width: clamp(420px, 36vw, 600px);
+  --ui-auxiliarybar-min-width: 240px;
+  --ui-auxiliarybar-max-width: 99vw;
+  --ui-activitybar-width: 48px;
+  --ui-titlebar-height: 48px;
 }
 
 .dark {

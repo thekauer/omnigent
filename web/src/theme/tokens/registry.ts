@@ -13,6 +13,7 @@ import { DENSITY_TOKENS } from "./density.ts";
 import { DIFF_TOKENS } from "./diff.ts";
 import { ELEVATION_TOKENS } from "./elevation.ts";
 import { FILE_TREE_TOKENS } from "./fileTree.ts";
+import { LAYOUT_TOKENS } from "./layout.ts";
 import { SCROLLBAR_TOKENS } from "./scrollbar.ts";
 import { SHAPE_TOKENS } from "./shape.ts";
 import { STATUS_TOKENS } from "./status.ts";
@@ -71,6 +72,7 @@ export const TOKENS: readonly TokenDef[] = [
   ...FILE_TREE_TOKENS,
   ...BRAND_TOKENS,
   ...VARIANT_SURFACE_TOKENS,
+  ...LAYOUT_TOKENS,
 ];
 
 /** Tokens with host defaults (no palette sets them), in registry order. */

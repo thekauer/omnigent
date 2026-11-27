@@ -1,7 +1,7 @@
 {
   "name": "workbench",
   "displayName": "Workbench layout",
-  "description": "The workbench's layout settings: where the activity bar and the side bars sit.",
+  "description": "The workbench's layout settings: where the activity bar and the side bars sit, and when the secondary side bar shows.",
   "publisher": "omnigent",
   "version": "1.0.0",
   "private": true,
@@ -34,6 +34,47 @@
           "scope": "window",
           "description": "Where the activity bar, which switches the primary side bar's view containers, is shown.",
           "defaultOverridable": true
+        },
+        "workbench.sideBar.location": {
+          "type": "string",
+          "enum": [
+            "left",
+            "right"
+          ],
+          "enumDescriptions": [
+            "The primary side bar on the left, the secondary side bar on the right.",
+            "The primary side bar on the right, the secondary side bar on the left."
+          ],
+          "default": "left",
+          "scope": "window",
+          "defaultOverridable": true,
+          "description": "Where the primary side bar (and its activity bar) sits; the secondary side bar takes the other side."
+        },
+        "workbench.secondarySideBar.defaultVisibility": {
+          "type": "string",
+          "enum": [
+            "hidden",
+            "visible",
+            "visibleInWorkspace"
+          ],
+          "enumDescriptions": [
+            "New sessions start with the secondary side bar closed.",
+            "New sessions start with it open.",
+            "New sessions start with it open (it shows only in a session)."
+          ],
+          "default": "hidden",
+          "scope": "window",
+          "defaultOverridable": true,
+          "description": "Whether a session without a saved state opens with the secondary side bar (the workspace rail) shown. Collapsing or expanding the rail carries into the next session until this changes."
+        },
+        "omnigent.secondarySideBar.autoHideBelow": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000,
+          "default": 0,
+          "scope": "window",
+          "defaultOverridable": true,
+          "description": "Hides the secondary side bar while the window is narrower than this many pixels (0: never), and shows it again when the window widens."
         }
       }
     },
@@ -45,6 +86,20 @@
       {
         "command": "workbench.action.focusActivityBar",
         "title": "Focus Activity Bar"
+      },
+      {
+        "command": "workbench.action.closeAuxiliaryBar",
+        "title": "Close Secondary Side Bar",
+        "icon": "x"
+      },
+      {
+        "command": "workbench.action.toggleMaximizedAuxiliaryBar",
+        "title": "Maximize Secondary Side Bar",
+        "icon": "maximize"
+      },
+      {
+        "command": "workbench.action.resetLayout",
+        "title": "View: Reset Layout"
       }
     ]
   }

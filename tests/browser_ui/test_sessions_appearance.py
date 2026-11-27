@@ -423,7 +423,19 @@ def _ui_font_family(page: Page) -> str:
 
 
 def _stored_default(page: Page) -> str | None:
-    return page.evaluate("() => localStorage.getItem('omnigent:default-workspace-panel')")
+    """The stored Workspace panel default: the rail's last state (layout state) over the
+    settings JSON's `workbench.secondarySideBar.defaultVisibility`; None for the product's."""
+    return page.evaluate(
+        """() => {
+          const layout = JSON.parse(localStorage.getItem('omnigent:layout-state') ?? 'null');
+          const last = layout?.state?.['workbench.auxiliaryBar.lastVisibility'];
+          if (last === 'open' || last === 'collapsed') return last;
+          const settings = JSON.parse(localStorage.getItem('omnigent:ui-settings') ?? 'null');
+          const values = settings?.values ?? {};
+          const intent = values['workbench.secondarySideBar.defaultVisibility'];
+          return intent === 'visible' || intent === 'visibleInWorkspace' ? 'open' : null;
+        }"""
+    )
 
 
 def _pick_workspace_panel_default(page: Page, value: str) -> None:

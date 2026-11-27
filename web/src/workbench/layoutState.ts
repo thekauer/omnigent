@@ -16,6 +16,8 @@ export const LAYOUT_SLOTS = Object.freeze({
   sidebar: "workbench.parts.sidebar",
   /** The view container the primary side bar shows (absent: the sessions). */
   activeViewContainer: "workbench.sideBar.activeViewContainer",
+  /** `"open"` or `"collapsed"`: how the secondary side bar was last left, for new sessions. */
+  auxiliaryBarLastVisibility: "workbench.auxiliaryBar.lastVisibility",
   /** `{ order?: string[], hidden?: string[] }`: the activity bar's items the user moved or hid. */
   activityBar: "workbench.activityBar",
   /** The resizable panels' widths and shares (`lib/panelSizePreferences.ts`). */
@@ -26,6 +28,8 @@ export const LAYOUT_SLOTS = Object.freeze({
   collapsedSections: "omnigent.conversations.list.collapsedSections",
   /** Names of the expanded project folders. */
   expandedProjects: "omnigent.conversations.list.expandedProjects",
+  /** Ids of the side bar's navigation entries the user hid (`sidebar/navigation` commands). */
+  hiddenNavigationEntries: "omnigent.conversations.navigation.hidden",
   /** Ids of the collapsed session families. */
   collapsedFamilies: "omnigent.conversations.list.collapsedFamilies",
   /** `{ [view id]: { collapsed?: boolean, hidden?: boolean } }`: stacked views the user changed. */

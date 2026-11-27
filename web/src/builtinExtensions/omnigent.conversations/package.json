@@ -1,7 +1,7 @@
 {
   "name": "conversations",
   "displayName": "Sessions",
-  "description": "The primary side bar's sessions container: the navigation and the sessions and projects list.",
+  "description": "The primary side bar's sessions container: the navigation (a sidebar/navigation menu) and the sessions and projects list.",
   "publisher": "omnigent",
   "version": "1.0.0",
   "private": true,
@@ -33,6 +33,79 @@
           "id": "omnigent.conversations.list",
           "name": "Sessions",
           "builtInView": "conversationList"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "omnigent.newSession",
+        "title": "New session",
+        "icon": "message-circle-plus"
+      },
+      {
+        "command": "omnigent.openAutomations",
+        "title": "Automations",
+        "icon": "clock"
+      },
+      {
+        "command": "omnigent.openWorkflows",
+        "title": "Workflows",
+        "icon": "workflow"
+      },
+      {
+        "command": "omnigent.openInbox",
+        "title": "Inbox",
+        "icon": "inbox"
+      },
+      {
+        "command": "omnigent.openCanvas",
+        "title": "Canvas",
+        "icon": "layout-dashboard"
+      },
+      {
+        "command": "omnigent.showExtensionPages",
+        "title": "Extension pages",
+        "icon": "puzzle"
+      },
+      {
+        "command": "omnigent.openUsage",
+        "title": "Usage",
+        "icon": "wallet"
+      }
+    ],
+    "menus": {
+      "sidebar/navigation": [
+        {
+          "command": "omnigent.newSession",
+          "group": "navigation"
+        },
+        {
+          "command": "omnigent.openAutomations",
+          "when": "omnigent.automations.enabled",
+          "group": "navigation"
+        },
+        {
+          "command": "omnigent.openWorkflows",
+          "when": "omnigent.serverFeature.workflows",
+          "group": "navigation"
+        },
+        {
+          "command": "omnigent.openInbox",
+          "group": "navigation"
+        },
+        {
+          "command": "omnigent.openCanvas",
+          "when": "omnigent.serverFeature.canvas",
+          "group": "navigation"
+        },
+        {
+          "command": "omnigent.showExtensionPages",
+          "group": "navigation"
+        },
+        {
+          "command": "omnigent.openUsage",
+          "when": "omnigent.serverFeature.usage_page",
+          "group": "navigation"
         }
       ]
     }

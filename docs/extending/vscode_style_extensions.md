@@ -1266,6 +1266,10 @@ Plain ESM with `// @ts-check`; no build step.
 | `contributes.menus["viewContainer/title"]`                           | same, group `navigation`                                      | `viewContainer` context key                         |
 | Activity bar, `workbench.activityBar.location` (`default`, `top`, `bottom`, `hidden`) | same (layout plan L4); `hidden` by default | Items drag to reorder, hide from the right-click menu; Accounts and Manage at the bottom at `default` |
 | `workbench.view.<container>`, `workbench.action.toggleActivityBarVisibility`, `focusActivityBar`; `activeViewlet`, `activityBarVisible` | same (layout plan L4) | View: Reset Layout is `workbench.action.resetLayout` |
+| `workbench.sideBar.location` (`left`, `right`), `workbench.secondarySideBar.defaultVisibility` | same (layout plan L5) | The secondary side bar takes the other side |
+| (none)                                                               | `omnigent.secondarySideBar.autoHideBelow`, layout tokens `ui-sidebar-width`, `-min-width`, `-max-width`, `ui-auxiliarybar-*`, `ui-activitybar-width` | Widths are theme tokens, not settings (decision 5) |
+| `workbench.action.toggleMaximizedAuxiliaryBar`                       | same (layout plan L5)                                         | The rail's Full screen; no default `viewContainer/title` entry |
+| (none)                                                               | `contributes.menus["sidebar/navigation"]`                     | The side bar's navigation rows: commands with `when`; right-click hides them |
 | `window.createTreeView(id, { treeDataProvider })`                    | same                                                          | Host-drawn rows; no DnD or multi-select             |
 | `TreeDataProvider`, `TreeItem`, `TreeItemCollapsibleState`           | same, plain data                                              | Plus `decoration` and `gitStatus` on items          |
 | `TreeView.title`, `.description`, `.message`, `.badge`               | same                                                          |                                                     |
@@ -1356,6 +1360,29 @@ Deviations and why:
   View: Reset Layout (`workbench.action.resetLayout`, also in the ⌘K palette) clears the
   layout state, settings stay. The side bar's open state and active container are one per
   window (the layout service); two shells mounted at once share them.
+- The side bars' widths are layout tokens (`theme/tokens/layout.ts`) a theme sets and a
+  product locks (`lockedTokens`), measured on the theme root (`px`, `rem`, `em`, `vw`,
+  `vh`); a drag's width is layout state (the secondary side bar's stays per session, as the
+  plan keeps it, so View: Reset Layout leaves it), and double-clicking the edge returns to the
+  token. `workbench.secondarySideBar.defaultVisibility` is the intent (Appearance's Workspace
+  panel row writes it; the old `omnigent:default-workspace-panel` "open" carries into it);
+  collapsing or expanding the rail is layout state (`workbench.auxiliaryBar.lastVisibility`)
+  and carries into the next session, as before, until the intent changes.
+  `omnigent.secondarySideBar.autoHideBelow` closes the rail for the window when it narrows past
+  the width and reopens what it closed when it widens. The secondary side bar's Close and
+  Maximize are built-in commands with icons that an extension or product puts in
+  `viewContainer/title`; the rail keeps its own Full screen button, so today's look stays.
+- The side bar's navigation is the `sidebar/navigation` menu (VS Code has no such menu): the
+  sessions container's own entries (`omnigent.newSession`, `omnigent.openAutomations`,
+  `omnigent.openWorkflows`, `omnigent.openInbox`, `omnigent.openCanvas`,
+  `omnigent.showExtensionPages`, `omnigent.openUsage`) are the host's rows, gated by `when`;
+  other extensions' entries follow them as command rows (a built-in entry's id is refused).
+  Right-clicking the navigation (its padding or a command row; a link keeps the browser's own
+  menu) hides and shows entries (layout state `omnigent.conversations.navigation.hidden`).
+  `workbench.secondarySideBar.defaultVisibility` `visible` and `visibleInWorkspace` act the
+  same: the secondary side bar shows in a session only. At `workbench.sideBar.location: right`
+  the phone drawer's edge swipes and the macOS desktop app's title strip still assume the
+  left (layout plan L9).
 - `builtInView` has no VS Code equivalent: the sessions container's views are host
   React components (VS Code's own views are workbench code). The side bar's header
   row keeps its host-drawn search and collapse buttons; `viewContainer/title` entries

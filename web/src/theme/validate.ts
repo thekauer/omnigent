@@ -368,6 +368,8 @@ export interface TokenConstraint {
   lengthRange?: readonly [number, number];
   /** Whether a calc() may multiply by `infinity` (the pill radius). */
   allowInfinity?: boolean;
+  /** A length that may size against the window (`vw`, `vh`): the side bars' widths. */
+  viewportUnits?: boolean;
   /**
    * A font size: `em` is the parent's font size, which a theme may set too, so an `em`
    * multiplier stays within {@link FONT_SIZE_EM_LIMIT}.
@@ -481,6 +483,14 @@ export const TOKEN_CONSTRAINTS: Readonly<Record<string, TokenConstraint>> = {
   "syntax-theme-light": { syntaxTheme: true },
   "syntax-theme-dark": { syntaxTheme: true },
   "ui-border-width": { lengthRange: [0, 32] },
+  "ui-sidebar-width": { viewportUnits: true },
+  "ui-sidebar-min-width": { viewportUnits: true },
+  "ui-sidebar-max-width": { viewportUnits: true },
+  "ui-auxiliarybar-width": { viewportUnits: true },
+  "ui-auxiliarybar-min-width": { viewportUnits: true },
+  "ui-auxiliarybar-max-width": { viewportUnits: true },
+  "ui-activitybar-width": { lengthRange: [0, 200] },
+  "ui-titlebar-height": { lengthRange: [0, 200] },
   "ui-scrollbar-size": { lengthRange: [0, 64] },
   "ui-row-line": { lengthRange: ROW_RANGE },
   "ui-row-height": { lengthRange: ROW_RANGE },
@@ -732,6 +742,12 @@ const CHANNEL_KEYWORDS = new Set([
 ]);
 const ANGLE_UNITS = new Set(["deg", "rad", "grad", "turn"]);
 const LENGTH_UNITS = new Set(["px", "rem", "em", "%"]);
+/** Viewport units, for the layout tokens that size against the window (`50vw`). */
+const VIEWPORT_UNITS = new Set(["vw", "vh"]);
+/** A window-sized length: no `%`, which would resolve against the probe's container. */
+const VIEWPORT_LENGTH_UNITS = new Set(["px", "rem", "em", ...VIEWPORT_UNITS]);
+/** The px a `1vw` or `1vh` can be: a viewport of up to 4000px. */
+const VIEWPORT_UNIT_PX: readonly [number, number] = [0, 40];
 const MATH_FUNCTIONS = new Set(["calc", "min", "max", "clamp"]);
 const GRADIENTS = new Set([
   "linear-gradient",
@@ -854,6 +870,10 @@ class ValueChecker {
 
   /** A literal's interval: px for lengths, ms for durations; an `em` at its worst case. */
   private literal(node: Extract<CssNode, { type: "number" }>): Interval {
+    if (VIEWPORT_UNITS.has(node.unit)) {
+      const ends = [node.value * VIEWPORT_UNIT_PX[0], node.value * VIEWPORT_UNIT_PX[1]];
+      return { lo: Math.min(...ends), hi: Math.max(...ends), vars: true, infinite: false };
+    }
     if (node.unit === "em") {
       const ends = [node.value * EM_PX_RANGE[0], node.value * EM_PX_RANGE[1]];
       return { lo: Math.min(...ends), hi: Math.max(...ends), vars: true, infinite: false };
@@ -1113,13 +1133,20 @@ class ValueChecker {
     if (node.type === "number" && node.unit === "" && node.value !== 0) {
       fail("a length needs a unit (px, rem, em or %)");
     }
+    const units = this.constraint.viewportUnits ? VIEWPORT_LENGTH_UNITS : LENGTH_UNITS;
     if (node.type === "function" && MATH_FUNCTIONS.has(node.name)) {
-      this.boundedMath(node, LENGTH_UNITS, range);
+      this.boundedMath(node, units, range);
       return;
     }
-    this.numeric(node, LENGTH_UNITS);
+    this.numeric(node, units);
     if (node.type !== "number") return;
     const [min, max] = range;
+    if (VIEWPORT_UNITS.has(node.unit)) {
+      if (node.value < 0 || node.value > 100) {
+        fail(`${formatNumber(node.value)}${node.unit} is outside 0..100${node.unit}`);
+      }
+      return;
+    }
     if (node.unit === "%") {
       if (
         node.value < Math.max(min, -100) ||
@@ -1465,9 +1492,10 @@ export function measureTokenValue(
   bounds: (id: string) => Interval | undefined,
   check = true,
 ): MeasureResult {
-  const units = INTERVAL_UNITS[kind];
-  if (!units) return { ok: false, reason: `${kind} has no interval` };
   const constraint = TOKEN_CONSTRAINTS[id] ?? {};
+  const units =
+    kind === "length" && constraint.viewportUnits ? VIEWPORT_LENGTH_UNITS : INTERVAL_UNITS[kind];
+  if (!units) return { ok: false, reason: `${kind} has no interval` };
   try {
     const nodes = parseValue(value);
     // `check` false (a registry default, trusted): its interval only, for its readers.

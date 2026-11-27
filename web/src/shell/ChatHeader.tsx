@@ -604,7 +604,7 @@ export function ChatHeader({
       className={cn(
         // Desktop sessions fade scrolling content behind the header.
         // Mobile keeps only the individual glass button surfaces.
-        "chat-header absolute inset-x-0 top-0 z-30 flex h-[76px] md:h-(--ui-header-height) items-center justify-between px-4 py-4 md:py-3 md:right-[var(--workspace-panel-offset,0px)]",
+        "chat-header absolute inset-x-0 top-0 z-30 flex h-[76px] md:h-(--ui-header-height) items-center justify-between px-4 py-4 md:py-3 md:right-[var(--workspace-panel-offset,0px)] md:left-[var(--workspace-panel-offset-left,0px)]",
         (conversationId || hasPageTitle) && !isMobile && "session-header-glass",
         // On desktop a page title gets a taller header, with room above it for hover toolbars.
         hasPageTitle && "md:h-26 md:pt-8 md:pb-0",

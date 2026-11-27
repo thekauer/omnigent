@@ -152,6 +152,8 @@ export interface ExtensionContributions {
   readonly viewTitleMenu: readonly MenuItemContribution[];
   /** `contributes.menus["viewContainer/title"]`: a container's title bar, by `viewContainer`. */
   readonly viewContainerTitleMenu: readonly MenuItemContribution[];
+  /** `contributes.menus["sidebar/navigation"]`: the side bar's navigation entries, in order. */
+  readonly navigationMenu: readonly MenuItemContribution[];
   readonly submenus: readonly SubmenuContribution[];
   readonly keybindings: readonly KeybindingContribution[];
   /** `contributes.themes`, `.colors` and `.fonts` (`theme/themeContributions.ts`). */
@@ -179,6 +181,7 @@ export const EMPTY_CONTRIBUTIONS: ExtensionContributions = Object.freeze({
   commands: [],
   viewTitleMenu: [],
   viewContainerTitleMenu: [],
+  navigationMenu: [],
   submenus: [],
   keybindings: [],
   theming: EMPTY_THEME_CONTRIBUTIONS,
@@ -691,13 +694,19 @@ export function parseContributions(
 
   const viewTitleMenu: MenuItemContribution[] = [];
   const viewContainerTitleMenu: MenuItemContribution[] = [];
+  const navigationMenu: MenuItemContribution[] = [];
   if (raw.menus !== undefined) {
     if (!isRecord(raw.menus)) {
       warnings.push('"contributes.menus" must be an object');
     } else {
       for (const [menu, entries] of Object.entries(raw.menus)) {
         const submenuIndex = submenus.findIndex((submenu) => submenu.id === menu);
-        if (menu !== "view/title" && menu !== "viewContainer/title" && submenuIndex === -1) {
+        if (
+          menu !== "view/title" &&
+          menu !== "viewContainer/title" &&
+          menu !== "sidebar/navigation" &&
+          submenuIndex === -1
+        ) {
           warnings.push(`contributes.menus: menu "${menu}" is not supported yet; ignoring it`);
           continue;
         }
@@ -739,7 +748,9 @@ export function parseContributions(
         });
         if (menu === "view/title") viewTitleMenu.push(...items);
         else if (menu === "viewContainer/title") viewContainerTitleMenu.push(...items);
-        else submenus[submenuIndex] = { ...submenus[submenuIndex], items: Object.freeze(items) };
+        else if (menu === "sidebar/navigation") {
+          navigationMenu.push(...items.filter((item) => item.submenu === undefined));
+        } else submenus[submenuIndex] = { ...submenus[submenuIndex], items: Object.freeze(items) };
       }
     }
   }
@@ -803,6 +814,7 @@ export function parseContributions(
       commands: Object.freeze(commands),
       viewTitleMenu: Object.freeze(viewTitleMenu),
       viewContainerTitleMenu: Object.freeze(viewContainerTitleMenu),
+      navigationMenu: Object.freeze(navigationMenu),
       submenus: Object.freeze(submenus),
     }),
     warnings,

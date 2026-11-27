@@ -64,6 +64,8 @@ Drawn only when an extension contributes them (layout plan L3), so not on the de
 | `[data-slot="view-welcome"]` | A view's welcome content (`contributes.viewsWelcome`). |
 | `.activitybar-item` | An activity bar item (`data-view-container` is its container, `data-active` while it shows in the open side bar), with its `[data-slot="activitybar-badge"]`. |
 | `[data-slot="view-container-title"]` | The side bar's header title for a container other than the sessions. |
+| `[data-navigation-entry="<command>"]` | Another extension's `sidebar/navigation` row. |
+| `.app-shell[data-sidebar-location="right"]` | The shell with `workbench.sideBar.location: right`; the rail then carries `[data-side="left"]`. |
 
 ## Classes
 

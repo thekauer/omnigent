@@ -31,6 +31,7 @@ import {
   useBuiltInViewBadges,
 } from "./builtInViews";
 import { DEFAULT_RAIL_VIEW_ICON, railViewIcon } from "./railViewIcons";
+import { TAB_BADGE_BASE } from "./railTabs";
 import type { RailView, RailViewContribution } from "./railViews";
 import { SidebarServerPicker } from "./SidebarServerPicker";
 import { SIDEBAR_ELEMENT_ID } from "./sidebarStyles";
@@ -244,7 +245,7 @@ function ActivityBarItem({
             onDrop();
           }}
           className={cn(
-            "activitybar-item relative flex cursor-pointer items-center justify-center rounded-[var(--radius-otto-button)] text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring",
+            "activitybar-item relative flex cursor-pointer items-center justify-center rounded-(--radius-otto-button) text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring",
             vertical ? "size-10" : "size-8",
             active && "bg-[var(--sidebar-active)] text-[var(--sidebar-active-foreground)]",
             active &&
@@ -259,7 +260,10 @@ function ActivityBarItem({
             <span
               data-slot="activitybar-badge"
               aria-hidden
-              className="absolute top-0.5 right-0.5 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] leading-none font-medium text-primary-foreground tabular-nums"
+              className={cn(
+                TAB_BADGE_BASE,
+                "absolute top-0.5 right-0.5 bg-primary text-[0.625rem] font-medium text-primary-foreground",
+              )}
             >
               {badge.label ?? badge.value}
             </span>

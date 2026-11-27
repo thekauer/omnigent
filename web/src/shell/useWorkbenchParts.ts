@@ -15,6 +15,8 @@ export interface WorkbenchPartState {
   readonly toggle?: () => void;
   /** Moves keyboard focus into the part (`workbench.action.focus*`). */
   readonly focus?: () => void;
+  /** Maximizes the part over the main part, or restores it. */
+  readonly toggleMaximized?: () => void;
 }
 
 /**
@@ -40,6 +42,7 @@ export function useWorkbenchPart(
         else setHidden(visible);
       },
       focus: () => latest.current.focus?.(),
+      toggleMaximized: () => latest.current.toggleMaximized?.(),
     });
   }, [enabled, part, service]);
   useLayoutEffect(() => {

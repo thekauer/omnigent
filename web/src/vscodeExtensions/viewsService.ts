@@ -37,6 +37,11 @@ import {
   type ViewContainerRegistry,
   viewContainers as windowViewContainers,
 } from "@/workbench/viewContainers";
+import {
+  builtInNavigationEntries,
+  type ContributedNavigationEntry,
+  contributedNavigation,
+} from "@/workbench/sidebarNavigation";
 
 const MAX_VIEW_TEXT = 200;
 // Room for a status line that quotes a long search query.
@@ -97,6 +102,8 @@ export interface ViewsServiceOptions {
   registry: RailViewRegistry;
   /** Where contributed view containers go; the window's by default. */
   containers?: ViewContainerRegistry;
+  /** Where other extensions' side bar navigation entries go; the window's by default. */
+  navigation?: { set: (entries: readonly ContributedNavigationEntry[]) => void };
   contextKeys: ContextKeyService;
   /** Runs a command with JSON arguments (the window's command registry). */
   executeCommand: (command: string, args: readonly unknown[]) => Promise<unknown>;
@@ -296,6 +303,8 @@ export class ViewsService {
   private readonly menus: { extensionId: string; item: MenuItemContribution }[] = [];
   private readonly containerMenus: { extensionId: string; item: MenuItemContribution }[] = [];
   private readonly welcome: { extensionId: string; entry: ViewWelcomeContribution }[] = [];
+  /** Other extensions' `sidebar/navigation` entries (the built-ins' are the host's rows). */
+  private readonly navigation: { extensionId: string; item: MenuItemContribution }[] = [];
   /** JSON of the container title actions last published. */
   private containerActionsKey = "";
   private readonly submenus = new Map<string, SubmenuContribution>();
@@ -496,6 +505,19 @@ export class ViewsService {
       this.containerMenus.push({ extensionId, item });
     }
     for (const entry of contributions.viewsWelcome) this.welcome.push({ extensionId, entry });
+    if (!builtIn) {
+      // The built-in entries' ids are the host's rows: another extension's entry can't take one.
+      const reserved = new Set(builtInNavigationEntries().map((entry) => entry.id));
+      for (const item of contributions.navigationMenu) {
+        if (reserved.has(item.command)) {
+          console.warn(
+            `[omnigent-extensions] ${extensionId}: sidebar/navigation entry ${item.command} is a built-in entry; ignoring it`,
+          );
+          continue;
+        }
+        this.navigation.push({ extensionId, item });
+      }
+    }
     const removeContainers = contributions.viewsContainers.map((container) =>
       this.containers.register({ ...container, extensionId, builtIn }),
     );
@@ -567,6 +589,9 @@ export class ViewsService {
       }
       for (let index = this.welcome.length - 1; index >= 0; index -= 1) {
         if (this.welcome[index].extensionId === extensionId) this.welcome.splice(index, 1);
+      }
+      for (let index = this.navigation.length - 1; index >= 0; index -= 1) {
+        if (this.navigation[index].extensionId === extensionId) this.navigation.splice(index, 1);
       }
       for (const focus of focusCommands) focus.dispose();
       for (const viewId of added) {
@@ -747,6 +772,20 @@ export class ViewsService {
       }
       entry.handle.update({ active });
     }
+    (this.options.navigation ?? contributedNavigation).set(
+      this.navigation.map(({ extensionId, item }) => {
+        const info = this.commandInfo.get(item.command);
+        return {
+          id: item.command,
+          title: info?.title ?? item.command,
+          icon: info?.icon,
+          when: item.when,
+          extensionId,
+          builtIn: false,
+          active: !item.when || item.when.evaluate(lookup),
+        };
+      }),
+    );
     const containerActions = new Map<string, readonly RailViewTitleAction[]>();
     for (const container of this.containers.getSnapshot().containers) {
       const actions = this.containerTitleActions(container.id);

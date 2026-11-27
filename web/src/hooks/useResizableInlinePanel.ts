@@ -15,6 +15,12 @@ import {
   useSyncExternalStore,
 } from "react";
 import { readSessionWorkspaceState, writeSessionWorkspaceState } from "@/lib/sessionWorkspaceState";
+import {
+  LayoutTokens,
+  layoutTokensVersion,
+  readLengthToken,
+  subscribeLayoutTokens,
+} from "@/workbench/layoutTokens";
 
 const MIN_WIDTH_PX = 240;
 const MAX_WIDTH_RATIO = 0.99;
@@ -30,17 +36,33 @@ const DEFAULT_MIN_PX = 420;
 const DEFAULT_MAX_PX = 600;
 const DEFAULT_SSR_PX = 500;
 
-function defaultWidthPx(): number {
+/** What `ui-auxiliarybar-width`'s default, `clamp(420px, 36vw, 600px)`, computes to. */
+function registeredDefaultWidthPx(): number {
   if (typeof window === "undefined") return DEFAULT_SSR_PX;
   const candidate = Math.round(window.innerWidth * DEFAULT_RATIO);
   return Math.max(DEFAULT_MIN_PX, Math.min(DEFAULT_MAX_PX, candidate));
 }
 
+/** The default width: the `ui-auxiliarybar-width` token (a theme's or a product's). */
+function defaultWidthPx(): number {
+  if (typeof window === "undefined") return DEFAULT_SSR_PX;
+  return Math.round(readLengthToken(LayoutTokens.auxiliaryBarWidth, registeredDefaultWidthPx));
+}
+
 /** The default width once the window grows by it, which keeps the chat's width unchanged. */
 function defaultWidthInWiderWindowPx(): number {
   if (typeof window === "undefined") return DEFAULT_SSR_PX;
+  // A width a theme set is the width wherever the window goes; the registered default's
+  // share of the window grows with it.
+  const width = defaultWidthPx();
+  if (width !== registeredDefaultWidthPx()) return width;
   const candidate = Math.round((window.innerWidth * DEFAULT_RATIO) / (1 - DEFAULT_RATIO));
   return Math.max(DEFAULT_MIN_PX, Math.min(DEFAULT_MAX_PX, candidate));
+}
+
+/** The smallest width: the `ui-auxiliarybar-min-width` token. */
+function minimumWidthPx(): number {
+  return readLengthToken(LayoutTokens.auxiliaryBarMinWidth, () => MIN_WIDTH_PX);
 }
 
 // Width the panel may not eat into: the sidebar when it's open. Passed down
@@ -48,7 +70,7 @@ function defaultWidthInWiderWindowPx(): number {
 // squeezing the chat.
 function clamp(
   w: number,
-  minPx = MIN_WIDTH_PX,
+  minPx = minimumWidthPx(),
   reservedPx = 0,
   chatMinPx = CHAT_MIN_WIDTH_PX,
 ): number {
@@ -60,7 +82,7 @@ function clamp(
   const ceiling = Math.max(
     0,
     Math.min(
-      window.innerWidth * MAX_WIDTH_RATIO,
+      readLengthToken(LayoutTokens.auxiliaryBarMaxWidth, () => window.innerWidth * MAX_WIDTH_RATIO),
       window.innerWidth - reservedPx - chatMinPx - GAP_PX,
     ),
   );
@@ -168,12 +190,17 @@ function getServerSnapshot(): number | null {
  */
 export function useResizableInlinePanel(
   sessionId: string | null,
-  minWidthPx = MIN_WIDTH_PX,
+  minWidthPx = minimumWidthPx(),
   reservedPx = 0,
   persistEnabled = true,
   chatMinWidthPx = CHAT_MIN_WIDTH_PX,
+  side: "left" | "right" = "right",
 ) {
   const raw = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  // A theme setting the width tokens re-renders with their new values.
+  useSyncExternalStore(subscribeLayoutTokens, layoutTokensVersion, layoutTokensVersion);
+  const sideRef = useRef(side);
+  sideRef.current = side;
   // On a session switch the module store still holds the previous session's
   // width until the effect below re-seeds it after commit. Derive this render's
   // width straight from the incoming session's saved value so the panel doesn't
@@ -270,7 +297,10 @@ export function useResizableInlinePanel(
     (e: React.KeyboardEvent) => {
       if (!persistEnabled) return;
       const step = 20;
-      if (e.key === "ArrowLeft") {
+      // The handle is the panel's inner edge: towards the chat widens.
+      const widen = side === "right" ? "ArrowLeft" : "ArrowRight";
+      const narrow = side === "right" ? "ArrowRight" : "ArrowLeft";
+      if (e.key === widen) {
         e.preventDefault();
         setStoredWidth(
           (prev) =>
@@ -282,7 +312,7 @@ export function useResizableInlinePanel(
             ),
           true,
         );
-      } else if (e.key === "ArrowRight") {
+      } else if (e.key === narrow) {
         e.preventDefault();
         setStoredWidth(
           (prev) =>
@@ -296,7 +326,7 @@ export function useResizableInlinePanel(
         );
       }
     },
-    [persistEnabled, resolvedWidth],
+    [persistEnabled, resolvedWidth, side],
   );
 
   // Drag listeners live only while a drag is active — no idle window-level
@@ -316,7 +346,7 @@ export function useResizableInlinePanel(
     }
 
     function onMouseMove(e: MouseEvent) {
-      pending = window.innerWidth - e.clientX;
+      pending = sideRef.current === "right" ? window.innerWidth - e.clientX : e.clientX;
       if (frame === 0) frame = requestAnimationFrame(flush);
     }
 
@@ -346,17 +376,27 @@ export function useResizableInlinePanel(
 
   // Stable identity so consumers memoized on this prop (WorkspacePanel) don't
   // re-render on every parent render — the object only changes when its inputs do.
+  // Double-click: back to the theme's width (`ui-auxiliarybar-width`) for this session.
+  const onDoubleClick = useCallback(() => {
+    if (!persistEnabledRef.current) return;
+    if (currentSessionId !== null)
+      writeSessionWorkspaceState(currentSessionId, { widthPx: undefined });
+    preferredWidth = null;
+    setStoredWidthRaw(null);
+  }, []);
+
   const handleProps = useMemo(
     () => ({
       onMouseDown,
       onKeyDown,
+      onDoubleClick,
       role: "separator" as const,
       "aria-orientation": "vertical" as const,
       "aria-label": "Resize panel",
       "aria-disabled": !persistEnabled,
       tabIndex: persistEnabled ? 0 : -1,
     }),
-    [onMouseDown, onKeyDown, persistEnabled],
+    [onMouseDown, onKeyDown, onDoubleClick, persistEnabled],
   );
 
   // Read when the panel opens, so a window resized since the last render is measured.

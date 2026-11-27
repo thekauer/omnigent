@@ -20,6 +20,19 @@ import { ActivityBar } from "./ActivityBar";
 import { useInboxCount } from "./sideBarListViews";
 import { useActiveViewContainer } from "./useWorkbenchParts";
 import { useActivityBarLocation } from "@/workbench/activityBar";
+import { useSideBarLocation } from "@/workbench/sideBars";
+import {
+  builtInNavigationEntries,
+  type NavigationEntry,
+  NavigationEntries,
+  setNavigationEntryHidden,
+  useContributedNavigation,
+  useHiddenNavigationEntries,
+} from "@/workbench/sidebarNavigation";
+import { WorkbenchContextKeys, whenHolds } from "@/workbench/workbenchContext";
+import { currentExtensionHost } from "@/vscodeExtensions/extensionHost";
+import { DEFAULT_RAIL_VIEW_ICON, railViewIcon } from "./railViewIcons";
+
 import { ViewContainerTitleActions } from "./ViewContainerTitleActions";
 import { useGridSessions } from "@/grid/GridSessionsContext";
 import { GridSidebar } from "@/grid/GridWorkspace";
@@ -62,7 +75,7 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 import {
   ArchiveIcon,
   BellIcon,
@@ -168,6 +181,7 @@ import {
 } from "@/components/ui/dialog";
 import {
   ContextMenu,
+  ContextMenuCheckboxItem,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
@@ -1076,7 +1090,13 @@ function SidebarImpl({
   // exposed as a CSS variable consumed by the ``md:w-[var(--sidebar-width)]``
   // class so it only applies on desktop — on mobile the sidebar is a
   // full-screen overlay (``fixed inset-0``) and the variable is ignored.
-  const { width: sidebarWidth, resizing, handleProps: resizeHandleProps } = useResizableSidebar();
+  // `workbench.sideBar.location`: the side bar's side, its drawer and edge mirrored on the right.
+  const onRight = useSideBarLocation() === "right";
+  const {
+    width: sidebarWidth,
+    resizing,
+    handleProps: resizeHandleProps,
+  } = useResizableSidebar(onRight ? "right" : "left");
 
   // On the mobile layout, a leftward swipe on the open drawer slides it shut and
   // a rightward swipe across the chat slides the closed one open, both under
@@ -1401,7 +1421,10 @@ function SidebarImpl({
           // (see the [data-electron-mac] rules in index.css).
           "conversations-sidebar flex flex-col md:bg-card md:select-none",
           nativeSidebarSurface ? "omnigent-native-sidebar-surface" : "omnigent-sidebar-panel",
-          !isElectronShell() && !nativeSidebarSurface && (open || peek) && "md:pl-1",
+          !isElectronShell() &&
+            !nativeSidebarSurface &&
+            (open || peek) &&
+            (onRight ? "md:pr-1" : "md:pl-1"),
           // Mobile (default): a fixed drawer that slides in via translate-x
           // and stops short of the right edge, leaving a tappable strip of the
           // chat behind it. The floating-card treatment below is desktop-only.
@@ -1409,14 +1432,14 @@ function SidebarImpl({
           // most of the phone but stops short of the right edge so the chat stays
           // visible (and tappable through the scrim) behind it.
           "fixed inset-0 z-50",
-          !sideBySide && "max-md:right-14",
+          !sideBySide && (onRight ? "max-md:left-14" : "max-md:right-14"),
           // Mobile only: animate the slide so the iOS edge-swipe settles
           // smoothly on release. Suppressed inline while a drag is live (the
           // overlay must track the finger 1:1). Scoped to transform so it can't
           // re-introduce the width-animation lag the base comment warns about,
           // and gated to mobile so the desktop floating card is unaffected.
           "max-md:transition-transform max-md:duration-200 max-md:ease-out",
-          effectiveOpen ? "translate-x-0" : "-translate-x-full",
+          effectiveOpen ? "translate-x-0" : onRight ? "translate-x-full" : "-translate-x-full",
           // Side by side: an in-flow panel that pushes the chat aside, opening
           // and collapsing by width like the desktop sidebar.
           sideBySide && [
@@ -1446,7 +1469,8 @@ function SidebarImpl({
           // ringed and shadowed, sliding+fading in from the left so it reads as an
           // overlay rather than a push.
           peek &&
-            "is-peek md:absolute md:inset-2 p-0 md:max-w-[400px] ring-1 ring-border rounded-xl md:shadow-xl animate-in fade-in slide-in-from-left-4 duration-200 ease-out",
+            "is-peek md:absolute md:inset-2 p-0 md:max-w-[400px] ring-1 ring-border rounded-xl md:shadow-xl animate-in fade-in duration-200 ease-out",
+          peek && (onRight ? "md:left-auto slide-in-from-right-4" : "slide-in-from-left-4"),
           // Click-through while fading in (see peekInteractive above): the
           // click falls through to the header toggle underneath, which pins
           // the sidebar open — what the user aimed for.
@@ -1486,7 +1510,11 @@ function SidebarImpl({
         {!peek && (
           <div
             {...resizeHandleProps}
-            className="absolute inset-y-0 right-0 z-10 hidden w-1 cursor-col-resize transition-colors hover:bg-primary/30 active:bg-primary/50 md:block"
+            className={cn(
+              "absolute inset-y-0 z-10 hidden w-1 cursor-col-resize transition-colors hover:bg-primary/30 active:bg-primary/50 md:block",
+              // The inner edge, towards the chat.
+              onRight ? "left-0" : "right-0",
+            )}
           />
         )}
         {inSettings ? (
@@ -1654,105 +1682,112 @@ function SidebarNavigationView() {
     usagePageEnabled,
     isUsagePage,
   } = useSidebarViewProps().navigation;
-  return (
-    <div
-      className={cn("flex flex-col gap-px px-2 pt-2 pb-0 max-md:pt-0", SIDEBAR_ROW_MOBILE_INSET)}
-      data-testid="sidebar-primary-nav"
-    >
-      {/* "New session" routes to the home composer ("/"), which now owns
-    session creation end-to-end (host/workspace/worktree chips +
-    send). Rendered as a Link so cmd/middle-click opens it in a new
-    tab; onNavClick still closes the sidebar on a plain mobile tap. */}
+  // The built-in entries' `when` clauses read the side bar's own flags, as it draws them.
+  const entries = useNavigationEntries({
+    [WorkbenchContextKeys.automationsEnabled]: automationsEnabled,
+    [`${WorkbenchContextKeys.serverFeaturePrefix}workflows`]: workflowsPageEnabled,
+    [`${WorkbenchContextKeys.serverFeaturePrefix}canvas`]: canvasEnabled,
+    [`${WorkbenchContextKeys.serverFeaturePrefix}usage_page`]: usagePageEnabled,
+  });
+  // The host's rows of the built-in entries; another extension's entry runs its command.
+  const rows: Record<string, ReactNode> = {
+    [NavigationEntries.newSession]: (
+      <>
+        {/* "New session" routes to the home composer ("/"), which now owns
+            session creation end-to-end (host/workspace/worktree chips +
+            send). Rendered as a Link so cmd/middle-click opens it in a new
+            tab; onNavClick still closes the sidebar on a plain mobile tap. */}
+        <Button
+          asChild
+          className={cn(
+            // px-2 + gap-2 puts the icon on the sidebar's left (red) column
+            // and the label on the label (blue) column — matching section
+            // headers and project folders. border-0 drops the Button base's
+            // transparent 1px border so the icon lands exactly on that
+            // column, flush with the Inbox row and folder rows.
+            SIDEBAR_ROW,
+            "group/new-session w-full justify-start border-0 font-normal mobile-touch-target",
+            SIDEBAR_HOVER_HIGHLIGHT,
+            isNewChatPage && SIDEBAR_ACTIVE_HIGHLIGHT,
+          )}
+          variant="ghost"
+          data-testid="new-chat-button"
+        >
+          {/* New session always creates a session the viewer owns, which
+        lands under "My sessions" — so snap the tab back there on click
+        (the button stays visible on both tabs). */}
+          <Link
+            to="/"
+            componentId="sidebar.new_chat"
+            aria-keyshortcuts={newSessionAriaShortcut()}
+            onClick={(e) => {
+              switchTab("mine");
+              onNavClick(e);
+            }}
+          >
+            <MessageCirclePlusIcon
+              className={cn(
+                "ui-icon",
+                isNewChatPage ? "text-[var(--sidebar-active-foreground)]" : "text-muted-foreground",
+              )}
+            />
+            New session
+            <NewSessionShortcutHint />
+          </Link>
+        </Button>
+      </>
+    ),
+    // Keep Scheduled in the primary nav group with the same row treatment as New session.
+    [NavigationEntries.automations]: (
       <Button
         asChild
         className={cn(
-          // px-2 + gap-2 puts the icon on the sidebar's left (red) column
-          // and the label on the label (blue) column — matching section
-          // headers and project folders. border-0 drops the Button base's
-          // transparent 1px border so the icon lands exactly on that
-          // column, flush with the Inbox row and folder rows.
+          // Same shared nav-row construct as "New session" / "Inbox" so
+          // the active-pill, hover, insets, icon column, and text weight
+          // all match post-refactor.
           SIDEBAR_ROW,
-          "group/new-session w-full justify-start border-0 font-normal mobile-touch-target",
+          "w-full justify-start border-0 font-normal mobile-touch-target",
           SIDEBAR_HOVER_HIGHLIGHT,
-          isNewChatPage && SIDEBAR_ACTIVE_HIGHLIGHT,
+          isTasksPage && SIDEBAR_ACTIVE_HIGHLIGHT,
         )}
         variant="ghost"
-        data-testid="new-chat-button"
+        data-testid="scheduled-tasks-nav"
       >
-        {/* New session always creates a session the viewer owns, which
-      lands under "My sessions" — so snap the tab back there on click
-      (the button stays visible on both tabs). */}
-        <Link
-          to="/"
-          componentId="sidebar.new_chat"
-          aria-keyshortcuts={newSessionAriaShortcut()}
-          onClick={(e) => {
-            switchTab("mine");
-            onNavClick(e);
-          }}
-        >
-          <MessageCirclePlusIcon
+        <Link to="/tasks" onClick={onNavClick} componentId="sidebar.tasks">
+          <ClockIcon
             className={cn(
               "ui-icon",
-              isNewChatPage ? "text-[var(--sidebar-active-foreground)]" : "text-muted-foreground",
+              isTasksPage ? "text-[var(--sidebar-active-foreground)]" : "text-muted-foreground",
             )}
           />
-          New session
-          <NewSessionShortcutHint />
+          Automations
         </Link>
       </Button>
-      {/* Keep Scheduled in the primary nav group with the same row treatment as New session. */}
-      {automationsEnabled && (
-        <Button
-          asChild
-          className={cn(
-            // Same shared nav-row construct as "New session" / "Inbox" so
-            // the active-pill, hover, insets, icon column, and text weight
-            // all match post-refactor.
-            SIDEBAR_ROW,
-            "w-full justify-start border-0 font-normal mobile-touch-target",
-            SIDEBAR_HOVER_HIGHLIGHT,
-            isTasksPage && SIDEBAR_ACTIVE_HIGHLIGHT,
-          )}
-          variant="ghost"
-          data-testid="scheduled-tasks-nav"
-        >
-          <Link to="/tasks" onClick={onNavClick} componentId="sidebar.tasks">
-            <ClockIcon
-              className={cn(
-                "ui-icon",
-                isTasksPage ? "text-[var(--sidebar-active-foreground)]" : "text-muted-foreground",
-              )}
-            />
-            Automations
-          </Link>
-        </Button>
-      )}
-      {workflowsPageEnabled && (
-        <Button
-          asChild
-          className={cn(
-            SIDEBAR_ROW,
-            "w-full justify-start border-0 font-normal mobile-touch-target",
-            SIDEBAR_HOVER_HIGHLIGHT,
-            isWorkflowsPage && SIDEBAR_ACTIVE_HIGHLIGHT,
-          )}
-          variant="ghost"
-          data-testid="workflows-nav"
-        >
-          <Link to="/workflows" onClick={onNavClick} componentId="sidebar.workflows">
-            <WorkflowIcon
-              className={cn(
-                "ui-icon",
-                isWorkflowsPage
-                  ? "text-[var(--sidebar-active-foreground)]"
-                  : "text-muted-foreground",
-              )}
-            />
-            Workflows
-          </Link>
-        </Button>
-      )}
+    ),
+    [NavigationEntries.workflows]: (
+      <Button
+        asChild
+        className={cn(
+          SIDEBAR_ROW,
+          "w-full justify-start border-0 font-normal mobile-touch-target",
+          SIDEBAR_HOVER_HIGHLIGHT,
+          isWorkflowsPage && SIDEBAR_ACTIVE_HIGHLIGHT,
+        )}
+        variant="ghost"
+        data-testid="workflows-nav"
+      >
+        <Link to="/workflows" onClick={onNavClick} componentId="sidebar.workflows">
+          <WorkflowIcon
+            className={cn(
+              "ui-icon",
+              isWorkflowsPage ? "text-[var(--sidebar-active-foreground)]" : "text-muted-foreground",
+            )}
+          />
+          Workflows
+        </Link>
+      </Button>
+    ),
+    [NavigationEntries.inbox]: (
       <Button
         asChild
         variant="ghost"
@@ -1789,42 +1824,148 @@ function SidebarNavigationView() {
           )}
         </Link>
       </Button>
-      {canvasEnabled && (
-        <PrimaryNavLink
-          to={canvasDestination.pathname + canvasDestination.search}
-          label="Canvas"
-          icon={LayoutDashboardIcon}
-          active={isCanvasPage}
-          onClick={onNavClick}
-          componentId="sidebar.canvas"
-          testId="canvas-nav"
-        />
-      )}
+    ),
+    [NavigationEntries.canvas]: (
+      <PrimaryNavLink
+        to={canvasDestination.pathname + canvasDestination.search}
+        label="Canvas"
+        icon={LayoutDashboardIcon}
+        active={isCanvasPage}
+        onClick={onNavClick}
+        componentId="sidebar.canvas"
+        testId="canvas-nav"
+      />
+    ),
+    [NavigationEntries.extensionPages]: (
       <ExtensionPrimaryNavigation activePageId={activeExtensionPageId} onNavigate={onNavClick} />
-      {usagePageEnabled && (
-        <Button
-          asChild
-          variant="ghost"
-          className={cn(
-            SIDEBAR_ROW,
-            "w-full justify-start border-0 font-normal mobile-touch-target",
-            SIDEBAR_HOVER_HIGHLIGHT,
-            isUsagePage && SIDEBAR_ACTIVE_HIGHLIGHT,
-          )}
-          data-testid="usage-nav"
-        >
-          <Link to="/usage" onClick={onNavClick} componentId="sidebar.usage">
-            <WalletIcon
-              className={cn(
-                "ui-icon",
-                isUsagePage ? "text-[var(--sidebar-active-foreground)]" : "text-muted-foreground",
-              )}
-            />
-            Usage
-          </Link>
-        </Button>
+    ),
+    [NavigationEntries.usage]: (
+      <Button
+        asChild
+        variant="ghost"
+        className={cn(
+          SIDEBAR_ROW,
+          "w-full justify-start border-0 font-normal mobile-touch-target",
+          SIDEBAR_HOVER_HIGHLIGHT,
+          isUsagePage && SIDEBAR_ACTIVE_HIGHLIGHT,
+        )}
+        data-testid="usage-nav"
+      >
+        <Link to="/usage" onClick={onNavClick} componentId="sidebar.usage">
+          <WalletIcon
+            className={cn(
+              "ui-icon",
+              isUsagePage ? "text-[var(--sidebar-active-foreground)]" : "text-muted-foreground",
+            )}
+          />
+          Usage
+        </Link>
+      </Button>
+    ),
+  };
+  return (
+    <SidebarNavigationMenu>
+      <div
+        className={cn("flex flex-col gap-px px-2 pt-2 pb-0 max-md:pt-0", SIDEBAR_ROW_MOBILE_INSET)}
+        data-testid="sidebar-primary-nav"
+      >
+        {entries.map((entry) => (
+          <Fragment key={entry.id}>
+            {entry.builtIn ? (rows[entry.id] ?? null) : <CommandNavigationRow entry={entry} />}
+          </Fragment>
+        ))}
+      </div>
+    </SidebarNavigationMenu>
+  );
+}
+
+/** The navigation entries drawn now: the built-ins whose `when` holds, then others', unhidden. */
+function useNavigationEntries(keys: Readonly<Record<string, boolean>>): readonly NavigationEntry[] {
+  const contributed = useContributedNavigation();
+  const hidden = useHiddenNavigationEntries();
+  return allNavigationEntries(keys, contributed).filter((entry) => !hidden.includes(entry.id));
+}
+
+function allNavigationEntries(
+  keys: Readonly<Record<string, boolean>>,
+  contributed: readonly (NavigationEntry & { active: boolean })[],
+): readonly NavigationEntry[] {
+  return [
+    ...builtInNavigationEntries().filter((entry) => whenHolds(entry.when, keys)),
+    ...contributed.filter((entry) => entry.active),
+  ];
+}
+
+/** Right-click on the navigation: show or hide each entry (layout state). */
+function SidebarNavigationMenu({ children }: { children: ReactNode }) {
+  const { automationsEnabled, workflowsPageEnabled, canvasEnabled, usagePageEnabled } =
+    useSidebarViewProps().navigation;
+  const contributed = useContributedNavigation();
+  const all = allNavigationEntries(
+    {
+      [WorkbenchContextKeys.automationsEnabled]: automationsEnabled,
+      [`${WorkbenchContextKeys.serverFeaturePrefix}workflows`]: workflowsPageEnabled,
+      [`${WorkbenchContextKeys.serverFeaturePrefix}canvas`]: canvasEnabled,
+      [`${WorkbenchContextKeys.serverFeaturePrefix}usage_page`]: usagePageEnabled,
+    },
+    contributed,
+  );
+  const hidden = useHiddenNavigationEntries();
+  // A link keeps the browser's own menu (open in a new tab, copy the link): the entries'
+  // menu opens on the rest of the navigation and on command rows.
+  const [onLink, setOnLink] = useState(false);
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger
+        asChild
+        disabled={onLink}
+        onPointerDownCapture={(event) => {
+          if (event.button !== 2 && !(event.button === 0 && event.ctrlKey)) return;
+          const link = (event.target as Element).closest?.("a[href]") !== null;
+          flushSync(() => setOnLink(link));
+        }}
+      >
+        {children}
+      </ContextMenuTrigger>
+      <ContextMenuContent data-testid="sidebar-navigation-menu">
+        {all.map((entry) => (
+          <ContextMenuCheckboxItem
+            key={entry.id}
+            checked={!hidden.includes(entry.id)}
+            onCheckedChange={(checked) => setNavigationEntryHidden(entry.id, !checked)}
+          >
+            {entry.title}
+          </ContextMenuCheckboxItem>
+        ))}
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+}
+
+/** Another extension's navigation entry: a row that runs its command. */
+function CommandNavigationRow({ entry }: { entry: NavigationEntry }) {
+  const Icon = railViewIcon(entry.icon) ?? DEFAULT_RAIL_VIEW_ICON;
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      data-navigation-entry={entry.id}
+      className={cn(
+        SIDEBAR_ROW,
+        "w-full justify-start border-0 font-normal mobile-touch-target",
+        SIDEBAR_HOVER_HIGHLIGHT,
       )}
-    </div>
+      onClick={() => {
+        currentExtensionHost()
+          ?.commands.execute(entry.id, [], () => {})
+          .catch((error: unknown) => {
+            showToast(`${entry.title}: ${error instanceof Error ? error.message : String(error)}`);
+          });
+      }}
+    >
+      <Icon className="ui-icon text-muted-foreground" aria-hidden />
+      {entry.title}
+    </Button>
   );
 }
 

@@ -9,13 +9,16 @@ import {
 } from "@/configuration/configurationService";
 import { useConfigurationValue } from "@/configuration/useConfiguration";
 import { LAYOUT_SLOTS, type LayoutStateStore, layoutState } from "./layoutState";
+import { LayoutTokens, readLengthToken } from "./layoutTokens";
 
 export const ACTIVITY_BAR_LOCATION_SETTING = "workbench.activityBar.location";
 
 export type ActivityBarLocation = "default" | "top" | "bottom" | "hidden";
 
-/** The bar's width beside the side bar, as the shell reserves it. */
-export const ACTIVITY_BAR_WIDTH_PX = 48;
+/** The bar's width beside the side bar, as the shell reserves it (`ui-activitybar-width`). */
+export function activityBarWidthPx(): number {
+  return readLengthToken(LayoutTokens.activityBarWidth, () => 48);
+}
 
 const LOCATIONS: readonly ActivityBarLocation[] = ["default", "top", "bottom", "hidden"];
 

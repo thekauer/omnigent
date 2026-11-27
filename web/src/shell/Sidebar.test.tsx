@@ -1,3 +1,4 @@
+import { contributedNavigation, readHiddenNavigationEntries } from "@/workbench/sidebarNavigation";
 import {
   addNestedSessionDraft,
   updateNestedSessionDraft,
@@ -1183,6 +1184,53 @@ describe("Sidebar session list", () => {
     expect(await screen.findByTestId("sidebar-profile-settings")).toBeInTheDocument();
     expect(screen.getByTestId("sidebar-server-picker")).toBeInTheDocument();
     expect(screen.getByTestId("sidebar-server-picker-row")).toBeInTheDocument();
+  });
+
+  it("hides a navigation entry from the navigation's right-click menu, in the layout state", () => {
+    mockConversations(THREE_TYPE_CONVERSATIONS);
+    renderSidebar();
+    const primaryNav = screen.getByTestId("sidebar-primary-nav");
+    // A link keeps the browser's menu.
+    const inboxLink = within(primaryNav).getByTestId("inbox-button");
+    fireEvent.pointerDown(inboxLink, { button: 2 });
+    fireEvent.contextMenu(inboxLink);
+    expect(screen.queryByRole("menuitemcheckbox", { name: "New session" })).toBeNull();
+    fireEvent.pointerDown(primaryNav, { button: 2 });
+    fireEvent.contextMenu(primaryNav);
+    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "New session" }));
+    expect(within(primaryNav).queryByTestId("new-chat-button")).toBeNull();
+    expect(within(primaryNav).getByTestId("inbox-button")).toBeInTheDocument();
+    expect(readHiddenNavigationEntries()).toEqual(["omnigent.newSession"]);
+    fireEvent.pointerDown(primaryNav, { button: 2 });
+    fireEvent.contextMenu(primaryNav);
+    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: "New session" }));
+    expect(within(primaryNav).getByTestId("new-chat-button")).toBeInTheDocument();
+  });
+
+  it("draws another extension's navigation entry after the built-ins, running its command", () => {
+    mockConversations(THREE_TYPE_CONVERSATIONS);
+    contributedNavigation.set([
+      {
+        id: "acme.tools.open",
+        title: "Acme tools",
+        icon: "workflow",
+        when: undefined,
+        extensionId: "acme.tools",
+        builtIn: false,
+        active: true,
+      },
+    ]);
+    try {
+      renderSidebar();
+      const rows = within(screen.getByTestId("sidebar-primary-nav")).getAllByRole("link");
+      const entry = screen.getByRole("button", { name: "Acme tools" });
+      expect(entry).toHaveAttribute("data-navigation-entry", "acme.tools.open");
+      expect(
+        rows.at(-1)!.compareDocumentPosition(entry) & Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    } finally {
+      contributedNavigation.set([]);
+    }
   });
 
   it("renders Inbox as its own primary navigation row", () => {

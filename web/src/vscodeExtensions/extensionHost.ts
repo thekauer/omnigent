@@ -4,6 +4,7 @@
 // render and core tabs never show a blank panel.
 import { builtInExtensions } from "@/builtinExtensions";
 import { registerLayoutCommands } from "@/workbench/layoutCommands";
+import { registerNavigationCommands } from "@/workbench/navigationCommands";
 import { type LayoutService, layoutService } from "@/workbench/layoutService";
 import { type WorkbenchContext, workbenchContext } from "@/workbench/workbenchContext";
 import { type ViewContainerRegistry, viewContainers } from "@/workbench/viewContainers";
@@ -83,6 +84,7 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
     configuration: options.configuration ?? configurationService,
     ...(options.containers ? { containers: options.containers } : {}),
   });
+  const navigationCommands = registerNavigationCommands(commands);
   // `config.<setting>` context keys, as in VS Code, so `when` and `toggled` can read settings.
   let settingKeys = new Set<string>();
   const syncSettings = () => {
@@ -201,6 +203,7 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
       await host.dispose();
       builtInCommands.dispose();
       layoutCommands.dispose();
+      navigationCommands.dispose();
       settingsSubscription.dispose();
       shellContextSubscription.dispose();
       railSubscription.dispose();

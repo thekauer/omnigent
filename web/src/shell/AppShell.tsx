@@ -213,7 +213,14 @@ import {
 import { extensionRailTabViewId, type RightRailTab } from "./railTabs";
 import { useRailViewIds } from "./railViews";
 import { ActivityBar } from "./ActivityBar";
-import { ACTIVITY_BAR_WIDTH_PX, useActivityBarLocation } from "@/workbench/activityBar";
+import { activityBarWidthPx, useActivityBarLocation } from "@/workbench/activityBar";
+import { setShellNavigator } from "@/workbench/navigationCommands";
+import {
+  otherSide,
+  useNarrowerThan,
+  useSecondarySideBarAutoHideBelow,
+  useSideBarLocation,
+} from "@/workbench/sideBars";
 import { builtInTabWhen } from "@/builtinExtensions/builtInTabWhen";
 import { serverFeatureKeys, WorkbenchContextKeys, whenHolds } from "@/workbench/workbenchContext";
 import { useWorkspaceBridgeSource } from "./useWorkspaceBridgeSource";
@@ -538,6 +545,11 @@ function AppShellImpl() {
   });
 
   const activityBarLocation = useActivityBarLocation();
+  // The navigation entries' commands open their pages through this shell's router.
+  const shellNavigate = useNavigate();
+  useEffect(() => setShellNavigator((path) => shellNavigate(path)), [shellNavigate]);
+  const sideBarLocation = useSideBarLocation();
+  const auxiliaryBarSide = otherSide(sideBarLocation);
   // Below md an open sidebar is a full-window drawer, so narrowing closes it
   // (except the settings menu) and remembers the desktop state for widening.
   const mobileViewport = useIsMobileViewport();
@@ -714,6 +726,8 @@ function AppShellImpl() {
         (canvasMode ? false : readDefaultWorkspacePanelOpen()))
       : false,
   );
+  // Set while `autoHideBelow` closed the rail; a toggle of the user's own clears it.
+  const autoHiddenRef = useRef(false);
   const workspaceTabListRef = useRef<HTMLDivElement>(null);
   const focusWorkspaceTabsOnOpenRef = useRef(false);
   const rightPanelOpenRef = useRef(rightPanelOpen);
@@ -1239,9 +1253,10 @@ function AppShellImpl() {
     inlinePanelMinWidth,
     (sidebarOpen ? sidebarWidth : 0) +
       (canvasMode ? canvasReservedWidth : 0) +
-      (activityBarLocation === "default" && !mobileViewport ? ACTIVITY_BAR_WIDTH_PX : 0),
+      (activityBarLocation === "default" && !mobileViewport ? activityBarWidthPx() : 0),
     rootSessionResolved,
     canvasMode ? CANVAS_CONVERSATION_MIN_WIDTH : undefined,
+    auxiliaryBarSide,
   );
   // How many children are actively working — surfaced in the tab badge so
   // "something's happening" is visible without opening the panel.
@@ -2085,6 +2100,7 @@ function AppShellImpl() {
       return;
     }
     const next = !rightPanelOpen;
+    autoHiddenRef.current = false;
     if (conversationId) {
       writeSessionWorkspaceState(conversationId, { open: next });
       // Remember the choice app-wide as well, so a collapsed rail stays
@@ -3307,6 +3323,24 @@ function AppShellImpl() {
     }),
     [canClone, forkDisabledReason, queryClient, serverConversationId],
   );
+  // `omnigent.secondarySideBar.autoHideBelow`: narrowing past it closes the rail for the window
+  // (the session keeps its own state), widening back reopens what it closed.
+  const autoHideBelow = useSecondarySideBarAutoHideBelow();
+  const narrowerThanAutoHide = useNarrowerThan(autoHideBelow);
+  const lastNarrowerRef = useRef<boolean | null>(null);
+  useLayoutEffect(() => {
+    const previous = lastNarrowerRef.current;
+    lastNarrowerRef.current = narrowerThanAutoHide;
+    if (previous === narrowerThanAutoHide) return;
+    if (narrowerThanAutoHide) {
+      if (!rightPanelOpenRef.current) return;
+      autoHiddenRef.current = true;
+      setRightPanelOpenImmediately(false);
+    } else if (autoHiddenRef.current) {
+      autoHiddenRef.current = false;
+      setRightPanelOpenImmediately(true);
+    }
+  }, [narrowerThanAutoHide, setRightPanelOpenImmediately]);
   const workspacePanelVisible = Boolean(
     conversationId &&
     hasRailContent &&
@@ -3336,6 +3370,7 @@ function AppShellImpl() {
         if (hidden === workspacePanelVisible) toggleRightPanelFromHotkey();
       },
       toggle: toggleRightPanelFromHotkey,
+      toggleMaximized: toggleRightPanelMaximized,
     },
     !gridRoute,
   );
@@ -3417,13 +3452,18 @@ function AppShellImpl() {
         sidebar below the traffic lights and supplies a drag strip in the
         freed space. */}
           <div
-            className="app-shell relative flex h-dvh bg-sidebar text-foreground"
+            className={cn(
+              "app-shell relative flex h-dvh bg-sidebar text-foreground",
+              // `workbench.sideBar.location: right`: the activity bar and side bar on the right.
+              sideBarLocation === "right" && "flex-row-reverse",
+            )}
+            data-sidebar-location={sideBarLocation === "right" ? "right" : undefined}
             style={
               {
                 // The activity bar beside the side bar is part of the shell's left edge.
                 "--app-sidebar-width": `${
                   (sidebarOpen ? sidebarWidth : 0) +
-                  (activityBarLocation === "default" && !mobileViewport ? ACTIVITY_BAR_WIDTH_PX : 0)
+                  (activityBarLocation === "default" && !mobileViewport ? activityBarWidthPx() : 0)
                 }px`,
               } as CSSProperties
             }
@@ -3532,12 +3572,22 @@ function AppShellImpl() {
                 className={cn(
                   "relative flex min-h-0 min-w-0 flex-1",
                   panelOpen && !terminalFirst && "md:hidden",
+                  // The secondary side bar on the left: the rail comes before the chat.
+                  auxiliaryBarSide === "left" && "flex-row-reverse",
                 )}
                 style={
                   {
-                    "--workspace-panel-offset": workspacePanelVisible
-                      ? `${inlinePanelWidth}px`
-                      : "0px",
+                    "--workspace-panel-offset":
+                      workspacePanelVisible && auxiliaryBarSide === "right"
+                        ? `${inlinePanelWidth}px`
+                        : "0px",
+                    ...(auxiliaryBarSide === "left"
+                      ? {
+                          "--workspace-panel-offset-left": workspacePanelVisible
+                            ? `${inlinePanelWidth}px`
+                            : "0px",
+                        }
+                      : {}),
                     "--omnigent-header-height": headerClearanceHidden ? "0px" : undefined,
                   } as CSSProperties
                 }
@@ -3763,6 +3813,7 @@ function AppShellImpl() {
                 )}
                 {conversationId && workspacePanelMounted && !tabsSidebar && (
                   <WorkspacePanel
+                    side={auxiliaryBarSide}
                     conversationId={conversationId}
                     pending={pendingConversation}
                     width={inlinePanelWidth}

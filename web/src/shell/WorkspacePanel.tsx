@@ -772,6 +772,8 @@ interface WorkspacePanelProps {
   onCloseTerminal: (key: string) => void;
   /** Whether the rail is maximized (occupies the full content area). */
   maximized: boolean;
+  /** The window side it sits on: the right, or the left when the side bar is on the right. */
+  side?: "left" | "right";
   /** Toggle the rail's maximized state. */
   onToggleMaximized: () => void;
   /** Viewer's permission level (gates edit affordances). */
@@ -907,6 +909,7 @@ function WorkspacePanelImpl({
   closingTerminalKey,
   onCloseTerminal,
   maximized,
+  side = "right",
   onToggleMaximized,
   permissionLevel,
   filesPanelSort,
@@ -1712,14 +1715,19 @@ function WorkspacePanelImpl({
       // handle is suppressed in that state — there's no neighbor to resize
       // against.
       data-maximized={maximized || undefined}
+      data-side={side === "left" ? "left" : undefined}
       data-state={open ? "open" : "closed"}
       data-animate-visibility={animateVisibility || undefined}
       data-resizing={resizing || undefined}
       className={cn(
-        "workspace-panel-motion @container/rail relative z-40 hidden md:flex md:min-h-0 md:flex-col md:overflow-hidden md:border-l md:border-border md:bg-card",
+        "workspace-panel-motion @container/rail relative z-40 hidden md:flex md:min-h-0 md:flex-col md:overflow-hidden md:border-border md:bg-card",
+        side === "left" ? "md:border-r" : "md:border-l",
         maximized ? "md:absolute md:inset-0" : "md:shrink-0",
         contained &&
-          "flex min-h-0 flex-col overflow-hidden border-l border-border bg-card shrink-0",
+          cn(
+            "flex min-h-0 flex-col overflow-hidden border-border bg-card shrink-0",
+            side === "left" ? "border-r" : "border-l",
+          ),
         contained && maximized && "absolute inset-0",
       )}
       // Width is fixed by the resize handle normally; maximized ignores it and
@@ -1744,7 +1752,9 @@ function WorkspacePanelImpl({
           <div
             {...effectiveHandleProps}
             className={cn(
-              "absolute inset-y-0 left-0 z-10 w-1 cursor-col-resize hover:bg-primary/30 active:bg-primary/50 transition-colors",
+              "absolute inset-y-0 z-10 w-1 cursor-col-resize hover:bg-primary/30 active:bg-primary/50 transition-colors",
+              // The inner edge, towards the chat.
+              side === "left" ? "right-0" : "left-0",
               pending && "cursor-default hover:bg-transparent active:bg-transparent",
             )}
           />

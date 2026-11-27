@@ -66,6 +66,7 @@ import {
 // The settings editor's schema and language service load with its dialog (settingsEditor.ts).
 import type { SettingsSchemaInput } from "./themeSettingsSchema";
 import { followThemeLocks } from "./themeConfigurationLocks";
+import { invalidateLayoutTokens } from "@/workbench/layoutTokens";
 import { configurationService } from "@/configuration/configurationService";
 import { getToken, TOKENS } from "./tokens/registry";
 import {
@@ -2186,6 +2187,8 @@ function valueReferences(value: string): string[] {
 export const themeService = new ThemeService();
 themeService.followSettings();
 followThemeLocks(themeService, configurationService);
+// A theme may set the layout tokens (the side bars' widths): their measures go stale.
+themeService.onDidChange(invalidateLayoutTokens);
 
 function subscribe(listener: () => void): () => void {
   return themeService.onDidChange(listener);

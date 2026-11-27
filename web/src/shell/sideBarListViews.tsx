@@ -265,7 +265,7 @@ function CompactRow({
       to={to}
       aria-current={active ? "page" : undefined}
       className={cn(
-        "flex min-h-8 items-center gap-2 rounded-[var(--radius-otto-button)] px-2 py-1 text-ui",
+        "flex min-h-8 items-center gap-2 rounded-(--radius-otto-button) px-2 py-1 text-ui",
         "text-foreground hover:bg-muted dark:hover:bg-muted/50",
         active && "bg-[var(--sidebar-active)] text-[var(--sidebar-active-foreground)]",
       )}

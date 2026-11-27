@@ -1,3 +1,4 @@
+import { readWorkspacePanelDefault } from "@/lib/workspacePanelPreferences";
 import { closeSettingsJsonEditor, useSettingsJsonEditorStore } from "@/store/settingsJsonEditor";
 import "@/test/withBuiltInThemes";
 
@@ -1512,7 +1513,7 @@ describe("SettingsPage", () => {
     expect(localStorage.getItem("omnigent:terminal-theme")).toBe("dark");
     expect(localStorage.getItem("omnigent:default-transcript-view")).toBe("terminal");
     expect(localStorage.getItem("omnigent:ui-theme-palette")).toBe(JSON.stringify("github"));
-    expect(localStorage.getItem("omnigent:default-workspace-panel")).toBe("open");
+    expect(readWorkspacePanelDefault()).toBe("open");
     expect(localStorage.getItem("omnigent:default-workspace-tab")).toBe("subagents");
     expect(localStorage.getItem("omnigent:ui-font-size")).toBe("16");
     expect(localStorage.getItem("omnigent:code-font-size")).toBe("15");

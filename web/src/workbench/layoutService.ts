@@ -63,6 +63,8 @@ export interface PartController {
   setSize?: (size: Partial<PartSize>) => void;
   /** Moves keyboard focus into the part. */
   focus?: () => void;
+  /** Maximizes the part over the main part, or restores it (the secondary side bar's). */
+  toggleMaximized?: () => void;
 }
 
 /** A value or an update of the previous one, as React's `setState` takes. */
@@ -153,6 +155,12 @@ export class LayoutService {
 
   getLocation(part: Part): PartLocation {
     return DEFAULT_LOCATIONS[part];
+  }
+
+  /** VS Code's `toggleMaximizedAuxiliaryBar`: the part over the main part, or back. */
+  toggleMaximized(part: Part): void {
+    if (!this.isVisible(part)) this.setPartHidden(false, part);
+    this.controllers.get(part)?.toggleMaximized?.();
   }
 
   /** Moves keyboard focus into `part`, when the shell draws it and can focus it. */

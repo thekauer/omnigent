@@ -17,6 +17,8 @@ export const TOGGLE_SIDEBAR_COMMAND = "workbench.action.toggleSidebarVisibility"
 export const CLOSE_SIDEBAR_COMMAND = "workbench.action.closeSidebar";
 export const TOGGLE_AUXILIARY_BAR_COMMAND = "workbench.action.toggleAuxiliaryBar";
 export const CLOSE_AUXILIARY_BAR_COMMAND = "workbench.action.closeAuxiliaryBar";
+export const TOGGLE_MAXIMIZED_AUXILIARY_BAR_COMMAND =
+  "workbench.action.toggleMaximizedAuxiliaryBar";
 export const TOGGLE_ACTIVITY_BAR_COMMAND = "workbench.action.toggleActivityBarVisibility";
 export const FOCUS_ACTIVITY_BAR_COMMAND = "workbench.action.focusActivityBar";
 export const RESET_LAYOUT_COMMAND = "workbench.action.resetLayout";
@@ -83,6 +85,9 @@ export function registerLayoutCommands(
       if (layout.isVisible(Parts.AUXILIARYBAR_PART)) {
         layout.setPartHidden(true, Parts.AUXILIARYBAR_PART);
       }
+    },
+    [TOGGLE_MAXIMIZED_AUXILIARY_BAR_COMMAND]: () => {
+      layout.toggleMaximized(Parts.AUXILIARYBAR_PART);
     },
     [TOGGLE_ACTIVITY_BAR_COMMAND]: () => {
       if (configuration) toggleActivityBarVisibility(configuration);

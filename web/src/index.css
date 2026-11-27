@@ -986,7 +986,9 @@
 }
 
 [data-workspace-panel-animate] .chat-header {
-  transition: right 200ms ease-in-out;
+  transition:
+    right 200ms ease-in-out,
+    left 200ms ease-in-out;
 }
 
 /* Sidebars keep their short open/close slide under reduced motion: without it
@@ -1052,6 +1054,13 @@
   }
 }
 
+@starting-style {
+  .workspace-panel-motion[data-side="left"][data-state="open"][data-animate-visibility],
+  .workspace-panel-motion[data-side="left"][data-rail-state="open"][data-animate-visibility] {
+    transform: translateX(-12px);
+  }
+}
+
 /* The transparent <main> shows the palette canvas through. */
 .app-shell {
   background: var(--shell-background, var(--background));
@@ -1069,6 +1078,11 @@
   background-position: right center;
   background-repeat: no-repeat;
   background-size: calc(100% - var(--app-sidebar-width, 0px)) 100%;
+}
+
+/* With the side bar on the right, the glow fills what is left of it. */
+.dark .app-shell[data-sidebar-location="right"] {
+  background-position: left center;
 }
 
 .dark .omnigent-native-sidebar-surface,
@@ -1091,17 +1105,45 @@
 html:not(.dark) .conversations-sidebar:not(.is-peek) {
   /* Unset, the edge token makes the declaration invalid: no border. */
   border-right: 1px solid var(--ui-sidebar-edge);
-  box-shadow: inset -4px 0 6px -4px rgb(0 0 0 / calc(5% * var(--omnigent-elevation)));
+  box-shadow: inset calc(var(--sidebar-edge-direction, -1) * 4px) 0 6px -4px
+    rgb(0 0 0 / calc(5% * var(--omnigent-elevation)));
 }
 .dark .conversations-sidebar {
   border-right: 1px solid var(--ui-sidebar-edge, var(--sidebar-edge-border));
-  box-shadow: inset -4px 0 6px -4px rgb(0 0 0 / calc(5% * var(--omnigent-elevation)));
+  box-shadow: inset calc(var(--sidebar-edge-direction, -1) * 4px) 0 6px -4px
+    rgb(0 0 0 / calc(5% * var(--omnigent-elevation)));
+}
+
+/* `workbench.sideBar.location: right`: the side bar's edge faces the chat on its left. */
+html:not(.dark) .app-shell[data-sidebar-location="right"] .conversations-sidebar:not(.is-peek) {
+  --sidebar-edge-direction: 1;
+  border-right: 0;
+  border-left: 1px solid var(--ui-sidebar-edge);
+}
+.dark .app-shell[data-sidebar-location="right"] .conversations-sidebar {
+  --sidebar-edge-direction: 1;
+  border-right: 0;
+  border-left: 1px solid var(--ui-sidebar-edge, var(--sidebar-edge-border));
+}
+
+.app-shell[data-sidebar-location="right"] .activitybar {
+  border-right-width: 0;
+  border-left-width: 1px;
+}
+
+/* The workspace rail on the left slides in from the left. */
+.workspace-panel-motion[data-side="left"]:not([data-state="open"], [data-rail-state="open"]) {
+  transform: translateX(-12px);
 }
 
 .dark .workspace-panel-motion {
   --workspace-panel-border: var(--ui-panel-edge, rgb(255 255 255 / 8%));
 
   border-left-color: var(--workspace-panel-border);
+}
+
+.dark .workspace-panel-motion[data-side="left"] {
+  border-right-color: var(--workspace-panel-border);
 }
 
 .dark .workspace-panel-motion .workspace-tab-strip {

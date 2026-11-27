@@ -227,7 +227,7 @@ export function SidebarServerPicker({
             variant="ghost"
             className={cn(
               inActivityBar
-                ? "size-10 justify-center rounded-[var(--radius-otto-button)] border-0 p-0"
+                ? "size-10 justify-center rounded-(--radius-otto-button) border-0 p-0"
                 : "h-9 min-w-0 flex-1 justify-start gap-2 rounded-[var(--radius-otto-button)] border-0 px-2 py-1 max-md:h-auto max-md:gap-3",
               "text-muted-foreground",
               "hover:bg-muted hover:text-foreground dark:hover:bg-muted/50",

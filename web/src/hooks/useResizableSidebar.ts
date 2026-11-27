@@ -11,21 +11,39 @@
 
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { readPanelSizePreference, writePanelSizePreference } from "@/lib/panelSizePreferences";
+import {
+  LayoutTokens,
+  layoutTokensVersion,
+  readLengthToken,
+  subscribeLayoutTokens,
+} from "@/workbench/layoutTokens";
+import { layoutState } from "@/workbench/layoutState";
 
 // Default 320px (20rem) — wider than the old fixed ``md:w-64`` (256px) sidebar
 // so conversation titles have more room before truncating. The floor keeps the
 // search box + "New session" button usable; the viewport-relative ceiling keeps
 // the sidebar from consuming more than half of the desktop layout.
+// The default, floor and ceiling are the layout tokens `ui-sidebar-width` (320px),
+// `ui-sidebar-min-width` (220px) and `ui-sidebar-max-width` (50vw), so themes and products set
+// them; these are the values they compute to when they can't be measured.
 const DEFAULT_WIDTH_PX = 320;
 const MIN_WIDTH_PX = 220;
 const MAX_WIDTH_RATIO = 0.5;
 
+function defaultWidth(): number {
+  return readLengthToken(LayoutTokens.sidebarWidth, () => DEFAULT_WIDTH_PX);
+}
+
 function clamp(w: number): number {
   // No viewport available off the DOM (SSR / node test env) — this runs during
   // render, so guard before reading ``window`` to avoid a hard throw.
-  if (typeof window === "undefined") return Math.max(MIN_WIDTH_PX, w);
-  const ceiling = window.innerWidth * MAX_WIDTH_RATIO;
-  return Math.max(MIN_WIDTH_PX, Math.min(w, ceiling));
+  const floor = readLengthToken(LayoutTokens.sidebarMinWidth, () => MIN_WIDTH_PX);
+  if (typeof window === "undefined") return Math.max(floor, w);
+  const ceiling = readLengthToken(
+    LayoutTokens.sidebarMaxWidth,
+    () => window.innerWidth * MAX_WIDTH_RATIO,
+  );
+  return Math.max(floor, Math.min(w, ceiling));
 }
 
 // ---------------------------------------------------------------------------
@@ -61,6 +79,19 @@ function subscribe(cb: () => void): () => void {
   return () => listeners.delete(cb);
 }
 
+/** Back to the token's width: the edge's double-click, and View: Reset Layout. */
+export function resetSidebarWidth(): void {
+  persistWidth(null);
+  setStoredWidthRaw(null);
+}
+
+// View: Reset Layout clears the layout state: the dragged width goes with it.
+layoutState.subscribe((change) => {
+  if (change.slots !== undefined) return;
+  preferredWidth = readPanelSizePreference("sidebarWidthPx");
+  setStoredWidthRaw(preferredWidth);
+});
+
 function getSnapshot(): number | null {
   return storedWidth;
 }
@@ -88,9 +119,13 @@ export function resetSidebarWidthStoreForTesting(): void {
  * handle element. Desktop-only — callers should not render the handle on
  * mobile (where the sidebar is a full-screen overlay).
  */
-export function useResizableSidebar() {
+export function useResizableSidebar(side: "left" | "right" = "left") {
   const raw = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
-  const width = clamp(raw ?? DEFAULT_WIDTH_PX);
+  // A theme setting the width tokens re-renders with their new values.
+  useSyncExternalStore(subscribeLayoutTokens, layoutTokensVersion, layoutTokensVersion);
+  const sideRef = useRef(side);
+  sideRef.current = side;
+  const width = clamp(raw ?? defaultWidth());
   const dragging = useRef(false);
   // Mirrors `dragging` for rendering, so the open/close width animation can
   // stay off while the user drags the edge.
@@ -101,7 +136,7 @@ export function useResizableSidebar() {
   // user's chosen width springs back when space returns.
   useEffect(() => {
     function onResize() {
-      setStoredWidth((prev) => clamp(preferredWidth ?? prev ?? DEFAULT_WIDTH_PX));
+      setStoredWidth((prev) => clamp(preferredWidth ?? prev ?? defaultWidth()));
     }
     window.addEventListener("resize", onResize);
     return () => window.removeEventListener("resize", onResize);
@@ -118,16 +153,18 @@ export function useResizableSidebar() {
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       const step = 20;
-      // Right edge of a left panel: ArrowRight widens, ArrowLeft narrows.
-      if (e.key === "ArrowRight") {
+      // Right edge of a left panel: ArrowRight widens, ArrowLeft narrows (mirrored on the right).
+      const widen = side === "left" ? "ArrowRight" : "ArrowLeft";
+      const narrow = side === "left" ? "ArrowLeft" : "ArrowRight";
+      if (e.key === widen) {
         e.preventDefault();
         setStoredWidth((prev) => clamp((prev ?? width) + step), true);
-      } else if (e.key === "ArrowLeft") {
+      } else if (e.key === narrow) {
         e.preventDefault();
         setStoredWidth((prev) => clamp((prev ?? width) - step), true);
       }
     },
-    [width],
+    [width, side],
   );
 
   useEffect(() => {
@@ -136,7 +173,7 @@ export function useResizableSidebar() {
       // Left panel: width is the cursor's distance from the viewport's left
       // edge. Update the live width only; persist once on release to avoid a
       // synchronous localStorage write per mousemove.
-      setStoredWidth(clamp(e.clientX));
+      setStoredWidth(clamp(sideRef.current === "left" ? e.clientX : window.innerWidth - e.clientX));
     }
 
     function onMouseUp() {
@@ -169,6 +206,8 @@ export function useResizableSidebar() {
     handleProps: {
       onMouseDown,
       onKeyDown,
+      // Double-click: back to the theme's width (`ui-sidebar-width`).
+      onDoubleClick: resetSidebarWidth,
       role: "separator" as const,
       "aria-orientation": "vertical" as const,
       "aria-label": "Resize sidebar",

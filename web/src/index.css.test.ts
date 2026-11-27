@@ -911,7 +911,10 @@ describe("index.css sidebar canvas", () => {
   });
 
   it("uses the shared inset shadow with a dark-only right border", () => {
-    const shadow = "inset -4px 0 6px -4px rgb(0 0 0 / calc(5% * var(--omnigent-elevation)))";
+    // The edge's side is `--sidebar-edge-direction` (-1, the right edge; 1 for a side bar on
+    // the right): `inset -4px 0 6px -4px` by default.
+    const shadow =
+      "inset calc(var(--sidebar-edge-direction, -1) * 4px) 0 6px -4px\n    rgb(0 0 0 / calc(5% * var(--omnigent-elevation)))";
     expect(lightEdgeRule).toContain(`box-shadow: ${shadow}`);
     expect(darkEdgeRule).toContain(`box-shadow: ${shadow}`);
     // Light has no border until a theme sets ui-sidebar-edge (unset, the declaration
