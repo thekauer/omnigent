@@ -483,8 +483,9 @@ sandboxProvider, resumable }`.
       ...; `shell/builtInViews.ts`), the trusted tier's first seam.
     - `contributes.viewsContainers`: `{ activitybar?, secondarySidebar?, panel? }`, each
       an array of `{ id, title, icon? }`. `activitybar` containers are the primary side
-      bar's (it draws the sessions container; the activity bar switches to the others,
-      layout plan L4), `secondarySidebar` (an Omnigent key) containers' views are tabs of
+      bar's: it draws one at a time (the sessions by default), and the activity bar
+      (`workbench.activityBar.location`, layout plan L4) switches between those with a
+      view to show, each item carrying its views' badges summed, `secondarySidebar` (an Omnigent key) containers' views are tabs of
       the classic rail after its own, `panel` is reserved. A container id is the
       extension id or starts with it.
       The side bar stacks its container's views (a built-in view as drawn, a tree
@@ -1263,6 +1264,8 @@ Plain ESM with `// @ts-check`; no build step.
 | `contributes.viewsContainers` (`activitybar`, `panel`)               | same, plus `secondarySidebar` (layout plan L3)                | VS Code moves views to the secondary side bar instead |
 | `contributes.viewsWelcome`                                           | same                                                          | `[text](command:id)` links; no other markdown       |
 | `contributes.menus["viewContainer/title"]`                           | same, group `navigation`                                      | `viewContainer` context key                         |
+| Activity bar, `workbench.activityBar.location` (`default`, `top`, `bottom`, `hidden`) | same (layout plan L4); `hidden` by default | Items drag to reorder, hide from the right-click menu; Accounts and Manage at the bottom at `default` |
+| `workbench.view.<container>`, `workbench.action.toggleActivityBarVisibility`, `focusActivityBar`; `activeViewlet`, `activityBarVisible` | same (layout plan L4) | View: Reset Layout is `workbench.action.resetLayout` |
 | `window.createTreeView(id, { treeDataProvider })`                    | same                                                          | Host-drawn rows; no DnD or multi-select             |
 | `TreeDataProvider`, `TreeItem`, `TreeItemCollapsibleState`           | same, plain data                                              | Plus `decoration` and `gitStatus` on items          |
 | `TreeView.title`, `.description`, `.message`, `.badge`               | same                                                          |                                                     |
@@ -1346,6 +1349,13 @@ Deviations and why:
   views' `when` clauses (the manifests), on the shell's keys
   `omnigent.session.hasWorkspace`, `omnigent.session.hasTasks` and
   `omnigent.serverFeature.<flag>`, which extensions' clauses read too.
+- The activity bar's Accounts and Manage items stand in for the side bar's footer only
+  beside the side bar (`default`); at `top` and `bottom` the footer stays, as the bar has
+  no end of its own there. Its order and hidden items are layout state
+  (`workbench.activityBar`), the active container too (`workbench.sideBar.activeViewContainer`);
+  View: Reset Layout (`workbench.action.resetLayout`, also in the ⌘K palette) clears the
+  layout state, settings stay. The side bar's open state and active container are one per
+  window (the layout service); two shells mounted at once share them.
 - `builtInView` has no VS Code equivalent: the sessions container's views are host
   React components (VS Code's own views are workbench code). The side bar's header
   row keeps its host-drawn search and collapse buttons; `viewContainer/title` entries

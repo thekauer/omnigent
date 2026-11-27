@@ -1,8 +1,12 @@
 // The workbench's parts and the layout service (layout plan L2), VS Code's `Parts` and
 // `IWorkbenchLayoutService`: the shell registers each part it draws with a controller (its
 // visibility and, where it has one, its size), and everything else (commands, context keys,
-// later the activity bar and the extension API) reads and changes the layout through here.
-// Plain data; no React.
+// the activity bar and the extension API) reads and changes the layout through here. The
+// primary side bar's own state lives here (L4): whether it is open and which view container
+// it shows. Plain data; no React.
+
+import { CONVERSATIONS_CONTAINER } from "./viewContainers";
+import { LAYOUT_SLOTS, type LayoutStateStore, layoutState } from "./layoutState";
 
 /** The workbench's parts, by VS Code's names (the auxiliary bar is the secondary side bar). */
 export const Parts = Object.freeze({
@@ -57,7 +61,12 @@ export interface PartController {
   getSize?: () => PartSize | undefined;
   /** Sets the part's size (a drag's outcome), when the shell lets it be set. */
   setSize?: (size: Partial<PartSize>) => void;
+  /** Moves keyboard focus into the part. */
+  focus?: () => void;
 }
+
+/** A value or an update of the previous one, as React's `setState` takes. */
+export type StateUpdate<T> = T | ((previous: T) => T);
 
 export interface PartVisibilityChange {
   readonly part: Part;
@@ -81,6 +90,15 @@ export class LayoutService {
   private readonly visible = new Map<Part, boolean>();
   private readonly visibilityListeners = new Set<Listener<PartVisibilityChange>>();
   private readonly layoutListeners = new Set<Listener<void>>();
+  private readonly store: LayoutStateStore;
+  /** The side bar's pinned open state; undefined until a shell first reads it. */
+  private sideBarOpen: boolean | undefined;
+  private sideBarHolds = 0;
+  private readonly sideBarListeners = new Set<() => void>();
+
+  constructor(store: LayoutStateStore = layoutState) {
+    this.store = store;
+  }
 
   /**
    * The shell draws `part`: its controller answers for it until the returned removal. A
@@ -135,6 +153,93 @@ export class LayoutService {
 
   getLocation(part: Part): PartLocation {
     return DEFAULT_LOCATIONS[part];
+  }
+
+  /** Moves keyboard focus into `part`, when the shell draws it and can focus it. */
+  focusPart(part: Part): boolean {
+    const focus = this.controllers.get(part)?.focus;
+    if (!focus) return false;
+    focus();
+    return true;
+  }
+
+  /**
+   * Whether the primary side bar is pinned open (a peek is the shell's own), starting from
+   * `initial` the first time a shell asks.
+   */
+  isSideBarOpen(initial: () => boolean = () => true): boolean {
+    this.sideBarOpen ??= initial();
+    return this.sideBarOpen;
+  }
+
+  setSideBarOpen = (update: StateUpdate<boolean>): void => {
+    const previous = this.isSideBarOpen();
+    const next = typeof update === "function" ? update(previous) : update;
+    if (next === previous) return;
+    this.sideBarOpen = next;
+    this.fireSideBar();
+  };
+
+  /** The view container the side bar shows (the layout state's, else the sessions). */
+  getActiveViewContainer(): string {
+    const stored = this.store.get(LAYOUT_SLOTS.activeViewContainer);
+    return typeof stored === "string" && stored !== "" ? stored : CONVERSATIONS_CONTAINER;
+  }
+
+  /** Shows `containerId` in the side bar, remembered in the layout state. */
+  setActiveViewContainer(containerId: string): void {
+    if (containerId === this.getActiveViewContainer()) return;
+    // The store's change reaches the side bar's listeners (`onDidChangeSideBar`).
+    this.store.set(
+      LAYOUT_SLOTS.activeViewContainer,
+      containerId === CONVERSATIONS_CONTAINER ? undefined : containerId,
+    );
+  }
+
+  /** VS Code's `openViewContainer`: shows the container and the side bar. */
+  openViewContainer(containerId: string): void {
+    this.setActiveViewContainer(containerId);
+    this.setPartHidden(false, Parts.SIDEBAR_PART);
+  }
+
+  /** Fires when the side bar's open state or active container changed. */
+  onDidChangeSideBar = (listener: () => void): (() => void) => {
+    this.sideBarListeners.add(listener);
+    const unsubscribeStore = this.store.subscribe((change) => {
+      if (!change.slots || change.slots.includes(LAYOUT_SLOTS.activeViewContainer)) listener();
+    });
+    return () => {
+      this.sideBarListeners.delete(listener);
+      unsubscribeStore();
+    };
+  };
+
+  /**
+   * A shell keeps the side bar's state while it holds it; when the last holder lets go the
+   * state is dropped, so the next shell starts from the layout state again.
+   */
+  holdSideBarState(): () => void {
+    this.sideBarHolds += 1;
+    let released = false;
+    return () => {
+      if (released) return;
+      released = true;
+      this.sideBarHolds -= 1;
+      // A remount in the same task (React StrictMode) holds it again before this runs.
+      queueMicrotask(() => {
+        if (this.sideBarHolds === 0) this.sideBarOpen = undefined;
+      });
+    };
+  }
+
+  private fireSideBar(): void {
+    for (const listener of [...this.sideBarListeners]) {
+      try {
+        listener();
+      } catch (error) {
+        console.error("[layout] a side bar listener failed", error);
+      }
+    }
   }
 
   /**

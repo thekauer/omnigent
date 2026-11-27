@@ -6,7 +6,7 @@ import { builtInExtensions } from "@/builtinExtensions";
 import { registerLayoutCommands } from "@/workbench/layoutCommands";
 import { type LayoutService, layoutService } from "@/workbench/layoutService";
 import { type WorkbenchContext, workbenchContext } from "@/workbench/workbenchContext";
-import type { ViewContainerRegistry } from "@/workbench/viewContainers";
+import { type ViewContainerRegistry, viewContainers } from "@/workbench/viewContainers";
 import {
   type ConfigurationService,
   configurationService,
@@ -78,11 +78,11 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
     themes: "select" in themes ? (themes as typeof themeService) : undefined,
   });
   // VS Code's layout commands and the parts' visibility context keys.
-  const layoutCommands = registerLayoutCommands(
-    commands,
-    options.layout ?? layoutService,
+  const layoutCommands = registerLayoutCommands(commands, options.layout ?? layoutService, {
     contextKeys,
-  );
+    configuration: options.configuration ?? configurationService,
+    ...(options.containers ? { containers: options.containers } : {}),
+  });
   // `config.<setting>` context keys, as in VS Code, so `when` and `toggled` can read settings.
   let settingKeys = new Set<string>();
   const syncSettings = () => {
@@ -115,6 +115,7 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
   };
   mirrorShellContext(Object.keys(shellContext.snapshot()));
   const shellContextSubscription = new Disposable(shellContext.subscribe(mirrorShellContext));
+  const containerRegistry = options.containers ?? viewContainers;
   const views = new ViewsService({
     registry,
     ...(options.containers ? { containers: options.containers } : {}),
@@ -123,10 +124,22 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
     showError: (message) => toastNotifications.error(message),
     workspace,
     // VS Code's `<view>.focus`: the workspace on screen shows the view's tab and focuses it.
+    // A side bar view's: the side bar shows its container.
     registerFocusCommand: (extensionId, command, viewId, builtIn) =>
-      commands.register(extensionId, command, () => bridge.rail()?.reveal(viewId) ?? false, {
-        builtIn,
-      }),
+      commands.register(
+        extensionId,
+        command,
+        () => {
+          const containerId = registry.get(viewId)?.containerId;
+          const container = containerId ? containerRegistry.get(containerId) : undefined;
+          if (container?.location === "sidebar") {
+            (options.layout ?? layoutService).openViewContainer(container.id);
+            return true;
+          }
+          return bridge.rail()?.reveal(viewId) ?? false;
+        },
+        { builtIn },
+      ),
   });
   // `view.<id>.available` while the workspace on screen can show that view's tab.
   let availableViews = new Set<string>();

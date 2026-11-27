@@ -1,0 +1,36 @@
+{
+  "name": "automations",
+  "displayName": "Automations",
+  "description": "Your automations, as a compact list in the primary side bar.",
+  "publisher": "omnigent",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "omnigent": "*"
+  },
+  "activationEvents": [
+    "*"
+  ],
+  "browser": "./extension.ts",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "omnigent.automations",
+          "title": "Automations",
+          "icon": "clock"
+        }
+      ]
+    },
+    "views": {
+      "omnigent.automations": [
+        {
+          "id": "omnigent.automations.list",
+          "name": "Automations",
+          "when": "omnigent.automations.enabled",
+          "builtInView": "automationsList"
+        }
+      ]
+    }
+  }
+}

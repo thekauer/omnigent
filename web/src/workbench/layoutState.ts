@@ -14,6 +14,10 @@ export const LAYOUT_STATE_STORAGE_KEY = "omnigent:layout-state";
 export const LAYOUT_SLOTS = Object.freeze({
   /** `{ visible: boolean }`: the primary side bar's desktop open state. */
   sidebar: "workbench.parts.sidebar",
+  /** The view container the primary side bar shows (absent: the sessions). */
+  activeViewContainer: "workbench.sideBar.activeViewContainer",
+  /** `{ order?: string[], hidden?: string[] }`: the activity bar's items the user moved or hid. */
+  activityBar: "workbench.activityBar",
   /** The resizable panels' widths and shares (`lib/panelSizePreferences.ts`). */
   panelSizes: "workbench.panelSizes",
   /** The conversation list's grouping, ordering and fields (`lib/sidebarViewPreferences.ts`). */

@@ -15,6 +15,14 @@ import * as files from "./omnigent.files/extension";
 import filesManifest from "./omnigent.files/package.json";
 import * as pullRequests from "./omnigent.pull-requests/extension";
 import pullRequestsManifest from "./omnigent.pull-requests/package.json";
+import * as automations from "./omnigent.automations/extension";
+import automationsManifest from "./omnigent.automations/package.json";
+import * as canvas from "./omnigent.canvas/extension";
+import canvasManifest from "./omnigent.canvas/package.json";
+import * as inbox from "./omnigent.inbox/extension";
+import inboxManifest from "./omnigent.inbox/package.json";
+import * as workbench from "./omnigent.workbench/extension";
+import workbenchManifest from "./omnigent.workbench/package.json";
 import * as tasks from "./omnigent.tasks/extension";
 import tasksManifest from "./omnigent.tasks/package.json";
 import * as themes from "./omnigent.themes/extension";
@@ -33,13 +41,18 @@ export interface BuiltInExtension {
 }
 
 export const BUILT_IN_EXTENSIONS: readonly BuiltInExtension[] = Object.freeze([
+  // The primary side bar's containers, in the activity bar's default order.
+  { manifest: conversationsManifest, module: conversations },
+  { manifest: inboxManifest, module: inbox },
+  { manifest: automationsManifest, module: automations },
+  { manifest: canvasManifest, module: canvas },
   { manifest: agentsManifest, module: agents },
   { manifest: changesManifest, module: changes },
   { manifest: contentSearchManifest, module: contentSearch },
-  { manifest: conversationsManifest, module: conversations },
   { manifest: filesManifest, module: files },
   { manifest: pullRequestsManifest, module: pullRequests },
   { manifest: tasksManifest, module: tasks },
+  { manifest: workbenchManifest, module: workbench },
   // The built-in colour themes: generated from the palettes (lib/themePalette.ts).
   {
     manifest: {

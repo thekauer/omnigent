@@ -3,10 +3,16 @@
 // draws its built-in views, with the same contributions the host registers.
 import { parseContributions } from "@/vscodeExtensions/contributions";
 import type { RailViewContribution } from "@/shell/railViews";
+import automationsManifest from "./omnigent.automations/package.json";
+import canvasManifest from "./omnigent.canvas/package.json";
 import conversationsManifest from "./omnigent.conversations/package.json";
+import inboxManifest from "./omnigent.inbox/package.json";
 
 const MANIFESTS: readonly { readonly id: string; readonly manifest: unknown }[] = [
   { id: "omnigent.conversations", manifest: conversationsManifest },
+  { id: "omnigent.inbox", manifest: inboxManifest },
+  { id: "omnigent.automations", manifest: automationsManifest },
+  { id: "omnigent.canvas", manifest: canvasManifest },
 ];
 
 let views: ReadonlyMap<string, readonly RailViewContribution[]> | undefined;

@@ -105,7 +105,16 @@ function currentOriginPicker(): ServerPickerInfo {
   return { currentOrigin: window.location.origin, recentServers: [] };
 }
 
-export function SidebarServerPicker() {
+/**
+ * The profile (Accounts) and Settings (Manage) items: the side bar's footer, or the activity
+ * bar's global items at its bottom while the bar is shown beside the side bar.
+ */
+export function SidebarServerPicker({
+  placement = "sidebar",
+}: {
+  placement?: "sidebar" | "activitybar";
+} = {}) {
+  const inActivityBar = placement === "activitybar";
   const nativeServerPicker = supportsNativeServerPicker();
   const [info, setInfo] = useState<ServerPickerInfo | null>(() =>
     nativeServerPicker ? null : currentOriginPicker(),
@@ -193,8 +202,12 @@ export function SidebarServerPicker() {
     // shrink-0 keeps the row at its natural height so the scrolling session
     // list above (flex-1) gives up space instead of squashing it.
     <div
-      className="flex shrink-0 items-stretch gap-1 px-2 pt-1 pb-2 max-md:items-center max-md:pr-4 max-md:pb-4"
-      data-testid="sidebar-server-picker-row"
+      className={
+        inActivityBar
+          ? "flex shrink-0 flex-col items-center gap-1"
+          : "flex shrink-0 items-stretch gap-1 px-2 pt-1 pb-2 max-md:items-center max-md:pr-4 max-md:pb-4"
+      }
+      data-testid={inActivityBar ? "activitybar-global-items" : "sidebar-server-picker-row"}
     >
       <DropdownMenu
         onOpenChange={(open) => {
@@ -213,21 +226,28 @@ export function SidebarServerPicker() {
             type="button"
             variant="ghost"
             className={cn(
-              "h-9 min-w-0 flex-1 justify-start gap-2 rounded-[var(--radius-otto-button)] border-0 px-2 py-1 max-md:h-auto max-md:gap-3",
+              inActivityBar
+                ? "size-10 justify-center rounded-[var(--radius-otto-button)] border-0 p-0"
+                : "h-9 min-w-0 flex-1 justify-start gap-2 rounded-[var(--radius-otto-button)] border-0 px-2 py-1 max-md:h-auto max-md:gap-3",
               "text-muted-foreground",
               "hover:bg-muted hover:text-foreground dark:hover:bg-muted/50",
               "data-[state=open]:bg-muted data-[state=open]:text-foreground",
             )}
             aria-label={`${userName}. Server: ${currentDescription}. Open profile menu`}
             title={currentDescription}
-            data-testid="sidebar-server-picker"
+            data-testid={inActivityBar ? "activitybar-accounts" : "sidebar-server-picker"}
           >
             <Avatar className="size-7 after:hidden max-md:size-9">
               <AvatarFallback className="bg-secondary font-medium text-sm text-secondary-foreground">
                 {userInitials(userName.replace(/\s+/g, "."))}
               </AvatarFallback>
             </Avatar>
-            <span className="flex min-w-0 flex-1 flex-col items-start text-left">
+            <span
+              className={cn(
+                "flex min-w-0 flex-1 flex-col items-start text-left",
+                inActivityBar && "sr-only",
+              )}
+            >
               <span className="w-full truncate text-left font-medium text-ui text-foreground leading-tight md:leading-4">
                 {userName}
               </span>
@@ -245,8 +265,8 @@ export function SidebarServerPicker() {
             a long host (the default menu is w-max) truncates in place instead of
             overflowing the viewport on a narrow phone. */}
         <DropdownMenuContent
-          side="top"
-          align="start"
+          side={inActivityBar ? "right" : "top"}
+          align={inActivityBar ? "end" : "start"}
           className="min-w-[var(--radix-dropdown-menu-trigger-width)] max-w-[min(20rem,calc(100vw-1rem))]"
         >
           <DropdownMenuItem asChild className="gap-2">
@@ -360,8 +380,11 @@ export function SidebarServerPicker() {
         </DropdownMenuContent>
       </DropdownMenu>
       <SidebarSettingsButton
-        testId="sidebar-profile-settings"
-        className="size-9 shrink-0 rounded-[var(--radius-otto-button)]"
+        testId={inActivityBar ? "activitybar-manage" : "sidebar-profile-settings"}
+        className={cn(
+          "shrink-0 rounded-[var(--radius-otto-button)]",
+          inActivityBar ? "size-10" : "size-9",
+        )}
         to={inSettings ? "/" : "/settings"}
         label={inSettings ? "Home" : "Settings"}
       />

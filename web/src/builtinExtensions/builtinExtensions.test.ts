@@ -360,13 +360,17 @@ describe("built-in extensions", () => {
       ...BUILT_IN_EXTENSIONS,
     ]);
     expect(descriptions.map((description) => description.id)).toEqual([
+      "omnigent.conversations",
+      "omnigent.inbox",
+      "omnigent.automations",
+      "omnigent.canvas",
       "omnigent.agents",
       "omnigent.changes",
       "omnigent.content-search",
-      "omnigent.conversations",
       "omnigent.files",
       "omnigent.pull-requests",
       "omnigent.tasks",
+      "omnigent.workbench",
       "omnigent.themes",
     ]);
     expect(error).toHaveBeenCalledWith(expect.stringContaining("invalid built-in extension"));

@@ -212,6 +212,8 @@ import {
 } from "./SessionOverview";
 import { extensionRailTabViewId, type RightRailTab } from "./railTabs";
 import { useRailViewIds } from "./railViews";
+import { ActivityBar } from "./ActivityBar";
+import { ACTIVITY_BAR_WIDTH_PX, useActivityBarLocation } from "@/workbench/activityBar";
 import { builtInTabWhen } from "@/builtinExtensions/builtInTabWhen";
 import { serverFeatureKeys, WorkbenchContextKeys, whenHolds } from "@/workbench/workbenchContext";
 import { useWorkspaceBridgeSource } from "./useWorkspaceBridgeSource";
@@ -535,6 +537,7 @@ function AppShellImpl() {
     });
   });
 
+  const activityBarLocation = useActivityBarLocation();
   // Below md an open sidebar is a full-window drawer, so narrowing closes it
   // (except the settings menu) and remembers the desktop state for widening.
   const mobileViewport = useIsMobileViewport();
@@ -1234,7 +1237,9 @@ function AppShellImpl() {
   } = useResizableInlinePanel(
     rootSessionId,
     inlinePanelMinWidth,
-    (sidebarOpen ? sidebarWidth : 0) + (canvasMode ? canvasReservedWidth : 0),
+    (sidebarOpen ? sidebarWidth : 0) +
+      (canvasMode ? canvasReservedWidth : 0) +
+      (activityBarLocation === "default" && !mobileViewport ? ACTIVITY_BAR_WIDTH_PX : 0),
     rootSessionResolved,
     canvasMode ? CANVAS_CONVERSATION_MIN_WIDTH : undefined,
   );
@@ -1263,6 +1268,8 @@ function AppShellImpl() {
       ...serverFeatureKeys(serverInfo === "loading" ? undefined : serverInfo.features),
       [WorkbenchContextKeys.sessionHasWorkspace]: showFilesPanel,
       [WorkbenchContextKeys.sessionHasTasks]: sessionHasTasks,
+      [WorkbenchContextKeys.automationsEnabled]:
+        serverInfo !== "loading" && serverInfo.automations_enabled !== false,
     }),
     [serverInfo, showFilesPanel, sessionHasTasks],
   );
@@ -3413,7 +3420,11 @@ function AppShellImpl() {
             className="app-shell relative flex h-dvh bg-sidebar text-foreground"
             style={
               {
-                "--app-sidebar-width": `${sidebarOpen ? sidebarWidth : 0}px`,
+                // The activity bar beside the side bar is part of the shell's left edge.
+                "--app-sidebar-width": `${
+                  (sidebarOpen ? sidebarWidth : 0) +
+                  (activityBarLocation === "default" && !mobileViewport ? ACTIVITY_BAR_WIDTH_PX : 0)
+                }px`,
               } as CSSProperties
             }
             // Reflect the docked sidebar's open state so CSS can drop the
@@ -3482,6 +3493,10 @@ function AppShellImpl() {
           header — which is taller and also anchored at top-0 — so a centered
           "<thread> — <host>" label here collided with the header's action
           cluster on a narrow window. The strip stays pure drag surface. */}
+            {/* The activity bar beside the side bar (`workbench.activityBar.location`: default). */}
+            {activityBarLocation === "default" && !mobileViewport && (
+              <ActivityBar location="default" />
+            )}
             <Sidebar
               open={sidebarOpen}
               onOpen={handleSidebarOpen}

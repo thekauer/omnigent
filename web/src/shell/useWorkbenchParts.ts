@@ -2,7 +2,7 @@
 // with a controller over AppShell's own state, and the primary side bar's desktop open state
 // is kept in the layout state.
 
-import { useEffect, useLayoutEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef, useSyncExternalStore } from "react";
 
 import type { ContextKeyValue } from "@/vscodeExtensions/contextKeys";
 import { LAYOUT_SLOTS, layoutState } from "@/workbench/layoutState";
@@ -13,6 +13,8 @@ export interface WorkbenchPartState {
   readonly visible: boolean;
   readonly setHidden: (hidden: boolean) => void;
   readonly toggle?: () => void;
+  /** Moves keyboard focus into the part (`workbench.action.focus*`). */
+  readonly focus?: () => void;
 }
 
 /**
@@ -37,6 +39,7 @@ export function useWorkbenchPart(
         if (toggle) toggle();
         else setHidden(visible);
       },
+      focus: () => latest.current.focus?.(),
     });
   }, [enabled, part, service]);
   useLayoutEffect(() => {
@@ -98,5 +101,23 @@ export function useWorkbenchContextKeys(
       published.current = [];
     },
     [context],
+  );
+}
+
+/** Whether `part` is on screen, kept current. */
+export function usePartVisible(part: Part, service: LayoutService = layoutService): boolean {
+  return useSyncExternalStore(
+    (listener) => service.onDidChangePartVisibility(listener),
+    () => service.isVisible(part),
+    () => false,
+  );
+}
+
+/** The view container the primary side bar shows, kept current. */
+export function useActiveViewContainer(service: LayoutService = layoutService): string {
+  return useSyncExternalStore(
+    service.onDidChangeSideBar,
+    () => service.getActiveViewContainer(),
+    () => service.getActiveViewContainer(),
   );
 }

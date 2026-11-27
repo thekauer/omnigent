@@ -15,7 +15,11 @@ import {
 import { filterSessionScope } from "@/lib/sessionVisibility";
 import { CONVERSATIONS_CONTAINER } from "@/workbench/viewContainers";
 import { registerBuiltInView } from "./builtInViews";
-import { ViewContainerViews } from "./ViewContainerViews";
+import { useSideBarContainerList, ViewContainerViews } from "./ViewContainerViews";
+import { ActivityBar } from "./ActivityBar";
+import { useInboxCount } from "./sideBarListViews";
+import { useActiveViewContainer } from "./useWorkbenchParts";
+import { useActivityBarLocation } from "@/workbench/activityBar";
 import { ViewContainerTitleActions } from "./ViewContainerTitleActions";
 import { useGridSessions } from "@/grid/GridSessionsContext";
 import { GridSidebar } from "@/grid/GridWorkspace";
@@ -247,10 +251,8 @@ import {
   markConversationRead,
   markConversationUnread,
   useConversationReadState,
-  useReadStateSnapshot,
   useUnseenTick,
 } from "@/hooks/useUnseenConversations";
-import { collectUnreadInboxItems } from "@/lib/inbox";
 import { cn } from "@/lib/utils";
 import { useOmnigentAnalytics } from "@/lib/analytics";
 import { isDesktopLayout, useIsMobileViewport } from "@/hooks/useIsMobileViewport";
@@ -359,6 +361,7 @@ import {
 import { SessionActionMenuItem } from "@/components/SessionActionMenuItem";
 import { useSessionActionRestrictions } from "@/hooks/useSessionActionRestrictions";
 import {
+  SIDEBAR_ELEMENT_ID,
   SIDEBAR_ROW,
   SIDEBAR_ROW_MOBILE_INSET,
   SIDEBAR_HOVER_HIGHLIGHT,
@@ -924,21 +927,11 @@ function SidebarImpl({
         : availableTab === "shared"
           ? sidebarData.shared
           : sidebarData.all;
-  const { conversationId: activeConversationId } = useParams<{ conversationId: string }>();
-  // Unread sessions as the Inbox lists them; like its row dot, the open session
-  // counts only when marked unread.
-  const unreadInboxCount = useReadStateSnapshot(
-    () =>
-      collectUnreadInboxItems(
-        sidebarData.inboxRows,
-        (id, updatedAt, status) =>
-          isConversationUnseen(id, updatedAt, status) &&
-          (id !== activeConversationId || isExplicitlyUnread(id)),
-      ).length,
-  );
-  const inboxCount = sidebarData.inboxCount + unreadInboxCount;
-  const inboxCountIncomplete = sidebarData.inboxCountIncomplete;
-  const inboxCountCapped = sidebarData.inboxCountCapped;
+  const {
+    count: inboxCount,
+    incomplete: inboxCountIncomplete,
+    capped: inboxCountCapped,
+  } = useInboxCount();
 
   // The scrollable list container — used as the IntersectionObserver root for
   // infinite scroll (auto-loading the next page as the sentinel nears view).
@@ -1093,6 +1086,17 @@ function SidebarImpl({
   const [closeSwipeProgress, setCloseSwipeProgress] = useState<number | null>(null);
   const [openSwipeProgress, setOpenSwipeProgress] = useState<number | null>(null);
   const mobileLayout = useIsMobileViewport();
+  // The activity bar: beside the side bar at `default` (a drawer has no beside: its top row).
+  const activityBarLocation = useActivityBarLocation();
+  const activityBarPlacement =
+    activityBarLocation === "default" && mobileLayout ? "top" : activityBarLocation;
+  const sideBarContainers = useSideBarContainerList();
+  const storedContainer = useActiveViewContainer();
+  // A container with nothing to show (or gone) falls back to the sessions.
+  const activeContainer =
+    sideBarContainers.find((container) => container.id === storedContainer) ??
+    sideBarContainers.find((container) => container.id === CONVERSATIONS_CONTAINER) ??
+    CONVERSATIONS_TITLE;
   // A wide phone (unfolded foldable, landscape) docks the open sidebar beside
   // the chat instead of over it.
   const sideBySide = useIsSideBySideSidebarViewport();
@@ -1365,8 +1369,13 @@ function SidebarImpl({
       )}
       <aside
         data-part={partHook(Parts.SIDEBAR_PART)}
+        id={SIDEBAR_ELEMENT_ID}
         ref={sidebarInertRef}
-        aria-label="Conversations"
+        aria-label={
+          inSettings || activeContainer.id === CONVERSATIONS_CONTAINER
+            ? "Conversations"
+            : activeContainer.title
+        }
         onAnimationEnd={(event) => {
           if (event.target === event.currentTarget) setPeekInteractive(true);
         }}
@@ -1502,26 +1511,37 @@ function SidebarImpl({
             session. Reuses onNavClick so a plain primary click closes
             the sidebar on mobile (where it's a full-screen overlay) but
             modifier/middle clicks still open `/` in a new tab. */}
-              <Link
-                to="/"
-                onClick={onNavClick}
-                data-testid="sidebar-brand"
-                componentId="sidebar.home"
-                className="sidebar-brand rounded-none transition-opacity duration-200 ease-[var(--ease-otto)] hover:opacity-70"
-              >
-                {branding.app_name ? (
-                  <span className="font-(family-name:--ui-app-name-font) text-(length:--ui-app-name-size) font-(weight:--ui-app-name-weight) tracking-(--ui-app-name-tracking)">
-                    {branding.app_name}
-                  </span>
-                ) : (
-                  <img
-                    src={omnigentWordmark}
-                    alt="Omnigent"
-                    data-testid="sidebar-wordmark"
-                    className="h-[15px] w-auto shrink-0 translate-y-px max-md:h-[18px] dark:invert"
-                  />
-                )}
-              </Link>
+              {activityBarPlacement === "top" ? (
+                <ActivityBar location="top" />
+              ) : activeContainer.id === CONVERSATIONS_CONTAINER ? (
+                <Link
+                  to="/"
+                  onClick={onNavClick}
+                  data-testid="sidebar-brand"
+                  componentId="sidebar.home"
+                  className="sidebar-brand rounded-none transition-opacity duration-200 ease-[var(--ease-otto)] hover:opacity-70"
+                >
+                  {branding.app_name ? (
+                    <span className="font-(family-name:--ui-app-name-font) text-(length:--ui-app-name-size) font-(weight:--ui-app-name-weight) tracking-(--ui-app-name-tracking)">
+                      {branding.app_name}
+                    </span>
+                  ) : (
+                    <img
+                      src={omnigentWordmark}
+                      alt="Omnigent"
+                      data-testid="sidebar-wordmark"
+                      className="h-[15px] w-auto shrink-0 translate-y-px max-md:h-[18px] dark:invert"
+                    />
+                  )}
+                </Link>
+              ) : (
+                <h2
+                  data-slot="view-container-title"
+                  className="ui-label min-w-0 truncate font-medium text-ui"
+                >
+                  {activeContainer.title}
+                </h2>
+              )}
               {isMacElectronShell() && (
                 <SidebarSearchButton
                   onOpenSearch={onOpenSearch}
@@ -1530,10 +1550,7 @@ function SidebarImpl({
                 />
               )}
               {/* The container's title actions (viewContainer/title), before the host's own. */}
-              <ViewContainerTitleActions
-                containerId={CONVERSATIONS_CONTAINER}
-                className="ml-auto"
-              />
+              <ViewContainerTitleActions containerId={activeContainer.id} className="ml-auto" />
               {/* Hidden on the macOS shell, where Search sits by the wordmark and the
             toggle and Back/Forward live in AppShell's title strip. */}
               <SidebarHeaderActions
@@ -1550,17 +1567,26 @@ function SidebarImpl({
             </div>
 
             <SidebarViewsContext.Provider value={sidebarViews}>
-              <ViewContainerViews containerId={CONVERSATIONS_CONTAINER} />
+              <ViewContainerViews containerId={activeContainer.id} />
             </SidebarViewsContext.Provider>
           </>
         )}
         {/* Profile and Settings stay pinned below either sidebar body. Native
             shells add their existing server-switching actions to its menu. */}
-        <SidebarServerPicker />
+        {!inSettings && activityBarPlacement === "bottom" && (
+          <div className="flex shrink-0 justify-center px-2 pt-1">
+            <ActivityBar location="bottom" />
+          </div>
+        )}
+        {/* Beside the activity bar, its Accounts and Manage items stand in for the footer. */}
+        {activityBarPlacement !== "default" && <SidebarServerPicker />}
       </aside>
     </>
   );
 }
+
+/** The sessions container, for a side bar drawn before the extension host registered it. */
+const CONVERSATIONS_TITLE = { id: CONVERSATIONS_CONTAINER, title: "Sessions" } as const;
 
 interface SidebarNavigationViewProps {
   onNavClick: (event: MouseEvent<HTMLAnchorElement>) => void;

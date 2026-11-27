@@ -31,6 +31,8 @@ describe("useAppCommands", () => {
       "Search settings…",
       "Toggle conversations sidebar",
       "Toggle workspace sidebar",
+      "View: Reset Layout",
+      "View: Toggle Activity Bar Visibility",
     ]);
   });
 

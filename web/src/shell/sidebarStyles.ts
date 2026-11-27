@@ -29,3 +29,6 @@ export const SIDEBAR_GRID_SELECTED_RING = "ring-1 ring-inset ring-brand-accent/5
 // row and the last nested row. Mobile follows the icon past SIDEBAR_ROW_MOBILE_INSET.
 export const SIDEBAR_FAMILY_LINE =
   "pointer-events-none absolute -top-px bottom-0 -left-[7.5px] max-md:left-[0.5px] w-px bg-muted-foreground/40 [li:not([data-sibling-session]+li)>&]:top-[3px] [li:not(:has(+li[data-sibling-session]))>&]:bottom-1";
+
+/** The primary side bar's element id, the activity bar items' `aria-controls`. */
+export const SIDEBAR_ELEMENT_ID = "workbench-sidebar";

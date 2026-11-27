@@ -5,6 +5,7 @@ import { useMemo } from "react";
 import {
   CalendarClockIcon,
   InboxIcon,
+  LayoutTemplateIcon,
   type LucideIcon,
   PanelLeftIcon,
   PanelRightIcon,
@@ -22,6 +23,13 @@ import { useIsMobileViewport } from "@/hooks/useIsMobileViewport";
 import { useLocation, useNavigate } from "@/lib/routing";
 import { useSettingsRoute } from "@/shell/settingsNav";
 import { settingsSearchCommand } from "@/shell/settingsSearch/settingsSearchCommand";
+import { toggleActivityBarVisibility } from "@/workbench/activityBar";
+import {
+  RESET_LAYOUT_COMMAND,
+  resetLayout,
+  TOGGLE_ACTIVITY_BAR_COMMAND,
+} from "@/workbench/layoutCommands";
+import { layoutService } from "@/workbench/layoutService";
 
 export interface ActionCommand {
   id: string;
@@ -106,6 +114,20 @@ export function useAppCommands({
         keywords: ["panel", "right", "files", "terminal", "workbench.action.toggleAuxiliaryBar"],
         run: onToggleRightSidebar,
         shortcut: rightSidebarShortcutEnabled ? rightSidebarToggleShortcutKeys() : undefined,
+      },
+      {
+        id: RESET_LAYOUT_COMMAND,
+        label: "View: Reset Layout",
+        icon: LayoutTemplateIcon,
+        keywords: ["layout", "reset", "side bar", "activity bar", "widths", RESET_LAYOUT_COMMAND],
+        run: () => resetLayout(layoutService),
+      },
+      {
+        id: TOGGLE_ACTIVITY_BAR_COMMAND,
+        label: "View: Toggle Activity Bar Visibility",
+        icon: PanelLeftIcon,
+        keywords: ["activity bar", "icons", "rail", TOGGLE_ACTIVITY_BAR_COMMAND],
+        run: () => toggleActivityBarVisibility(),
       },
     ],
     [

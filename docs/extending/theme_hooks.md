@@ -43,14 +43,15 @@ The shadcn primitives' own slots (`button`, `tabs-trigger`, `dropdown-menu-conte
 ## `data-part` hooks
 
 `[data-part="<name>"]` on the element that draws a workbench part (layout plan L2), named as
-VS Code's parts (`workbench.parts.<name>` in the layout service). The titlebar, activitybar,
-panel and statusbar parts are reserved: nothing draws them yet.
+VS Code's parts (`workbench.parts.<name>` in the layout service). The titlebar, panel and
+statusbar parts are reserved: nothing draws them yet.
 
 | Hook | Element |
 |---|---|
 | `sidebar` | The primary side bar (`aside.conversations-sidebar`), open or closed. |
 | `main` | The main area (`[data-slot="main-area"]`): the chat header, the route's page and, on a session, the workspace rail beside it; the grid's own main area on a grid route. |
 | `auxiliarybar` | The secondary side bar: the workspace rail (`[data-slot="workspace-panel"]`), classic or tabs. |
+| `activitybar` | The activity bar, when `workbench.activityBar.location` shows it (layout plan L4): beside the side bar (`data-location="default"`, class `.activitybar`) or a row in its header or bottom (`top`, `bottom`). Not on the default pages. |
 
 ## View hooks
 
@@ -61,6 +62,8 @@ Drawn only when an extension contributes them (layout plan L3), so not on the de
 | `[data-view="<view id>"]` | A contributed view stacked in the primary side bar (`data-collapsed` while collapsed). |
 | `[data-slot="view-container-actions"]` | A container's `viewContainer/title` buttons (`data-view-container` is its id). |
 | `[data-slot="view-welcome"]` | A view's welcome content (`contributes.viewsWelcome`). |
+| `.activitybar-item` | An activity bar item (`data-view-container` is its container, `data-active` while it shows in the open side bar), with its `[data-slot="activitybar-badge"]`. |
+| `[data-slot="view-container-title"]` | The side bar's header title for a container other than the sessions. |
 
 ## Classes
 

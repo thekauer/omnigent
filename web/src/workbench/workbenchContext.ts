@@ -13,6 +13,8 @@ export const WorkbenchContextKeys = Object.freeze({
   sessionHasWorkspace: "omnigent.session.hasWorkspace",
   /** The session on screen has a Tasks page (native tasks, or a session journal). */
   sessionHasTasks: "omnigent.session.hasTasks",
+  /** The server runs automations (scheduled tasks). */
+  automationsEnabled: "omnigent.automations.enabled",
   /** `omnigent.serverFeature.<name>`: a server feature flag is on. */
   serverFeaturePrefix: "omnigent.serverFeature.",
 });

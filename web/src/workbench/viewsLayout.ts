@@ -2,7 +2,7 @@
 // expanded, a view hidden or shown again, kept in the layout state over the contribution's
 // `visibility`. Plain data; React reads it through `useViewsLayout`.
 
-import { useSyncExternalStore } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 import { LAYOUT_SLOTS, type LayoutStateStore, layoutState } from "./layoutState";
 
 export interface ViewLayout {
@@ -73,8 +73,9 @@ function snapshot(store: LayoutStateStore): ViewsLayout {
 }
 
 export function useViewsLayout(store: LayoutStateStore = layoutState): ViewsLayout {
+  const subscribe = useCallback((listener: () => void) => store.subscribe(listener), [store]);
   return useSyncExternalStore(
-    (listener) => store.subscribe(listener),
+    subscribe,
     () => snapshot(store),
     () => EMPTY,
   );

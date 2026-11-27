@@ -1,0 +1,36 @@
+{
+  "name": "canvas",
+  "displayName": "Canvas",
+  "description": "The canvases, as a compact list in the primary side bar.",
+  "publisher": "omnigent",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "omnigent": "*"
+  },
+  "activationEvents": [
+    "*"
+  ],
+  "browser": "./extension.ts",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "omnigent.canvas",
+          "title": "Canvas",
+          "icon": "layout-dashboard"
+        }
+      ]
+    },
+    "views": {
+      "omnigent.canvas": [
+        {
+          "id": "omnigent.canvas.list",
+          "name": "Canvases",
+          "when": "omnigent.serverFeature.canvas",
+          "builtInView": "canvasList"
+        }
+      ]
+    }
+  }
+}
