@@ -1,3 +1,4 @@
+import { embedLayoutScope, layoutState } from "@/workbench/layoutState";
 import { applyMobileAppTargetAttribute } from "./lib/mobileAppTargets";
 import { appConfig, type SidebarConfig } from "./appConfig";
 import { IdentityAwareSidebarDataProvider } from "./hooks/useSidebarData";
@@ -354,6 +355,8 @@ export function OmnigentApp({
   // belt-and-suspenders that captures the first non-empty props.
   useState(() => {
     setOmnigentHostConfig(hostConfig);
+    // The embed's layout state is its own, by its mount path, not the standalone app's.
+    layoutState.setScope(embedLayoutScope(basename));
     return null;
   });
   // The built-in extensions (the Changes, Files, Pull Requests, Tasks, Agents and

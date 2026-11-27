@@ -503,7 +503,11 @@ export class WorkspaceService {
           }
           if (!configuration.has(name)) throw new Error(`unknown setting ${JSON.stringify(name)}`);
           // An extension writes its own settings; the host's and other extensions' are the user's.
-          if (writer && !writer.builtIn && !name.startsWith(`${writer.extensionId}.`)) {
+          if (
+            writer &&
+            !writer.builtIn &&
+            configuration.registry.getProperty(name)?.owner !== writer.extensionId
+          ) {
             throw new Error(`${name} is not a setting of ${writer.extensionId}`);
           }
           configuration.update(name, value);

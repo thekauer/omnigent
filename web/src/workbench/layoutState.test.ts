@@ -6,6 +6,7 @@ import {
   LEGACY_LAYOUT_STORAGE_KEYS,
   type LayoutStateChange,
   LayoutStateStore,
+  embedLayoutScope,
   readLayoutStateText,
 } from "./layoutState";
 
@@ -18,6 +19,62 @@ afterEach(() => {
 });
 
 describe("LayoutStateStore", () => {
+  it("keeps an embed's state apart from the standalone app's, by its scope", () => {
+    const store = new LayoutStateStore();
+    store.set("slot", "standalone");
+    const listener = vi.fn();
+    store.subscribe(listener);
+    store.setScope(embedLayoutScope("/ml/embed"));
+    expect(listener).toHaveBeenCalledWith({});
+    expect(store.get("slot")).toBeUndefined();
+    store.set("slot", "embedded");
+    expect(localStorage.getItem(`${LAYOUT_STATE_STORAGE_KEY}@embed:/ml/embed`)).toContain(
+      "embedded",
+    );
+    // An embed doesn't take the standalone app's old keys.
+    localStorage.setItem("omnigent:sidebar-view", JSON.stringify({ grouping: "status" }));
+    expect(store.get(LAYOUT_SLOTS.conversationsView)).toBeUndefined();
+    store.setScope("");
+    expect(store.get("slot")).toBe("standalone");
+    expect(embedLayoutScope(undefined)).toBe("embed:/");
+  });
+
+  it("prefers an old key written after the migration (a rolled-back build) over the slot", () => {
+    localStorage.setItem(
+      LAYOUT_STATE_STORAGE_KEY,
+      JSON.stringify({
+        version: 1,
+        state: { [LAYOUT_SLOTS.conversationsView]: { grouping: "a" } },
+      }),
+    );
+    localStorage.setItem("omnigent:sidebar-view", JSON.stringify({ grouping: "b" }));
+    const store = new LayoutStateStore();
+    expect(store.get(LAYOUT_SLOTS.conversationsView)).toEqual({ grouping: "b" });
+    expect(localStorage.getItem("omnigent:sidebar-view")).toBeNull();
+  });
+
+  it("warns once when the state can't be stored and lasts for the window only", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("Quota exceeded", "QuotaExceededError");
+    });
+    const store = new LayoutStateStore();
+    store.set("a", 1);
+    store.set("b", 2);
+    expect(store.get("b")).toBe(2);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("can't be stored"));
+  });
+
+  it("treats a document of a non-integer or infinite version as corrupt, not newer", () => {
+    for (const version of ["1e999", "1.5"]) {
+      localStorage.setItem(LAYOUT_STATE_STORAGE_KEY, `{"version": ${version}, "state": {}}`);
+      const store = new LayoutStateStore();
+      store.set("slot", 1);
+      expect(stored()).toEqual({ version: 1, state: { slot: 1 } });
+    }
+  });
+
   it("carries every old key into its slot once, and removes the old keys", () => {
     const values: Record<string, unknown> = {
       "omnigent:panel-size-preferences": { sidebarWidthPx: 300 },
@@ -38,14 +95,6 @@ describe("LayoutStateStore", () => {
     expect(store.get(LAYOUT_SLOTS.collapsedFamilies)).toEqual(["conv_1"]);
     for (const key of Object.keys(values)) expect(localStorage.getItem(key)).toBeNull();
     expect(stored()).toMatchObject({ version: 1 });
-  });
-
-  it("keeps the document's slot over an old key written later (an older tab)", () => {
-    const store = new LayoutStateStore();
-    store.set(LAYOUT_SLOTS.collapsedSections, ["Projects"]);
-    localStorage.setItem("omnigent:collapsed-sidebar-sections", JSON.stringify(["Shared"]));
-    expect(store.get(LAYOUT_SLOTS.collapsedSections)).toEqual(["Projects"]);
-    expect(localStorage.getItem("omnigent:collapsed-sidebar-sections")).toBeNull();
   });
 
   it("keeps the old keys while the document can't be written, and the window its values", () => {

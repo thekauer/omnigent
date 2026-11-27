@@ -42,6 +42,11 @@ export interface ConfigurationPolicy {
   readonly defaults?: Readonly<Record<string, unknown>>;
   /** Applied last and refused on write ("Set by product"). */
   readonly locked?: Readonly<Record<string, unknown>>;
+  /**
+   * Refuses a write the locks of part of a value forbid (a theme's locked option or token
+   * inside an object setting): the reason, or undefined to allow it.
+   */
+  readonly writeProblem?: (key: string, value: unknown) => string | undefined;
 }
 
 /** Fields of a registered setting the editor's schema leaves out. */
@@ -84,6 +89,9 @@ export class ConfigurationService {
   private readonly store: SettingsStore;
   private readonly memory = new Map<string, unknown>();
   private readonly policies = new Map<string, ConfigurationPolicy>();
+  /** The extensions that added their configuration, and which of them are built-in. */
+  private readonly extensionIds = new Set<string>();
+  private readonly builtInOwners = new Set<string>();
   private readonly listeners = new Set<(event: ConfigurationChangeEvent) => void>();
   private readonly schemaListeners = new Set<() => void>();
   private snapshot: Map<string, unknown> | null = null;
@@ -127,7 +135,7 @@ export class ConfigurationService {
     return value;
   }
 
-  private policyValue(kind: keyof ConfigurationPolicy, key: string): unknown {
+  private policyValue(kind: "defaults" | "locked", key: string): unknown {
     let found: unknown;
     for (const policy of this.policies.values()) {
       const values = policy[kind];
@@ -137,6 +145,24 @@ export class ConfigurationService {
       }
     }
     return found;
+  }
+
+  /** Whether some policy locks `key`, whether or not its value fits the schema. */
+  private lockPresent(key: string): boolean {
+    return [...this.policies.values()].some(
+      (policy) => policy.locked !== undefined && Object.hasOwn(policy.locked, key),
+    );
+  }
+
+  private readonly warnedLocks = new Set<string>();
+
+  /** A lock whose value the schema doesn't take: the default applies, and writes stay refused. */
+  private warnInvalidLock(key: string): void {
+    if (this.warnedLocks.has(key)) return;
+    this.warnedLocks.add(key);
+    console.warn(
+      `[configuration] the product's locked value for ${key} doesn't fit its schema; the default applies`,
+    );
   }
 
   /** The value that applies for `key`, or undefined for a key nothing sets. */
@@ -150,7 +176,11 @@ export class ConfigurationService {
     const userValue = this.userValue(key);
     const memoryValue = this.memory.get(key);
     const lockedValue = this.policyValue("locked", key);
-    const value = lockedValue ?? memoryValue ?? userValue ?? policyDefaultValue ?? defaultValue;
+    const locked = lockedValue !== undefined || this.lockPresent(key);
+    if (locked && lockedValue === undefined) this.warnInvalidLock(key);
+    const value = locked
+      ? (lockedValue ?? policyDefaultValue ?? defaultValue)
+      : (memoryValue ?? userValue ?? policyDefaultValue ?? defaultValue);
     return Object.freeze({
       key,
       defaultValue: copyOf(defaultValue),
@@ -179,9 +209,9 @@ export class ConfigurationService {
     ];
   }
 
-  /** Whether the product locks `key`. */
+  /** Whether the product locks `key` (even with a value its schema doesn't take). */
   isLocked(key: string): boolean {
-    return this.policyValue("locked", key) !== undefined;
+    return this.lockPresent(key);
   }
 
   // --- writing ---------------------------------------------------------------------
@@ -193,6 +223,14 @@ export class ConfigurationService {
     target: ConfigurationTarget = "user",
   ): string | undefined {
     if (this.isLocked(key)) return `${key}: ${SET_BY_PRODUCT}`;
+    // VS Code's `application` scope: only the user's settings, not one window's memory.
+    if (target === "memory" && this.scopeOf(key) === "application") {
+      return `${key} is an application setting: it can only be set in the settings JSON`;
+    }
+    for (const policy of this.policies.values()) {
+      const problem = policy.writeProblem?.(key, value);
+      if (problem) return `${key}: ${problem}`;
+    }
     const property = this.registry.getProperty(key);
     if (value !== undefined && property) {
       const problem = valueProblem(property.schema, value);
@@ -236,8 +274,45 @@ export class ConfigurationService {
     extensionId: string,
     contributions: ConfigurationContributions,
     log: Pick<Console, "warn"> = console,
+    { builtIn = false }: { builtIn?: boolean } = {},
   ): () => void {
-    const removals = contributions.nodes.map((node) => this.registry.registerConfiguration(node));
+    // A key belongs to the longest loaded extension id it starts with: `acme.tools` can't
+    // take `acme.tools.extra.key` from a loaded `acme.tools.extra`, which takes it back.
+    this.extensionIds.add(extensionId);
+    for (const property of this.registry.getProperties()) {
+      const owner = property.owner;
+      if (
+        owner !== extensionId &&
+        !this.builtInOwners.has(owner) &&
+        extensionId.startsWith(`${owner}.`) &&
+        property.key.startsWith(`${extensionId}.`)
+      ) {
+        log.warn(
+          `[configuration] ${owner}: ${property.key} belongs to ${extensionId}; dropping it`,
+        );
+        this.registry.unregisterKey(property.key);
+      }
+    }
+    if (builtIn) this.builtInOwners.add(extensionId);
+    const nodes = contributions.nodes.map((node) => {
+      if (builtIn) return node;
+      const properties = Object.fromEntries(
+        Object.entries(node.properties).filter(([key]) => {
+          const longer = [...this.extensionIds].find(
+            (other) =>
+              other !== extensionId &&
+              other.startsWith(`${extensionId}.`) &&
+              key.startsWith(`${other}.`),
+          );
+          if (longer) {
+            log.warn(`[configuration] ${extensionId}: ${key} belongs to ${longer}; ignoring it`);
+          }
+          return longer === undefined;
+        }),
+      );
+      return { ...node, properties };
+    });
+    const removals = nodes.map((node) => this.registry.registerConfiguration(node));
     const defaults = contributions.defaults;
     if (Object.keys(defaults).length > 0) {
       for (const [key, value] of Object.entries(defaults)) {
@@ -249,6 +324,8 @@ export class ConfigurationService {
       removals.push(this.registry.registerDefaultConfigurations(extensionId, defaults));
     }
     return () => {
+      this.extensionIds.delete(extensionId);
+      this.builtInOwners.delete(extensionId);
       for (const remove of removals.reverse()) remove();
     };
   }
@@ -257,6 +334,7 @@ export class ConfigurationService {
   setPolicy(source: string, policy: ConfigurationPolicy | null): void {
     if (policy) this.policies.set(source, policy);
     else this.policies.delete(source);
+    this.warnedLocks.clear();
     this.changed();
     this.schemaChanged();
   }
@@ -281,12 +359,15 @@ export class ConfigurationService {
       deprecationMessage ? `Deprecated: ${deprecationMessage}` : undefined,
       defaultValue === undefined ? undefined : `Default: \`${JSON.stringify(defaultValue)}\`.`,
     ].filter((note): note is string => Boolean(note));
-    const locked = this.policyValue("locked", property.key);
+    const locked = this.lockPresent(property.key)
+      ? (this.policyValue("locked", property.key) ?? defaultValue)
+      : undefined;
+    const lockPresent = this.lockPresent(property.key);
     return {
       ...schema,
       ...(defaultValue === undefined ? {} : { default: defaultValue }),
       ...(notes.length > 0 ? { description: notes.join(" ") } : {}),
-      ...(locked === undefined ? {} : { locked: { value: locked } }),
+      ...(lockPresent ? { locked: { value: locked } } : {}),
     };
   }
 

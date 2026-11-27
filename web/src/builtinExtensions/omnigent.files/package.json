@@ -60,13 +60,15 @@
           ],
           "default": "alpha",
           "scope": "resource",
-          "description": "How the Files and Changes tabs sort files. The sort menu writes it here; a grid cell keeps its own."
+          "description": "How the Files and Changes tabs sort files. The sort menu writes it here; a grid cell keeps its own.",
+          "defaultOverridable": true
         },
         "omnigent.files.showHidden": {
           "type": "boolean",
           "default": true,
           "scope": "resource",
-          "description": "Whether a session's Files tab shows hidden (dot) files when it opens (a grid cell starts with them hidden). The tab's eye toggle changes it for the session on screen only."
+          "description": "Whether a session's Files tab shows hidden (dot) files when it opens (a grid cell starts with them hidden). The tab's eye toggle changes it for the session on screen only.",
+          "defaultOverridable": true
         }
       }
     },

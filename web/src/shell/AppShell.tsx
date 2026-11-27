@@ -1839,10 +1839,15 @@ function AppShellImpl() {
   const handleFilesSortChange = useCallback((s: ChangedSort) => {
     try {
       configurationService.update(FILES_SORT_ORDER_SETTING, s);
-    } catch {
+    } catch (error) {
       // The settings JSON doesn't parse (or the product locks the sort): this window keeps it.
       if (!configurationService.isLocked(FILES_SORT_ORDER_SETTING)) {
         configurationService.update(FILES_SORT_ORDER_SETTING, s, "memory");
+        toast.warning("The sort applies to this window only", {
+          description: `It couldn't be saved to the settings JSON: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        });
       }
     }
   }, []);
@@ -3967,7 +3972,7 @@ function AppShellImpl() {
 }
 
 /**
- * Initial sidebar open state — on desktop as the layout state remembers it (open by
+ * Initial sidebar open state: on desktop as the layout state remembers it (open by
  * default), closed on mobile. SSR-
  * safe (returns false when window is undefined). The threshold is
  * Tailwind's `md` breakpoint, used in the Sidebar's responsive classes.

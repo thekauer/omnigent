@@ -96,7 +96,14 @@ describe("ConfigurationService", () => {
       locked: { "acme.layout.visible": "no" },
     });
     expect(service.getValue("acme.layout.width")).toBe(0);
-    expect(service.isLocked("acme.layout.visible")).toBe(false);
+    // A lock whose value doesn't fit still locks: the default applies, and writes are refused.
+    writeText('{ "acme.layout.visible": true }');
+    expect(service.isLocked("acme.layout.visible")).toBe(true);
+    expect(service.getValue("acme.layout.visible")).toBe(false);
+    expect(() => service.update("acme.layout.visible", true)).toThrow(SettingsWriteError);
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining("locked value for acme.layout.visible doesn't fit its schema"),
+    );
     // An override the setting doesn't take is a warning, and the registered default stays.
     service.addExtension(
       "acme.other",
@@ -108,6 +115,54 @@ describe("ConfigurationService", () => {
       expect.stringMatching(/acme\.other: configurationDefaults acme\.layout\.width/),
     );
     expect(service.getValue("acme.layout.width")).toBe(0);
+  });
+
+  it("keeps an application setting out of a window's memory", () => {
+    service.addExtension(
+      "acme.app",
+      parseConfigurationContributions("acme.app", {
+        configuration: {
+          properties: { "acme.app.mode": { type: "string", scope: "application" } },
+        },
+      }).contributions,
+    );
+    expect(() => service.update("acme.app.mode", "x", "memory")).toThrow(/application setting/);
+    service.update("acme.app.mode", "x");
+    expect(service.getValue("acme.app.mode")).toBe("x");
+  });
+
+  it("refuses a write a policy's guard forbids, as for a locked part of an object setting", () => {
+    service.addExtension("acme.layout", ACME);
+    service.setPolicy("theme", {
+      writeProblem: (key, value) =>
+        key === "acme.layout.hidden" && Array.isArray(value) && value.includes("locked")
+          ? "Set by product"
+          : undefined,
+    });
+    expect(() => service.update("acme.layout.hidden", ["locked"])).toThrow(/Set by product/);
+    service.update("acme.layout.hidden", ["free"]);
+    expect(service.getValue("acme.layout.hidden")).toEqual(["free"]);
+  });
+
+  it("gives a key to the longest loaded extension id it starts with, in either load order", () => {
+    const node = (owner: string, keys: string[]) =>
+      parseConfigurationContributions(owner, {
+        configuration: {
+          properties: Object.fromEntries(keys.map((key) => [key, { type: "string" }])),
+        },
+      }).contributions;
+    service.addExtension("acme.tools", node("acme.tools", ["acme.tools.a", "acme.tools.extra.k"]));
+    expect(registry.getProperty("acme.tools.extra.k")?.owner).toBe("acme.tools");
+    // The longer id loads: it takes its namespace back.
+    service.addExtension("acme.tools.extra", node("acme.tools.extra", ["acme.tools.extra.k"]));
+    expect(registry.getProperty("acme.tools.extra.k")?.owner).toBe("acme.tools.extra");
+    expect(registry.getProperty("acme.tools.a")?.owner).toBe("acme.tools");
+    // Loaded the other way round, the shorter id can't take it.
+    const other = new ConfigurationService(new ConfigurationRegistry(), store);
+    other.addExtension("acme.tools.extra", node("acme.tools.extra", []));
+    other.addExtension("acme.tools", node("acme.tools", ["acme.tools.extra.k"]));
+    expect(other.registry.getProperty("acme.tools.extra.k")).toBeUndefined();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("belongs to acme.tools.extra"));
   });
 
   it("writes the user's settings JSON in place, keeping its comments", () => {

@@ -53,12 +53,29 @@ const SCOPE_ALIASES: Readonly<Record<string, ConfigurationScope>> = {
 };
 
 export interface ParseConfigurationOptions {
-  /** Built-ins may register any key and mark a setting's default as not overridable. */
+  /**
+   * Built-ins may register any key; their settings' defaults are not overridable by other
+   * extensions' `configurationDefaults` unless they set `defaultOverridable: true`.
+   */
   readonly builtIn?: boolean;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** `text` as markdown that draws exactly that text. */
+export function escapeMarkdown(text: string): string {
+  return text
+    .replace(/[\\`*_[\]<>|~]/g, (char) => `\\${char}`)
+    .replace(/^(\s*)([#>+-]|\d+\.)/gm, "$1\\$2");
+}
+
+/** Markdown with images (which would load remote URLs) and raw HTML tags left out. */
+export function sanitizeMarkdown(markdown: string): string {
+  return markdown
+    .replace(/!\[([^\]]*)\](?:\([^)]*\)|\[[^\]]*\])/g, "$1")
+    .replace(/<\/?[A-Za-z][^>]*>/g, "");
 }
 
 function textOf(value: unknown, max: number): string | undefined {
@@ -104,18 +121,33 @@ function valueSchemaOf(
   raw: Record<string, unknown>,
   where: string,
   warnings: string[],
+  trusted = false,
 ): SettingsSchemaNode {
   const type = typeOf(raw.type, where, warnings);
-  const description =
-    textOf(raw.description, MAX_DESCRIPTION_LENGTH) ??
-    textOf(raw.markdownDescription, MAX_DESCRIPTION_LENGTH);
+  // The editor's hovers draw markdown: a third party's `description` is text, as in VS Code,
+  // and its `markdownDescription` markdown without remote images or raw HTML.
+  const plain = textOf(raw.description, MAX_DESCRIPTION_LENGTH);
+  const markdown = textOf(raw.markdownDescription, MAX_DESCRIPTION_LENGTH);
+  const description = trusted
+    ? (plain ?? markdown)
+    : plain !== undefined
+      ? escapeMarkdown(plain)
+      : markdown !== undefined
+        ? sanitizeMarkdown(markdown)
+        : undefined;
   const enumValues = stringList(raw.enum, `${where}.enum`, warnings);
   if (enumValues && type !== undefined && type !== "string") {
     warnings.push(`${where}.enum is taken for string settings only; ignoring it`);
   }
-  const enumDescriptions =
-    stringList(raw.enumDescriptions, `${where}.enumDescriptions`, warnings) ??
-    stringList(raw.markdownEnumDescriptions, `${where}.markdownEnumDescriptions`, warnings);
+  const plainEnum = stringList(raw.enumDescriptions, `${where}.enumDescriptions`, warnings);
+  const markdownEnum = stringList(
+    raw.markdownEnumDescriptions,
+    `${where}.markdownEnumDescriptions`,
+    warnings,
+  );
+  const enumDescriptions = trusted
+    ? (plainEnum ?? markdownEnum)
+    : (plainEnum?.map(escapeMarkdown) ?? markdownEnum?.map(sanitizeMarkdown));
   const bound = (name: "minimum" | "maximum") => {
     const value = raw[name];
     if (value === undefined) return undefined;
@@ -148,14 +180,15 @@ function propertyOf(
     warnings.push(`${where} must be an object`);
     return undefined;
   }
-  const schema: Record<string, unknown> = { ...valueSchemaOf(raw, where, warnings) };
+  const trusted = options.builtIn === true;
+  const schema: Record<string, unknown> = { ...valueSchemaOf(raw, where, warnings, trusted) };
   if (raw.items !== undefined) {
     if (schema.type !== "array") {
       warnings.push(`${where}.items is taken for array settings only; ignoring it`);
     } else if (!isRecord(raw.items)) {
       warnings.push(`${where}.items must be an object`);
     } else {
-      schema.items = Object.freeze(valueSchemaOf(raw.items, `${where}.items`, warnings));
+      schema.items = Object.freeze(valueSchemaOf(raw.items, `${where}.items`, warnings, trusted));
     }
   }
   if (raw.scope !== undefined) {
@@ -183,6 +216,10 @@ function propertyOf(
     } else if (typeof raw.defaultOverridable === "boolean") {
       schema.defaultOverridable = raw.defaultOverridable;
     }
+  }
+  // A built-in's setting takes no other extension's default unless it opts in.
+  if (options.builtIn && schema.defaultOverridable === undefined) {
+    schema.defaultOverridable = false;
   }
   if (raw.default !== undefined) {
     const snapshot = snapshotPlainData(raw.default, DEFAULT_LIMITS);

@@ -107,6 +107,64 @@ describe("parseConfigurationContributions", () => {
     });
   });
 
+  it("fixes a built-in's defaults unless it opts in, and leaves a third party's open", () => {
+    const builtIn = parseConfigurationContributions(
+      "omnigent.files",
+      {
+        configuration: {
+          properties: {
+            "omnigent.files.a": { type: "string" },
+            "omnigent.files.b": { type: "string", defaultOverridable: true },
+          },
+        },
+      },
+      { builtIn: true },
+    ).contributions.nodes[0]!.properties;
+    expect(builtIn["omnigent.files.a"]?.defaultOverridable).toBe(false);
+    expect(builtIn["omnigent.files.b"]?.defaultOverridable).toBe(true);
+    const third = parseConfigurationContributions("acme.x", {
+      configuration: { properties: { "acme.x.a": { type: "string" } } },
+    }).contributions.nodes[0]!.properties;
+    expect(third["acme.x.a"]?.defaultOverridable).toBeUndefined();
+  });
+
+  it("draws a third party's description as text and its markdown without images or HTML", () => {
+    const { contributions } = parseConfigurationContributions("acme.x", {
+      configuration: {
+        properties: {
+          "acme.x.plain": {
+            type: "string",
+            description: "Use *this* `x`",
+            enum: ["a"],
+            enumDescriptions: ["[a](b)"],
+          },
+          "acme.x.md": {
+            type: "string",
+            markdownDescription:
+              "See ![beacon](https://tracker.example/p.gif) and ![r][ref] <img src=x> [docs](https://example.com)",
+          },
+        },
+      },
+    });
+    const properties = contributions.nodes[0]!.properties;
+    expect(properties["acme.x.plain"]?.description).toBe("Use \\*this\\* \\`x\\`");
+    expect(properties["acme.x.plain"]?.enumDescriptions).toEqual(["\\[a\\](b)"]);
+    expect(properties["acme.x.md"]?.description).toBe(
+      "See beacon and r  [docs](https://example.com)",
+    );
+    // A built-in's description stays markdown.
+    const builtIn = parseConfigurationContributions(
+      "omnigent.x",
+      {
+        configuration: {
+          properties: { "omnigent.x.a": { type: "string", description: "`code`" } },
+        },
+      },
+      { builtIn: true },
+    );
+    expect(builtIn.contributions.nodes[0]!.properties["omnigent.x.a"]?.description).toBe("`code`");
+  });
+
   it("reads configurationDefaults for any setting key, without language overrides", () => {
     const { contributions, warnings } = parseConfigurationContributions("acme.x", {
       configurationDefaults: {

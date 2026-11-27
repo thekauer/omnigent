@@ -103,7 +103,12 @@ export interface HostServices {
 
 /** Where an extension's `contributes.configuration` and `configurationDefaults` go. */
 export interface ConfigurationContributionSink {
-  addExtension: (extensionId: string, contributions: ConfigurationContributions) => () => void;
+  addExtension: (
+    extensionId: string,
+    contributions: ConfigurationContributions,
+    log?: Pick<Console, "warn">,
+    options?: { builtIn?: boolean },
+  ) => () => void;
 }
 
 export type ExtensionLogger = (message: string, error?: unknown) => void;

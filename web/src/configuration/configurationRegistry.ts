@@ -100,6 +100,11 @@ export class ConfigurationRegistry {
     };
   }
 
+  /** Drops `key`'s registration (another extension's namespace turned out to hold it). */
+  unregisterKey(key: string): void {
+    if (this.properties.delete(key)) this.changed([key]);
+  }
+
   /**
    * `contributes.configurationDefaults` of `source`: new defaults for settings, registered or
    * not yet (they apply once the setting registers). The last registered wins a key.

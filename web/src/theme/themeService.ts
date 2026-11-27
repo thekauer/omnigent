@@ -65,6 +65,8 @@ import {
 } from "./themeSettingKeys";
 // The settings editor's schema and language service load with its dialog (settingsEditor.ts).
 import type { SettingsSchemaInput } from "./themeSettingsSchema";
+import { followThemeLocks } from "./themeConfigurationLocks";
+import { configurationService } from "@/configuration/configurationService";
 import { getToken, TOKENS } from "./tokens/registry";
 import {
   checkVariants,
@@ -2183,6 +2185,7 @@ function valueReferences(value: string): string[] {
 /** The window's theme service. */
 export const themeService = new ThemeService();
 themeService.followSettings();
+followThemeLocks(themeService, configurationService);
 
 function subscribe(listener: () => void): () => void {
   return themeService.onDidChange(listener);

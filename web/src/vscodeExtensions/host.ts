@@ -161,6 +161,8 @@ export class ExtensionHost {
     const removeConfiguration = this.services.configuration?.addExtension(
       extension.id,
       contributions.configuration,
+      this.log,
+      { builtIn: extension.builtIn === true },
     );
     this.contributed.set(extension.id, () => {
       removeConfiguration?.();

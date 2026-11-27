@@ -5,6 +5,8 @@
 // keys these lived under before are carried into it on the first read and removed once the
 // document is written.
 
+import { toast } from "sonner";
+
 /** The document's storage key: `{ version: 1, state: { <slot>: <value> } }`. */
 export const LAYOUT_STATE_STORAGE_KEY = "omnigent:layout-state";
 
@@ -81,9 +83,16 @@ export interface LayoutStateChange {
   readonly slots?: readonly string[];
 }
 
+/** The layout state scope of an embed mounted at `basename`: its own document. */
+export function embedLayoutScope(basename: string | undefined): string {
+  return `embed:${basename && basename !== "" ? basename : "/"}`;
+}
+
 export class LayoutStateStore {
-  private readonly storageKey: string;
-  private readonly legacy: Readonly<Record<string, string>>;
+  private readonly baseKey: string;
+  private readonly baseLegacy: Readonly<Record<string, string>>;
+  /** Whose document this is: "" for the standalone app, `embed:<basename>` for an embed. */
+  private scope = "";
   private readonly listeners = new Set<(change: LayoutStateChange) => void>();
   private cache: { stored: readonly (string | null)[]; values: LayoutStateValues } | null = null;
   /** The values while storage refuses writes (quota, privacy mode), so the window keeps them. */
@@ -93,8 +102,33 @@ export class LayoutStateStore {
     storageKey: string = LAYOUT_STATE_STORAGE_KEY,
     legacy: Readonly<Record<string, string>> = LEGACY_LAYOUT_STORAGE_KEYS,
   ) {
-    this.storageKey = storageKey;
-    this.legacy = legacy;
+    this.baseKey = storageKey;
+    this.baseLegacy = legacy;
+  }
+
+  private get storageKey(): string {
+    return this.scope === "" ? this.baseKey : `${this.baseKey}@${this.scope}`;
+  }
+
+  /** The old keys are the standalone app's: only its document carries them in. */
+  private get legacy(): Readonly<Record<string, string>> {
+    return this.scope === "" ? this.baseLegacy : {};
+  }
+
+  getScope(): string {
+    return this.scope;
+  }
+
+  /**
+   * Keeps the state of `scope` from now on (an embed's own, by its basename, so an embed and
+   * the standalone app on one origin don't share their layout); listeners hear every slot.
+   */
+  setScope(scope: string): void {
+    if (scope === this.scope) return;
+    this.scope = scope;
+    this.cache = null;
+    this.unsaved = null;
+    this.fire({});
   }
 
   private storedTexts(): (string | null)[] {
@@ -117,7 +151,9 @@ export class LayoutStateStore {
       legacyKeys.forEach((legacyKey, index) => {
         const slot = this.legacy[legacyKey]!;
         const value = parseJson(legacyRaw[index] ?? null);
-        if (value !== undefined && !Object.hasOwn(merged, slot)) merged[slot] = value;
+        // Carrying a key in removes it, so one still there was written since: by a build from
+        // before the document (rolled back to), and it is newer than the document's slot.
+        if (value !== undefined) merged[slot] = value;
       });
       values = Object.freeze(merged);
       if (this.persist(values)) {
@@ -142,7 +178,12 @@ export class LayoutStateStore {
     const text = JSON.stringify({ version: VERSION, state: values });
     if (text.length > LAYOUT_STATE_MAX_CHARS) return false;
     const existing = parseJson(readStorage(this.storageKey));
-    if (isRecord(existing) && typeof existing.version === "number" && existing.version > VERSION) {
+    // Only a well-formed newer version is kept: `1e999` or `1.5` is a corrupt document.
+    if (
+      isRecord(existing) &&
+      Number.isSafeInteger(existing.version) &&
+      (existing.version as number) > VERSION
+    ) {
       return false;
     }
     try {
@@ -171,9 +212,22 @@ export class LayoutStateStore {
       this.unsaved = null;
       this.cache = { stored: this.storedTexts(), values };
     } else {
+      if (this.unsaved === null) this.warnUnsaved();
       this.unsaved = values;
     }
     this.fire({ slots: [slot] });
+  }
+
+  private warnedUnsaved = false;
+
+  /** The layout can't be stored (over the size cap, storage refused): say so, once. */
+  private warnUnsaved(): void {
+    if (this.warnedUnsaved) return;
+    this.warnedUnsaved = true;
+    console.warn("[layout] the layout state can't be stored; changes last for this window only");
+    toast.warning("Layout changes last for this window only", {
+      description: "The browser's storage refused them, or they are too large to keep.",
+    });
   }
 
   /** Removes every slot (View: Reset Layout). */
