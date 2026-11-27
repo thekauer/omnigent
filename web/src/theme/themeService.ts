@@ -49,24 +49,22 @@ import {
 import { parseThemeFile, SWATCH_KEYS, type ParsedTheme, type ThemeTokens } from "./themeFile";
 import type { ProductThemeConfig } from "./productTheme";
 import { type RejectedToken, resolveTokenLayers } from "./resolveTokens";
+import { EMPTY_SETTINGS_TEXT, type StoredSettings } from "@/configuration/settingsDocument";
+import {
+  type SettingsDocumentChange,
+  type SettingsStore,
+  settingsStore,
+  SettingsWriteError,
+} from "@/configuration/settingsStore";
 import {
   COLOR_CUSTOMIZATIONS_SETTING,
-  editSettingsText,
-  EMPTY_SETTINGS_TEXT,
-  LEGACY_SETTINGS_STORAGE_KEYS,
-  migrateLegacySettings,
-  readStoredSettings,
-  serializeSettings,
-  SETTINGS_STORAGE_KEY,
-  SETTINGS_TEXT_LIMIT,
-  SETTINGS_WRITE_BLOCKED,
-  type StoredSettings,
-  storeSettings,
+  isThemeSettingKey,
+  LEGACY_THEME_SETTINGS_STORAGE_KEYS,
   STYLE_SETTING_PREFIX,
   THEME_OPTIONS_SETTING,
-} from "./settingsDocument";
+} from "./themeSettingKeys";
 // The settings editor's schema and language service load with its dialog (settingsEditor.ts).
-import type { SettingsSchemaInput } from "./settingsSchema";
+import type { SettingsSchemaInput } from "./themeSettingsSchema";
 import { getToken, TOKENS } from "./tokens/registry";
 import {
   checkVariants,
@@ -91,7 +89,8 @@ import {
   type ValueContext,
 } from "./validate";
 
-export { SETTINGS_STORAGE_KEY } from "./settingsDocument";
+export { SETTINGS_STORAGE_KEY } from "@/configuration/settingsDocument";
+export { SettingsWriteError };
 export const THEME_CACHE_STORAGE_KEY = "omnigent:ui-theme-cache";
 
 /** A syntax theme a theme's `tokenColors` make, as registered (and cached). */
@@ -413,87 +412,6 @@ function writeJson(key: string, value: unknown): void {
   }
 }
 
-/** Thrown by a write the settings document refuses (it doesn't parse, or the key is locked). */
-export class SettingsWriteError extends Error {
-  override readonly name = "SettingsWriteError";
-}
-
-// The last document read, by the stored texts it came from: reads happen several times per
-// refresh.
-let documentCache: { stored: readonly (string | null)[]; settings: StoredSettings } | null = null;
-
-/** The stored document's and the legacy keys' texts, as the cache keys on them. */
-function storedTexts(): (string | null)[] {
-  return [SETTINGS_STORAGE_KEY, ...LEGACY_SETTINGS_STORAGE_KEYS].map(readStorage);
-}
-
-function readStorage(key: string): string | null {
-  try {
-    return window.localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-/** A legacy key's value: its JSON, or nothing when it isn't JSON. */
-function parseLegacy(raw: string | null): unknown {
-  if (raw === null) return undefined;
-  try {
-    return JSON.parse(raw) as unknown;
-  } catch {
-    return undefined;
-  }
-}
-
-/**
- * Reads the stored settings document, first carrying any pre-M10b keys into it. Never
- * throws: a document it can't read is the defaults. The legacy keys are removed only once
- * their values are in the document's text (while the text doesn't parse they stay, and
- * their values apply over the last good ones).
- */
-function readSettingsDocument(): StoredSettings {
-  const stored = storedTexts();
-  if (documentCache && documentCache.stored.every((text, index) => text === stored[index])) {
-    return documentCache.settings;
-  }
-  const [raw = null, ...legacyRaw] = stored;
-  let settings: StoredSettings;
-  try {
-    settings = readStoredSettings(raw);
-    if (legacyRaw.some((value) => value !== null)) {
-      const [options, variants, customizations] = legacyRaw.map(parseLegacy);
-      const migration = migrateLegacySettings(settings, { options, variants, customizations });
-      try {
-        if (migration.settings !== settings) {
-          window.localStorage.setItem(SETTINGS_STORAGE_KEY, serializeSettings(migration.settings));
-        }
-        if (migration.complete) {
-          for (const legacyKey of LEGACY_SETTINGS_STORAGE_KEYS) {
-            window.localStorage.removeItem(legacyKey);
-          }
-        }
-      } catch {
-        // Quota or access errors: the legacy keys stay, and are read again next time.
-      }
-      settings = migration.settings;
-    }
-  } catch (error) {
-    console.warn("[theme] the settings document can't be read; the defaults apply", error);
-    settings = readStoredSettings(null);
-  }
-  documentCache = { stored: storedTexts(), settings };
-  return settings;
-}
-
-function writeSettingsDocument(settings: StoredSettings): void {
-  try {
-    if (settings.text.trim() === "") window.localStorage.removeItem(SETTINGS_STORAGE_KEY);
-    else window.localStorage.setItem(SETTINGS_STORAGE_KEY, serializeSettings(settings));
-  } catch {
-    // Quota or access errors keep the in-memory state.
-  }
-}
-
 /** FNV-1a over a string, as a short hex key. */
 export function hashText(text: string): string {
   let hash = 0x811c9dc5;
@@ -539,6 +457,8 @@ interface CustomizationRejection {
 
 /** The window's theme service; one per page ({@link themeService}). */
 export class ThemeService implements ThemeContributionSink {
+  /** The settings document the options, variants and customizations are read from. */
+  private readonly settings: SettingsStore = settingsStore;
   private readonly extensions = new Map<string, ThemeExtension>();
   private readonly registrations = new Map<string, symbol>();
   private readonly listeners = new Set<() => void>();
@@ -1219,20 +1139,18 @@ export class ThemeService implements ThemeContributionSink {
    * keep applying. Nothing is stored over the size cap (false).
    */
   saveSettingsText(text: string): boolean {
-    if (text.length > SETTINGS_TEXT_LIMIT) return false;
-    writeSettingsDocument(storeSettings(text, this.settingsDocument().values));
+    if (!this.settings.saveText(text, this)) return false;
     this.refresh();
     return true;
   }
 
   /** Why the settings can't be written now (they don't parse), or null. */
   settingsWriteBlocked(): string | null {
-    return this.settingsDocument().valid ? null : SETTINGS_WRITE_BLOCKED;
+    return this.settings.writeBlocked();
   }
 
   private settingsDocument(): StoredSettings {
-    if (typeof window === "undefined") return readStoredSettings(null);
-    return readSettingsDocument();
+    return this.settings.read();
   }
 
   private settingsValues(): Readonly<Record<string, unknown>> {
@@ -1241,18 +1159,40 @@ export class ThemeService implements ThemeContributionSink {
 
   /** Sets (undefined: removes) one key of the document; refused while it doesn't parse. */
   private editSettings(path: readonly string[], value: unknown): void {
-    const current = this.settingsDocument();
-    if (!current.valid) throw new SettingsWriteError(SETTINGS_WRITE_BLOCKED);
-    const edit = editSettingsText(current.text, path, value);
-    if (!edit.ok) throw new SettingsWriteError(edit.reason);
-    writeSettingsDocument(storeSettings(edit.text, current.values));
+    this.settings.edit([[path, value]], this);
     this.refresh();
   }
 
-  /** Settings' reset: the default theme, and no options, variants or customizations. */
+  /**
+   * Re-applies when someone else writes the theme's keys (an extension's `update`); returns
+   * the unsubscribe. The window's service follows the window's document.
+   */
+  followSettings(): () => void {
+    return this.settings.subscribe((change: SettingsDocumentChange) => {
+      // A theme service applies its own writes.
+      if (change.origin instanceof ThemeService) return;
+      if (change.paths && !change.paths.some((path) => isThemeSettingKey(path[0] ?? ""))) return;
+      this.refresh();
+    });
+  }
+
+  /**
+   * Settings' reset: the default theme, and no options, variants or customizations. The
+   * document's other settings stay; a document with only theme keys (or one that doesn't
+   * parse) goes as a whole.
+   */
   resetAppearance(): void {
-    writeJson(SETTINGS_STORAGE_KEY, undefined);
-    for (const key of LEGACY_SETTINGS_STORAGE_KEYS) writeJson(key, undefined);
+    const current = this.settingsDocument();
+    const keys = Object.keys(current.values);
+    if (current.valid && keys.some((key) => !isThemeSettingKey(key))) {
+      this.settings.edit(
+        keys.filter(isThemeSettingKey).map((key) => [[key], undefined] as const),
+        this,
+      );
+      for (const key of LEGACY_THEME_SETTINGS_STORAGE_KEYS) writeJson(key, undefined);
+    } else {
+      this.settings.clear(this, LEGACY_THEME_SETTINGS_STORAGE_KEYS);
+    }
     this.select(null);
   }
 
@@ -2235,6 +2175,7 @@ function valueReferences(value: string): string[] {
 
 /** The window's theme service. */
 export const themeService = new ThemeService();
+themeService.followSettings();
 
 function subscribe(listener: () => void): () => void {
   return themeService.onDidChange(listener);

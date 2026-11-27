@@ -9,6 +9,10 @@ import {
   WorkspaceBridge,
   type WorkspaceBridgeState,
 } from "@/shell/workspaceBridge";
+import { ConfigurationRegistry } from "@/configuration/configurationRegistry";
+import { ConfigurationService } from "@/configuration/configurationService";
+import { readStoredSettings, SETTINGS_STORAGE_KEY } from "@/configuration/settingsDocument";
+import { SettingsStore } from "@/configuration/settingsStore";
 import { getExtensionApi } from "./apiRegistry";
 import {
   OPEN_FILE_COMMAND,
@@ -409,5 +413,75 @@ describe("workspace.getConfiguration", () => {
     expect(changes[0].affectsConfiguration("omnigent.files.showHidden")).toBe(true);
     expect(changes[0].affectsConfiguration("omnigent.files.sortOrder")).toBe(false);
     service.dispose();
+  });
+});
+
+describe("workspace.getConfiguration over the configuration registry", () => {
+  afterEach(() => localStorage.clear());
+
+  it("reads, inspects and writes an extension's contributed settings", async () => {
+    localStorage.clear();
+    const configuration = new ConfigurationService(
+      new ConfigurationRegistry(),
+      new SettingsStore(),
+    );
+    const workspace = new WorkspaceService(new WorkspaceBridge(), configuration);
+    const changes: string[] = [];
+    let api: typeof omnigent | undefined;
+    const host = new ExtensionHost({
+      services: hostServices({ workspace, configuration }),
+      importModule: () =>
+        Promise.resolve({
+          activate: () => {
+            api = getExtensionApi("pub.ext");
+            api.workspace.onDidChangeConfiguration((event) => {
+              if (event.affectsConfiguration("pub.ext.mode")) changes.push("mode");
+              if (event.affectsConfiguration("omnigent.files")) changes.push("files");
+            });
+          },
+        }),
+      console: { error: vi.fn(), warn: vi.fn(), info: vi.fn() },
+    });
+    await host.start([
+      {
+        id: "pub.ext",
+        version: "1.0.0",
+        activationEvents: ["*"],
+        entryUrl: "/ext.js",
+        contributes: {
+          configuration: {
+            title: "Ext",
+            properties: {
+              "pub.ext.mode": { type: "string", enum: ["a", "b"], default: "a" },
+              "pub.ext.count": { type: "integer", default: 1 },
+            },
+          },
+        },
+      },
+    ]);
+    const settings = api!.workspace.getConfiguration("pub.ext");
+    expect(settings.get("mode")).toBe("a");
+    expect(settings.has("mode")).toBe(true);
+    expect(settings.inspect("mode")).toEqual({ key: "pub.ext.mode", defaultValue: "a" });
+    expect(workspace.settingValues()).toMatchObject({ "pub.ext.mode": "a", "pub.ext.count": 1 });
+    await settings.update("mode", "b");
+    expect(settings.get("mode")).toBe("b");
+    expect(settings.inspect("mode")).toMatchObject({ globalValue: "b" });
+    expect(readStoredSettings(localStorage.getItem(SETTINGS_STORAGE_KEY)).text).toContain(
+      '"pub.ext.mode": "b"',
+    );
+    expect(changes).toEqual(["mode"]);
+    await expect(settings.update("mode", "c")).rejects.toThrow(/invalid value for pub\.ext\.mode/);
+    await expect(settings.update("unknown", 1)).rejects.toThrow(/unknown setting/);
+    // The user's settings JSON wins over the default; a wrong value there doesn't apply.
+    new SettingsStore().saveText('{ "pub.ext.count": "many" }');
+    configuration.reload();
+    expect(settings.get("count")).toBe(1);
+    expect(settings.get("mode")).toBe("a");
+    expect(changes).toEqual(["mode", "mode"]);
+    await host.dispose();
+    // Its settings go with it.
+    expect(configuration.has("pub.ext.mode")).toBe(false);
+    workspace.dispose();
   });
 });

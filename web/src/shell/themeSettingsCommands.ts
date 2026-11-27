@@ -18,7 +18,7 @@ import {
 } from "@/store/paletteCommands";
 import type { PaletteSetting } from "@/store/paletteSettings";
 import { openSettingsJsonEditor } from "@/store/settingsJsonEditor";
-import { SET_BY_PRODUCT } from "@/theme/settingsDocument";
+import { SET_BY_PRODUCT } from "@/configuration/settingsDocument";
 import { type ActiveTheme, themeService, type ThemeService } from "@/theme/themeService";
 import { defaultVariant, VARIANT_LABELS, VARIANT_NAMES, VARIANTS } from "@/theme/variants";
 

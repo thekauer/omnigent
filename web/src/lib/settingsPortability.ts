@@ -38,7 +38,8 @@ import {
   unpinSessionWorkspaceTabs,
 } from "./sessionWorkspaceState";
 import { notifyTerminalThemeChanged } from "./terminalThemePreferences";
-import { LEGACY_SETTINGS_STORAGE_KEYS } from "@/theme/settingsDocument";
+import { configurationService } from "@/configuration/configurationService";
+import { LEGACY_SETTINGS_STORAGE_KEYS } from "@/configuration/legacySettings";
 import { SETTINGS_STORAGE_KEY, THEME_CACHE_STORAGE_KEY } from "@/theme/themeService";
 import {
   PINNED_WORKSPACE_TABS_STORAGE_KEY,
@@ -208,6 +209,7 @@ export function applyImportedSettings(imported: ExportedSettings): number {
   notifyPeerSessionMessageDisplayChanged();
   notifySessionRowQuickActionsChanged();
   notifyTerminalThemeChanged();
+  configurationService.reload();
   const nextPins = readPinnedWorkspaceTabs();
   const removedPins = previousPins.filter((tab) => !nextPins.includes(tab));
   unpinSessionWorkspaceTabs(removedPins);

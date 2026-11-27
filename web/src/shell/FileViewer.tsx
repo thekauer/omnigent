@@ -9,7 +9,7 @@
 //   │  - gutter icon → add comment    │                  │
 //   └──────────────────────────────────┴──────────────────┘
 
-import { DEFAULT_FILES_PANEL_PREFERENCES } from "@/lib/filesPanelPreferences";
+import { DEFAULT_FILES_SORT_ORDER } from "@/lib/filesPanelPreferences";
 import { FileViewerContext, useWorkspacePaths, type FilePosition } from "./FileViewerContext";
 import {
   revealInFileManager,
@@ -459,7 +459,7 @@ function FileViewerBody({
   mobileOverlay = false,
   viewport,
   onCommentsOpenChange,
-  sort = DEFAULT_FILES_PANEL_PREFERENCES.sort,
+  sort = DEFAULT_FILES_SORT_ORDER,
 }: FileViewerProps) {
   // null = single-user mode (no enforcement); undefined = prop not provided (treat as unrestricted).
   // LEVEL_EDIT = 2; levels below 2 are read-only.

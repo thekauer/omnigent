@@ -10,6 +10,11 @@ import {
   type ThemeContributions,
 } from "@/theme/themeContributions";
 import { getToken } from "@/theme/tokens/registry";
+import {
+  type ConfigurationContributions,
+  EMPTY_CONFIGURATION_CONTRIBUTIONS,
+  parseConfigurationContributions,
+} from "@/configuration/configurationContributions";
 
 /** The view container of the classic workspace rail. */
 export const RIGHT_PANEL_CONTAINER = "omnigent.rightPanel";
@@ -110,6 +115,8 @@ export interface ExtensionContributions {
   readonly keybindings: readonly KeybindingContribution[];
   /** `contributes.themes`, `.colors` and `.fonts` (`theme/themeContributions.ts`). */
   readonly theming: ThemeContributions;
+  /** `contributes.configuration` and `.configurationDefaults` (configuration/). */
+  readonly configuration: ConfigurationContributions;
 }
 
 export interface ParseContributionsOptions {
@@ -131,6 +138,7 @@ export const EMPTY_CONTRIBUTIONS: ExtensionContributions = Object.freeze({
   submenus: [],
   keybindings: [],
   theming: EMPTY_THEME_CONTRIBUTIONS,
+  configuration: EMPTY_CONFIGURATION_CONTRIBUTIONS,
 });
 
 const MAX_HINT_LENGTH = 300;
@@ -599,9 +607,14 @@ export function parseContributions(
     isKnownToken: (id) => getToken(id) !== undefined,
   });
   warnings.push(...theming.warnings);
+  const configuration = parseConfigurationContributions(extensionId, raw, {
+    builtIn: options.builtIn === true,
+  });
+  warnings.push(...configuration.warnings);
   return {
     contributions: Object.freeze({
       theming: theming.contributions,
+      configuration: configuration.contributions,
       keybindings: Object.freeze(keybindings),
       views: Object.freeze(views),
       commands: Object.freeze(commands),

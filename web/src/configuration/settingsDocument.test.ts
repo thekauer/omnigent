@@ -12,7 +12,14 @@ import {
   SETTINGS_TEXT_LIMIT,
   SETTINGS_WRITE_BLOCKED,
   storeSettings,
+  type StoredSettings,
 } from "./settingsDocument";
+
+import { type LegacySettings, legacyThemeSettingsWrites } from "@/theme/themeSettingKeys";
+
+/** The theme's legacy keys carried into `current`, as the store does. */
+const migrateLegacy = (current: StoredSettings, legacy: LegacySettings) =>
+  migrateLegacySettings(current, legacyThemeSettingsWrites(legacy, current.values));
 
 const plain = (value: unknown) => JSON.parse(JSON.stringify(value)) as unknown;
 
@@ -389,7 +396,7 @@ describe("migrateLegacySettings", () => {
   };
 
   it("builds the document from the old keys", () => {
-    const { settings, complete } = migrateLegacySettings(EMPTY_STORED_SETTINGS, legacy);
+    const { settings, complete } = migrateLegacy(EMPTY_STORED_SETTINGS, legacy);
     expect(complete).toBe(true);
     expect(settings.valid).toBe(true);
     expect(plain(settings.values)).toEqual({
@@ -404,7 +411,7 @@ describe("migrateLegacySettings", () => {
       '// mine\n{ "omnigent.style.density": "comfortable", "omnigent.style.header": "solid" }',
       EMPTY_STORED_SETTINGS.values,
     );
-    const { settings } = migrateLegacySettings(current, { variants: { density: "compact" } });
+    const { settings } = migrateLegacy(current, { variants: { density: "compact" } });
     expect(settings.text).toContain("// mine");
     expect(plain(settings.values)).toEqual({
       "omnigent.style.density": "compact",
@@ -417,7 +424,7 @@ describe("migrateLegacySettings", () => {
       '{\n  // mine\n  "workbench.colorCustomizations": { "primary": "#222222", "[nord]": { "ring": "#333333" } }\n}\n',
       EMPTY_STORED_SETTINGS.values,
     );
-    const { settings, complete } = migrateLegacySettings(current, {
+    const { settings, complete } = migrateLegacy(current, {
       customizations: {
         primary: "#111111",
         foreground: "#444444",
@@ -439,7 +446,7 @@ describe("migrateLegacySettings", () => {
 
   it("keeps the legacy keys while a malformed document can't take them, applying them meanwhile", () => {
     const current = { text: "{ oops", values: EMPTY_STORED_SETTINGS.values, valid: false };
-    const { settings, complete } = migrateLegacySettings(current, {
+    const { settings, complete } = migrateLegacy(current, {
       variants: { density: "compact" },
     });
     expect(complete).toBe(false);
@@ -447,7 +454,7 @@ describe("migrateLegacySettings", () => {
     expect(plain(settings.values)).toEqual({ "omnigent.style.density": "compact" });
     // Fixed, the same legacy values go into the text.
     const fixed = storeSettings('{ "omnigent.style.header": "solid" }', settings.values);
-    const again = migrateLegacySettings(fixed, { variants: { density: "compact" } });
+    const again = migrateLegacy(fixed, { variants: { density: "compact" } });
     expect(again.complete).toBe(true);
     expect(plain(parseSettingsText(again.settings.text).ok && again.settings.values)).toEqual({
       "omnigent.style.header": "solid",
@@ -456,7 +463,7 @@ describe("migrateLegacySettings", () => {
   });
 
   it("is incomplete when a write is refused, such as one over the length limit", () => {
-    const { settings, complete } = migrateLegacySettings(EMPTY_STORED_SETTINGS, {
+    const { settings, complete } = migrateLegacy(EMPTY_STORED_SETTINGS, {
       variants: { density: "compact", header: "x".repeat(SETTINGS_TEXT_LIMIT - 30) },
     });
     expect(complete).toBe(false);
@@ -474,27 +481,25 @@ describe("migrateLegacySettings", () => {
         .values,
       valid: false,
     };
-    const { settings } = migrateLegacySettings(broken, legacyProto);
+    const { settings } = migrateLegacy(broken, legacyProto);
     expect(plain(settings.values)).toEqual({
       "omnigent.style.header": "solid",
       // A scope named __proto__ is only a name in brackets.
       "omnigent.themeOptions": { "[__proto__]": { a: "b" }, "[s]": { ok: "y" } },
       "workbench.colorCustomizations": { ring: "#123456" },
     });
-    const valid = migrateLegacySettings(EMPTY_STORED_SETTINGS, legacyProto).settings;
+    const valid = migrateLegacy(EMPTY_STORED_SETTINGS, legacyProto).settings;
     expect(valid.text).not.toMatch(/"__proto__"/);
     expect(({} as Record<string, unknown>).primary).toBeUndefined();
   });
 
   it("changes nothing without legacy values, and drops unreadable ones", () => {
-    expect(migrateLegacySettings(EMPTY_STORED_SETTINGS, {})).toEqual({
+    expect(migrateLegacy(EMPTY_STORED_SETTINGS, {})).toEqual({
       settings: EMPTY_STORED_SETTINGS,
       complete: true,
     });
     let deep: unknown = "x";
     for (let index = 0; index < 50; index += 1) deep = { a: deep };
-    expect(migrateLegacySettings(EMPTY_STORED_SETTINGS, { customizations: deep }).complete).toBe(
-      true,
-    );
+    expect(migrateLegacy(EMPTY_STORED_SETTINGS, { customizations: deep }).complete).toBe(true);
   });
 });

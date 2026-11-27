@@ -23,6 +23,10 @@ import {
   type WorkspaceFileSettings,
   WorkspaceUnavailableError,
 } from "@/shell/workspaceBridge";
+import {
+  type ConfigurationService,
+  configurationService as windowConfiguration,
+} from "@/configuration/configurationService";
 import { EventEmitter } from "./base";
 
 const MAX_GLOBS_LENGTH = 4096;
@@ -88,7 +92,11 @@ function canceledError(): Error {
   return error;
 }
 
-/** The workspace settings by full name, with the bridge field each one is. */
+/**
+ * The settings the workspace on screen sets itself, by full name, with the bridge field each
+ * one is (the Files tab's sort and eye toggle). They are registered by the built-in
+ * `omnigent.files` extension; every other setting comes from the configuration service.
+ */
 const SETTINGS: Readonly<
   Record<string, { field: keyof WorkspaceFileSettings; valid: (value: unknown) => boolean }>
 > = Object.freeze({
@@ -248,7 +256,9 @@ export class WorkspaceService {
   private readonly sessionEmitter = new EventEmitter<string | undefined>();
   private readonly fileSystemEmitter = new EventEmitter<omnigent.FilesChangeEvent>();
   private readonly unsubscribe: () => void;
+  private readonly unsubscribeConfiguration: () => void;
   private readonly bridge: WorkspaceBridge;
+  private readonly configuration: ConfigurationService;
   private source: WorkspaceBridgeState;
   private snapshot: readonly omnigent.ChangedFile[] | undefined;
   private flushScheduled = false;
@@ -263,11 +273,23 @@ export class WorkspaceService {
   /** Fires when the files of the workspace on screen may have changed on disk. */
   readonly onDidChangeFiles = this.fileSystemEmitter.event;
 
-  constructor(bridge: WorkspaceBridge) {
+  constructor(bridge: WorkspaceBridge, configuration: ConfigurationService = windowConfiguration) {
     this.bridge = bridge;
+    this.configuration = configuration;
     this.source = bridge.getState();
     this.snapshot = this.copy(this.source);
     this.unsubscribe = bridge.subscribe(() => this.scheduleFlush());
+    // The workspace's own settings change through the bridge; the rest here.
+    this.unsubscribeConfiguration = configuration.onDidChangeConfiguration((event) => {
+      if (this.disposed) return;
+      const changed = event.affectedKeys.filter((key) => !Object.hasOwn(SETTINGS, key));
+      if (changed.length === 0) return;
+      this.configurationEmitter.fire(
+        Object.freeze({
+          affectsConfiguration: (section: string) => affects(changed, section),
+        }),
+      );
+    });
   }
 
   private copy(state: WorkspaceBridgeState): readonly omnigent.ChangedFile[] | undefined {
@@ -412,32 +434,71 @@ export class WorkspaceService {
     }
   }
 
-  /** Every setting's current value by full name, for the `config.*` context keys. */
-  settingValues(): Record<string, string | boolean> {
-    return Object.fromEntries(
-      Object.entries(SETTINGS).map(([name, { field }]) => [name, this.source.settings[field]]),
-    );
+  /**
+   * Every setting's current value by full name, for the `config.*` context keys: the
+   * workspace's own, and each other setting whose value is a string, number or boolean.
+   */
+  settingValues(): Record<string, string | number | boolean> {
+    const values: Record<string, string | number | boolean> = {};
+    for (const key of this.configuration.keys()) {
+      if (Object.hasOwn(SETTINGS, key)) continue;
+      const value = this.configuration.getValue(key);
+      if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
+        values[key] = value;
+      }
+    }
+    for (const [name, { field }] of Object.entries(SETTINGS)) {
+      values[name] = this.source.settings[field];
+    }
+    return values;
   }
 
+  /**
+   * `workspace.getConfiguration`: the registered settings, as VS Code's. The Files tab's
+   * settings read and write the workspace on screen (which keeps the sort in the user's
+   * settings); every other one reads the configuration service and writes the settings JSON.
+   */
   getConfiguration(section = ""): omnigent.WorkspaceConfiguration {
     const fullName = (key: string) => (section ? `${section}.${key}` : key);
+    const configuration = this.configuration;
     function get<T>(key: string, defaultValue?: T): T | undefined;
     function get<T>(this: WorkspaceService, key: string, defaultValue?: T): T | undefined {
-      const setting = SETTINGS[fullName(key)];
-      return setting ? (this.source.settings[setting.field] as T) : defaultValue;
+      const name = fullName(key);
+      const setting = Object.hasOwn(SETTINGS, name) ? SETTINGS[name] : undefined;
+      if (setting) return this.source.settings[setting.field] as T;
+      const value = configuration.getValue<T>(name);
+      return value === undefined ? defaultValue : value;
     }
+    const inspect = (key: string): omnigent.ConfigurationInspection | undefined => {
+      const name = fullName(key);
+      if (!configuration.has(name) && !Object.hasOwn(SETTINGS, name)) return undefined;
+      const layers = configuration.inspect(name);
+      const setting = Object.hasOwn(SETTINGS, name) ? SETTINGS[name] : undefined;
+      return Object.freeze({
+        key: name,
+        defaultValue: layers.defaultValue,
+        ...(layers.userValue === undefined ? {} : { globalValue: layers.userValue }),
+        ...(setting ? { workspaceValue: this.source.settings[setting.field] } : {}),
+      });
+    };
     return Object.freeze({
       get: get.bind(this) as omnigent.WorkspaceConfiguration["get"],
-      has: (key: string) => Object.hasOwn(SETTINGS, fullName(key)),
+      has: (key: string) =>
+        Object.hasOwn(SETTINGS, fullName(key)) || configuration.has(fullName(key)),
+      inspect,
       update: (key: string, value: unknown): Promise<void> => {
         try {
           const name = fullName(key);
           const setting = Object.hasOwn(SETTINGS, name) ? SETTINGS[name] : undefined;
-          if (!setting) throw new Error(`unknown setting ${JSON.stringify(name)}`);
-          if (!setting.valid(value)) {
-            throw new TypeError(`invalid value for ${name}: ${JSON.stringify(value)}`);
+          if (setting) {
+            if (!setting.valid(value)) {
+              throw new TypeError(`invalid value for ${name}: ${JSON.stringify(value)}`);
+            }
+            this.bridge.updateSettings({ [setting.field]: value });
+            return Promise.resolve();
           }
-          this.bridge.updateSettings({ [setting.field]: value });
+          if (!configuration.has(name)) throw new Error(`unknown setting ${JSON.stringify(name)}`);
+          configuration.update(name, value);
           return Promise.resolve();
         } catch (error) {
           return Promise.reject(error instanceof Error ? error : new Error(String(error)));
@@ -497,6 +558,7 @@ export class WorkspaceService {
   dispose(): void {
     this.disposed = true;
     this.unsubscribe();
+    this.unsubscribeConfiguration();
     this.filesEmitter.dispose();
     this.configurationEmitter.dispose();
     this.sessionEmitter.dispose();

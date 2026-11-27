@@ -1244,7 +1244,8 @@ Plain ESM with `// @ts-check`; no build step.
 | `vscode.open` and SCM resource states                                | `omnigent.openFile`, `workspace.getChangedFiles`              | Plain paths, the session's changed files            |
 | Built-in extensions (`extensions/` in the VS Code repo)              | `web/src/builtinExtensions/<publisher.name>/`                 | Bundled, activated at startup in every build        |
 | `TreeView.visible`, `onDidChangeVisibility`                          | same                                                          | Visible while a drawn copy is on screen             |
-| `workspace.getConfiguration`, `onDidChangeConfiguration`             | same, for `omnigent.files.*`                                  | `config.*` context keys as in VS Code               |
+| `workspace.getConfiguration`, `onDidChangeConfiguration`             | same, plus `inspect`; every registered setting                | `config.*` context keys as in VS Code               |
+| `contributes.configuration`, `contributes.configurationDefaults`     | same (layout plan L1), keys under the extension's id          | Values in the settings JSON; no language overrides  |
 | `contributes.submenus` and submenu menus                             | same, in `view/title`                                         | Drawn as a dropdown naming the toggled entry        |
 | `TreeView.message` as a `MarkdownString` with command links          | `[text](command:id)` in a plain string                        | No other markdown                                   |
 | `SourceControl.inputBox`                                             | `TreeView.searchInput` with `contributes.views[].searchInput` | Query, toggles and fields; per chat session         |
@@ -1427,7 +1428,7 @@ Deviations and why:
 
 - `item.command` on header items.
 - Menus other than `view/title` (item context menus, the "..." overflow),
-  `keybindings`, `configuration` and a settings UI.
+  `keybindings` and a settings UI (settings are the settings JSON, layout plan L1).
 - The rest of the `when` grammar (`=~`, `in`, comparisons), multi-select and
   drag and drop in trees, and views in the v2 workspace sidebar (then the v2
   Files page could move onto the Files extension).

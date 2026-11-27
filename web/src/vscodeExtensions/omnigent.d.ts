@@ -818,8 +818,8 @@ declare module "omnigent" {
    *   workspace on screen and focuses its search input, as VS Code's
    *   `<view>.focus`; resolves to whether it could.
    *
-   * Context keys the host sets: `config.<setting>` for each workspace setting
-   * (see {@link workspace.getConfiguration}), and `view.<view id>.available`
+   * Context keys the host sets: `config.<setting>` for each setting with a
+   * string, number or boolean value (see {@link workspace.getConfiguration}), and `view.<view id>.available`
    * while the workspace on screen can show that view's tab.
    */
   export namespace commands {
@@ -1019,10 +1019,15 @@ declare module "omnigent" {
   }
 
   /**
-   * Settings of the workspace on screen, as `vscode.WorkspaceConfiguration`.
-   * Known settings: `omnigent.files.sortOrder` (`"alpha"`, `"recent"`, `"size"`
-   * or `"type"`) and `omnigent.files.showHidden` (boolean), shared with the
-   * Files tab and the file viewer. Each is also the context key `config.<name>`.
+   * The settings, as `vscode.WorkspaceConfiguration`: every setting an extension
+   * registers (`contributes.configuration` in the manifest, built-ins included),
+   * read from the user's settings JSON over its default (or a
+   * `contributes.configurationDefaults` override). A value the setting's schema
+   * doesn't take is left out (its default applies). Built-in settings include
+   * `omnigent.files.sortOrder` (`"alpha"`, `"recent"`, `"size"` or `"type"`) and
+   * `omnigent.files.showHidden` (boolean), which read and write the workspace on
+   * screen (its Files tab and file viewer), and the theme's `omnigent.style.*`.
+   * Each string, number or boolean setting is also the context key `config.<name>`.
    */
   export interface WorkspaceConfiguration {
     get: {
@@ -1030,8 +1035,24 @@ declare module "omnigent" {
       <T>(key: string, defaultValue: T): T;
     };
     has: (key: string) => boolean;
-    /** Rejects for an unknown setting, a value of the wrong type, or no workspace on screen. */
+    /** A registered setting's value per layer, as `vscode.WorkspaceConfiguration.inspect`. */
+    inspect: (key: string) => ConfigurationInspection | undefined;
+    /**
+     * Writes the user's settings JSON (comments kept), or the workspace on screen for
+     * `omnigent.files.*`. Rejects for an unknown setting, a value its schema doesn't take,
+     * one set by the product, a settings JSON with syntax errors, or no workspace on screen.
+     */
     update: (key: string, value: unknown) => Promise<void>;
+  }
+
+  /** A setting's value per layer, as VS Code's `inspect` result. */
+  export interface ConfigurationInspection {
+    readonly key: string;
+    readonly defaultValue: unknown;
+    /** The user's settings JSON value, when it sets one the schema takes. */
+    readonly globalValue?: unknown;
+    /** The workspace on screen's value (`omnigent.files.*`). */
+    readonly workspaceValue?: unknown;
   }
 
   export interface ConfigurationChangeEvent {

@@ -98,5 +98,6 @@ export function hostServices(overrides: Partial<HostServices> = {}): HostService
     ...(overrides.keybindings ? { keybindings: overrides.keybindings } : {}),
     ...(overrides.themes ? { themes: overrides.themes } : {}),
     ...(overrides.colorThemes ? { colorThemes: overrides.colorThemes } : {}),
+    ...(overrides.configuration ? { configuration: overrides.configuration } : {}),
   };
 }

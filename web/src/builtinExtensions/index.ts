@@ -17,7 +17,11 @@ import * as tasks from "./omnigent.tasks/extension";
 import tasksManifest from "./omnigent.tasks/package.json";
 import * as themes from "./omnigent.themes/extension";
 import themesManifest from "./omnigent.themes/package.json";
-import { builtInThemeContributions, builtInThemeFiles } from "./builtInThemes";
+import {
+  builtInThemeConfiguration,
+  builtInThemeContributions,
+  builtInThemeFiles,
+} from "./builtInThemes";
 
 export interface BuiltInExtension {
   readonly manifest: unknown;
@@ -35,7 +39,13 @@ export const BUILT_IN_EXTENSIONS: readonly BuiltInExtension[] = Object.freeze([
   { manifest: tasksManifest, module: tasks },
   // The built-in colour themes: generated from the palettes (lib/themePalette.ts).
   {
-    manifest: { ...themesManifest, contributes: { themes: builtInThemeContributions() } },
+    manifest: {
+      ...themesManifest,
+      contributes: {
+        themes: builtInThemeContributions(),
+        configuration: builtInThemeConfiguration(),
+      },
+    },
     module: themes,
     files: builtInThemeFiles(),
   },

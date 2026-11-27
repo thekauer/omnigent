@@ -62,7 +62,15 @@ import { useIOSViewportLock } from "@/hooks/useIOSViewportLock";
 import { isDesktopLayout, useIsMobileViewport } from "@/hooks/useIsMobileViewport";
 import { useIsSideBySideSidebarViewport } from "@/hooks/useIsSideBySideSidebarViewport";
 import { useReportLocalTimezone } from "@/hooks/useReportLocalTimezone";
-import { readFilesPanelPreferences, writeFilesPanelPreferences } from "@/lib/filesPanelPreferences";
+import { configurationService } from "@/configuration/configurationService";
+import { useConfigurationValue } from "@/configuration/useConfiguration";
+import {
+  DEFAULT_FILES_SHOW_HIDDEN,
+  DEFAULT_FILES_SORT_ORDER,
+  FILES_SHOW_HIDDEN_SETTING,
+  FILES_SORT_ORDER_SETTING,
+  filesSortOrder,
+} from "@/lib/filesPanelPreferences";
 import { useOptimisticTitle } from "@/lib/optimisticTitles";
 import { derivePermissionLevel, isOwnerLevel } from "@/lib/permissionsApi";
 import {
@@ -656,14 +664,19 @@ function AppShellImpl() {
   // to, so the persist effect targets the right session even before a switch's
   // restore has re-rendered. Set by the conversation-restore effect.
   const stateConvRef = useRef<string | null>(conversationId ?? null);
-  // Hidden (dot-prefixed) files are shown by default; the eye toggle hides them.
-  const [filesPanelShowHidden, setFilesPanelShowHidden] = useState(true);
-  // Lifted so the Changes list order and the FileViewer prev/next order
-  // share one source of truth (otherwise the "X/N" index won't match the
-  // list position). It starts from the last choice, or the alphabetical default.
-  const [filesPanelSort, setFilesPanelSort] = useState<ChangedSort>(
-    () => readFilesPanelPreferences().sort,
+  // Hidden (dot-prefixed) files: `omnigent.files.showHidden` (shown by default), until the
+  // eye toggle sets this session's own choice.
+  const configuredShowHidden = useConfigurationValue(FILES_SHOW_HIDDEN_SETTING);
+  const [filesPanelShowHiddenOverride, setFilesPanelShowHidden] = useState<boolean | undefined>(
+    undefined,
   );
+  const filesPanelShowHidden =
+    filesPanelShowHiddenOverride ??
+    (typeof configuredShowHidden === "boolean" ? configuredShowHidden : DEFAULT_FILES_SHOW_HIDDEN);
+  // One source of truth for the Changes list order and the FileViewer prev/next order
+  // (otherwise the "X/N" index won't match the list position): `omnigent.files.sortOrder`.
+  const filesPanelSort =
+    filesSortOrder(useConfigurationValue(FILES_SORT_ORDER_SETTING)) ?? DEFAULT_FILES_SORT_ORDER;
   const [panelInitialKey, setPanelInitialKeyState] = useState<string | null>(null);
   const [executionLogsKey, setExecutionLogsKey] = useState<string | null>(null);
   const [filesPanelOpen, setFilesPanelOpen] = useState(false);
@@ -1449,7 +1462,7 @@ function AppShellImpl() {
     setTasksPanelOpen(false);
     setContentSearchPanelOpen(false);
     setSideChatsPanelOpen(false);
-    setFilesPanelShowHidden(true);
+    setFilesPanelShowHidden(undefined);
     // An open "Close shell?" dialog would target a terminal absent from the
     // new session's list.
     setTerminalPendingClose(null);
@@ -1804,8 +1817,14 @@ function AppShellImpl() {
   }, [rightRailTab, openPanels, openFiles, selectedFilePath, selectedTerminalKey]);
 
   const handleFilesSortChange = useCallback((s: ChangedSort) => {
-    setFilesPanelSort(s);
-    writeFilesPanelPreferences({ ...readFilesPanelPreferences(), sort: s });
+    try {
+      configurationService.update(FILES_SORT_ORDER_SETTING, s);
+    } catch {
+      // The settings JSON doesn't parse (or the product locks the sort): this window keeps it.
+      if (!configurationService.isLocked(FILES_SORT_ORDER_SETTING)) {
+        configurationService.update(FILES_SORT_ORDER_SETTING, s, "memory");
+      }
+    }
   }, []);
 
   const commitFileNavigation = useCallback(

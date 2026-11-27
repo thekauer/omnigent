@@ -8,7 +8,8 @@ import {
   settingsHover,
   spanOfPath,
 } from "./settingsLanguage";
-import { buildSettingsSchema, schemaAt, type SettingsSchemaInput } from "./settingsSchema";
+import { buildSettingsSchema, type SettingsSchemaInput } from "@/theme/themeSettingsSchema";
+import { schemaAt, type SettingsSchemaNode } from "./settingsSchema";
 
 const INPUT: SettingsSchemaInput = {
   tokens: [
@@ -311,5 +312,62 @@ describe("spanOfPath", () => {
     const span = spanOfPath(text, ["workbench.colorCustomizations", "[nord]", "primary"]);
     expect(text.slice(span.offset, span.offset + span.length)).toBe('"primary": "x"');
     expect(spanOfPath(text, ["nope"])).toEqual({ offset: 0, length: 0 });
+  });
+});
+
+describe("registered settings of every type", () => {
+  const REGISTERED: SettingsSchemaNode = {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      "acme.x.visible": { type: "boolean", default: true, description: "Shows it." },
+      "acme.x.width": { type: "integer", minimum: 0, maximum: 10, default: 4 },
+      "acme.x.ratio": { type: "number" },
+      "acme.x.tags": { type: "array", items: { type: "string", enum: ["a", "b"] } },
+      "acme.x.mode": { type: "string", enum: ["on", "off"] },
+      "acme.x.locked": { type: "boolean", locked: { value: false } },
+    },
+  };
+  const messages = (text: string) =>
+    settingsDiagnostics(text, REGISTERED).map((entry) => [entry.path?.join("."), entry.message]);
+
+  it("checks booleans, integers, bounds and array items", () => {
+    expect(
+      messages(
+        '{ "acme.x.visible": "yes", "acme.x.width": 2.5, "acme.x.ratio": "1", "acme.x.tags": ["a", "c"], "acme.x.mode": "on" }',
+      ),
+    ).toEqual([
+      ["acme.x.visible", "Expected a boolean."],
+      ["acme.x.width", "Expected an integer."],
+      ["acme.x.ratio", "Expected a number."],
+      ["acme.x.tags", 'An item: Value is not accepted. Valid values: "a", "b".'],
+    ]);
+    expect(messages('{ "acme.x.width": 11 }')).toEqual([
+      ["acme.x.width", "Value is above the maximum of 10."],
+    ]);
+    expect(messages('{ "acme.x.width": -1 }')).toEqual([
+      ["acme.x.width", "Value is below the minimum of 0."],
+    ]);
+    expect(messages('{ "acme.x.locked": true }')).toEqual([
+      ["acme.x.locked", "Set by product (false): this value doesn't apply."],
+    ]);
+  });
+
+  it("completes keys with a snippet of their type, and booleans' values", () => {
+    const keys = settingsCompletions("{\n  \n}", 4, REGISTERED);
+    const insert = (label: string) => keys.find((entry) => entry.label === label)?.insertText;
+    expect(insert("acme.x.visible")).toBe('"acme.x.visible": ${1|true,false|}');
+    expect(insert("acme.x.width")).toBe('"acme.x.width": ${1:4}');
+    expect(insert("acme.x.tags")).toBe('"acme.x.tags": [$1]');
+    expect(insert("acme.x.locked")).toBeUndefined();
+    const text = '{ "acme.x.visible":  }';
+    expect(
+      settingsCompletions(text, text.indexOf(":") + 2, REGISTERED).map((entry) => entry.label),
+    ).toEqual(["true", "false"]);
+  });
+
+  it("describes a key on hover", () => {
+    const text = '{ "acme.x.visible": true }';
+    expect(settingsHover(text, 5, REGISTERED)?.contents).toBe("**acme.x.visible**\n\nShows it.");
   });
 });

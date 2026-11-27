@@ -9,7 +9,7 @@ import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { FIXTURE_EXTENSION_ID, fixtureThemeExtension } from "@/test/themeFixtures";
-import { readStoredSettings, SETTINGS_STORAGE_KEY } from "@/theme/settingsDocument";
+import { readStoredSettings, SETTINGS_STORAGE_KEY } from "@/configuration/settingsDocument";
 import { themeService } from "@/theme/themeService";
 
 import { CommandContextProvider } from "./commandContext";

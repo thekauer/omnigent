@@ -1,45 +1,14 @@
-// The settings document's schema (theming plan M10b): a JSON Schema-shaped tree the
-// editor's completions, hovers and checks read. Built from what is registered now (the
-// token registry, every theme's options under its scope, the style variants), so an
-// extension's theme options appear with nothing else to register. Pure.
+// The theme service's keys of the settings document's schema (theming plan M10b), built
+// from what is registered now (the token registry, every theme's options under its scope,
+// the style variants), so an extension's theme options appear with nothing else to
+// register. The editor's schema is these over the registered configuration. Pure.
 
+import type { SettingsSchemaNode } from "@/configuration/settingsSchema";
 import {
   COLOR_CUSTOMIZATIONS_SETTING,
   STYLE_SETTING_PREFIX,
   THEME_OPTIONS_SETTING,
-} from "./settingsDocument";
-
-/** A product lock on a key: its value applies, never the document's. */
-export interface SettingsLock {
-  readonly value: string;
-  /** How the value reads (an option choice's or a variant value's label). */
-  readonly label?: string;
-}
-
-export interface SettingsSchemaNode {
-  readonly type?: "object" | "string";
-  readonly description?: string;
-  readonly enum?: readonly string[];
-  /** One label per `enum` value, as VS Code's `enumDescriptions`. */
-  readonly enumDescriptions?: readonly string[];
-  readonly default?: string;
-  readonly properties?: Readonly<Record<string, SettingsSchemaNode>>;
-  /** The schema of keys `properties` doesn't name, by key pattern. */
-  readonly patternProperties?: Readonly<Record<string, SettingsSchemaNode>>;
-  /** False: any other key is unknown (a warning). */
-  readonly additionalProperties?: false;
-  /** Set by the product: shown, never applied. */
-  readonly locked?: SettingsLock;
-  /** The product turned these customizations off: they don't apply. */
-  readonly hidden?: boolean;
-  /** Said of every key this node matches, such as a theme that isn't installed. */
-  readonly warning?: string;
-  /**
-   * Values the theme service checks itself (token values): the language service completes
-   * and describes the keys but leaves their diagnostics to it.
-   */
-  readonly checkedByService?: boolean;
-}
+} from "./themeSettingKeys";
 
 export interface SettingsSchemaToken {
   readonly id: string;
@@ -207,27 +176,4 @@ export function buildSettingsSchema(input: SettingsSchemaInput): SettingsSchemaN
     },
     additionalProperties: false,
   };
-}
-
-/** The node for the key `key` under `node`, if it takes one. */
-export function childSchema(
-  node: SettingsSchemaNode | undefined,
-  key: string,
-): SettingsSchemaNode | undefined {
-  if (!node) return undefined;
-  if (node.properties && Object.hasOwn(node.properties, key)) return node.properties[key];
-  for (const [pattern, child] of Object.entries(node.patternProperties ?? {})) {
-    if (new RegExp(pattern).test(key)) return child;
-  }
-  return undefined;
-}
-
-/** The node at `path` from the root. */
-export function schemaAt(
-  root: SettingsSchemaNode,
-  path: readonly (string | number)[],
-): SettingsSchemaNode | undefined {
-  let node: SettingsSchemaNode | undefined = root;
-  for (const segment of path) node = childSchema(node, String(segment));
-  return node;
 }

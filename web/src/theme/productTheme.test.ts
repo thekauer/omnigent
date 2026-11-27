@@ -19,13 +19,12 @@ import {
   setProductTheme,
 } from "./productTheme";
 import { matchesAllowed, themeService, ThemeService } from "./themeService";
+import { readStoredSettings, SETTINGS_STORAGE_KEY } from "@/configuration/settingsDocument";
 import {
   LEGACY_COLOR_CUSTOMIZATIONS_STORAGE_KEY,
   LEGACY_THEME_OPTIONS_STORAGE_KEY,
   LEGACY_VARIANTS_STORAGE_KEY,
-  readStoredSettings,
-  SETTINGS_STORAGE_KEY,
-} from "./settingsDocument";
+} from "@/theme/themeSettingKeys";
 
 const DARK = `${FIXTURE_EXTENSION_ID}/full-dark`;
 const LIGHT = `${FIXTURE_EXTENSION_ID}/full-light`;

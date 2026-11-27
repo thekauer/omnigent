@@ -19,7 +19,7 @@ import {
   ThemeService,
   type ThemeExtension,
 } from "./themeService";
-import { LEGACY_COLOR_CUSTOMIZATIONS_STORAGE_KEY } from "./settingsDocument";
+import { LEGACY_COLOR_CUSTOMIZATIONS_STORAGE_KEY } from "@/theme/themeSettingKeys";
 import { getToken } from "./tokens/registry";
 import { type LayerValue, resolveTokenLayers } from "./resolveTokens";
 import { TOKEN_CONSTRAINTS, validateTokenValue, type ValueContext } from "./validate";

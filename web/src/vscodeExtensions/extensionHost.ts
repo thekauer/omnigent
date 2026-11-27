@@ -3,6 +3,10 @@
 // host. Built-ins load from the bundle, so their views register before the first
 // render and core tabs never show a blank panel.
 import { builtInExtensions } from "@/builtinExtensions";
+import {
+  type ConfigurationService,
+  configurationService,
+} from "@/configuration/configurationService";
 import { refreshRunnerHealth } from "@/hooks/useRunnerHealth";
 import { type GitHostProviderRegistry, gitHostProviders } from "@/lib/gitHostProviders";
 import { hostProgress } from "@/lib/hostProgress";
@@ -44,6 +48,8 @@ export interface ExtensionRuntimeOptions {
   hostOptions?: Partial<ExtensionHostOptions>;
   /** Where contributed keybindings dispatch; the whole window by default. */
   keybindingScope?: KeybindingScope;
+  /** Where contributed settings go; the window's configuration service by default. */
+  configuration?: ConfigurationService;
   /** Where contributed themes go; the window's theme service by default. */
   themes?: ThemeContributionSink & { markStarted?: () => void };
 }
@@ -54,7 +60,7 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
   const bridge = options.bridge ?? workspaceBridge;
   const commands = new CommandRegistry();
   const contextKeys = new ContextKeyService();
-  const workspace = new WorkspaceService(bridge);
+  const workspace = new WorkspaceService(bridge, options.configuration ?? configurationService);
   const themes = options.themes ?? themeService;
   const builtInCommands = registerBuiltInCommands(commands, {
     contextKeys,
@@ -62,10 +68,21 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
     themes: "select" in themes ? (themes as typeof themeService) : undefined,
   });
   // `config.<setting>` context keys, as in VS Code, so `when` and `toggled` can read settings.
+  let settingKeys = new Set<string>();
   const syncSettings = () => {
+    const next = new Set<string>();
     for (const [name, value] of Object.entries(workspace.settingValues())) {
-      contextKeys.setHost(`config.${name}`, value);
+      try {
+        contextKeys.setHost(`config.${name}`, value);
+        next.add(name);
+      } catch {
+        // A key too long for a context key: `when` can't read it, `getConfiguration` can.
+      }
     }
+    for (const name of settingKeys) {
+      if (!next.has(name)) contextKeys.setHost(`config.${name}`, undefined);
+    }
+    settingKeys = next;
   };
   syncSettings();
   const settingsSubscription = workspace.onDidChangeConfiguration(syncSettings);
@@ -119,6 +136,7 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
       gitHosts: options.gitHosts ?? gitHostProviders,
       keybindings,
       themes,
+      configuration: options.configuration ?? configurationService,
     },
     ...options.hostOptions,
   });

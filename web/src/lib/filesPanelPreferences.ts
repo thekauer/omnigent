@@ -1,65 +1,38 @@
-// Persisted, app-global preference for the Working folder file list.
-//
-// Holds the changed-files sort order. It's a *preference*, not per-conversation
-// state: the user's choice "carries over" as they switch in and out of sessions
-// and should survive a page refresh, mirroring the global-toggle semantics of
-// fileViewPreferences. It's stored under a single localStorage key with no
-// per-conversation keying.
-//
-// AppShell keeps the live React state as the source of truth for the UI; these
-// helpers only seed that state on mount and snapshot it when the user changes
-// the sort, so a refresh (or a brand-new conversation) starts from the last
-// choice instead of the hardcoded default.
+// The Files and Changes tabs' settings in the settings document (layout plan L1):
+// `omnigent.files.sortOrder`, the app-global sort of the changed files and the Files tab, and
+// `omnigent.files.showHidden`, whether a workspace shows dot files until its eye toggle says
+// otherwise. The built-in `omnigent.files` extension registers both; this module holds their
+// names, defaults and the migration of the key the sort was kept in before.
 
+import type { SettingsValues, SettingsWrite } from "@/configuration/settingsDocument";
 import { type ChangedSort, isValidSort } from "@/lib/changedSort";
 
-export interface FilesPanelPreferences {
-  /** Sort order for the changed-files flat list. */
-  sort: ChangedSort;
-}
-
-const STORAGE_KEY = "omnigent:files-panel-preferences";
+export const FILES_SORT_ORDER_SETTING = "omnigent.files.sortOrder";
+export const FILES_SHOW_HIDDEN_SETTING = "omnigent.files.showHidden";
 
 // Alphabetical, with folders first in the tree; the other sorts stay a choice away.
-export const DEFAULT_FILES_PANEL_PREFERENCES: FilesPanelPreferences = {
-  sort: "alpha",
-};
+export const DEFAULT_FILES_SORT_ORDER: ChangedSort = "alpha";
+// Hidden (dot-prefixed) files are shown by default; the eye toggle hides them.
+export const DEFAULT_FILES_SHOW_HIDDEN = true;
 
-/**
- * Read the persisted Files-panel preference. Returns the default when nothing
- * is stored, on a server render (no `window`), or when the stored value is
- * malformed — never throws, so a corrupt entry can't break the app.
- */
-export function readFilesPanelPreferences(): FilesPanelPreferences {
-  if (typeof window === "undefined") return DEFAULT_FILES_PANEL_PREFERENCES;
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULT_FILES_PANEL_PREFERENCES;
-    const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-      return DEFAULT_FILES_PANEL_PREFERENCES;
-    }
-    const p = parsed as Record<string, unknown>;
-    return {
-      sort:
-        typeof p.sort === "string" && isValidSort(p.sort)
-          ? p.sort
-          : DEFAULT_FILES_PANEL_PREFERENCES.sort,
-    };
-  } catch {
-    return DEFAULT_FILES_PANEL_PREFERENCES;
-  }
+/** Where the sort was kept before the settings document: `{ "sort": "<order>" }`. */
+export const LEGACY_FILES_PANEL_STORAGE_KEY = "omnigent:files-panel-preferences";
+
+/** The sort `value` names, or undefined. */
+export function filesSortOrder(value: unknown): ChangedSort | undefined {
+  return typeof value === "string" && isValidSort(value) ? value : undefined;
 }
 
 /**
- * Persist the Files-panel preference. Swallows quota/access errors so a failed
- * write can't break the panel.
+ * The write that carries the legacy key's sort into the document's values `existing`, unless
+ * the document sets the sort already. An unreadable or unknown sort carries nothing.
  */
-export function writeFilesPanelPreferences(prefs: FilesPanelPreferences): void {
-  if (typeof window === "undefined") return;
-  try {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs));
-  } catch {
-    // localStorage quota or access errors shouldn't break the app.
-  }
+export function legacyFilesSettingsWrites(
+  legacy: unknown,
+  existing: SettingsValues,
+): SettingsWrite[] {
+  if (typeof legacy !== "object" || legacy === null || Array.isArray(legacy)) return [];
+  const sort = filesSortOrder((legacy as Record<string, unknown>).sort);
+  if (sort === undefined || Object.hasOwn(existing, FILES_SORT_ORDER_SETTING)) return [];
+  return [[[FILES_SORT_ORDER_SETTING], sort]];
 }

@@ -1,5 +1,5 @@
-// The user's theme settings as one JSON document (theming plan M10b), as VS Code keeps
-// `settings.json`: the theme options, the style variants and the colour customizations. The
+// The user's settings as one JSON document (theming plan M10b, layout plan L1), as VS Code
+// keeps `settings.json`: every key the configuration registry knows, the theme's included. The
 // text is stored as written (JSONC: comments and trailing commas), with the last values that
 // parsed, so a text with syntax errors keeps the previous values applying. Writes edit the
 // text in place, keeping its comments, and are refused while it doesn't parse. Pure.
@@ -9,30 +9,13 @@
 // iterative: no nesting can overflow the stack. A key whose value nests deeper than the
 // values' depth limit is left out of the values and reported at that key; the rest applies.
 
-import { nullMap, type PlainData, snapshotPlainData } from "./validate";
+import { nullMap, type PlainData, snapshotPlainData } from "@/theme/validate";
 
 /** The document's storage key: `{ version: 1, text, values }`. */
 export const SETTINGS_STORAGE_KEY = "omnigent:ui-settings";
 
-/** The colour customizations: token ids, and `[<theme id>]` objects of them (VS Code's key). */
-export const COLOR_CUSTOMIZATIONS_SETTING = "workbench.colorCustomizations";
-/** The theme options: `{ "[<scope>]": { "<option id>": "<choice id>" } }`. */
-export const THEME_OPTIONS_SETTING = "omnigent.themeOptions";
-/** One key per style variant: `omnigent.style.density`. */
-export const STYLE_SETTING_PREFIX = "omnigent.style.";
-
 /** What a product-locked setting's row, diagnostic and hover say. */
 export const SET_BY_PRODUCT = "Set by product";
-
-/** The keys before M10b, read into the document and removed once they are in its text. */
-export const LEGACY_THEME_OPTIONS_STORAGE_KEY = "omnigent:ui-theme-options";
-export const LEGACY_VARIANTS_STORAGE_KEY = "omnigent:ui-variants";
-export const LEGACY_COLOR_CUSTOMIZATIONS_STORAGE_KEY = "omnigent:ui-color-customizations";
-export const LEGACY_SETTINGS_STORAGE_KEYS = [
-  LEGACY_THEME_OPTIONS_STORAGE_KEY,
-  LEGACY_VARIANTS_STORAGE_KEY,
-  LEGACY_COLOR_CUSTOMIZATIONS_STORAGE_KEY,
-] as const;
 
 /** The longest text stored or parsed. */
 export const SETTINGS_TEXT_LIMIT = 131_072;
@@ -798,63 +781,8 @@ export function editSettingsText(
 
 // --- Migration -----------------------------------------------------------------------
 
-/** What the legacy keys held, as read from storage. */
-export interface LegacySettings {
-  /** `omnigent:ui-theme-options`: scope (no brackets) to option choices. */
-  readonly options?: unknown;
-  /** `omnigent:ui-variants`: variant name to value. */
-  readonly variants?: unknown;
-  /** `omnigent:ui-color-customizations`. */
-  readonly customizations?: unknown;
-}
-
-/**
- * The `[path, value]` writes that carry the legacy values into `existing` (the document's
- * values): options and variants over the document's, and colour customizations token by
- * token under them (a token the document sets keeps its value).
- */
-export function legacySettingsWrites(
-  legacy: LegacySettings,
-  existing: SettingsValues = nullMap<PlainData>(),
-): [string[], unknown][] {
-  const writes: [string[], unknown][] = [];
-  const readable = (value: unknown) => {
-    const snapshot = snapshotPlainData(value ?? null, SETTINGS_VALUE_LIMITS);
-    return snapshot.ok && isRecord(snapshot.value) ? snapshot.value : undefined;
-  };
-  const options = readable(legacy.options);
-  for (const [scope, choices] of Object.entries(options ?? {})) {
-    if (!isRecord(choices) || scope.length > 200 || /[[\]]/.test(scope)) continue;
-    for (const [option, choice] of Object.entries(choices)) {
-      if (typeof choice === "string") {
-        writes.push([[THEME_OPTIONS_SETTING, `[${scope}]`, option], choice]);
-      }
-    }
-  }
-  const variants = readable(legacy.variants);
-  for (const [name, value] of Object.entries(variants ?? {})) {
-    if (typeof value === "string") writes.push([[`${STYLE_SETTING_PREFIX}${name}`], value]);
-  }
-  const customizations = readable(legacy.customizations);
-  const current = existing[COLOR_CUSTOMIZATIONS_SETTING];
-  const have = isRecord(current) ? current : undefined;
-  for (const [key, value] of Object.entries(customizations ?? {})) {
-    const path = [COLOR_CUSTOMIZATIONS_SETTING, key];
-    if (key.startsWith("[") && isRecord(value)) {
-      const scoped = have?.[key];
-      if (scoped !== undefined && !isRecord(scoped)) continue;
-      for (const [token, tokenValue] of Object.entries(value)) {
-        if (!(isRecord(scoped) && Object.hasOwn(scoped, token))) {
-          writes.push([[...path, token], tokenValue]);
-        }
-      }
-    } else if (!(have && Object.hasOwn(have, key))) {
-      writes.push([path, value]);
-    }
-  }
-  // A `__proto__` key is never a setting (the reader leaves it out).
-  return writes.filter(([path]) => !path.includes("__proto__"));
-}
+/** One write a migration makes: the value at the key path. */
+export type SettingsWrite = readonly [readonly string[], unknown];
 
 /** A migration's result: the document, and whether every legacy value is now in its text. */
 export interface LegacyMigration {
@@ -864,15 +792,17 @@ export interface LegacyMigration {
 }
 
 /**
- * The document with the legacy values written into its text. A text that doesn't parse
+ * The document with the legacy values (`legacyWrites`, from the sources in
+ * `legacySettings.ts`) written into its text. A text that doesn't parse
  * keeps its text; the values join its last good ones so they apply meanwhile, and the
  * migration stays incomplete (the legacy keys stay) until the text parses again.
  */
 export function migrateLegacySettings(
   current: StoredSettings,
-  legacy: LegacySettings,
+  legacyWrites: readonly SettingsWrite[],
 ): LegacyMigration {
-  const writes = legacySettingsWrites(legacy, current.values);
+  // A `__proto__` key is never a setting (the reader leaves it out).
+  const writes = legacyWrites.filter(([path]) => !path.includes("__proto__"));
   if (writes.length === 0) return { settings: current, complete: true };
   if (current.valid) {
     let text = current.text;

@@ -1,5 +1,6 @@
 // Builds the `omnigent` module an extension imports. One instance per extension,
 // like VS Code's per-extension `vscode` module, so every call is attributable.
+import type { ConfigurationContributions } from "@/configuration/configurationContributions";
 import type * as omnigent from "omnigent";
 import type { ThemeContributionSink } from "@/theme/themeService";
 import {
@@ -96,6 +97,13 @@ export interface HostServices {
   themes?: ThemeContributionSink;
   /** The colour theme extensions read (`window.activeColorTheme`); the window's by default. */
   colorThemes?: ColorThemes;
+  /** Contributed settings and their defaults; without it, they are ignored. */
+  configuration?: ConfigurationContributionSink;
+}
+
+/** Where an extension's `contributes.configuration` and `configurationDefaults` go. */
+export interface ConfigurationContributionSink {
+  addExtension: (extensionId: string, contributions: ConfigurationContributions) => () => void;
 }
 
 export type ExtensionLogger = (message: string, error?: unknown) => void;

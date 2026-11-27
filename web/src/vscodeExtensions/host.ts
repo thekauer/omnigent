@@ -158,7 +158,12 @@ export class ExtensionHost {
       contributions: contributions.theming,
       files: extension.files ?? {},
     });
+    const removeConfiguration = this.services.configuration?.addExtension(
+      extension.id,
+      contributions.configuration,
+    );
     this.contributed.set(extension.id, () => {
+      removeConfiguration?.();
       removeThemes?.();
       removeKeybindings?.();
       removeViews();

@@ -3,7 +3,7 @@
 // only for the settings models, and diagnostics become markers (a lock drawn faded).
 import { describe, expect, it, vi } from "vitest";
 
-import { buildSettingsSchema } from "@/theme/settingsSchema";
+import { buildSettingsSchema } from "@/theme/themeSettingsSchema";
 
 import type { MonacoModule } from "../monacoSetup";
 import {

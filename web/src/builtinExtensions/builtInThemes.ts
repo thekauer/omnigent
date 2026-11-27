@@ -7,7 +7,13 @@ import { PALETTE_TOKEN_CSS_NAMES, PALETTES, type ThemeSelection } from "@/lib/th
 import themesManifest from "@/builtinExtensions/omnigent.themes/package.json";
 import { parseThemeContributions } from "@/theme/themeContributions";
 import type { ThemeService } from "@/theme/themeService";
+import {
+  COLOR_CUSTOMIZATIONS_SETTING,
+  STYLE_SETTING_PREFIX,
+  THEME_OPTIONS_SETTING,
+} from "@/theme/themeSettingKeys";
 import { getToken } from "@/theme/tokens/registry";
+import { VARIANT_LABELS, VARIANT_NAMES, VARIANTS } from "@/theme/variants";
 import type { ExtensionFile } from "@/vscodeExtensions/host";
 
 export const BUILT_IN_THEMES_EXTENSION_ID = "omnigent.themes";
@@ -96,4 +102,44 @@ export function registerBuiltInThemes(service: ThemeService): () => void {
     contributions,
     files: builtInThemeFiles(),
   });
+}
+
+/**
+ * `contributes.configuration`: the theme service's keys of the settings document, so they are
+ * settings like any other (`getConfiguration`, the editor's schema). Their detailed schema
+ * (each theme's options, the tokens, the product's locks) is the theme service's, and no
+ * extension's `configurationDefaults` may set them: a theme does.
+ */
+export function builtInThemeConfiguration(): Record<string, unknown> {
+  const fixed = { defaultOverridable: false, scope: "window" };
+  return {
+    title: "Theme",
+    properties: {
+      [THEME_OPTIONS_SETTING]: {
+        ...fixed,
+        type: "object",
+        description: 'Theme options by theme: `{ "[<theme id>]": { "<option>": "<choice>" } }`.',
+      },
+      ...Object.fromEntries(
+        VARIANT_NAMES.map((name) => [
+          `${STYLE_SETTING_PREFIX}${name}`,
+          {
+            ...fixed,
+            type: "string",
+            description: `${VARIANT_LABELS[name].label}: ${VARIANT_LABELS[name].description}`,
+            enum: [...VARIANTS[name]],
+            enumDescriptions: (VARIANTS[name] as readonly string[]).map(
+              (value) => (VARIANT_LABELS[name].values as Record<string, string>)[value] ?? value,
+            ),
+          },
+        ]),
+      ),
+      [COLOR_CUSTOMIZATIONS_SETTING]: {
+        ...fixed,
+        type: "object",
+        description:
+          "Color customizations: token values over every theme, or over one theme in a `[<theme id>]` object.",
+      },
+    },
+  };
 }

@@ -34,6 +34,8 @@ import {
 import { setEmbedRoot } from "@/lib/host";
 import { EmbeddedProvider } from "@/lib/embedded";
 import { RoutingProvider, reactRouterRouting, type RoutingApi } from "@/lib/routing";
+import { configurationService } from "@/configuration/configurationService";
+import { readStoredSettings, SETTINGS_STORAGE_KEY } from "@/configuration/settingsDocument";
 import { FileViewerContext, useFileViewer } from "./FileViewerContext";
 import { ShellCommandContext, ShellCommandDraftContext } from "./ShellCommandContext";
 import { resetDesktopCommandsForTests } from "@/lib/desktopCommands";
@@ -3111,6 +3113,58 @@ describe("FilesPanel visibility", () => {
     // dotfiles would disappear the moment the user moves between sessions.
     fireEvent.click(screen.getByTestId("nav-session"));
     expect(builtIns.bridge.getState().settings.showHidden).toBe(true);
+  });
+
+  it("reads the Files settings from the settings JSON, the sort written back and the eye per session", () => {
+    useEnvironmentMock.mockReturnValue({
+      data: { available: true, root: null },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useWorkspaceEnvironment>);
+    mockConversations([
+      { id: "conv_abc", permission_level: null },
+      { id: "conv_xyz", permission_level: null },
+    ]);
+    localStorage.setItem(
+      SETTINGS_STORAGE_KEY,
+      JSON.stringify({
+        version: 1,
+        text: '{\n  // mine\n  "omnigent.files.showHidden": false,\n  "omnigent.files.sortOrder": "size"\n}\n',
+        values: {},
+      }),
+    );
+    try {
+      const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+      render(sessionShellTree(qc, "/c/conv_abc", <SessionNavButton to="/c/conv_xyz" />));
+      expect(builtIns.bridge.getState().settings).toMatchObject({
+        showHidden: false,
+        sortOrder: "size",
+      });
+      // The sort menu writes the user's settings JSON, comments kept.
+      act(() => builtIns.bridge.updateSettings({ sortOrder: "recent", showHidden: true }));
+      expect(builtIns.bridge.getState().settings).toMatchObject({
+        showHidden: true,
+        sortOrder: "recent",
+      });
+      const stored = readStoredSettings(localStorage.getItem(SETTINGS_STORAGE_KEY));
+      expect(stored.text).toContain("// mine");
+      expect(stored.values).toEqual({
+        "omnigent.files.showHidden": false,
+        "omnigent.files.sortOrder": "recent",
+      });
+      // The eye is this session's: the next one starts from the setting again.
+      fireEvent.click(screen.getByTestId("nav-session"));
+      expect(builtIns.bridge.getState().settings).toMatchObject({
+        showHidden: false,
+        sortOrder: "recent",
+      });
+      // An edit of the settings JSON applies at once.
+      act(() => {
+        configurationService.update("omnigent.files.sortOrder", "type");
+      });
+      expect(builtIns.bridge.getState().settings.sortOrder).toBe("type");
+    } finally {
+      localStorage.removeItem(SETTINGS_STORAGE_KEY);
+    }
   });
 });
 

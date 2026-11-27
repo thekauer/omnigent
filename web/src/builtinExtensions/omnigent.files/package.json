@@ -40,6 +40,35 @@
         }
       ]
     },
+    "configuration": {
+      "title": "Files",
+      "properties": {
+        "omnigent.files.sortOrder": {
+          "type": "string",
+          "enum": [
+            "alpha",
+            "recent",
+            "size",
+            "type"
+          ],
+          "enumDescriptions": [
+            "Filename",
+            "Last edited",
+            "Size",
+            "Type"
+          ],
+          "default": "alpha",
+          "scope": "resource",
+          "description": "How the Files and Changes tabs sort files. The sort menu writes it here; a grid cell keeps its own."
+        },
+        "omnigent.files.showHidden": {
+          "type": "boolean",
+          "default": true,
+          "scope": "resource",
+          "description": "Whether a workspace shows hidden (dot) files when it opens. The Files tab's eye toggle changes it for the workspace on screen only."
+        }
+      }
+    },
     "commands": [
       {
         "command": "omnigent.files.refresh",

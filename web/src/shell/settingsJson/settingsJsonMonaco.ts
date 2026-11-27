@@ -8,8 +8,8 @@ import {
   type SettingsDiagnostic,
   settingsCompletions,
   settingsHover,
-} from "@/theme/settingsLanguage";
-import type { SettingsSchemaNode } from "@/theme/settingsSchema";
+} from "@/configuration/settingsLanguage";
+import type { SettingsSchemaNode } from "@/configuration/settingsSchema";
 
 export const SETTINGS_JSON_LANGUAGE = "jsonc";
 export const SETTINGS_JSON_MARKER_OWNER = "omnigent-settings";

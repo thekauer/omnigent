@@ -1,4 +1,4 @@
-// The settings editor's language service (theming plan M10b): diagnostics, completions and
+// The settings editor's language service (theming plan M10b, layout plan L1): diagnostics, completions and
 // hovers for the settings document against its schema, as VS Code's JSON language service
 // does for `settings.json`. Offsets only; the Monaco adapter turns them into positions. Pure.
 // Loaded with the settings dialog, not at boot. Validity is the document reader's
@@ -9,6 +9,7 @@ import {
   findNodeAtOffset,
   getLocation,
   getNodePath,
+  getNodeValue,
   type Node as JsonNode,
   type ParseError,
   parseTree,
@@ -16,7 +17,13 @@ import {
 } from "jsonc-parser";
 
 import { parseSettingsText, SET_BY_PRODUCT } from "./settingsDocument";
-import { childSchema, type SettingsSchemaNode, schemaAt } from "./settingsSchema";
+import {
+  childSchema,
+  expectedTypeMessage,
+  type SettingsSchemaNode,
+  schemaAt,
+  valueProblem,
+} from "./settingsSchema";
 
 export type SettingsSeverity = "error" | "warning" | "info";
 
@@ -35,7 +42,11 @@ export { SET_BY_PRODUCT };
 
 /** What a locked key's diagnostic and hover say. */
 export function lockedMessage(node: SettingsSchemaNode): string {
-  const value = node.locked ? (node.locked.label ?? node.locked.value) : "";
+  const locked = node.locked;
+  const value = !locked
+    ? ""
+    : (locked.label ??
+      (typeof locked.value === "string" ? locked.value : JSON.stringify(locked.value)));
   return `${SET_BY_PRODUCT}${value ? ` (${value})` : ""}: this value doesn't apply.`;
 }
 
@@ -72,9 +83,14 @@ export function settingsDiagnostics(
       return;
     }
     if (node.checkedByService) return;
-    if (node.type === "object") {
+    if (node.type === "object" || (node.type === undefined && node.properties)) {
       if (value.type !== "object") {
-        out.push({ ...span(value), severity: "error", message: "Expected an object.", path });
+        out.push({
+          ...span(value),
+          severity: "error",
+          message: expectedTypeMessage("object"),
+          path,
+        });
         return;
       }
       duplicates(value, path);
@@ -134,18 +150,14 @@ export function settingsDiagnostics(
       }
       return;
     }
-    if (node.type === "string" && value.type !== "string") {
-      out.push({ ...span(value), severity: "error", message: "Expected a string.", path });
+    let jsonValue: unknown;
+    try {
+      jsonValue = getNodeValue(value);
+    } catch {
       return;
     }
-    if (node.enum && !node.enum.includes(String(value.value))) {
-      out.push({
-        ...span(value),
-        severity: "error",
-        message: `Value is not accepted. Valid values: ${node.enum.map(quote).join(", ")}.`,
-        path,
-      });
-    }
+    const problem = valueProblem(node, jsonValue);
+    if (problem) out.push({ ...span(value), severity: "error", message: problem, path });
   };
   const duplicates = (object: JsonNode, path: string[]) => {
     const seen = new Set<string>();
@@ -244,13 +256,27 @@ function documentation(node: SettingsSchemaNode): string | undefined {
   return node.description;
 }
 
+const escapeSnippet = (value: string) => value.replace(/[$}\\,|]/g, (char) => `\\${char}`);
+
 function valueSnippet(node: SettingsSchemaNode): string {
   if (node.type === "object") return "{\n\t$1\n}";
   if (node.enum && node.enum.length > 0) {
-    const escape = (value: string) => value.replace(/[$}\\,|]/g, (char) => `\\${char}`);
-    return `"\${1|${node.enum.map(escape).join(",")}|}"`;
+    return `"\${1|${node.enum.map(escapeSnippet).join(",")}|}"`;
   }
-  return '"$1"';
+  const fallback = node.default === undefined ? undefined : JSON.stringify(node.default);
+  switch (node.type) {
+    case "boolean":
+      return node.default === false ? "${1|false,true|}" : "${1|true,false|}";
+    case "number":
+    case "integer":
+      return `\${1:${escapeSnippet(fallback ?? "0")}}`;
+    case "array":
+      return "[$1]";
+    case "null":
+      return "null";
+    default:
+      return '"$1"';
+  }
 }
 
 /** What may be typed at `offset`: the keys an object takes, or the values a key does. */
@@ -296,7 +322,19 @@ export function settingsCompletions(
       }));
   }
   const node = schemaAt(schema, location.path);
-  if (!node || node.locked || node.hidden || !node.enum) return [];
+  if (!node || node.locked || node.hidden) return [];
+  if (node.type === "boolean" && !node.enum) {
+    const replace =
+      previous && previous.type === "boolean" ? span(previous) : { offset, length: 0 };
+    return ["true", "false"].map((value) => ({
+      label: value,
+      insertText: value,
+      kind: "value" as const,
+      documentation: documentation(node),
+      ...replace,
+    }));
+  }
+  if (!node.enum) return [];
   const replace = previous && previous.type === "string" ? span(previous) : { offset, length: 0 };
   return node.enum.map((value, index) => ({
     label: quote(value),

@@ -3,15 +3,21 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { FIXTURE_EXTENSION_ID, fixtureThemeExtension } from "@/test/themeFixtures";
 
 import {
-  LEGACY_COLOR_CUSTOMIZATIONS_STORAGE_KEY,
-  LEGACY_THEME_OPTIONS_STORAGE_KEY,
-  LEGACY_VARIANTS_STORAGE_KEY,
   readStoredSettings,
   SETTINGS_STORAGE_KEY,
   SETTINGS_WRITE_BLOCKED,
-} from "./settingsDocument";
+} from "@/configuration/settingsDocument";
+import {
+  LEGACY_COLOR_CUSTOMIZATIONS_STORAGE_KEY,
+  LEGACY_THEME_OPTIONS_STORAGE_KEY,
+  LEGACY_VARIANTS_STORAGE_KEY,
+} from "@/theme/themeSettingKeys";
+import { builtInThemeConfiguration } from "@/builtinExtensions/builtInThemes";
+import { parseConfigurationContributions } from "@/configuration/configurationContributions";
+import { ConfigurationRegistry } from "@/configuration/configurationRegistry";
+import { ConfigurationService } from "@/configuration/configurationService";
 import { checkSettings, getSettingsSchema, saveSettings } from "./settingsEditor";
-import { schemaAt } from "./settingsSchema";
+import { schemaAt } from "@/configuration/settingsSchema";
 import { SettingsWriteError, ThemeService } from "./themeService";
 
 const DARK = `${FIXTURE_EXTENSION_ID}/full-dark`;
@@ -228,6 +234,64 @@ describe("migration of the pre-M10b keys", () => {
     service.resetAppearance();
     expect(localStorage.getItem(SETTINGS_STORAGE_KEY)).toBeNull();
     expect(localStorage.getItem(LEGACY_VARIANTS_STORAGE_KEY)).toBeNull();
+    expect(service.getUserVariants()).toEqual({});
+  });
+});
+
+describe("the theme's keys among the registered settings (layout L1)", () => {
+  const registered = () => {
+    const configuration = new ConfigurationService(new ConfigurationRegistry());
+    configuration.addExtension(
+      "acme.layout",
+      parseConfigurationContributions("acme.layout", {
+        configuration: {
+          properties: {
+            "acme.layout.visible": { type: "boolean", default: false, description: "Shows it." },
+          },
+        },
+      }).contributions,
+    );
+    return configuration;
+  };
+
+  it("has one schema: the registered settings, with the theme's keys over them", () => {
+    const configuration = registered();
+    configuration.addExtension(
+      "omnigent.themes",
+      parseConfigurationContributions(
+        "omnigent.themes",
+        { configuration: builtInThemeConfiguration() },
+        { builtIn: true },
+      ).contributions,
+    );
+    const schema = getSettingsSchema(service, configuration);
+    expect(schemaAt(schema, ["acme.layout.visible"])).toMatchObject({ type: "boolean" });
+    // The theme service's node, with the theme's own value, wins over the registered one.
+    expect(schemaAt(schema, ["omnigent.style.density"])?.description).toContain("(Compact)");
+    expect(
+      checkSettings('{ "acme.layout.visible": 1, "acme.nope": 2 }', service, configuration).map(
+        (entry) => entry.message,
+      ),
+    ).toEqual(["Expected a boolean.", 'Unknown setting "acme.nope".']);
+    expect(saveSettings('{ "acme.layout.visible": true }', service, configuration).saved).toBe(
+      true,
+    );
+    expect(configuration.getValue("acme.layout.visible")).toBe(true);
+  });
+
+  it("re-applies a theme key someone else writes", () => {
+    const stop = service.followSettings();
+    const configuration = registered();
+    configuration.update("omnigent.style.header", "solid");
+    expect(document.documentElement.getAttribute("data-omni-header")).toBe("solid");
+    stop();
+  });
+
+  it("resets only the theme's keys when the document holds others", () => {
+    save('// mine\n{ "omnigent.style.header": "solid", "acme.layout.visible": true }\n');
+    service.resetAppearance();
+    expect(stored().values).toEqual({ "acme.layout.visible": true });
+    expect(stored().text).toContain("// mine");
     expect(service.getUserVariants()).toEqual({});
   });
 });

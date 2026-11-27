@@ -15,11 +15,8 @@ import {
   ThemeService,
   type ThemeExtension,
 } from "./themeService";
-import {
-  LEGACY_COLOR_CUSTOMIZATIONS_STORAGE_KEY,
-  readStoredSettings,
-  SETTINGS_STORAGE_KEY,
-} from "./settingsDocument";
+import { readStoredSettings, SETTINGS_STORAGE_KEY } from "@/configuration/settingsDocument";
+import { LEGACY_COLOR_CUSTOMIZATIONS_STORAGE_KEY } from "@/theme/themeSettingKeys";
 import { getToken } from "./tokens/registry";
 
 function storedValues() {

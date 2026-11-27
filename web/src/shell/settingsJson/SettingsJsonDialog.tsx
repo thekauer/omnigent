@@ -16,7 +16,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { closeSettingsJsonEditor, useSettingsJsonEditorStore } from "@/store/settingsJsonEditor";
-import type { SettingsDiagnostic } from "@/theme/settingsLanguage";
+import type { SettingsDiagnostic } from "@/configuration/settingsLanguage";
+import { configurationService } from "@/configuration/configurationService";
 import { checkSettings, saveSettings } from "@/theme/settingsEditor";
 import { themeService, useThemeCustomizationsHidden } from "@/theme/themeService";
 
@@ -61,18 +62,23 @@ function SettingsJsonDialogBody() {
   const pending = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const reveal = useRef<((offset: number) => void) | null>(null);
   useEffect(() => () => clearTimeout(pending.current), []);
-  // The schema follows the themes and the product's locks: check again when they change.
-  useEffect(
-    () =>
-      themeService.onDidChange(() => {
-        clearTimeout(pending.current);
-        pending.current = setTimeout(
-          () => setDiagnostics(checkSettings(latestText.current)),
-          CHECK_DELAY_MS,
-        );
-      }),
-    [],
-  );
+  // The schema follows the themes, the registered settings and the product's locks: check
+  // again when they change.
+  useEffect(() => {
+    const recheck = () => {
+      clearTimeout(pending.current);
+      pending.current = setTimeout(
+        () => setDiagnostics(checkSettings(latestText.current)),
+        CHECK_DELAY_MS,
+      );
+    };
+    const stopThemes = themeService.onDidChange(recheck);
+    const stopSchema = configurationService.onDidChangeSchema(recheck);
+    return () => {
+      stopThemes();
+      stopSchema();
+    };
+  }, []);
   const latestText = useRef(text);
   latestText.current = text;
 
