@@ -4,7 +4,8 @@
 // the server's `/v1/info` `product.theme` (server config `product: theme:`). Each field
 // comes from the highest source that sets it; the locked maps merge per key.
 
-import type { ServerInfo } from "@/lib/capabilities";
+import { SERVER_INFO_OFFLINE_FALLBACK } from "@/lib/bootCapabilities";
+import { FALLBACK_SERVER_INFO, type ServerInfo } from "@/lib/capabilities";
 import { isContributedThemeId, isThemeSelection } from "@/lib/themePalette";
 import type { UiTheme } from "./themeContributions";
 import { themeService } from "./themeService";
@@ -395,10 +396,15 @@ const BUILD_FILES = import.meta.glob<unknown>("../../product.json", {
 export const LAST_SERVER_PRODUCT_THEME_STORAGE_KEY = "omnigent:ui-product-theme-server";
 
 /**
- * Takes the server's `/v1/info` product theme as the lowest source (a failed probe has
- * none), and keeps it for the next load's first paint.
+ * Takes the server's `/v1/info` product theme as the lowest source, and keeps it for the
+ * next load's first paint. A failed probe (the fallback info) says nothing about it: the
+ * last-known policy holds, so a network error never lifts the server's locks.
  */
 export function applyServerProductTheme(info: ServerInfo): void {
+  if (info === FALLBACK_SERVER_INFO || info === SERVER_INFO_OFFLINE_FALLBACK) {
+    applyLastServerProductTheme();
+    return;
+  }
   const config = parseServerProductTheme(info.product?.theme);
   try {
     if (config && Object.keys(config).length > 0) {
@@ -428,6 +434,13 @@ export function applyBuildProductTheme(options: { apply?: boolean } = {}): void 
  */
 export function applyBootProductThemes(options: { apply?: boolean } = {}): void {
   applyBuildProductTheme({ apply: false });
+  applyLastServerProductTheme({ apply: false });
+  if (options.apply !== false) applyMerged();
+}
+
+/** Takes the server's last-known product theme as its source, unless it has one already. */
+function applyLastServerProductTheme(options: { apply?: boolean } = {}): void {
+  if (configured.has("server")) return;
   let last: unknown;
   try {
     const text = window.localStorage.getItem(LAST_SERVER_PRODUCT_THEME_STORAGE_KEY);
@@ -436,10 +449,7 @@ export function applyBootProductThemes(options: { apply?: boolean } = {}): void 
   } catch {
     last = undefined;
   }
-  if (!configured.has("server")) {
-    setProductTheme("server", parseProductTheme(last, "server, last known"), { apply: false });
-  }
-  if (options.apply !== false) applyMerged();
+  setProductTheme("server", parseProductTheme(last, "server, last known"), options);
 }
 
 /** Gives the theme service the configurations recorded so far (an embed's, before its mount). */

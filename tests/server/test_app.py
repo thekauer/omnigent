@@ -3283,6 +3283,40 @@ async def test_info_publishes_the_product_theme(
         assert (await c.get("/v1/info")).json()["product"] is None
 
 
+@pytest.mark.asyncio
+async def test_server_starts_with_a_lone_surrogate_in_the_product_theme(
+    db_uri: str,
+    runtime_init: None,
+    tmp_path: Path,
+) -> None:
+    """A string with no UTF-16 form is dropped at startup, not a crash; the rest is served."""
+    app = _build_branding_app(
+        db_uri,
+        tmp_path,
+        "surrogate",
+        server_config={
+            "product": {
+                "theme": {
+                    "default": "acme\ud800",
+                    "allowed": ["\udfff"],
+                    "locked_tokens": {"primary": "\ud800", "\ud800": "#000000"},
+                    "locked_variants": {"density": "compact"},
+                }
+            }
+        },
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as c:
+        resp = await c.get("/v1/info")
+
+    assert resp.status_code == 200
+    theme = resp.json()["product"]["theme"]
+    assert {key: value for key, value in theme.items() if value is not None} == {
+        "locked_variants": {"density": "compact"},
+    }
+
+
 @pytest.mark.parametrize(
     ("names", "expected", "absent"),
     [

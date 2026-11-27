@@ -14,6 +14,7 @@ from io import BytesIO
 from pathlib import Path
 
 import pytest
+import yaml
 from PIL import Image
 
 from omnigent.server import server_config as server_config_module
@@ -903,6 +904,49 @@ def test_product_theme_cost_counts_as_javascript_does() -> None:
     assert product_theme_cost("ab") == 4
     assert product_theme_cost('a"b') == 6
     assert product_theme_cost("\U0001f600") == 4
+
+
+def test_product_theme_drops_strings_with_a_lone_surrogate(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A lone surrogate (YAML's ``"\\ud800"``) has no UTF-16 form: each such string goes."""
+    config = yaml.safe_load(
+        """
+product:
+  theme:
+    default: "acme\\ud800"
+    allowed: ["omnigent.themes/*", "acme\\udfff/*"]
+    locked_tokens:
+      primary: "#00ff00\\ud800"
+      "ring\\ud800": "#ff0000"
+      accent: "#0000ff"
+    locked_variants:
+      density: "compact"
+"""
+    )
+    assert config["product"]["theme"]["default"] == "acme\ud800"
+    with caplog.at_level(logging.WARNING, logger="omnigent.server.server_config"):
+        theme = load_product_theme(config)
+    assert theme == {
+        "allowed": ["omnigent.themes/*"],
+        "locked_tokens": {"accent": "#0000ff"},
+        "locked_variants": {"density": "compact"},
+    }
+    assert "product.theme.default must be a theme id" in caplog.text
+    assert "product.theme.allowed has malformed entries" in caplog.text
+    assert "locked_tokens.primary is malformed" in caplog.text
+    assert "locked_tokens.'ring\\ud800' is malformed" in caplog.text
+
+
+def test_product_theme_value_limit_counts_utf16_code_units() -> None:
+    """The 256-unit value limit is counted as the web counts it: an emoji is two units."""
+    fits = "\U0001f600" * 128
+    over = "\U0001f600" * 129
+    assert len(over) <= 256
+    theme = load_product_theme(
+        {"product": {"theme": {"locked_tokens": {"fits": fits, "over": over}}}}
+    )
+    assert theme == {"locked_tokens": {"fits": fits}}
 
 
 def test_product_theme_limit_matches_the_web() -> None:

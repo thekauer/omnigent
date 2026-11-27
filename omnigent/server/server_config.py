@@ -271,6 +271,27 @@ def product_theme_cost(text: str) -> int:
     return len(json.dumps(text, ensure_ascii=False).encode("utf-16-le")) // 2
 
 
+def _utf16_length(text: str) -> int | None:
+    """Return *text*'s length in UTF-16 code units (JavaScript's ``length``), as the web counts.
+
+    :param text: A string from the server config.
+    :returns: The length, or ``None`` when *text* has a lone surrogate (YAML's ``"\\ud800"``),
+        which has no UTF-16 (nor UTF-8) form to serve.
+    """
+    try:
+        return len(text.encode("utf-16-le")) // 2
+    except UnicodeEncodeError:
+        return None
+
+
+def _product_theme_string(text: Any, low: int, high: int) -> bool:
+    """Return whether *text* is a string of *low* to *high* UTF-16 code units."""
+    if not isinstance(text, str):
+        return False
+    length = _utf16_length(text)
+    return length is not None and low <= length <= high
+
+
 def _cap_product_theme(out: dict[str, Any]) -> None:
     """Drop what is over :data:`PRODUCT_THEME_MAX_CHARS` from *out*, warning with the keys.
 
@@ -336,15 +357,15 @@ def _product_theme_map(raw: Any, key: str, limit: int) -> dict[str, str] | None:
         return None
     entries: dict[str, str] = {}
     for name, value in raw.items():
-        valid = (
-            isinstance(name, str)
-            and 0 < len(name) <= _PRODUCT_THEME_KEY_LIMIT
-            and isinstance(value, str)
-            and len(value) <= _PRODUCT_THEME_VALUE_LIMIT
+        valid = _product_theme_string(name, 1, _PRODUCT_THEME_KEY_LIMIT) and _product_theme_string(
+            value, 0, _PRODUCT_THEME_VALUE_LIMIT
         )
         if not valid:
             logger.warning(
-                "server config product.theme.%s.%s is malformed; ignoring it", key, name
+                "server config product.theme.%s.%s is malformed; ignoring it",
+                key,
+                # A lone surrogate can't be logged as text: it is named by its escape.
+                name[:80] if _product_theme_string(name, 0, 1_000_000) else ascii(name)[:80],
             )
             continue
         if len(entries) >= limit:
@@ -392,7 +413,9 @@ def load_product_theme(config: Mapping[str, Any]) -> dict[str, Any] | None:
     out: dict[str, Any] = {}
     default = theme.get("default")
     if default is not None:
-        if isinstance(default, str) and 0 < len(default.strip()) <= _PRODUCT_THEME_ID_LIMIT:
+        if isinstance(default, str) and _product_theme_string(
+            default.strip(), 1, _PRODUCT_THEME_ID_LIMIT
+        ):
             out["default"] = default.strip()
         else:
             logger.warning("server config product.theme.default must be a theme id; ignoring it")
@@ -402,7 +425,8 @@ def load_product_theme(config: Mapping[str, Any]) -> dict[str, Any] | None:
         names = [
             item.strip()
             for item in items
-            if isinstance(item, str) and 0 < len(item.strip()) <= _PRODUCT_THEME_ID_LIMIT
+            if isinstance(item, str)
+            and _product_theme_string(item.strip(), 1, _PRODUCT_THEME_ID_LIMIT)
         ]
         if len(names) != len(items):
             logger.warning("server config product.theme.allowed has malformed entries")

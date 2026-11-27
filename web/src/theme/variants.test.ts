@@ -231,8 +231,12 @@ describe("variants.css", () => {
     expect(indexCss).toMatch(
       /@custom-variant md \{\s*@media \(width >= 73\.8125rem\)[\s\S]*?&:where\(\[data-desktop-app\], \[data-desktop-app\] \*\)/,
     );
+    // Any run of whitespace between a selector's parts: a formatter wraps long ones.
     const rule = (selector: string) =>
-      new RegExp(`${selector.replace(/[[\]().*:"=]/g, "\\$&")}\\s*\\{([^}]*)\\}`, "g");
+      new RegExp(
+        `${selector.replace(/[[\]().*:"=]/g, "\\$&").replace(/\s+/g, "\\s+")}\\s*\\{([^}]*)\\}`,
+        "g",
+      );
     const desktop = ":where([data-desktop-app], [data-desktop-app] *)";
     const [width, app] = [
       ...variantsCss.matchAll(rule('[data-omni-sheet="floating"] [data-slot="main-area"]')),

@@ -180,9 +180,10 @@ describe("resolveTokenLayers", () => {
         { "ui-row-height": "calc(var(--ui-radius-md) + 8px)" },
       ]);
       // Without the link, md's default (0.75 of the base) still reads the base too far:
-      // the next layer's link goes too.
+      // the next layer's base goes too, and then the link fits again and is put back.
       expect(deeper.values["ui-row-height"]).toBe("calc(var(--ui-radius-md) + 8px)");
-      expect(Object.keys(reasons(deeper)).sort()).toEqual(["ui-radius-base", "ui-radius-md"]);
+      expect(deeper.values["ui-radius-md"]).toBe("var(--ui-radius-base)");
+      expect(Object.keys(reasons(deeper))).toEqual(["ui-radius-base"]);
     });
 
     it("blames a cycle a lock closes through a var() fallback", () => {
@@ -191,7 +192,9 @@ describe("resolveTokenLayers", () => {
         { primary: "var(--ring, #000000)" },
       ]);
       expect(result.values.primary).toBe("var(--ring, #000000)");
-      expect(Object.keys(reasons(result)).sort()).toEqual(["accent", "ring"]);
+      // Leaving out the ring ends both cycles; the accent stays.
+      expect(result.values.accent).toBe("var(--primary)");
+      expect(Object.keys(reasons(result))).toEqual(["ring"]);
     });
 
     it("drops the values that close a cycle with a lock, never the lock", () => {
@@ -207,15 +210,95 @@ describe("resolveTokenLayers", () => {
       });
     });
 
-    it("drops every lower value on a longer cycle through a lock", () => {
+    it("drops one link of a longer cycle through a lock, not every link", () => {
       const result = resolveLocked([
         { ring: "var(--accent)", accent: "var(--primary)", primary: "#123456" },
         { primary: "var(--ring)" },
       ]);
       expect(result.values.primary).toBe("var(--ring)");
-      expect(result.values.ring).toBeUndefined();
+      expect(result.values.ring).toBe("var(--accent)");
       expect(result.values.accent).toBeUndefined();
-      expect(Object.keys(reasons(result)).sort()).toEqual(["accent", "ring"]);
+      expect(Object.keys(reasons(result))).toEqual(["accent"]);
+      // The same with the links in the user's layer.
+      const user = resolveLocked([
+        {},
+        { ring: "var(--accent)", accent: "var(--primary)", "sidebar-ring": "#ff0000" },
+        { primary: "var(--ring)" },
+      ]);
+      expect(user.values.primary).toBe("var(--ring)");
+      expect(user.values["sidebar-ring"]).toBe("#ff0000");
+      expect(Object.keys(reasons(user))).toHaveLength(1);
+    });
+
+    it("keeps both locks one user value breaks, whichever is named first", () => {
+      const locks = {
+        "ui-row-height": "calc(var(--ui-radius-base) + 8px)",
+        "ui-row-line": "calc(var(--ui-radius-base) * 1)",
+      };
+      const swapped = {
+        "ui-row-line": locks["ui-row-line"],
+        "ui-row-height": locks["ui-row-height"],
+      };
+      for (const lock of [locks, swapped]) {
+        const result = resolveLocked([{}, { "ui-radius-base": "399px" }, lock]);
+        expect(result.values["ui-row-height"]).toBe(locks["ui-row-height"]);
+        expect(result.values["ui-row-line"]).toBe(locks["ui-row-line"]);
+        expect(Object.keys(reasons(result))).toEqual(["ui-radius-base"]);
+      }
+    });
+
+    it("blames a user value behind a theme value it pushed out of range", () => {
+      // The user's base pushes the theme's row line out of range; the line's default
+      // then breaks nothing, but the lock reads the line at 21 times: still the user's.
+      const result = resolveLocked([
+        { "ui-row-line": "calc(var(--ui-radius-base) * 1)" },
+        { "ui-radius-base": "401px" },
+        { "ui-row-height": "calc(var(--ui-row-line) * 21)" },
+      ]);
+      expect(result.values["ui-row-height"]).toBe("calc(var(--ui-row-line) * 21)");
+      expect(result.values["ui-row-line"]).toBe("calc(var(--ui-radius-base) * 1)");
+      expect(result.values["ui-radius-base"]).toBeUndefined();
+      expect(reasons(result)).toEqual({
+        "ui-radius-base": "pushes the product's --ui-row-height out of range in dark",
+      });
+    });
+
+    it("blames a user value whose theme fallback's default closes a cycle with a lock", () => {
+      // 399px pushes the theme's row height out of range; its default reads the row
+      // line, the lock, which reads the row height.
+      const result = resolveLocked([
+        { "ui-row-height": "calc(var(--ui-radius-base) + 8px)" },
+        { "ui-radius-base": "399px" },
+        { "ui-row-line": "calc(var(--ui-row-height) - 8px)" },
+      ]);
+      expect(result.values["ui-row-line"]).toBe("calc(var(--ui-row-height) - 8px)");
+      expect(result.values["ui-row-height"]).toBe("calc(var(--ui-radius-base) + 8px)");
+      expect(Object.keys(reasons(result))).toEqual(["ui-radius-base"]);
+    });
+
+    it("drops only the theme value when that alone lets the lock fit", () => {
+      const result = resolveLocked([
+        { "ui-row-line": "400px" },
+        { "ui-radius-base": "1px" },
+        { "ui-row-height": "calc(var(--ui-row-line) + var(--ui-radius-base))" },
+      ]);
+      expect(result.values["ui-row-height"]).toBe(
+        "calc(var(--ui-row-line) + var(--ui-radius-base))",
+      );
+      expect(result.values["ui-radius-base"]).toBe("1px");
+      expect(reasons(result)).toEqual({
+        "ui-row-line": "pushes the product's --ui-row-height out of range in dark",
+      });
+    });
+
+    it("keeps a lock and its fallback-read color against a user cycle through it", () => {
+      const result = resolveLocked([
+        { accent: "#00ff00" },
+        { accent: "var(--sidebar, var(--ring))" },
+        { ring: "var(--accent)", sidebar: "#ffffff" },
+      ]);
+      expect(result.values.ring).toBe("var(--accent)");
+      expect(result.values.sidebar).toBe("#ffffff");
     });
 
     it("gives a lock that fails on its own its default, never a lower layer's value", () => {
@@ -435,4 +518,217 @@ describe("resolveTokenLayers fuzz", () => {
       expect(dropped).toBeGreaterThan(100);
     });
   }
+});
+
+// Random layered token graphs: a theme, the user's customizations and the product's locks.
+describe("resolveTokenLayers with locks, fuzz", () => {
+  const COLORS = ["ring", "accent", "primary", "sidebar", "sidebar-ring"];
+  const color = (next: () => number): string => {
+    const pick = () => COLORS[Math.floor(next() * COLORS.length)]!;
+    const roll = next();
+    if (roll < 0.3)
+      return `#${Math.floor(next() * 0xffffff)
+        .toString(16)
+        .padStart(6, "0")}`;
+    if (roll < 0.7) return `var(--${pick()})`;
+    return `var(--${pick()}, var(--${pick()}))`;
+  };
+  // Tokens with small ranges (32px, 400px) read from ones with large ranges, so a value
+  // a layer below writes often pushes a lock, or a value the lock reads, out of range.
+  const LENGTHS = [
+    "ui-radius-base",
+    "ui-radius-md",
+    "ui-radius-sm",
+    "ui-row-line",
+    "ui-border-width",
+    "ui-view-title-gap",
+  ];
+  const length = (next: () => number): Expression => {
+    const pick = (): Expression => ({
+      type: "var",
+      id: LENGTHS[Math.floor(next() * LENGTHS.length)]!,
+    });
+    const px = (): Expression => ({
+      type: "px",
+      value: Math.round(next() < 0.8 ? next() * 40 : next() * 450),
+    });
+    const roll = next();
+    if (roll < 0.25) return px();
+    if (roll < 0.45) return pick();
+    if (roll < 0.7) {
+      const factor = [1, 2, 8, 21][Math.floor(next() * 4)]!;
+      return { type: "scale", operand: pick(), factor };
+    }
+    if (roll < 0.85) return { type: "sum", left: pick(), right: pick(), sign: 1 };
+    return { type: "sum", left: pick(), right: px(), sign: next() < 0.8 ? 1 : -1 };
+  };
+  /** A layer of random values; each token written with `chance`. */
+  const randomLayer = (next: () => number, chance: number) => {
+    const written: Record<string, string> = {};
+    const expressions: Record<string, Expression> = {};
+    for (const id of LENGTHS) {
+      if (next() >= chance) continue;
+      const expression = length(next);
+      const value = write(expression);
+      if (!validateTokenValue("length", value, registryOnly, TOKEN_CONSTRAINTS[id]).ok) continue;
+      written[id] = value;
+      expressions[id] = expression;
+    }
+    for (const id of COLORS) if (next() < chance) written[id] = color(next);
+    return { written, expressions };
+  };
+  /** The tokens `lock` may read through any layer's value or a default. */
+  const closureOf = (layers: readonly Record<string, LayerValue>[], value: LayerValue) => {
+    const closure = new Set<string>();
+    const stack = [...value.references];
+    while (stack.length > 0) {
+      const id = stack.pop()!;
+      if (closure.has(id)) continue;
+      closure.add(id);
+      stack.push(
+        ...[...(registryDefault(id, "dark") ?? "").matchAll(/var\(\s*--([A-Za-z0-9-]+)/g)].map(
+          (m) => m[1]!,
+        ),
+      );
+      for (const layer of layers) stack.push(...(layer[id]?.references ?? []));
+    }
+    return closure;
+  };
+
+  it("never gives up a lock while a theme or user value in its closure applies", () => {
+    let held = 0;
+    let lost = 0;
+    let blamed = 0;
+    for (let seed = 1; seed <= 1500; seed += 1) {
+      const next = random(seed * 7919);
+      const generated = [randomLayer(next, 0.5), randomLayer(next, 0.5), randomLayer(next, 0.3)];
+      const layers = generated.map(({ written }) => layerOf(written));
+      const result = resolveTokenLayers(layers, "dark", { locked: 2 });
+      // Locks alone: what the product's own values do.
+      const alone = resolveTokenLayers([{}, {}, layers[2]!], "dark", { locked: 2 });
+      blamed += result.rejected.filter((entry) => /product's/.test(entry.reason)).length;
+      for (const [id, lock] of Object.entries(layers[2]!)) {
+        if (result.values[id] === lock.value) {
+          held += 1;
+          continue;
+        }
+        lost += 1;
+        const closure = closureOf(layers, lock);
+        const applied = [...closure].filter(
+          (ref) =>
+            result.values[ref] !== undefined && result.values[ref] !== layers[2]![ref]?.value,
+        );
+        // It may fail only as it fails with no other layer's value at all.
+        expect(alone.values[id], `seed ${seed}: --${id} lost with ${applied.join(", ")}`).not.toBe(
+          lock.value,
+        );
+      }
+      // And what is kept is in range, on no cycle: the kept formulas' exact values.
+      const expressionOf = (id: string): Expression | undefined => {
+        for (let layer = 2; layer >= 0; layer -= 1) {
+          if (generated[layer]!.written[id] === result.values[id]) {
+            return generated[layer]!.expressions[id];
+          }
+        }
+        return undefined;
+      };
+      const memo = new Map<string, number>();
+      const visiting = new Set<string>();
+      const value = (id: string): number => {
+        if (memo.has(id)) return memo.get(id)!;
+        if (visiting.has(id)) throw new Error(`seed ${seed}: a kept cycle through ${id}`);
+        visiting.add(id);
+        const expression = result.values[id] === undefined ? undefined : expressionOf(id);
+        const computed = expression ? evaluate(expression, value) : DEFAULT_PX[id]!(value);
+        visiting.delete(id);
+        memo.set(id, computed);
+        return computed;
+      };
+      for (const id of LENGTHS) {
+        // A default is trusted: only the values kept are checked.
+        if (result.values[id] === undefined) continue;
+        const [lo, hi] = tokenRange(id, "length");
+        const computed = value(id);
+        expect(computed, `seed ${seed}: --${id}`).toBeGreaterThanOrEqual(lo - 1e-6);
+        expect(computed, `seed ${seed}: --${id}`).toBeLessThanOrEqual(Math.min(hi, 10_000) + 1e-6);
+      }
+    }
+    // Every outcome is exercised.
+    expect(held).toBeGreaterThan(1000);
+    expect(lost).toBeGreaterThan(100);
+    expect(blamed).toBeGreaterThan(200);
+    // About 0.3s alone; the whole suite's load can stretch it far past the 5s default.
+  }, 60_000);
+});
+
+describe("resolveTokenLayers with locks, timing", () => {
+  const timed = (layers: Record<string, string>[]) => {
+    const values = layers.map((written) => {
+      const layer: Record<string, LayerValue> = {};
+      for (const [id, value] of Object.entries(written)) {
+        const result = validateTokenValue(
+          getToken(id)!.kind,
+          value,
+          registryOnly,
+          TOKEN_CONSTRAINTS[id],
+        );
+        if (result.ok) layer[id] = { value: result.value, references: result.references };
+      }
+      return layer;
+    });
+    const locked = values.length - 1;
+    resolveTokenLayers(values, "dark", { locked });
+    const start = performance.now();
+    const result = resolveTokenLayers(values, "dark", { locked });
+    const ms = performance.now() - start;
+    const alone = resolveTokenLayers(
+      [...values.slice(0, -1).map(() => ({})), values[locked]!],
+      "dark",
+      {
+        locked,
+      },
+    );
+    for (const [id, lock] of Object.entries(values[locked]!)) {
+      if (result.values[id] !== lock.value) expect(alone.values[id]).not.toBe(lock.value);
+    }
+    return ms;
+  };
+  const colors = TOKENS.filter((token) => token.kind === "color").map((token) => token.id);
+  const lengths = TOKENS.filter((token) => token.kind === "length").map((token) => token.id);
+
+  it("resolves a document of rings of references through many locks in time", () => {
+    const theme: Record<string, string> = {};
+    const user: Record<string, string> = {};
+    const lock: Record<string, string> = {};
+    colors.forEach((id, index) => {
+      const after = colors[(index + 1) % colors.length]!;
+      const before = colors[(index + colors.length - 1) % colors.length]!;
+      theme[id] = `var(--${before}, #000000)`;
+      user[id] = `var(--${after}, var(--${before}))`;
+      if (index % 3 === 0) lock[id] = `var(--${after})`;
+    });
+    lengths.forEach((id, index) => {
+      const after = lengths[(index + 1) % lengths.length]!;
+      theme[id] = `calc(var(--${after}) * 1)`;
+      user[id] = `calc(var(--${after}) + 1px)`;
+      if (index % 4 === 0) lock[id] = `calc(var(--${after}) * 2)`;
+    });
+    // Measured at 10 to 25ms; the bound only catches a blow-up.
+    expect(timed([theme, user, lock])).toBeLessThan(1500);
+  }, 30_000);
+
+  it("resolves many user cycles and lock cycles in time", () => {
+    const half = Math.floor(colors.length / 2);
+    const user: Record<string, string> = {};
+    const lock: Record<string, string> = {};
+    for (let index = 0; index + 1 < half; index += 2) {
+      user[colors[index]!] = `var(--${colors[index + 1]})`;
+      user[colors[index + 1]!] = `var(--${colors[index]})`;
+    }
+    for (let index = half; index + 1 < colors.length; index += 2) {
+      lock[colors[index]!] = `var(--${colors[index + 1]})`;
+      user[colors[index + 1]!] = `var(--${colors[index]})`;
+    }
+    expect(timed([{}, user, lock])).toBeLessThan(1500);
+  }, 30_000);
 });

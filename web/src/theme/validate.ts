@@ -1516,13 +1516,24 @@ export function measureTokenValue(
  * token reading itself included. CSS makes every token on a cycle invalid.
  */
 export function referenceCycles(graph: ReadonlyMap<string, readonly string[]>): Set<string> {
+  return new Set(cycleComponents(graph).keys());
+}
+
+/**
+ * The ids in `graph` that are on a reference cycle, each to the index of its strongly
+ * connected component: two ids share an index when each reaches the other.
+ */
+export function cycleComponents(
+  graph: ReadonlyMap<string, readonly string[]>,
+): Map<string, number> {
   // Tarjan's strongly connected components: a component of two or more, or a self-loop.
-  const onCycle = new Set<string>();
+  const onCycle = new Map<string, number>();
   const index = new Map<string, number>();
   const low = new Map<string, number>();
   const stack: string[] = [];
   const onStack = new Set<string>();
   let counter = 0;
+  let components = 0;
   const connect = (id: string): void => {
     index.set(id, counter);
     low.set(id, counter);
@@ -1546,7 +1557,8 @@ export function referenceCycles(graph: ReadonlyMap<string, readonly string[]>): 
       component.push(member);
     } while (member !== id);
     if (component.length > 1 || (graph.get(id) ?? []).includes(id)) {
-      for (const entry of component) onCycle.add(entry);
+      for (const entry of component) onCycle.set(entry, components);
+      components += 1;
     }
   };
   for (const id of graph.keys()) if (!index.has(id)) connect(id);

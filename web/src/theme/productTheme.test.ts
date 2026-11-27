@@ -4,6 +4,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { registerBuiltInThemes } from "@/builtinExtensions/builtInThemes";
+import { SERVER_INFO_OFFLINE_FALLBACK } from "@/lib/bootCapabilities";
+import { FALLBACK_SERVER_INFO } from "@/lib/capabilities";
 import { FIXTURE_EXTENSION_ID, fixtureThemeExtension } from "@/test/themeFixtures";
 
 import {
@@ -461,8 +463,20 @@ describe("the product theme in the theme service", () => {
     // The next load: before the server answers, its last policy holds.
     applyBootProductThemes();
     expect(themeService.getProductPolicy()).toEqual({ hideCustomizations: true });
-    // A server with none clears it.
-    applyServerProductTheme({} as never);
+    // A failed probe says nothing: the last-known policy holds, in memory and stored.
+    applyServerProductTheme(FALLBACK_SERVER_INFO);
+    expect(themeService.getProductPolicy()).toEqual({ hideCustomizations: true });
+    expect(localStorage.getItem(LAST_SERVER_PRODUCT_THEME_STORAGE_KEY)).toContain(
+      "hideCustomizations",
+    );
+    // So does a failed probe on a load with no server source yet (a reload offline).
+    setProductTheme("server", undefined);
+    applyServerProductTheme(FALLBACK_SERVER_INFO);
+    expect(themeService.getProductPolicy()).toEqual({ hideCustomizations: true });
+    applyServerProductTheme(SERVER_INFO_OFFLINE_FALLBACK);
+    expect(themeService.getProductPolicy()).toEqual({ hideCustomizations: true });
+    // A server that answers with none clears it.
+    applyServerProductTheme({ ...FALLBACK_SERVER_INFO, product: null });
     expect(localStorage.getItem(LAST_SERVER_PRODUCT_THEME_STORAGE_KEY)).toBeNull();
     expect(themeService.getProductPolicy()).toBeNull();
     // Whatever another writer put there is checked again.
