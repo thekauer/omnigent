@@ -51,3 +51,9 @@ export function builtInContainerViews(containerId: string): readonly RailViewCon
   views ??= readViews();
   return views.get(containerId) ?? [];
 }
+
+/** Every built-in container's views, in manifest order. */
+export function allBuiltInContainerViews(): readonly RailViewContribution[] {
+  views ??= readViews();
+  return [...views.values()].flat();
+}

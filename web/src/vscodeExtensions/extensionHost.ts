@@ -2,6 +2,8 @@
 // extensions at startup, and the dev loader adds dev-path extensions to the same
 // host. Built-ins load from the bundle, so their views register before the first
 // render and core tabs never show a blank panel.
+import { openMoveViewPicker } from "@/store/moveViewPicker";
+import { containerLocation, readViewLocations, viewContainerFor } from "@/workbench/viewLocations";
 import { builtInExtensions } from "@/builtinExtensions";
 import { registerLayoutCommands } from "@/workbench/layoutCommands";
 import { registerNavigationCommands } from "@/workbench/navigationCommands";
@@ -82,6 +84,7 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
   const layoutCommands = registerLayoutCommands(commands, options.layout ?? layoutService, {
     contextKeys,
     configuration: options.configuration ?? configurationService,
+    openMoveView: openMoveViewPicker,
     ...(options.containers ? { containers: options.containers } : {}),
   });
   const navigationCommands = registerNavigationCommands(commands);
@@ -132,10 +135,13 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
         extensionId,
         command,
         () => {
-          const containerId = registry.get(viewId)?.containerId;
-          const container = containerId ? containerRegistry.get(containerId) : undefined;
-          if (container?.location === "sidebar") {
-            (options.layout ?? layoutService).openViewContainer(container.id);
+          // Where the view is now: the user may have moved it.
+          const view = registry.get(viewId);
+          const containerId = view
+            ? viewContainerFor(view, readViewLocations(), containerRegistry)
+            : undefined;
+          if (containerId && containerLocation(containerId, containerRegistry) === "sidebar") {
+            (options.layout ?? layoutService).openViewContainer(containerId);
             return true;
           }
           return bridge.rail()?.reveal(viewId) ?? false;

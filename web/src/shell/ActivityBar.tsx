@@ -25,6 +25,7 @@ import {
 } from "@/workbench/activityBar";
 import { layoutService, Parts, partHook } from "@/workbench/layoutService";
 import type { ViewContainerDescriptor } from "@/workbench/viewContainers";
+import { generatedContainerId } from "@/workbench/viewLocations";
 import {
   type BuiltInViewBadge,
   BuiltInViewBadgeProviders,
@@ -37,6 +38,7 @@ import { SidebarServerPicker } from "./SidebarServerPicker";
 import { SIDEBAR_ELEMENT_ID } from "./sidebarStyles";
 import { useActiveViewContainer, usePartVisible, useWorkbenchPart } from "./useWorkbenchParts";
 import { useSideBarContainers } from "./ViewContainerViews";
+import { useViewDropTarget } from "./viewMoves";
 
 interface ActivityBarEntry {
   readonly container: ViewContainerDescriptor;
@@ -103,6 +105,8 @@ export function ActivityBar({ location }: { location: Exclude<ActivityBarLocatio
     event.preventDefault();
     items[next]?.focus();
   };
+  // A view dropped on the bar, not on an item, gets a side bar entry of its own.
+  const newEntryDrop = useViewDropTarget(useCallback((viewId) => generatedContainerId(viewId), []));
   const activeShown = shown.some((entry) => entry.container.id === activeId)
     ? activeId
     : shown[0]?.container.id;
@@ -113,6 +117,7 @@ export function ActivityBar({ location }: { location: Exclude<ActivityBarLocatio
           <div
             data-part={partHook(Parts.ACTIVITYBAR_PART)}
             data-location={location}
+            {...newEntryDrop}
             className={cn(
               "activitybar flex shrink-0 select-none",
               vertical
@@ -208,6 +213,9 @@ function ActivityBarItem({
   const Icon = railViewIcon(container.icon) ?? DEFAULT_RAIL_VIEW_ICON;
   const badge = useContainerBadge(views);
   const [dropTarget, setDropTarget] = useState(false);
+  // A view dropped on the item moves into its container.
+  const containerId = container.id;
+  const viewDrop = useViewDropTarget(useCallback(() => containerId, [containerId]));
   const label = badge
     ? `${container.title} (${badge.tooltip || badge.label || badge.value})`
     : container.title;
@@ -235,15 +243,23 @@ function ActivityBarItem({
             onDragEnd();
           }}
           onDragOver={(event) => {
+            viewDrop.onDragOver(event);
+            if (event.defaultPrevented) return;
             event.preventDefault();
             setDropTarget(true);
           }}
-          onDragLeave={() => setDropTarget(false)}
+          onDragLeave={(event) => {
+            viewDrop.onDragLeave(event);
+            setDropTarget(false);
+          }}
           onDrop={(event) => {
+            viewDrop.onDrop(event);
+            if (event.defaultPrevented) return;
             event.preventDefault();
             setDropTarget(false);
             onDrop();
           }}
+          data-view-drop-target={viewDrop["data-view-drop-target"]}
           className={cn(
             "activitybar-item relative flex cursor-pointer items-center justify-center rounded-(--radius-otto-button) text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring",
             vertical ? "size-10" : "size-8",

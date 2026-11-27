@@ -98,6 +98,8 @@ import { useTerminalStatuses } from "./useTerminalStatuses";
 import { extensionRailTab, extensionRailTabViewId, type RightRailTab } from "./railTabs";
 import { useWorkspaceRail } from "./useWorkspaceRail";
 import { builtInTabView, hasRailTab, useRailViews } from "./railViews";
+import { RailTabStripMenu } from "./RailTabStripMenu";
+import { viewDragProps } from "./viewMoves";
 import { isViewHidden, useViewsLayout } from "@/workbench/viewsLayout";
 import { ViewContainerTitleActions } from "./ViewContainerTitleActions";
 import { RIGHT_PANEL_CONTAINER } from "@/workbench/viewContainers";
@@ -1482,9 +1484,14 @@ function WorkspacePanelImpl({
     });
     if (presentation === null) return null;
     const { label, icon: Icon, badge } = presentation;
+    // An extension view's tab drags to another container.
+    const tabViewId = extensionRailTabViewId(tab);
+    const tabView =
+      tabViewId === null ? undefined : extensionViews.find((view) => view.id === tabViewId);
     return (
       <WorkspaceTabTooltip key={tab} label={label} shortcut={presentation.tooltipShortcut}>
         <TabsTrigger
+          {...(tabView ? viewDragProps(tabView) : {})}
           value={tab}
           aria-label={presentation.ariaLabel}
           aria-keyshortcuts={presentation.ariaKeyShortcuts}
@@ -1761,284 +1768,290 @@ function WorkspacePanelImpl({
         )}
         {/* The default nav tab comes first; the remaining tabs keep their relative order. */}
         {/* Narrow rails use the picker for fixed panels, leaving room for open tabs. */}
-        <div
-          ref={tabListRef}
-          role="toolbar"
-          aria-label="Workspace tabs"
-          tabIndex={-1}
-          className="workspace-tab-strip shrink-0 flex min-h-(--ui-tabstrip-height) items-center overflow-x-hidden border-b-(length:--ui-border-width) [--tw-border-style:var(--ui-divider-style)] border-border px-(--ui-tabstrip-padding-x) py-(--ui-tabstrip-padding-y)"
-        >
-          {visiblePermanentTabs.length > 0 && (
-            <Tabs
-              className={cn("shrink-0", showOpenTabs && "@max-[400px]/rail:hidden")}
-              // Soft tabs own their highlight. A vanished shell falls back to a
-              // fixed page, so only live shell selections suppress its highlight.
-              value={
-                pending
-                  ? "__pending__"
-                  : selectedFilePath !== null ||
-                      browserSelected ||
-                      sideChatSelected ||
-                      terminalShown
-                    ? "__tab__"
-                    : (rightRailTab ?? "__empty__")
-              }
-              onValueChange={(value) => selectPermanentTab(value as RightRailTab)}
-              componentId="chat.right_rail.tabs"
-            >
-              <TabsList variant="pill" className="gap-1">
-                {visiblePermanentTabs.map(renderTabTrigger)}
-              </TabsList>
-            </Tabs>
-          )}
-          {/* The divider follows the fixed panel icons' visibility. */}
-          {visiblePermanentTabs.length > 0 && (
-            <div
-              aria-hidden
-              className={cn(
-                "mx-2 h-[14px] w-px shrink-0 self-center bg-border-strong",
-                showOpenTabs && "@max-[400px]/rail:hidden",
-              )}
-            />
-          )}
-          {showOpenTabs && (
-            <>
-              {/* Open tabs fill the space before the pinned trailing controls. */}
-              <WorkspaceTabsScroller>
-                {visibleOpenPanels.map((tab) => {
-                  const { label, icon: Icon } = WORKSPACE_PANEL_TABS[tab];
-                  const active =
-                    rightRailTab === tab &&
-                    selectedFilePath === null &&
-                    selectedTerminalKey === null;
-                  return (
-                    <div
-                      key={tab}
-                      className={cn(
-                        "flex h-[24px] shrink-0 items-center gap-[6px] rounded-md px-2 text-ui font-medium leading-5 transition-colors",
-                        active
-                          ? "bg-[color-mix(in_srgb,var(--muted-foreground)_15%,var(--card))] text-foreground"
-                          : "text-muted-foreground hover:bg-[color-mix(in_srgb,var(--muted-foreground)_15%,var(--card))] hover:text-foreground",
-                      )}
-                    >
-                      <button
-                        ref={active ? activePanelRef : null}
-                        type="button"
-                        role="tab"
-                        aria-label={label}
-                        aria-selected={active}
-                        className="flex items-center gap-1"
-                        onClick={() => selectPermanentTab(tab)}
-                        onAuxClick={(event) => {
-                          if (event.button === 1) {
-                            event.preventDefault();
-                            closePanel(tab);
-                          }
-                        }}
-                      >
-                        <Icon className="size-4" />
-                        {label}
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`Close ${label}`}
-                        className="flex size-4 items-center justify-center rounded hover:bg-muted"
-                        onClick={() => closePanel(tab)}
-                      >
-                        <XIcon className="size-3" />
-                      </button>
-                    </div>
-                  );
-                })}
-                <FileTabsStrip
-                  openFiles={openFiles}
-                  activeFilePath={selectedFilePath}
-                  onFileSelect={openFileViewer}
-                  onCloseFile={closeFile}
-                />
-                <TerminalTabsStrip
-                  openTerminals={openTerminals}
-                  activeTerminalKey={selectedTerminalKey}
-                  closingKey={closingTerminalKey ?? null}
-                  canClose={isEditorLevel(permissionLevel)}
-                  labelFor={terminalLabelFor}
-                  onSelect={openTerminalTab}
-                  onClose={onCloseTerminal}
-                />
-                {showBrowserTab &&
-                  browsers.tabs.map((tabId, index) => (
-                    <div
-                      key={tabId}
-                      ref={browserSelected && browsers.selected === tabId ? activeBrowserRef : null}
-                      className={cn(
-                        "flex h-[24px] shrink-0 items-center gap-[6px] rounded-md px-2 text-ui font-medium leading-5 transition-colors",
-                        browserSelected && browsers.selected === tabId
-                          ? "bg-[color-mix(in_srgb,var(--muted-foreground)_15%,var(--card))] text-foreground"
-                          : "text-muted-foreground hover:bg-[color-mix(in_srgb,var(--muted-foreground)_15%,var(--card))] hover:text-foreground",
-                      )}
-                    >
-                      <button
-                        type="button"
-                        role="tab"
-                        aria-selected={browserSelected && browsers.selected === tabId}
-                        title={browsers.labelFor(tabId, index)}
-                        className="flex min-w-0 items-center gap-1"
-                        onAuxClick={(event) => {
-                          if (event.button === 1) {
-                            event.preventDefault();
-                            void closeBrowserTab(tabId);
-                          }
-                        }}
-                        onClick={() => {
-                          browsers.select(tabId);
-                          onRightRailTabChange("browser");
-                        }}
-                      >
-                        <GlobeIcon className="size-4 shrink-0" />
-                        <span className="max-w-44 truncate">{browsers.labelFor(tabId, index)}</span>
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`Close ${browsers.labelFor(tabId, index)}`}
-                        className="flex size-4 items-center justify-center rounded hover:bg-muted"
-                        onClick={() => void closeBrowserTab(tabId)}
-                      >
-                        <XIcon className="size-3" />
-                      </button>
-                    </div>
-                  ))}
-                {sideChats.tabs.map((childId) => {
-                  const active = sideChatSelected && sideChats.selected === childId;
-                  const label = chatTabLabels[childId] ?? childId;
-                  const TabIcon =
-                    subagentSessionIdFromTab(childId) === null ? MessagesSquareIcon : BotIcon;
-                  return (
-                    <div
-                      key={childId}
-                      ref={active ? activeSideChatRef : null}
-                      className={cn(
-                        "flex h-[24px] shrink-0 items-center gap-[6px] rounded-md px-2 text-ui font-medium leading-5 transition-colors",
-                        active
-                          ? "bg-[color-mix(in_srgb,var(--muted-foreground)_15%,var(--card))] text-foreground"
-                          : "text-muted-foreground hover:bg-[color-mix(in_srgb,var(--muted-foreground)_15%,var(--card))] hover:text-foreground",
-                      )}
-                    >
-                      <button
-                        type="button"
-                        role="tab"
-                        aria-selected={active}
-                        className="flex items-center gap-1"
-                        onAuxClick={(event) => {
-                          if (event.button === 1) {
-                            event.preventDefault();
-                            closeSideChat(childId);
-                          }
-                        }}
-                        onClick={() => {
-                          sideChats.select(childId);
-                          onRightRailTabChange("sidechat");
-                        }}
-                      >
-                        <TabIcon className="size-4 shrink-0" />
-                        <span className="max-w-[16ch] truncate">{label}</span>
-                      </button>
-                      <button
-                        type="button"
-                        aria-label={`Close ${label}`}
-                        className="flex size-4 items-center justify-center rounded hover:bg-muted"
-                        onClick={() => closeSideChat(childId)}
-                      >
-                        <XIcon className="size-3" />
-                      </button>
-                    </div>
-                  );
-                })}
-              </WorkspaceTabsScroller>
-            </>
-          )}
-          {/* With no open tabs, "+" sits right after the nav tabs. */}
-          {!pending && !showOpenTabs && newTabMenu("start")}
-          {/* The picker and fullscreen toggle form the trailing control group,
-            pinned right outside the scrolling viewport; "+" joins it once tabs exist. */}
-          <div className="ml-auto flex shrink-0 items-center gap-1 pl-1">
-            {showOpenTabs && newTabMenu("end")}
-            <ViewContainerTitleActions containerId={RIGHT_PANEL_CONTAINER} />
-            {panelOptions.length > 0 && (
-              <DropdownMenu
-                onOpenChange={(isOpen) => {
-                  if (isOpen) markPickerKeyboard();
-                }}
+        <RailTabStripMenu views={extensionViews}>
+          <div
+            ref={tabListRef}
+            role="toolbar"
+            aria-label="Workspace tabs"
+            tabIndex={-1}
+            className="workspace-tab-strip shrink-0 flex min-h-(--ui-tabstrip-height) items-center overflow-x-hidden border-b-(length:--ui-border-width) [--tw-border-style:var(--ui-divider-style)] border-border px-(--ui-tabstrip-padding-x) py-(--ui-tabstrip-padding-y)"
+          >
+            {visiblePermanentTabs.length > 0 && (
+              <Tabs
+                className={cn("shrink-0", showOpenTabs && "@max-[400px]/rail:hidden")}
+                // Soft tabs own their highlight. A vanished shell falls back to a
+                // fixed page, so only live shell selections suppress its highlight.
+                value={
+                  pending
+                    ? "__pending__"
+                    : selectedFilePath !== null ||
+                        browserSelected ||
+                        sideChatSelected ||
+                        terminalShown
+                      ? "__tab__"
+                      : (rightRailTab ?? "__empty__")
+                }
+                onValueChange={(value) => selectPermanentTab(value as RightRailTab)}
+                componentId="chat.right_rail.tabs"
               >
-                <WorkspaceTabTooltip label="Select panel">
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon-xs"
-                      className="size-6 shrink-0"
-                      aria-label="Select panel"
-                      disabled={pending}
-                    >
-                      <ChevronDownIcon className="size-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                </WorkspaceTabTooltip>
-                <DropdownMenuContent
-                  align="end"
-                  className="max-w-[min(32rem,calc(100vw-2rem))]"
-                  onPointerDown={markPickerPointer}
-                  // A press that began on the trigger selects on release, with no
-                  // pointerdown inside the menu.
-                  onPointerUp={markPickerPointer}
-                  onPointerDownOutside={markPickerPointer}
-                  onKeyDown={markPickerKeyboard}
-                  // Restoring focus after a mouse pick reopens the trigger's tooltip and
-                  // leaves it hanging; keyboard picks keep Radix's focus restore.
-                  onCloseAutoFocus={(event) => {
-                    if (pickerInputRef.current === "pointer") event.preventDefault();
+                <TabsList variant="pill" className="gap-1">
+                  {visiblePermanentTabs.map(renderTabTrigger)}
+                </TabsList>
+              </Tabs>
+            )}
+            {/* The divider follows the fixed panel icons' visibility. */}
+            {visiblePermanentTabs.length > 0 && (
+              <div
+                aria-hidden
+                className={cn(
+                  "mx-2 h-[14px] w-px shrink-0 self-center bg-border-strong",
+                  showOpenTabs && "@max-[400px]/rail:hidden",
+                )}
+              />
+            )}
+            {showOpenTabs && (
+              <>
+                {/* Open tabs fill the space before the pinned trailing controls. */}
+                <WorkspaceTabsScroller>
+                  {visibleOpenPanels.map((tab) => {
+                    const { label, icon: Icon } = WORKSPACE_PANEL_TABS[tab];
+                    const active =
+                      rightRailTab === tab &&
+                      selectedFilePath === null &&
+                      selectedTerminalKey === null;
+                    return (
+                      <div
+                        key={tab}
+                        className={cn(
+                          "flex h-[24px] shrink-0 items-center gap-[6px] rounded-md px-2 text-ui font-medium leading-5 transition-colors",
+                          active
+                            ? "bg-[color-mix(in_srgb,var(--muted-foreground)_15%,var(--card))] text-foreground"
+                            : "text-muted-foreground hover:bg-[color-mix(in_srgb,var(--muted-foreground)_15%,var(--card))] hover:text-foreground",
+                        )}
+                      >
+                        <button
+                          ref={active ? activePanelRef : null}
+                          type="button"
+                          role="tab"
+                          aria-label={label}
+                          aria-selected={active}
+                          className="flex items-center gap-1"
+                          onClick={() => selectPermanentTab(tab)}
+                          onAuxClick={(event) => {
+                            if (event.button === 1) {
+                              event.preventDefault();
+                              closePanel(tab);
+                            }
+                          }}
+                        >
+                          <Icon className="size-4" />
+                          {label}
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Close ${label}`}
+                          className="flex size-4 items-center justify-center rounded hover:bg-muted"
+                          onClick={() => closePanel(tab)}
+                        >
+                          <XIcon className="size-3" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                  <FileTabsStrip
+                    openFiles={openFiles}
+                    activeFilePath={selectedFilePath}
+                    onFileSelect={openFileViewer}
+                    onCloseFile={closeFile}
+                  />
+                  <TerminalTabsStrip
+                    openTerminals={openTerminals}
+                    activeTerminalKey={selectedTerminalKey}
+                    closingKey={closingTerminalKey ?? null}
+                    canClose={isEditorLevel(permissionLevel)}
+                    labelFor={terminalLabelFor}
+                    onSelect={openTerminalTab}
+                    onClose={onCloseTerminal}
+                  />
+                  {showBrowserTab &&
+                    browsers.tabs.map((tabId, index) => (
+                      <div
+                        key={tabId}
+                        ref={
+                          browserSelected && browsers.selected === tabId ? activeBrowserRef : null
+                        }
+                        className={cn(
+                          "flex h-[24px] shrink-0 items-center gap-[6px] rounded-md px-2 text-ui font-medium leading-5 transition-colors",
+                          browserSelected && browsers.selected === tabId
+                            ? "bg-[color-mix(in_srgb,var(--muted-foreground)_15%,var(--card))] text-foreground"
+                            : "text-muted-foreground hover:bg-[color-mix(in_srgb,var(--muted-foreground)_15%,var(--card))] hover:text-foreground",
+                        )}
+                      >
+                        <button
+                          type="button"
+                          role="tab"
+                          aria-selected={browserSelected && browsers.selected === tabId}
+                          title={browsers.labelFor(tabId, index)}
+                          className="flex min-w-0 items-center gap-1"
+                          onAuxClick={(event) => {
+                            if (event.button === 1) {
+                              event.preventDefault();
+                              void closeBrowserTab(tabId);
+                            }
+                          }}
+                          onClick={() => {
+                            browsers.select(tabId);
+                            onRightRailTabChange("browser");
+                          }}
+                        >
+                          <GlobeIcon className="size-4 shrink-0" />
+                          <span className="max-w-44 truncate">
+                            {browsers.labelFor(tabId, index)}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Close ${browsers.labelFor(tabId, index)}`}
+                          className="flex size-4 items-center justify-center rounded hover:bg-muted"
+                          onClick={() => void closeBrowserTab(tabId)}
+                        >
+                          <XIcon className="size-3" />
+                        </button>
+                      </div>
+                    ))}
+                  {sideChats.tabs.map((childId) => {
+                    const active = sideChatSelected && sideChats.selected === childId;
+                    const label = chatTabLabels[childId] ?? childId;
+                    const TabIcon =
+                      subagentSessionIdFromTab(childId) === null ? MessagesSquareIcon : BotIcon;
+                    return (
+                      <div
+                        key={childId}
+                        ref={active ? activeSideChatRef : null}
+                        className={cn(
+                          "flex h-[24px] shrink-0 items-center gap-[6px] rounded-md px-2 text-ui font-medium leading-5 transition-colors",
+                          active
+                            ? "bg-[color-mix(in_srgb,var(--muted-foreground)_15%,var(--card))] text-foreground"
+                            : "text-muted-foreground hover:bg-[color-mix(in_srgb,var(--muted-foreground)_15%,var(--card))] hover:text-foreground",
+                        )}
+                      >
+                        <button
+                          type="button"
+                          role="tab"
+                          aria-selected={active}
+                          className="flex items-center gap-1"
+                          onAuxClick={(event) => {
+                            if (event.button === 1) {
+                              event.preventDefault();
+                              closeSideChat(childId);
+                            }
+                          }}
+                          onClick={() => {
+                            sideChats.select(childId);
+                            onRightRailTabChange("sidechat");
+                          }}
+                        >
+                          <TabIcon className="size-4 shrink-0" />
+                          <span className="max-w-[16ch] truncate">{label}</span>
+                        </button>
+                        <button
+                          type="button"
+                          aria-label={`Close ${label}`}
+                          className="flex size-4 items-center justify-center rounded hover:bg-muted"
+                          onClick={() => closeSideChat(childId)}
+                        >
+                          <XIcon className="size-3" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </WorkspaceTabsScroller>
+              </>
+            )}
+            {/* With no open tabs, "+" sits right after the nav tabs. */}
+            {!pending && !showOpenTabs && newTabMenu("start")}
+            {/* The picker and fullscreen toggle form the trailing control group,
+            pinned right outside the scrolling viewport; "+" joins it once tabs exist. */}
+            <div className="ml-auto flex shrink-0 items-center gap-1 pl-1">
+              {showOpenTabs && newTabMenu("end")}
+              <ViewContainerTitleActions containerId={RIGHT_PANEL_CONTAINER} />
+              {panelOptions.length > 0 && (
+                <DropdownMenu
+                  onOpenChange={(isOpen) => {
+                    if (isOpen) markPickerKeyboard();
                   }}
                 >
-                  <SuppressBrowserView />
-                  <DropdownMenuLabel>Panels</DropdownMenuLabel>
-                  {panelOptions.map((option) => (
-                    <DropdownMenuItem
-                      key={option.key}
-                      onSelect={option.select}
-                      disabled={option.disabled}
-                      title={option.label}
-                      aria-current={option.active ? "true" : undefined}
-                    >
-                      <span className="min-w-0 flex-1 truncate">{option.label}</span>
-                      {option.active && <CheckIcon className="size-4" aria-hidden />}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            )}
-            <WorkspaceTabTooltip
-              label={maximized ? "Exit full screen" : "Full screen"}
-              // Escape exits full screen only from a file; other tabs keep Escape for themselves.
-              shortcut={fileViewerInFront && maximized && !isMobile ? [ESC_KEY] : undefined}
-            >
-              <Button
-                type="button"
-                variant="ghost"
-                aria-label={maximized ? "Exit full screen" : "Full screen"}
-                aria-pressed={maximized}
-                onClick={onToggleMaximized}
-                disabled={pending}
-                size="icon-xs"
-                className="flex size-6 text-muted-foreground hover:text-foreground"
+                  <WorkspaceTabTooltip label="Select panel">
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        className="size-6 shrink-0"
+                        aria-label="Select panel"
+                        disabled={pending}
+                      >
+                        <ChevronDownIcon className="size-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                  </WorkspaceTabTooltip>
+                  <DropdownMenuContent
+                    align="end"
+                    className="max-w-[min(32rem,calc(100vw-2rem))]"
+                    onPointerDown={markPickerPointer}
+                    // A press that began on the trigger selects on release, with no
+                    // pointerdown inside the menu.
+                    onPointerUp={markPickerPointer}
+                    onPointerDownOutside={markPickerPointer}
+                    onKeyDown={markPickerKeyboard}
+                    // Restoring focus after a mouse pick reopens the trigger's tooltip and
+                    // leaves it hanging; keyboard picks keep Radix's focus restore.
+                    onCloseAutoFocus={(event) => {
+                      if (pickerInputRef.current === "pointer") event.preventDefault();
+                    }}
+                  >
+                    <SuppressBrowserView />
+                    <DropdownMenuLabel>Panels</DropdownMenuLabel>
+                    {panelOptions.map((option) => (
+                      <DropdownMenuItem
+                        key={option.key}
+                        onSelect={option.select}
+                        disabled={option.disabled}
+                        title={option.label}
+                        aria-current={option.active ? "true" : undefined}
+                      >
+                        <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                        {option.active && <CheckIcon className="size-4" aria-hidden />}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
+              <WorkspaceTabTooltip
+                label={maximized ? "Exit full screen" : "Full screen"}
+                // Escape exits full screen only from a file; other tabs keep Escape for themselves.
+                shortcut={fileViewerInFront && maximized && !isMobile ? [ESC_KEY] : undefined}
               >
-                {maximized ? (
-                  <MinimizeIcon className="size-4" />
-                ) : (
-                  <MaximizeIcon className="size-4" />
-                )}
-              </Button>
-            </WorkspaceTabTooltip>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  aria-label={maximized ? "Exit full screen" : "Full screen"}
+                  aria-pressed={maximized}
+                  onClick={onToggleMaximized}
+                  disabled={pending}
+                  size="icon-xs"
+                  className="flex size-6 text-muted-foreground hover:text-foreground"
+                >
+                  {maximized ? (
+                    <MinimizeIcon className="size-4" />
+                  ) : (
+                    <MaximizeIcon className="size-4" />
+                  )}
+                </Button>
+              </WorkspaceTabTooltip>
+            </div>
           </div>
-        </div>
+        </RailTabStripMenu>
         {/* Single content slot: an open shell or file tab, else the selected tab's view. */}
         <div
           ref={railContentRef}

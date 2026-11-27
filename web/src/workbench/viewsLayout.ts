@@ -4,6 +4,7 @@
 
 import { useCallback, useSyncExternalStore } from "react";
 import { LAYOUT_SLOTS, type LayoutStateStore, layoutState } from "./layoutState";
+import { type ProductLayoutPolicy, productLayout } from "./productLayout";
 
 export interface ViewLayout {
   readonly collapsed?: boolean;
@@ -14,8 +15,15 @@ export type ViewsLayout = Readonly<Record<string, ViewLayout>>;
 
 const EMPTY: ViewsLayout = Object.freeze({});
 
-/** The stored view layout, keeping only well-formed entries. */
-export function readViewsLayout(store: LayoutStateStore = layoutState): ViewsLayout {
+/**
+ * The stored view layout, keeping only well-formed entries; the user's hidden views come back
+ * while the product locks view locations.
+ */
+export function readViewsLayout(
+  store: LayoutStateStore = layoutState,
+  policy: ProductLayoutPolicy = productLayout,
+): ViewsLayout {
+  const locked = policy.viewLocationsLocked();
   const stored = store.get(LAYOUT_SLOTS.views);
   if (typeof stored !== "object" || stored === null || Array.isArray(stored)) return EMPTY;
   const views: Record<string, ViewLayout> = {};
@@ -24,19 +32,25 @@ export function readViewsLayout(store: LayoutStateStore = layoutState): ViewsLay
     const { collapsed, hidden } = value as Record<string, unknown>;
     const entry: { collapsed?: boolean; hidden?: boolean } = {};
     if (typeof collapsed === "boolean") entry.collapsed = collapsed;
-    if (typeof hidden === "boolean") entry.hidden = hidden;
+    if (typeof hidden === "boolean" && !locked) entry.hidden = hidden;
     if (Object.keys(entry).length > 0) views[viewId] = entry;
   }
   return Object.freeze(views);
 }
 
-/** Changes one view's layout; an empty entry is dropped. */
+/**
+ * Changes one view's layout; an empty entry is dropped. Hiding or showing is refused (false)
+ * while the product locks view locations.
+ */
 export function updateViewLayout(
   viewId: string,
   patch: ViewLayout,
   store: LayoutStateStore = layoutState,
-): void {
-  const current = readViewsLayout(store);
+  policy: ProductLayoutPolicy = productLayout,
+): boolean {
+  if (patch.hidden !== undefined && policy.viewLocationsLocked()) return false;
+  // The stored entry as written, so a lock lifted later finds the user's hidden views again.
+  const current = readViewsLayout(store, UNLOCKED);
   const entry = { ...current[viewId], ...patch };
   const kept = Object.fromEntries(
     Object.entries(entry).filter(([, value]) => value !== undefined),
@@ -45,7 +59,10 @@ export function updateViewLayout(
   if (Object.keys(kept).length === 0) next.delete(viewId);
   else next.set(viewId, kept);
   store.set(LAYOUT_SLOTS.views, next.size === 0 ? undefined : Object.fromEntries(next));
+  return true;
 }
+
+const UNLOCKED = { viewLocationsLocked: () => false } as ProductLayoutPolicy;
 
 /** Whether a view is collapsed: the user's choice, else its contribution's `visibility`. */
 export function isViewCollapsed(
@@ -65,18 +82,29 @@ export function isViewHidden(
 
 let cache: { text: string; layout: ViewsLayout } | undefined;
 
-function snapshot(store: LayoutStateStore): ViewsLayout {
-  const layout = readViewsLayout(store);
+function snapshot(store: LayoutStateStore, policy: ProductLayoutPolicy): ViewsLayout {
+  const layout = readViewsLayout(store, policy);
   const text = JSON.stringify(layout);
   if (cache?.text !== text) cache = { text, layout };
   return cache.layout;
 }
 
-export function useViewsLayout(store: LayoutStateStore = layoutState): ViewsLayout {
-  const subscribe = useCallback((listener: () => void) => store.subscribe(listener), [store]);
+export function useViewsLayout(
+  store: LayoutStateStore = layoutState,
+  policy: ProductLayoutPolicy = productLayout,
+): ViewsLayout {
+  const subscribe = useCallback(
+    (listener: () => void) => {
+      const unsubscribers = [store.subscribe(listener), policy.subscribe(listener)];
+      return () => {
+        for (const unsubscribe of unsubscribers) unsubscribe();
+      };
+    },
+    [store, policy],
+  );
   return useSyncExternalStore(
     subscribe,
-    () => snapshot(store),
+    () => snapshot(store, policy),
     () => EMPTY,
   );
 }

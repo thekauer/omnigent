@@ -7,6 +7,7 @@ import {
   InboxIcon,
   LayoutTemplateIcon,
   type LucideIcon,
+  MoveIcon,
   PanelLeftIcon,
   PanelRightIcon,
   SettingsIcon,
@@ -25,11 +26,15 @@ import { useSettingsRoute } from "@/shell/settingsNav";
 import { settingsSearchCommand } from "@/shell/settingsSearch/settingsSearchCommand";
 import { toggleActivityBarVisibility } from "@/workbench/activityBar";
 import {
+  MOVE_VIEW_COMMAND,
   RESET_LAYOUT_COMMAND,
+  RESET_VIEW_LOCATIONS_COMMAND,
   resetLayout,
   TOGGLE_ACTIVITY_BAR_COMMAND,
 } from "@/workbench/layoutCommands";
 import { layoutService } from "@/workbench/layoutService";
+import { resetViewLocations } from "@/workbench/viewLocations";
+import { openMoveViewPicker } from "@/store/moveViewPicker";
 
 export interface ActionCommand {
   id: string;
@@ -128,6 +133,20 @@ export function useAppCommands({
         icon: PanelLeftIcon,
         keywords: ["activity bar", "icons", "rail", TOGGLE_ACTIVITY_BAR_COMMAND],
         run: () => toggleActivityBarVisibility(),
+      },
+      {
+        id: MOVE_VIEW_COMMAND,
+        label: "View: Move View…",
+        icon: MoveIcon,
+        keywords: ["move", "view", "side bar", "secondary side bar", MOVE_VIEW_COMMAND],
+        run: () => openMoveViewPicker(),
+      },
+      {
+        id: RESET_VIEW_LOCATIONS_COMMAND,
+        label: "View: Reset View Locations",
+        icon: LayoutTemplateIcon,
+        keywords: ["move", "view", "reset", "locations", RESET_VIEW_LOCATIONS_COMMAND],
+        run: () => resetViewLocations(),
       },
     ],
     [

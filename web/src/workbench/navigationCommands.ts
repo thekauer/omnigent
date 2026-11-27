@@ -27,10 +27,36 @@ export function setShellNavigator(navigate: (path: string) => void): () => void 
   };
 }
 
+/** How the side bar's row goes, when it does more than open a path (it switches a tab). */
+export type NavigationHandler = (navigate: (path: string) => void) => void;
+
+const handlers = new Map<string, NavigationHandler>();
+
+/**
+ * Runs `handler` for `command` instead of opening its path, while the side bar that set it is
+ * mounted, so the command does what its row does; returns the removal.
+ */
+export function setNavigationHandler(command: string, handler: NavigationHandler): () => void {
+  handlers.set(command, handler);
+  return () => {
+    if (handlers.get(command) === handler) handlers.delete(command);
+  };
+}
+
+/** Opens the entry `command` names: as its row does, else its path. */
+export function runNavigationEntry(command: string): void {
+  const navigate = navigator;
+  const path = NAVIGATION_PATHS[command];
+  if (!navigate || path === undefined) return;
+  const handler = handlers.get(command);
+  if (handler) handler(navigate);
+  else navigate(path);
+}
+
 export function registerNavigationCommands(commands: CommandRegistry): Disposable {
   return Disposable.from(
-    ...Object.entries(NAVIGATION_PATHS).map(([command, path]) =>
-      commands.register(BUILT_IN_COMMAND_OWNER, command, () => navigator?.(path), {
+    ...Object.keys(NAVIGATION_PATHS).map((command) =>
+      commands.register(BUILT_IN_COMMAND_OWNER, command, () => runNavigationEntry(command), {
         builtIn: true,
       }),
     ),

@@ -33,6 +33,8 @@ describe("useAppCommands", () => {
       "Toggle workspace sidebar",
       "View: Reset Layout",
       "View: Toggle Activity Bar Visibility",
+      "View: Move View…",
+      "View: Reset View Locations",
     ]);
   });
 

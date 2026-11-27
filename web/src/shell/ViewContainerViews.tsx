@@ -4,9 +4,33 @@
 // VS Code stacks views. A built-in container drawn before the extension host registered its
 // views draws them from its manifest.
 
-import { type CSSProperties, useCallback, useMemo, useSyncExternalStore } from "react";
+import {
+  type CSSProperties,
+  type ReactElement,
+  useCallback,
+  type MouseEvent,
+  useMemo,
+  useSyncExternalStore,
+} from "react";
 import { layoutState } from "@/workbench/layoutState";
-import { builtInContainerViews } from "@/builtinExtensions/builtInContainers";
+import { allBuiltInContainerViews } from "@/builtinExtensions/builtInContainers";
+import {
+  ContextMenu,
+  ContextMenuCheckboxItem,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuLabel,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import { productLayout } from "@/workbench/productLayout";
+import {
+  canMoveView,
+  generatedContainers,
+  readViewLocations,
+  useViewLocations,
+  type ViewLocations,
+} from "@/workbench/viewLocations";
 import { RenderErrorBoundary } from "@/components/RenderErrorBoundary";
 import { whenHolds, workbenchContext } from "@/workbench/workbenchContext";
 import {
@@ -26,6 +50,8 @@ import {
 } from "@/workbench/viewsLayout";
 import { builtInViewComponent } from "./builtInViews";
 import { ExtensionRailView } from "./extensionViews/ExtensionRailView";
+import { setViewHidden, viewDragProps, ViewMoveMenuItems } from "./viewMoves";
+import { openMoveViewPicker } from "@/store/moveViewPicker";
 import {
   type RailView,
   type RailViewContribution,
@@ -39,24 +65,32 @@ function isRegistered(view: RailViewContribution): view is RailView {
   return "active" in view;
 }
 
+/** The registered views, then the built-in containers' manifest views not registered yet. */
+function withManifestViews(
+  registered: readonly RailViewContribution[],
+): readonly RailViewContribution[] {
+  const registeredIds = new Set(registered.map((view) => view.id));
+  return [
+    ...allBuiltInContainerViews().filter((view) => !registeredIds.has(view.id)),
+    ...registered,
+  ];
+}
+
 /**
  * The views of `containerId` drawn now, in order: the registered ones (a built-in container's
- * from its manifest until they are), the container's own extension's first, each whose
- * `when` holds and that isn't hidden.
+ * from its manifest until they are) that are there, moved there included, the container's own
+ * extension's first, each whose `when` holds and that isn't hidden.
  */
 export function containerViews(
   registered: readonly RailViewContribution[],
   containerId: string,
   owner: string | undefined,
   layout: ViewsLayout,
+  locations: ViewLocations = NO_LOCATIONS,
 ): readonly RailViewContribution[] {
-  const inContainer = registered.filter((view) => viewContainerOf(view) === containerId);
-  // The manifest's views not registered yet are drawn from it, before the rest.
-  const registeredIds = new Set(inContainer.map((view) => view.id));
-  const views = [
-    ...builtInContainerViews(containerId).filter((view) => !registeredIds.has(view.id)),
-    ...inContainer,
-  ];
+  const views = withManifestViews(registered).filter(
+    (view) => viewContainerOf(view, locations) === containerId,
+  );
   const ordered = [
     ...views.filter((view) => view.extensionId === owner),
     ...views.filter((view) => view.extensionId !== owner),
@@ -68,6 +102,8 @@ export function containerViews(
   );
 }
 
+const NO_LOCATIONS: ViewLocations = Object.freeze({});
+
 /** The views of `containerId` drawn now, in order. */
 export function useContainerViews(
   containerId: string,
@@ -76,12 +112,13 @@ export function useContainerViews(
 ): readonly RailViewContribution[] {
   const { views: registered } = useRailViews(registry, null);
   const layout = useViewsLayout();
+  const locations = useViewLocations();
   const owner = useViewContainers(containers).containers.find(
     (container) => container.id === containerId,
   )?.extensionId;
   return useMemo(
-    () => containerViews(registered, containerId, owner, layout),
-    [registered, containerId, owner, layout],
+    () => containerViews(registered, containerId, owner, layout, locations),
+    [registered, containerId, owner, layout, locations],
   );
 }
 
@@ -92,10 +129,11 @@ export function useSideBarContainers(
 ): readonly { container: ViewContainerDescriptor; views: readonly RailViewContribution[] }[] {
   const { views: registered } = useRailViews(registry, null);
   const layout = useViewsLayout();
+  const locations = useViewLocations();
   const snapshot = useViewContainers(containers);
   return useMemo(
-    () => sideBarContainersOf(registered, snapshot.containers, layout),
-    [registered, layout, snapshot],
+    () => sideBarContainersOf(registered, snapshot.containers, layout, locations),
+    [registered, layout, snapshot, locations],
   );
 }
 
@@ -103,8 +141,13 @@ function sideBarContainersOf(
   registered: readonly RailViewContribution[],
   all: readonly ViewContainerDescriptor[],
   layout: ViewsLayout,
+  locations: ViewLocations,
 ): { container: ViewContainerDescriptor; views: readonly RailViewContribution[] }[] {
-  const sideBar = all.filter((container) => container.location === "sidebar");
+  // The side bar entries moving a view made follow the registered containers.
+  const sideBar = [
+    ...all.filter((container) => container.location === "sidebar"),
+    ...generatedContainers(withManifestViews(registered), locations),
+  ];
   // Before the host registered the built-ins, the sessions container is there anyway.
   const listed = sideBar.some((container) => container.id === CONVERSATIONS_CONTAINER)
     ? sideBar
@@ -112,7 +155,7 @@ function sideBarContainersOf(
   return listed
     .map((container) => ({
       container,
-      views: containerViews(registered, container.id, container.extensionId, layout),
+      views: containerViews(registered, container.id, container.extensionId, layout, locations),
     }))
     .filter((entry) => entry.views.length > 0);
 }
@@ -131,6 +174,7 @@ export function useSideBarContainerList(
         registry.getSnapshot().views,
         containers.getSnapshot().containers,
         readViewsLayout(),
+        readViewLocations(),
       ).map(({ container }) => container),
     );
   const subscribe = useCallback(
@@ -139,6 +183,7 @@ export function useSideBarContainerList(
         registry.subscribe(listener),
         containers.subscribe(listener),
         layoutState.subscribe(listener),
+        productLayout.subscribe(listener),
       ];
       return () => {
         for (const unsubscribe of unsubscribers) unsubscribe();
@@ -197,10 +242,106 @@ export function ViewContainerViews({
             collapse={{
               collapsed,
               onToggle: () => updateViewLayout(view.id, { collapsed: !collapsed }),
+              wrapTitle: (title) => (
+                <PaneHeaderMenu view={view} title={title} canHide={views.length > 1} />
+              ),
             }}
           />
         </RenderErrorBoundary>
       </div>
     );
   });
+}
+
+/** A stacked view's header: drag it to another container, right-click to hide or move it. */
+function PaneHeaderMenu({
+  view,
+  title,
+  canHide,
+}: {
+  view: RailViewContribution;
+  title: ReactElement;
+  canHide: boolean;
+}) {
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger
+        asChild
+        disabled={!canMoveView(view)}
+        onContextMenuCapture={keepLinkMenus}
+        {...viewDragProps(view)}
+      >
+        {title}
+      </ContextMenuTrigger>
+      <ContextMenuContent data-testid="view-pane-menu">
+        <ViewMoveMenuItems view={view} canHide={canHide} />
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+}
+
+const NO_VIEWS_LAYOUT: ViewsLayout = Object.freeze({});
+
+/**
+ * A link keeps the browser's own menu (open in a new tab, copy the link): stopped before the
+ * menu's trigger sees the event, which leaves its default alone.
+ */
+function keepLinkMenus(event: MouseEvent<HTMLElement>): void {
+  if ((event.target as Element).closest?.("a[href]")) event.stopPropagation();
+}
+
+/**
+ * The side bar's header row as its container's title (layout plan L6): its right-click menu
+ * lists the container's views, hidden ones too, to hide and show them, and moves one. A link
+ * keeps the browser's own menu.
+ */
+export function ContainerViewsMenu({
+  containerId,
+  children,
+  registry = railViews,
+}: {
+  containerId: string;
+  children: ReactElement;
+  registry?: RailViewRegistry;
+}) {
+  const { views: registered } = useRailViews(registry, null);
+  const layout = useViewsLayout();
+  const locations = useViewLocations();
+  const owner = useViewContainers().containers.find(
+    (container) => container.id === containerId,
+  )?.extensionId;
+  const listed = containerViews(registered, containerId, owner, NO_VIEWS_LAYOUT, locations).filter(
+    (view) => canMoveView(view),
+  );
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger
+        asChild
+        disabled={listed.length === 0}
+        onContextMenuCapture={keepLinkMenus}
+      >
+        {children}
+      </ContextMenuTrigger>
+      <ContextMenuContent data-testid="view-container-menu">
+        <ContextMenuLabel>Views</ContextMenuLabel>
+        {listed.map((view) => {
+          const hidden = isViewHidden(view, layout);
+          const shown = listed.filter((other) => !isViewHidden(other, layout)).length;
+          return (
+            <ContextMenuCheckboxItem
+              key={view.id}
+              checked={!hidden}
+              // The last view shown stays: a container with none leaves the side bar.
+              disabled={!hidden && shown === 1}
+              onCheckedChange={(checked) => setViewHidden(view.id, !checked)}
+            >
+              {view.name}
+            </ContextMenuCheckboxItem>
+          );
+        })}
+        <ContextMenuSeparator />
+        <ContextMenuItem onSelect={() => openMoveViewPicker()}>Move View…</ContextMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
+  );
 }

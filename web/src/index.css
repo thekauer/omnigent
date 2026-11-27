@@ -1131,6 +1131,12 @@ html:not(.dark) .app-shell[data-sidebar-location="right"] .conversations-sidebar
   border-left-width: 1px;
 }
 
+/* A place a dragged view can land on, while it is over it. */
+[data-view-drop-target] {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
 /* The workspace rail on the left slides in from the left. */
 .workspace-panel-motion[data-side="left"]:not([data-state="open"], [data-rail-state="open"]) {
   transform: translateX(-12px);

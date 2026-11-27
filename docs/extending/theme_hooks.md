@@ -66,6 +66,7 @@ Drawn only when an extension contributes them (layout plan L3), so not on the de
 | `[data-slot="view-container-title"]` | The side bar's header title for a container other than the sessions. |
 | `[data-navigation-entry="<command>"]` | Another extension's `sidebar/navigation` row. |
 | `.app-shell[data-sidebar-location="right"]` | The shell with `workbench.sideBar.location: right`; the rail then carries `[data-side="left"]`. |
+| `[data-view-drop-target]` | A place a dragged view can land on (the side bar, an activity bar item, the activity bar, the right panel's tab strip), while it is over it (layout plan L6). |
 
 ## Classes
 

@@ -15,7 +15,13 @@ import {
 import { filterSessionScope } from "@/lib/sessionVisibility";
 import { CONVERSATIONS_CONTAINER } from "@/workbench/viewContainers";
 import { registerBuiltInView } from "./builtInViews";
-import { useSideBarContainerList, ViewContainerViews } from "./ViewContainerViews";
+import {
+  ContainerViewsMenu,
+  useSideBarContainerList,
+  ViewContainerViews,
+} from "./ViewContainerViews";
+import { useViewDropTarget } from "./viewMoves";
+import { setNavigationHandler } from "@/workbench/navigationCommands";
 import { ActivityBar } from "./ActivityBar";
 import { useInboxCount } from "./sideBarListViews";
 import { useActiveViewContainer } from "./useWorkbenchParts";
@@ -1117,6 +1123,29 @@ function SidebarImpl({
     sideBarContainers.find((container) => container.id === storedContainer) ??
     sideBarContainers.find((container) => container.id === CONVERSATIONS_CONTAINER) ??
     CONVERSATIONS_TITLE;
+  // The New session and Canvas commands do what their rows do: the tab back to My sessions,
+  // the canvas the address remembers.
+  const canvasPath = canvasDestination.pathname + canvasDestination.search;
+  useEffect(
+    () =>
+      setNavigationHandler(NavigationEntries.newSession, (go) => {
+        switchTab("mine");
+        go("/");
+      }),
+    [switchTab],
+  );
+  useEffect(
+    () => setNavigationHandler(NavigationEntries.canvas, (go) => go(canvasPath)),
+    [canvasPath],
+  );
+  // A view dragged onto the side bar moves into the container it shows.
+  const activeContainerId = activeContainer.id;
+  const viewDrop = useViewDropTarget(
+    useCallback(
+      () => (inSettings ? undefined : activeContainerId),
+      [inSettings, activeContainerId],
+    ),
+  );
   // A wide phone (unfolded foldable, landscape) docks the open sidebar beside
   // the chat instead of over it.
   const sideBySide = useIsSideBySideSidebarViewport();
@@ -1389,6 +1418,7 @@ function SidebarImpl({
       )}
       <aside
         data-part={partHook(Parts.SIDEBAR_PART)}
+        {...viewDrop}
         id={SIDEBAR_ELEMENT_ID}
         ref={sidebarInertRef}
         aria-label={
@@ -1532,67 +1562,69 @@ function SidebarImpl({
           [data-electron-mac] rules in index.css). Browsers and other platforms
           keep the standard single row. */}
             {/* Mobile Search shares the floating chat controls' 16px edge inset. */}
-            <div className="sidebar-header-row flex shrink-0 items-center justify-between p-4 shadow-[inset_0_-1px_0_var(--ui-sidebar-header-rule)] md:h-(--ui-header-height) md:py-0 md:pr-3">
-              {/* Brand mark doubles as the "home" affordance: clicking it
+            <ContainerViewsMenu containerId={activeContainer.id}>
+              <div className="sidebar-header-row flex shrink-0 items-center justify-between p-4 shadow-[inset_0_-1px_0_var(--ui-sidebar-header-rule)] md:h-(--ui-header-height) md:py-0 md:pr-3">
+                {/* Brand mark doubles as the "home" affordance: clicking it
             returns to `/`, the new-session composer. Without this there
             is no way back to the landing composer once you're inside a
             session. Reuses onNavClick so a plain primary click closes
             the sidebar on mobile (where it's a full-screen overlay) but
             modifier/middle clicks still open `/` in a new tab. */}
-              {activityBarPlacement === "top" ? (
-                <ActivityBar location="top" />
-              ) : activeContainer.id === CONVERSATIONS_CONTAINER ? (
-                <Link
-                  to="/"
-                  onClick={onNavClick}
-                  data-testid="sidebar-brand"
-                  componentId="sidebar.home"
-                  className="sidebar-brand rounded-none transition-opacity duration-200 ease-[var(--ease-otto)] hover:opacity-70"
-                >
-                  {branding.app_name ? (
-                    <span className="font-(family-name:--ui-app-name-font) text-(length:--ui-app-name-size) font-(weight:--ui-app-name-weight) tracking-(--ui-app-name-tracking)">
-                      {branding.app_name}
-                    </span>
-                  ) : (
-                    <img
-                      src={omnigentWordmark}
-                      alt="Omnigent"
-                      data-testid="sidebar-wordmark"
-                      className="h-[15px] w-auto shrink-0 translate-y-px max-md:h-[18px] dark:invert"
-                    />
-                  )}
-                </Link>
-              ) : (
-                <h2
-                  data-slot="view-container-title"
-                  className="ui-label min-w-0 truncate font-medium text-ui"
-                >
-                  {activeContainer.title}
-                </h2>
-              )}
-              {isMacElectronShell() && (
-                <SidebarSearchButton
-                  onOpenSearch={onOpenSearch}
-                  className="hidden md:inline-flex"
-                  testId="electron-sidebar-search-button"
-                />
-              )}
-              {/* The container's title actions (viewContainer/title), before the host's own. */}
-              <ViewContainerTitleActions containerId={activeContainer.id} className="ml-auto" />
-              {/* Hidden on the macOS shell, where Search sits by the wordmark and the
+                {activityBarPlacement === "top" ? (
+                  <ActivityBar location="top" />
+                ) : activeContainer.id === CONVERSATIONS_CONTAINER ? (
+                  <Link
+                    to="/"
+                    onClick={onNavClick}
+                    data-testid="sidebar-brand"
+                    componentId="sidebar.home"
+                    className="sidebar-brand rounded-none transition-opacity duration-200 ease-[var(--ease-otto)] hover:opacity-70"
+                  >
+                    {branding.app_name ? (
+                      <span className="font-(family-name:--ui-app-name-font) text-(length:--ui-app-name-size) font-(weight:--ui-app-name-weight) tracking-(--ui-app-name-tracking)">
+                        {branding.app_name}
+                      </span>
+                    ) : (
+                      <img
+                        src={omnigentWordmark}
+                        alt="Omnigent"
+                        data-testid="sidebar-wordmark"
+                        className="h-[15px] w-auto shrink-0 translate-y-px max-md:h-[18px] dark:invert"
+                      />
+                    )}
+                  </Link>
+                ) : (
+                  <h2
+                    data-slot="view-container-title"
+                    className="ui-label min-w-0 truncate font-medium text-ui"
+                  >
+                    {activeContainer.title}
+                  </h2>
+                )}
+                {isMacElectronShell() && (
+                  <SidebarSearchButton
+                    onOpenSearch={onOpenSearch}
+                    className="hidden md:inline-flex"
+                    testId="electron-sidebar-search-button"
+                  />
+                )}
+                {/* The container's title actions (viewContainer/title), before the host's own. */}
+                <ViewContainerTitleActions containerId={activeContainer.id} className="ml-auto" />
+                {/* Hidden on the macOS shell, where Search sits by the wordmark and the
             toggle and Back/Forward live in AppShell's title strip. */}
-              <SidebarHeaderActions
-                expanded={!peek}
-                // Side by side, the chat stays in view with no dismiss strip,
-                // so the collapse toggle is the tap-to-close affordance.
-                showMobileToggle={sideBySide}
-                // onOpen is optional (the sidebar renders standalone in tests), so
-                // fall back to a no-op rather than widening the child's contract.
-                onToggle={peek ? () => onOpen?.() : onClose}
-                onOpenSearch={onOpenSearch}
-                showSettings={false}
-              />
-            </div>
+                <SidebarHeaderActions
+                  expanded={!peek}
+                  // Side by side, the chat stays in view with no dismiss strip,
+                  // so the collapse toggle is the tap-to-close affordance.
+                  showMobileToggle={sideBySide}
+                  // onOpen is optional (the sidebar renders standalone in tests), so
+                  // fall back to a no-op rather than widening the child's contract.
+                  onToggle={peek ? () => onOpen?.() : onClose}
+                  onOpenSearch={onOpenSearch}
+                  showSettings={false}
+                />
+              </div>
+            </ContainerViewsMenu>
 
             <SidebarViewsContext.Provider value={sidebarViews}>
               <ViewContainerViews containerId={activeContainer.id} />

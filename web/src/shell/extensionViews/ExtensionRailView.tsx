@@ -9,6 +9,7 @@ import {
   Fragment,
   lazy,
   type KeyboardEvent as ReactKeyboardEvent,
+  type ReactElement,
   type ReactNode,
   type RefObject,
   Suspense,
@@ -704,6 +705,8 @@ function ViewLocationBar({
 export interface ViewCollapse {
   readonly collapsed: boolean;
   readonly onToggle: () => void;
+  /** Wraps the pane's header (its menu, its drag), as the side bar's view moving does. */
+  readonly wrapTitle?: (title: ReactElement) => ReactNode;
 }
 
 function ViewTitle({
@@ -723,7 +726,7 @@ function ViewTitle({
   const navigation = view.actions.filter((action) => action.group === "navigation");
   // Open In sits last, after the drawer's Close, as in the classic Files header.
   const openIn = navigation.find((action) => action.kind === "openIn");
-  return (
+  const title = (
     <div
       data-slot="view-title"
       className="flex h-(--ui-view-title-height) shrink-0 items-center gap-(--ui-view-title-gap) px-(--ui-view-title-padding-x)"
@@ -795,6 +798,7 @@ function ViewTitle({
       </div>
     </div>
   );
+  return collapse?.wrapTitle ? collapse.wrapTitle(title) : title;
 }
 
 /** The view's filter field and the actions next to it, laid out as the Files views' search bar. */

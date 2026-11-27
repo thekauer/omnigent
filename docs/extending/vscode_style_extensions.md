@@ -1270,6 +1270,7 @@ Plain ESM with `// @ts-check`; no build step.
 | (none)                                                               | `omnigent.secondarySideBar.autoHideBelow`, layout tokens `ui-sidebar-width`, `-min-width`, `-max-width`, `ui-auxiliarybar-*`, `ui-activitybar-width` | Widths are theme tokens, not settings (decision 5) |
 | `workbench.action.toggleMaximizedAuxiliaryBar`                       | same (layout plan L5)                                         | The rail's Full screen; no default `viewContainer/title` entry |
 | (none)                                                               | `contributes.menus["sidebar/navigation"]`                     | The side bar's navigation rows: commands with `when`; right-click hides them |
+| Moving views: "Move View...", drag and drop, Hide, "Reset Location"; `workbench.action.moveView`, `moveFocusedView`, `resetViewLocations` | same (layout plan L6) | Layout state `workbench.views.locations`; a new side bar entry is a generated container; product `lockViewLocations` |
 | `window.createTreeView(id, { treeDataProvider })`                    | same                                                          | Host-drawn rows; no DnD or multi-select             |
 | `TreeDataProvider`, `TreeItem`, `TreeItemCollapsibleState`           | same, plain data                                              | Plus `decoration` and `gitStatus` on items          |
 | `TreeView.title`, `.description`, `.message`, `.badge`               | same                                                          |                                                     |
@@ -1376,6 +1377,8 @@ Deviations and why:
   sessions container's own entries (`omnigent.newSession`, `omnigent.openAutomations`,
   `omnigent.openWorkflows`, `omnigent.openInbox`, `omnigent.openCanvas`,
   `omnigent.showExtensionPages`, `omnigent.openUsage`) are the host's rows, gated by `when`;
+  run as commands, New session and Canvas do what their rows do while the side bar is mounted
+  (the list back on My sessions, the canvas the address names), and open their pages otherwise;
   other extensions' entries follow them as command rows (a built-in entry's id is refused).
   Right-clicking the navigation (its padding or a command row; a link keeps the browser's own
   menu) hides and shows entries (layout state `omnigent.conversations.navigation.hidden`).
@@ -1383,6 +1386,22 @@ Deviations and why:
   same: the secondary side bar shows in a session only. At `workbench.sideBar.location: right`
   the phone drawer's edge swipes and the macOS desktop app's title strip still assume the
   left (layout plan L9).
+- Moving views (layout plan L6) is VS Code's: "View: Move View..." (`workbench.action.moveView`,
+  the view's id as its argument; `moveFocusedView` for the view keyboard focus is in) picks
+  the view, then another side bar container, a new side bar entry or the secondary side bar; a
+  view's header in the side bar and its tab in the right panel drag onto an activity bar item
+  (its container), the activity bar's empty part (a new entry), the side bar (the container it
+  shows) or the right panel's tab strip. Their right-click menus Hide the view, Move it and,
+  once moved, Reset Location; the side bar's header row and the tab strip list the views to
+  show hidden ones again; "View: Reset View Locations" (`workbench.action.resetViewLocations`)
+  puts every view back. A move is layout state (`workbench.views.locations`, `{ view: container }`),
+  so View: Reset Layout clears it too; a generated entry (`workbench.view.generated.<view>`)
+  exists while a view is in it and takes its first view's name and icon. Differences: a
+  `builtInView` view (a host component) moves between side bar containers only, a built-in
+  rail tab's view (`builtInTab`) doesn't move, and the secondary side bar is one container
+  (the rail draws its containers' views as one strip). A product's `lockViewLocations` keeps
+  every view where its extension put it: no moving, hiding or dragging, and the user's stored
+  moves and hidden views don't apply while it holds.
 - `builtInView` has no VS Code equivalent: the sessions container's views are host
   React components (VS Code's own views are workbench code). The side bar's header
   row keeps its host-drawn search and collapse buttons; `viewContainer/title` entries

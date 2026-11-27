@@ -9,6 +9,7 @@ import { updateOverlayToastOffset } from "@/lib/updateOverlayInset";
 import { useSettingsJsonEditorStore } from "@/store/settingsJsonEditor";
 import { CommandPalette } from "./CommandPalette";
 import { RecentSessionsSwitcher } from "./RecentSessionsSwitcher";
+import { useMoveViewPickerStore } from "@/store/moveViewPicker";
 
 // The QuickPick palette and its theme picker load only with quick_pick_palette, so the
 // default bundle keeps the flagged code, and what it imports, out of the first load. The
@@ -23,6 +24,9 @@ const SettingsJsonDialog = lazy(() =>
   import("./settingsJson/SettingsJsonDialog").then((module) => ({
     default: module.SettingsJsonDialog,
   })),
+);
+const MoveViewPicker = lazy(() =>
+  import("./MoveViewPicker").then((module) => ({ default: module.MoveViewPicker })),
 );
 const ThemePicker = lazy(() =>
   import("./ThemePicker").then((module) => ({ default: module.ThemePicker })),
@@ -72,6 +76,7 @@ export function AppShellOverlays({
   const quickPick = isFeatureEnabled(serverInfo, "quick_pick_palette");
   const Palette = quickPick ? QuickPickCommandPalette : CommandPalette;
   const settingsJsonOpen = useSettingsJsonEditorStore((state) => state.open);
+  const moveViewOpen = useMoveViewPickerStore((state) => state.open);
   return (
     <>
       {/* Keyboard-shortcuts reference. Self-contained (owns its open state +
@@ -105,6 +110,12 @@ export function AppShellOverlays({
       {quickPick && (
         <Suspense fallback={null}>
           <ThemePicker />
+        </Suspense>
+      )}
+      {/* View: Move View...: where a view goes. */}
+      {moveViewOpen && (
+        <Suspense fallback={null}>
+          <MoveViewPicker />
         </Suspense>
       )}
       {/* Settings (JSON): theme options, style variants and color customizations. */}

@@ -10,6 +10,7 @@ import { type LayoutService, Parts } from "./layoutService";
 import { toggleActivityBarVisibility } from "./activityBar";
 import { type LayoutStateStore, layoutState } from "./layoutState";
 import { type ViewContainerRegistry, viewContainers } from "./viewContainers";
+import { resetViewLocations } from "./viewLocations";
 import type { ConfigurationService } from "@/configuration/configurationService";
 import { isDesktopLayout } from "@/hooks/useIsMobileViewport";
 
@@ -22,6 +23,9 @@ export const TOGGLE_MAXIMIZED_AUXILIARY_BAR_COMMAND =
 export const TOGGLE_ACTIVITY_BAR_COMMAND = "workbench.action.toggleActivityBarVisibility";
 export const FOCUS_ACTIVITY_BAR_COMMAND = "workbench.action.focusActivityBar";
 export const RESET_LAYOUT_COMMAND = "workbench.action.resetLayout";
+export const MOVE_VIEW_COMMAND = "workbench.action.moveView";
+export const MOVE_FOCUSED_VIEW_COMMAND = "workbench.action.moveFocusedView";
+export const RESET_VIEW_LOCATIONS_COMMAND = "workbench.action.resetViewLocations";
 
 /** VS Code's `workbench.view.<container>`: shows the container. */
 export function viewContainerCommand(containerId: string): string {
@@ -61,6 +65,15 @@ export interface LayoutCommandOptions {
   /** Each container gets its `workbench.view.<id>` command. */
   readonly containers?: ViewContainerRegistry;
   readonly store?: LayoutStateStore;
+  /** Opens the Move View picker, for the view given (else it asks for one). */
+  readonly openMoveView?: (viewId?: string) => void;
+}
+
+/** The view keyboard focus is in, by its drawn element (a side bar pane or a rail tab's page). */
+export function focusedViewId(): string | undefined {
+  const active = typeof document === "undefined" ? null : document.activeElement;
+  const drawn = active?.closest?.('[data-testid^="extension-view-"]');
+  return drawn?.getAttribute("data-testid")?.slice("extension-view-".length) || undefined;
 }
 
 /** Registers the layout commands and keeps the visibility context keys; returns the removal. */
@@ -74,6 +87,7 @@ export function registerLayoutCommands(
     configuration,
     containers = viewContainers,
     store = layoutState,
+    openMoveView,
   } = options instanceof ContextKeyService ? { contextKeys: options } : options;
   const register = (id: string, run: () => void) =>
     commands.register(BUILT_IN_COMMAND_OWNER, id, () => run(), { builtIn: true });
@@ -96,9 +110,21 @@ export function registerLayoutCommands(
       layout.focusPart(Parts.ACTIVITYBAR_PART);
     },
     [RESET_LAYOUT_COMMAND]: () => resetLayout(layout, store),
+    [RESET_VIEW_LOCATIONS_COMMAND]: () => resetViewLocations(store),
+    [MOVE_FOCUSED_VIEW_COMMAND]: () => {
+      const viewId = focusedViewId();
+      if (viewId !== undefined) openMoveView?.(viewId);
+    },
   };
   const registrations = [
     ...Object.entries(handlers).map(([id, run]) => register(id, run)),
+    // VS Code's `workbench.action.moveView` takes the view's id as its argument.
+    commands.register(
+      BUILT_IN_COMMAND_OWNER,
+      MOVE_VIEW_COMMAND,
+      (viewId?: unknown) => openMoveView?.(typeof viewId === "string" ? viewId : undefined),
+      { builtIn: true },
+    ),
     ...Object.entries(LAYOUT_COMMAND_ALIASES).map(([alias, id]) => register(alias, handlers[id]!)),
   ];
   // `workbench.view.<id>` for each side bar and secondary side bar container, as they come.

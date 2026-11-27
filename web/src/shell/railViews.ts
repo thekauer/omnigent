@@ -7,6 +7,12 @@ import { useMemo, useSyncExternalStore } from "react";
 import type { WorkspaceChangedFile } from "@/hooks/useWorkspaceChangedFiles";
 import type { WhenClause } from "@/vscodeExtensions/when";
 import { RIGHT_PANEL_CONTAINER, viewContainers } from "@/workbench/viewContainers";
+import {
+  containerLocation,
+  useViewLocations,
+  type ViewLocations,
+  viewContainerFor,
+} from "@/workbench/viewLocations";
 import { isViewHidden, useViewsLayout } from "@/workbench/viewsLayout";
 
 /** A view's count badge on its tab, like VS Code's `ViewBadge`. */
@@ -434,31 +440,52 @@ export function hasRailTab(
   return view.builtInTab === undefined && view.active && !hidden(view);
 }
 
-/** The container a view is in. */
-export function viewContainerOf(view: RailViewContribution): string {
-  return view.containerId ?? RIGHT_PANEL_CONTAINER;
+/** The container a view is in: where the user moved it (`locations`), else its own. */
+export function viewContainerOf(
+  view: RailViewContribution,
+  locations: ViewLocations = NO_LOCATIONS,
+): string {
+  return viewContainerFor(view, locations);
 }
 
-const containerSnapshots = new WeakMap<RailViewsSnapshot, Map<string, RailViewsSnapshot>>();
+const NO_LOCATIONS: ViewLocations = Object.freeze({});
 
-/** The snapshot's views of `container` (every view for `null`), the same object per snapshot. */
+const containerSnapshots = new WeakMap<
+  RailViewsSnapshot,
+  WeakMap<ViewLocations, Map<string, RailViewsSnapshot>>
+>();
+
+/**
+ * The snapshot's views of `container` (every view for `null`) with the user's moves, the same
+ * object per snapshot and moves.
+ */
 export function viewsOfContainer(
   snapshot: RailViewsSnapshot,
   container: string | null,
+  locations: ViewLocations = NO_LOCATIONS,
 ): RailViewsSnapshot {
   if (container === null) return snapshot;
-  let byContainer = containerSnapshots.get(snapshot);
+  let byLocations = containerSnapshots.get(snapshot);
+  if (!byLocations) {
+    byLocations = new WeakMap();
+    containerSnapshots.set(snapshot, byLocations);
+  }
+  let byContainer = byLocations.get(locations);
   if (!byContainer) {
     byContainer = new Map();
-    containerSnapshots.set(snapshot, byContainer);
+    byLocations.set(locations, byContainer);
   }
   let filtered = byContainer.get(container);
   if (!filtered) {
     // The classic rail draws every secondary side bar container's views as its tabs.
-    const drawnHere = (view: RailViewContribution) =>
-      viewContainerOf(view) === container ||
-      (container === RIGHT_PANEL_CONTAINER &&
-        viewContainers.get(viewContainerOf(view))?.location === "auxiliarybar");
+    const drawnHere = (view: RailViewContribution) => {
+      const containerId = viewContainerOf(view, locations);
+      return (
+        containerId === container ||
+        (container === RIGHT_PANEL_CONTAINER &&
+          containerLocation(containerId, viewContainers) === "auxiliarybar")
+      );
+    };
     filtered = Object.freeze({
       views: Object.freeze(snapshot.views.filter(drawnHere)),
       settled: snapshot.settled,
@@ -478,7 +505,8 @@ export function useRailViews(
     registry.getSnapshot,
     registry.getSnapshot,
   );
-  return viewsOfContainer(snapshot, container);
+  const locations = useViewLocations();
+  return viewsOfContainer(snapshot, container, locations);
 }
 
 /**
@@ -491,8 +519,9 @@ export function useRailViewIds(registry: RailViewRegistry = railViews): {
   settled: boolean;
 } {
   const layout = useViewsLayout();
+  const locations = useViewLocations();
   const key = useSyncExternalStore(registry.subscribe, () => {
-    const snapshot = viewsOfContainer(registry.getSnapshot(), RIGHT_PANEL_CONTAINER);
+    const snapshot = viewsOfContainer(registry.getSnapshot(), RIGHT_PANEL_CONTAINER, locations);
     // Built-in tabs' views always count; an extension tab only while it has a tab.
     const ids = snapshot.views
       .filter(

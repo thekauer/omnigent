@@ -34,6 +34,8 @@ export const LAYOUT_SLOTS = Object.freeze({
   collapsedFamilies: "omnigent.conversations.list.collapsedFamilies",
   /** `{ [view id]: { collapsed?: boolean, hidden?: boolean } }`: stacked views the user changed. */
   views: "workbench.views",
+  /** `{ [view id]: container id }`: the views the user moved to another container. */
+  viewLocations: "workbench.views.locations",
 });
 
 /** The keys each slot was stored under before the layout state document. */
