@@ -1361,8 +1361,8 @@ Deviations and why:
   no end of its own there. Its order and hidden items are layout state
   (`workbench.activityBar`), the active container too (`workbench.sideBar.activeViewContainer`);
   View: Reset Layout (`workbench.action.resetLayout`, also in the ⌘K palette) clears the
-  layout state, settings stay. The side bar's open state and active container are one per
-  window (the layout service); two shells mounted at once share them.
+  layout state, settings stay. The side bar's open state and active container are each
+  mounted app's own (layout plan L8).
 - The side bars' widths are layout tokens (`theme/tokens/layout.ts`) a theme sets and a
   product locks (`lockedTokens`), measured on the theme root (`px`, `rem`, `em`, `vw`,
   `vh`); a drag's width is layout state (the secondary side bar's stays per session, as the
@@ -1411,6 +1411,42 @@ Deviations and why:
   (the rail draws its containers' views as one strip). A product's `lockViewLocations` keeps
   every view where its extension put it: no moving, hiding or dragging, and the user's stored
   moves and hidden views don't apply while it holds.
+- A product's settings and layout (layout plan L8, decision 9; `product/productConfig.ts`):
+  `OmnigentAppProps.product.settings` and `.layout` over a build's `web/product.json` over the
+  server's `product: settings:` and `product: layout:` (snake_case there, as `/v1/info` serves
+  them). `settings.defaults` and `settings.locked` map any registered setting key to a value:
+  the configuration service's product defaults (a first run and a reset) and locks (applied
+  last, refused on write, "Set by product" in the settings JSON); each value is checked
+  against the setting's schema as the user's are. The maps merge per key across the sources
+  (the highest source wins a key). `layout.hiddenParts` (part ids; the main part can't be
+  hidden), `hiddenContainers` and `hiddenViews` (ids or `*` patterns; navigation entries'
+  command ids too, so `omnigent.newSession` hides the New session row) remove what they name:
+  not drawn, not offered in the menus, their `workbench.view.<id>` and `<view>.focus` commands
+  do nothing. `containerOrder` is the activity bar's order before the user's moves;
+  `lockViewLocations` keeps views where their extensions put them. Each layout field comes
+  from the highest source that sets it. Each key fails open (a malformed one is left out with
+  a warning; the server warns about camelCase keys, the web about snake_case ones); a locked
+  value that can't be read (a lone surrogate, too deep, too large a structure, a getter, or
+  past the budget) still locks its key, to its default (`locked_invalid` from the server); budgets
+  (`PRODUCT_SETTINGS_MAX_CHARS`, `PRODUCT_LAYOUT_MAX_CHARS`, the per-value depth and node
+  limits) agree between the server and the web, counted in UTF-16 units (a number counts a
+  fixed 24, as the two languages print numbers differently). A failed `/v1/info` probe keeps
+  the server's last-known settings and layout (`omnigent:ui-product-config-server`).
+- Each mounted app has its own workbench (layout plan L8): an embed's `OmnigentApp` makes its
+  own layout service and layout state (`omnigent:layout-state@embed:<basename>`), and its React
+  tree reads and registers only into them (the standalone app's tree into its own), so two
+  embeds on a page, or an embed beside the standalone app, don't share the side bar's open
+  state, the active container, the activity bar or the views' moves. The window's commands and
+  keybindings, and the preferences read and written from events (panel widths, the list's
+  view), reach the app last mounted or used (pointer, keys or focus inside it). Part sizes
+  clamp to the embed's root (decision 14): the layout tokens are measured on the active mount's
+  root, their `vw` and `vh` read as the root's width and height, and `autoHideBelow` reads the
+  root's width. Still one per window: the primary side bar's dragged width (one module state),
+  the product's settings and layout policy (the mounts' `product` props merge as their
+  themes do, the later mount's fields winning), the extension host and its registries, and the
+  phone/desktop breakpoint, which follows the window as the stylesheet's `md` does (layout
+  plan L9). A product lock or default for a key no extension registers yet applies once it
+  registers (its schema checks it then).
 - The title bar (layout plan L7) is a part above the workbench (`[data-part="titlebar"]`,
   height `ui-titlebar-height`), off unless `window.titleBar.visible` (an Omnigent key: VS Code's
   custom title bar is always on), never on phones, and not yet in the macOS desktop app, whose

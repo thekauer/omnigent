@@ -6532,6 +6532,26 @@
       "ProductInfo": {
         "description": "The operator's product configuration served to the web app.",
         "properties": {
+          "layout": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProductLayoutInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "settings": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProductSettingsInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "theme": {
             "anyOf": [
               {
@@ -6544,6 +6564,125 @@
           }
         },
         "title": "ProductInfo",
+        "type": "object"
+      },
+      "ProductLayoutInfo": {
+        "description": "The product's layout (server config `product: layout:`).\n\nParts, view containers and views it hides (ids or `*` patterns), the activity bar's\ndefault order, and whether views stay where their extensions put them. The web app\napplies them below an embedding product's and a build's own. Unset keys are null.",
+        "properties": {
+          "container_order": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Container Order"
+          },
+          "hidden_containers": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hidden Containers"
+          },
+          "hidden_parts": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hidden Parts"
+          },
+          "hidden_views": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hidden Views"
+          },
+          "lock_view_locations": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lock View Locations"
+          }
+        },
+        "title": "ProductLayoutInfo",
+        "type": "object"
+      },
+      "ProductSettingsInfo": {
+        "description": "The product's settings (server config `product: settings:`).\n\nSetting keys to values: `defaults` for a first run and a reset, `locked` applied last\nand refused on write, `locked_invalid` keys locked to their defaults (their configured\nvalue can't be served). The web app checks each value against the setting's schema and\napplies them below an embedding product's and a build's own. Unset keys are null.",
+        "properties": {
+          "defaults": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Defaults"
+          },
+          "locked": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locked"
+          },
+          "locked_invalid": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Locked Invalid"
+          }
+        },
+        "title": "ProductSettingsInfo",
         "type": "object"
       },
       "ProductThemeInfo": {

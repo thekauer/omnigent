@@ -5,6 +5,8 @@
 // comes from the highest source that sets it; the locked maps merge per key.
 
 import { SERVER_INFO_OFFLINE_FALLBACK } from "@/lib/bootCapabilities";
+import type { ProductSettingsConfig } from "@/product/productConfig";
+import type { ProductLayoutConfig } from "@/workbench/productLayout";
 import { FALLBACK_SERVER_INFO, type ServerInfo } from "@/lib/capabilities";
 import { isContributedThemeId, isThemeSelection } from "@/lib/themePalette";
 import type { UiTheme } from "./themeContributions";
@@ -38,6 +40,10 @@ export interface ProductThemeConfig {
 /** What `OmnigentAppProps.product` and `web/product.json` carry. */
 export interface ProductConfig {
   readonly theme?: ProductThemeConfig;
+  /** Setting defaults and locks over the configuration registry (`product/productConfig.ts`). */
+  readonly settings?: ProductSettingsConfig;
+  /** Parts, containers and views hidden, the activity bar's order, `lockViewLocations`. */
+  readonly layout?: ProductLayoutConfig;
 }
 
 /** Where a product theme configuration comes from, highest precedence first. */

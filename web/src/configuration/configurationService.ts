@@ -36,6 +36,12 @@ export interface ConfigurationChangeEvent {
   readonly affectsConfiguration: (section: string) => boolean;
 }
 
+/**
+ * A locked value that couldn't be read (a product's, from a source that couldn't carry it): the
+ * key stays locked, to its default.
+ */
+export const INVALID_LOCKED_VALUE: unknown = Object.freeze({ invalidLockedValue: true });
+
 /** A product's settings (layout plan L8 fills it from the three product sources). */
 export interface ConfigurationPolicy {
   /** Defaults over the registered ones: what a first run and a reset get. */
@@ -139,7 +145,7 @@ export class ConfigurationService {
     let found: unknown;
     for (const policy of this.policies.values()) {
       const values = policy[kind];
-      if (values && Object.hasOwn(values, key)) {
+      if (values && Object.hasOwn(values, key) && values[key] !== INVALID_LOCKED_VALUE) {
         const value = this.accepted(key, values[key]);
         if (value !== undefined) found = value;
       }

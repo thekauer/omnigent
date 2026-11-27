@@ -24,16 +24,24 @@ from omnigent.server.server_config import (
     BRANDING_ASSET_MAX_DIMENSION,
     BRANDING_ASSET_MAX_FRAMES,
     BRANDING_ASSETS_DIRNAME,
+    PRODUCT_LAYOUT_MAX_CHARS,
+    PRODUCT_NUMBER_COST,
+    PRODUCT_SETTINGS_MAX_CHARS,
     PRODUCT_THEME_MAX_CHARS,
+    PRODUCT_VALUE_MAX_DEPTH,
+    PRODUCT_VALUE_MAX_NODES,
     automation_trigger_poll_minutes,
     branding_config,
     branding_logo_asset,
     config_str_list,
     load_branding_snapshot,
     load_picker_curation,
+    load_product_layout,
+    load_product_settings,
     load_product_theme,
     load_server_config,
     product_theme_cost,
+    product_value_cost,
     resolve_config_path,
     session_title_instructions,
 )
@@ -955,3 +963,164 @@ def test_product_theme_limit_matches_the_web() -> None:
         Path(__file__).resolve().parents[2] / "web" / "src" / "theme" / "productTheme.ts"
     ).read_text(encoding="utf-8")
     assert f"PRODUCT_THEME_MAX_CHARS = {PRODUCT_THEME_MAX_CHARS:_};" in source
+
+
+@pytest.mark.parametrize(
+    "config",
+    [{}, {"product": {"theme": {}}}, {"product": {"settings": {}, "layout": {}}}],
+)
+def test_product_settings_and_layout_are_none_without_config(config: dict[str, object]) -> None:
+    """Every existing deployment serves neither block."""
+    assert load_product_settings(config) is None
+    assert load_product_layout(config) is None
+
+
+def test_product_settings_keep_the_well_formed_keys(caplog: pytest.LogCaptureFixture) -> None:
+    """Each key fails open; a lock whose value can't be served still locks its key."""
+    with caplog.at_level(logging.WARNING, logger="omnigent.server.server_config"):
+        settings = load_product_settings(
+            {
+                "product": {
+                    "settings": {
+                        "defaults": {
+                            "workbench.activityBar.location": "default",
+                            "bad key!": 1,
+                            "acme.deep": [[[[[[[[["too deep"]]]]]]]]],
+                            "acme.obj": {"a": [1, True, None]},
+                        },
+                        "locked": {"window.titleBar.visible": True, "acme.locked": "x\ud800"},
+                        "lockedInvalid": ["x"],
+                    }
+                }
+            }
+        )
+    assert settings == {
+        "defaults": {
+            "workbench.activityBar.location": "default",
+            "acme.obj": {"a": [1, True, None]},
+        },
+        "locked": {"window.titleBar.visible": True},
+        "locked_invalid": ["acme.locked"],
+    }
+    assert "product.settings.defaults.bad key! is not a setting key" in caplog.text
+    assert "acme.deep has a value the web can't read; ignoring it" in caplog.text
+    assert "acme.locked has a value the web can't read; the key stays locked" in caplog.text
+    assert "lockedInvalid is not a key; did you mean locked_invalid?" in caplog.text
+
+
+def test_product_settings_of_the_wrong_type_are_ignored(caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level(logging.WARNING, logger="omnigent.server.server_config"):
+        assert load_product_settings({"product": {"settings": ["x"]}}) is None
+        assert load_product_settings({"product": {"settings": {"locked": "x"}}}) is None
+    assert "product.settings must be a mapping" in caplog.text
+    assert "product.settings.locked must be a mapping" in caplog.text
+
+
+def test_product_value_cost_counts_as_the_web_does() -> None:
+    """Strings as their JSON text in UTF-16 units, numbers a fixed cost, brackets and commas."""
+    assert product_value_cost("ab") == 4
+    assert product_value_cost("\U0001f600") == 4
+    assert product_value_cost(1.5) == PRODUCT_NUMBER_COST
+    assert product_value_cost([True, False, None]) == 2 + 2 + 4 + 5 + 4
+    assert product_value_cost({"a": 1}) == 2 + 3 + 1 + PRODUCT_NUMBER_COST
+    assert product_value_cost(float("inf")) is None
+    assert product_value_cost({1: "a"}) is None
+    nested: object = "x"
+    for _ in range(PRODUCT_VALUE_MAX_DEPTH):
+        nested = [nested]
+    assert product_value_cost(nested) is None
+    assert product_value_cost(["x"] * (PRODUCT_VALUE_MAX_NODES - 1)) is not None
+    assert product_value_cost(["x"] * PRODUCT_VALUE_MAX_NODES) is None
+
+
+def test_product_settings_are_capped_locks_first(caplog: pytest.LogCaptureFixture) -> None:
+    big = "x" * 60_000
+    with caplog.at_level(logging.WARNING, logger="omnigent.server.server_config"):
+        settings = load_product_settings(
+            {
+                "product": {
+                    "settings": {
+                        "defaults": {"acme.a": big},
+                        "locked": {"acme.b": big, "acme.c": big},
+                    }
+                }
+            }
+        )
+    assert settings == {"locked": {"acme.b": big, "acme.c": big}}
+    assert "over the 131072-character limit; dropping acme.a" in caplog.text
+
+
+def test_product_layout_keeps_the_well_formed_keys(caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level(logging.WARNING, logger="omnigent.server.server_config"):
+        layout = load_product_layout(
+            {
+                "product": {
+                    "layout": {
+                        "hidden_parts": ["workbench.parts.titlebar", 3, "bad id"],
+                        "hidden_views": "omnigent.newSession",
+                        "hidden_containers": [],
+                        "container_order": ["omnigent.inbox", "omnigent.inbox", "acme.*"],
+                        "lock_view_locations": "yes",
+                        "hiddenParts": ["x"],
+                    }
+                }
+            }
+        )
+    assert layout == {
+        "hidden_parts": ["workbench.parts.titlebar"],
+        "hidden_views": ["omnigent.newSession"],
+        "container_order": ["omnigent.inbox", "acme.*"],
+    }
+    assert "product.layout.hidden_parts has malformed entries" in caplog.text
+    assert "lock_view_locations must be true or false" in caplog.text
+    assert "hiddenParts is not a key; did you mean hidden_parts?" in caplog.text
+    assert load_product_layout({"product": {"layout": {"lock_view_locations": True}}}) == {
+        "lock_view_locations": True
+    }
+
+
+def test_product_layout_drops_a_lone_surrogate() -> None:
+    assert load_product_layout({"product": {"layout": {"hidden_views": ["a\ud800", "b"]}}}) == {
+        "hidden_views": ["b"]
+    }
+
+
+def test_product_settings_and_layout_limits_match_the_web() -> None:
+    """The server and the web share the limits."""
+    source = (
+        Path(__file__).resolve().parents[2] / "web" / "src" / "product" / "productConfig.ts"
+    ).read_text(encoding="utf-8")
+    for name, value in (
+        ("PRODUCT_SETTINGS_MAX_CHARS", PRODUCT_SETTINGS_MAX_CHARS),
+        ("PRODUCT_LAYOUT_MAX_CHARS", PRODUCT_LAYOUT_MAX_CHARS),
+        ("PRODUCT_VALUE_MAX_DEPTH", PRODUCT_VALUE_MAX_DEPTH),
+        ("PRODUCT_VALUE_MAX_NODES", PRODUCT_VALUE_MAX_NODES),
+        ("PRODUCT_NUMBER_COST", PRODUCT_NUMBER_COST),
+    ):
+        assert f"{name} = {value:_};" in source or f"{name} = {value};" in source, name
+
+
+def test_product_settings_drop_an_int_past_a_double() -> None:
+    """The web reads it as Infinity and drops it: so does the server, without crashing."""
+    assert product_value_cost(10**400) is None
+    assert (
+        load_product_settings({"product": {"settings": {"defaults": {"acme.a": 10**400}}}}) is None
+    )
+    assert load_product_settings({"product": {"settings": {"locked": {"acme.a": 10**400}}}}) == {
+        "locked_invalid": ["acme.a"]
+    }
+
+
+def test_product_settings_keep_an_over_budget_lock_locked() -> None:
+    """A lock that doesn't fit the budget still locks its key, to its default."""
+    big = "x" * 70_000
+    assert load_product_settings(
+        {"product": {"settings": {"locked": {"acme.b": big, "acme.c": big}}}}
+    ) == {"locked": {"acme.b": big}, "locked_invalid": ["acme.c"]}
+
+
+def test_product_layout_strips_ascii_whitespace_only() -> None:
+    """As the web trims: a control character other than ASCII whitespace stays (and fails)."""
+    assert load_product_layout({"product": {"layout": {"hidden_views": [" a ", "\x1cb"]}}}) == {
+        "hidden_views": ["a"]
+    }

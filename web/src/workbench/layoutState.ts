@@ -315,5 +315,84 @@ export class LayoutStateStore {
   }
 }
 
-/** The window's layout state. */
-export const layoutState = new LayoutStateStore();
+/** The standalone app's layout state (an embed's mount has its own, `workbench/workbenchScope.ts`). */
+export const standaloneLayoutState = new LayoutStateStore();
+
+let activeStore: LayoutStateStore = standaloneLayoutState;
+const activeListeners = new Set<(change: LayoutStateChange) => void>();
+let activeUnsubscribe: (() => void) | null = null;
+
+function followActive(): void {
+  activeUnsubscribe?.();
+  activeUnsubscribe =
+    activeListeners.size === 0
+      ? null
+      : activeStore.subscribe((change) => {
+          for (const listener of [...activeListeners]) {
+            try {
+              listener(change);
+            } catch (error) {
+              console.error("[layout] a layout state listener failed", error);
+            }
+          }
+        });
+}
+
+/**
+ * The layout state the window's code outside a mount's React tree reads and writes (commands,
+ * preferences): the active mount's (the one last mounted or used), the standalone app's
+ * otherwise. Inside a mount, read the mount's own (`useWorkbenchScope`).
+ */
+class ActiveLayoutStateStore extends LayoutStateStore {
+  override getScope(): string {
+    return activeStore.getScope();
+  }
+  override setScope(scope: string): void {
+    activeStore.setScope(scope);
+  }
+  override get(slot: string): unknown {
+    return activeStore.get(slot);
+  }
+  override set(slot: string, value: unknown): void {
+    activeStore.set(slot, value);
+  }
+  override resetSlots(slots: readonly string[]): Record<string, unknown> {
+    return activeStore.resetSlots(slots);
+  }
+  override restoreSlots(values: Readonly<Record<string, unknown>>): void {
+    activeStore.restoreSlots(values);
+  }
+  override reset(): void {
+    activeStore.reset();
+  }
+  override subscribe(listener: (change: LayoutStateChange) => void): () => void {
+    activeListeners.add(listener);
+    if (activeListeners.size === 1) followActive();
+    return () => {
+      activeListeners.delete(listener);
+      if (activeListeners.size === 0) followActive();
+    };
+  }
+}
+
+/** The active mount's layout state (the standalone app's unless an embed is active). */
+export const layoutState: LayoutStateStore = new ActiveLayoutStateStore();
+
+/** Makes `store` the active layout state (null: the standalone app's); listeners hear every slot. */
+export function setActiveLayoutState(store: LayoutStateStore | null): void {
+  const next = store ?? standaloneLayoutState;
+  if (next === activeStore) return;
+  activeStore = next;
+  followActive();
+  for (const listener of [...activeListeners]) {
+    try {
+      listener({});
+    } catch (error) {
+      console.error("[layout] a layout state listener failed", error);
+    }
+  }
+}
+
+export function activeLayoutState(): LayoutStateStore {
+  return activeStore;
+}

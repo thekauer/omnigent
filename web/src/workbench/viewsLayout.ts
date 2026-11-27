@@ -4,7 +4,8 @@
 
 import { useCallback, useSyncExternalStore } from "react";
 import { LAYOUT_SLOTS, type LayoutStateStore, layoutState } from "./layoutState";
-import { type ProductLayoutPolicy, productLayout } from "./productLayout";
+import { isViewHiddenByProduct, type ProductLayoutPolicy, productLayout } from "./productLayout";
+import { useWorkbenchScope } from "./workbenchScope";
 
 export interface ViewLayout {
   readonly collapsed?: boolean;
@@ -72,11 +73,16 @@ export function isViewCollapsed(
   return layout[view.id]?.collapsed ?? view.visibility === "collapsed";
 }
 
-/** Whether a view is hidden: the user's choice, else its contribution's `visibility`. */
+/**
+ * Whether a view is hidden: removed by the product (`hiddenViews`), else the user's choice, else
+ * its contribution's `visibility`.
+ */
 export function isViewHidden(
   view: { readonly id: string; readonly visibility?: string },
   layout: ViewsLayout,
+  policy: ProductLayoutPolicy = productLayout,
 ): boolean {
+  if (isViewHiddenByProduct(view.id, policy)) return true;
   return layout[view.id]?.hidden ?? view.visibility === "hidden";
 }
 
@@ -90,9 +96,12 @@ function snapshot(store: LayoutStateStore, policy: ProductLayoutPolicy): ViewsLa
 }
 
 export function useViewsLayout(
-  store: LayoutStateStore = layoutState,
+  given?: LayoutStateStore,
   policy: ProductLayoutPolicy = productLayout,
 ): ViewsLayout {
+  // The mount's own layout state unless one is given.
+  const scoped = useWorkbenchScope().state;
+  const store = given ?? scoped;
   const subscribe = useCallback(
     (listener: () => void) => {
       const unsubscribers = [store.subscribe(listener), policy.subscribe(listener)];

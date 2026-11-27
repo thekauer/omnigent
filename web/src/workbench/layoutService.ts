@@ -6,7 +6,7 @@
 // it shows. Plain data; no React.
 
 import { CONVERSATIONS_CONTAINER } from "./viewContainers";
-import { LAYOUT_SLOTS, type LayoutStateStore, layoutState } from "./layoutState";
+import { LAYOUT_SLOTS, type LayoutStateStore, standaloneLayoutState } from "./layoutState";
 
 /** The workbench's parts, by VS Code's names (the auxiliary bar is the secondary side bar). */
 export const Parts = Object.freeze({
@@ -98,8 +98,68 @@ export class LayoutService {
   private sideBarHolds = 0;
   private readonly sideBarListeners = new Set<() => void>();
 
-  constructor(store: LayoutStateStore = layoutState) {
+  private root: HTMLElement | null = null;
+  private rootSize: PartSize | undefined;
+  private rootObserver: ResizeObserver | null = null;
+  private readonly rootListeners = new Set<Listener<void>>();
+
+  constructor(store: LayoutStateStore = standaloneLayoutState) {
     this.store = store;
+  }
+
+  /** The layout state this service keeps the side bar's container in. */
+  getStore(): LayoutStateStore {
+    return this.store;
+  }
+
+  /**
+   * The element the parts are laid out in (an embed's root; null: the window): its size is
+   * what part sizes clamp to and what width-based rules read (layout plan L8, decision 14).
+   */
+  setRoot(root: HTMLElement | null): void {
+    if (root === this.root) return;
+    this.rootObserver?.disconnect();
+    this.rootObserver = null;
+    this.root = root;
+    this.rootSize = undefined;
+    if (root && typeof ResizeObserver !== "undefined") {
+      this.rootObserver = new ResizeObserver(() => this.measureRoot());
+      this.rootObserver.observe(root);
+    }
+    this.measureRoot();
+  }
+
+  getRoot(): HTMLElement | null {
+    return this.root;
+  }
+
+  private measureRoot(): void {
+    const box = this.root?.getBoundingClientRect();
+    const next = box ? Object.freeze({ width: box.width, height: box.height }) : undefined;
+    if (next?.width === this.rootSize?.width && next?.height === this.rootSize?.height) return;
+    this.rootSize = next;
+    fire(this.rootListeners, undefined);
+    fire(this.layoutListeners, undefined);
+  }
+
+  /** The root's size, or the window's when the parts are laid out in the window. */
+  getRootSize(): PartSize {
+    if (this.rootSize) return this.rootSize;
+    if (typeof window === "undefined") return { width: 0, height: 0 };
+    return { width: window.innerWidth, height: window.innerHeight };
+  }
+
+  /** Fires when the root's size changes (the window's resize when there is no root). */
+  onDidChangeRootSize(listener: Listener<void>): () => void {
+    this.rootListeners.add(listener);
+    const onResize = () => {
+      if (!this.root) listener(undefined);
+    };
+    if (typeof window !== "undefined") window.addEventListener("resize", onResize);
+    return () => {
+      this.rootListeners.delete(listener);
+      if (typeof window !== "undefined") window.removeEventListener("resize", onResize);
+    };
   }
 
   /**
@@ -278,5 +338,134 @@ export class LayoutService {
   }
 }
 
-/** The window's workbench layout. */
-export const layoutService = new LayoutService();
+/** The standalone app's workbench layout (an embed's mount has its own). */
+export const standaloneLayoutService = new LayoutService(standaloneLayoutState);
+
+let activeService: LayoutService = standaloneLayoutService;
+const switchListeners = new Set<() => void>();
+
+/** Calls `subscribe` on the active service now and again each time another becomes active. */
+function followActiveService(
+  subscribe: (service: LayoutService) => () => void,
+  onSwitch?: () => void,
+): () => void {
+  let unsubscribe = subscribe(activeService);
+  const resubscribe = () => {
+    unsubscribe();
+    unsubscribe = subscribe(activeService);
+    onSwitch?.();
+  };
+  switchListeners.add(resubscribe);
+  return () => {
+    switchListeners.delete(resubscribe);
+    unsubscribe();
+  };
+}
+
+/**
+ * The layout the window's code outside a mount's React tree reaches (the extension host's
+ * commands, context keys): the active mount's (last mounted or used), the standalone app's
+ * otherwise. Inside a mount, use the mount's own (`useWorkbenchScope`).
+ */
+class ActiveLayoutService extends LayoutService {
+  override registerPart(part: Part, controller: PartController): () => void {
+    return activeService.registerPart(part, controller);
+  }
+  override hasPart(part: Part): boolean {
+    return activeService.hasPart(part);
+  }
+  override isVisible(part: Part): boolean {
+    return activeService.isVisible(part);
+  }
+  override setPartHidden(hidden: boolean, part: Part): void {
+    activeService.setPartHidden(hidden, part);
+  }
+  override togglePart(part: Part): void {
+    activeService.togglePart(part);
+  }
+  override getSize(part: Part): PartSize | undefined {
+    return activeService.getSize(part);
+  }
+  override setSize(part: Part, size: Partial<PartSize>): void {
+    activeService.setSize(part, size);
+  }
+  override getLocation(part: Part): PartLocation {
+    return activeService.getLocation(part);
+  }
+  override toggleMaximized(part: Part): void {
+    activeService.toggleMaximized(part);
+  }
+  override focusPart(part: Part): boolean {
+    return activeService.focusPart(part);
+  }
+  override isSideBarOpen(initial?: () => boolean): boolean {
+    return activeService.isSideBarOpen(initial);
+  }
+  override setSideBarOpen = (update: StateUpdate<boolean>): void => {
+    activeService.setSideBarOpen(update);
+  };
+  override getActiveViewContainer(): string {
+    return activeService.getActiveViewContainer();
+  }
+  override setActiveViewContainer(containerId: string): void {
+    activeService.setActiveViewContainer(containerId);
+  }
+  override openViewContainer(containerId: string): void {
+    activeService.openViewContainer(containerId);
+  }
+  override onDidChangeSideBar = (listener: () => void): (() => void) =>
+    followActiveService((service) => service.onDidChangeSideBar(listener), listener);
+  override holdSideBarState(): () => void {
+    return activeService.holdSideBarState();
+  }
+  override partChanged(part: Part): void {
+    activeService.partChanged(part);
+  }
+  override onDidChangePartVisibility(listener: Listener<PartVisibilityChange>): () => void {
+    return followActiveService(
+      (service) => service.onDidChangePartVisibility(listener),
+      () => {
+        for (const part of PART_IDS) listener({ part, visible: activeService.isVisible(part) });
+      },
+    );
+  }
+  override onDidChangeLayout(listener: Listener<void>): () => void {
+    return followActiveService(
+      (service) => service.onDidChangeLayout(listener),
+      () => listener(undefined),
+    );
+  }
+  override getStore(): LayoutStateStore {
+    return activeService.getStore();
+  }
+  override setRoot(root: HTMLElement | null): void {
+    activeService.setRoot(root);
+  }
+  override getRoot(): HTMLElement | null {
+    return activeService.getRoot();
+  }
+  override getRootSize(): PartSize {
+    return activeService.getRootSize();
+  }
+  override onDidChangeRootSize(listener: Listener<void>): () => void {
+    return followActiveService(
+      (service) => service.onDidChangeRootSize(listener),
+      () => listener(undefined),
+    );
+  }
+}
+
+/** The active mount's workbench layout (the standalone app's unless an embed is active). */
+export const layoutService: LayoutService = new ActiveLayoutService(standaloneLayoutState);
+
+/** Makes `service` the active layout (null: the standalone app's). */
+export function setActiveLayoutService(service: LayoutService | null): void {
+  const next = service ?? standaloneLayoutService;
+  if (next === activeService) return;
+  activeService = next;
+  for (const listener of [...switchListeners]) listener();
+}
+
+export function activeLayoutService(): LayoutService {
+  return activeService;
+}

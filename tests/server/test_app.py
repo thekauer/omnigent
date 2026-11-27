@@ -3284,6 +3284,49 @@ async def test_info_publishes_the_product_theme(
 
 
 @pytest.mark.asyncio
+async def test_info_publishes_the_product_settings_and_layout(
+    db_uri: str,
+    runtime_init: None,
+    tmp_path: Path,
+) -> None:
+    """``GET /v1/info`` carries ``product.settings`` and ``product.layout`` as configured."""
+    app = _build_branding_app(
+        db_uri,
+        tmp_path,
+        "product-layout",
+        server_config={
+            "product": {
+                "settings": {
+                    "defaults": {"workbench.activityBar.location": "default"},
+                    "locked": {"window.titleBar.visible": True, "acme.bad": "\ud800"},
+                },
+                "layout": {
+                    "hidden_views": ["omnigent.newSession"],
+                    "lock_view_locations": True,
+                },
+            }
+        },
+    )
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=app), base_url="http://test"
+    ) as c:
+        resp = await c.get("/v1/info")
+
+    assert resp.status_code == 200
+    product = resp.json()["product"]
+    assert product["theme"] is None
+    assert product["settings"] == {
+        "defaults": {"workbench.activityBar.location": "default"},
+        "locked": {"window.titleBar.visible": True},
+        "locked_invalid": ["acme.bad"],
+    }
+    assert {key: value for key, value in product["layout"].items() if value is not None} == {
+        "hidden_views": ["omnigent.newSession"],
+        "lock_view_locations": True,
+    }
+
+
+@pytest.mark.asyncio
 async def test_server_starts_with_a_lone_surrogate_in_the_product_theme(
     db_uri: str,
     runtime_init: None,

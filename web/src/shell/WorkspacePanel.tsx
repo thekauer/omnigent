@@ -99,6 +99,7 @@ import { extensionRailTab, extensionRailTabViewId, type RightRailTab } from "./r
 import { useWorkspaceRail } from "./useWorkspaceRail";
 import { builtInTabView, hasRailTab, useRailViews } from "./railViews";
 import { RailTabStripMenu } from "./RailTabStripMenu";
+import { isViewHiddenByProduct } from "@/workbench/productLayout";
 import { viewDragProps } from "./viewMoves";
 import { isViewHidden, useViewsLayout } from "@/workbench/viewsLayout";
 import { ViewContainerTitleActions } from "./ViewContainerTitleActions";
@@ -1282,7 +1283,13 @@ function WorkspacePanelImpl({
   );
   const defaultTab = readDefaultWorkspaceTab();
   const tabOrder = [defaultTab, ...defaultWorkspaceTabs.filter((tab) => tab !== defaultTab)];
+  // A built-in tab whose view the product removed (`layout.hiddenViews`) gets no tab.
+  const productRemovesTab = (tab: RailPanelTab) => {
+    const viewId = builtInTabView(extensionViews, tab)?.id;
+    return viewId !== undefined && isViewHiddenByProduct(viewId);
+  };
   const availablePanels = tabOrder.filter((tab) => {
+    if (productRemovesTab(tab)) return false;
     if (tab === "subagents") return true;
     if (tab === "github") return pending || showGithubTab;
     if (tab === "tasks") return showTasksTab;
@@ -1291,7 +1298,9 @@ function WorkspacePanelImpl({
   const pinnedTabs = readPinnedWorkspaceTabs();
   const visiblePermanentTabs: RailPanelTab[] = [
     ...availablePanels.filter((tab) => pinnedTabs.includes(tab)),
-    ...(showContentSearch && (pending || showFilesPanel) ? ["content-search" as const] : []),
+    ...(showContentSearch && (pending || showFilesPanel) && !productRemovesTab("content-search")
+      ? ["content-search" as const]
+      : []),
     // Extension views follow the built-ins, in the registry's order.
     ...extensionViews
       // A view whose `when` doesn't hold, or a hidden one, gets no tab.

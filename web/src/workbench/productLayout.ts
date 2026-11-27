@@ -64,13 +64,61 @@ export function useProductLayout(policy: ProductLayoutPolicy = productLayout): P
 
 /** Whether `id` matches one of `patterns` (ids, or `*` for any run of characters). */
 export function matchesIdPattern(id: string, patterns: readonly string[] | undefined): boolean {
-  if (!patterns) return false;
-  return patterns.some((pattern) => {
-    if (!pattern.includes("*")) return pattern === id;
-    const source = pattern
-      .split("*")
-      .map((part) => part.replace(/[.+?^${}()|[\]\\]/g, "\\$&"))
-      .join(".*");
-    return new RegExp(`^${source}$`).test(id);
-  });
+  return patterns?.some((pattern) => wildcardMatch(pattern, id)) ?? false;
+}
+
+/** `*` matches any run of characters: a linear two-pointer match, no regular expression. */
+function wildcardMatch(pattern: string, text: string): boolean {
+  let at = 0;
+  let textAt = 0;
+  let starAt = -1;
+  let resume = 0;
+  while (textAt < text.length) {
+    if (at < pattern.length && pattern[at] !== "*" && pattern[at] === text[textAt]) {
+      at += 1;
+      textAt += 1;
+    } else if (at < pattern.length && pattern[at] === "*") {
+      starAt = at;
+      resume = textAt;
+      at += 1;
+    } else if (starAt >= 0) {
+      at = starAt + 1;
+      resume += 1;
+      textAt = resume;
+    } else {
+      return false;
+    }
+  }
+  while (at < pattern.length && pattern[at] === "*") at += 1;
+  return at === pattern.length;
+}
+
+/** Whether the product hides `part` (`hiddenParts`; the main part can't be hidden). */
+export function isPartHiddenByProduct(
+  part: string,
+  policy: ProductLayoutPolicy = productLayout,
+): boolean {
+  return part !== "workbench.parts.main" && matchesIdPattern(part, policy.get().hiddenParts);
+}
+
+/** Whether the product removes the view container `id` (`hiddenContainers`). */
+export function isContainerHiddenByProduct(
+  id: string,
+  policy: ProductLayoutPolicy = productLayout,
+): boolean {
+  return matchesIdPattern(id, policy.get().hiddenContainers);
+}
+
+/** Whether the product removes the view, or navigation entry, `id` (`hiddenViews`). */
+export function isViewHiddenByProduct(
+  id: string,
+  policy: ProductLayoutPolicy = productLayout,
+): boolean {
+  return matchesIdPattern(id, policy.get().hiddenViews);
+}
+
+/** Whether the product hides `part`, kept current. */
+export function useProductHidesPart(part: string, policy: ProductLayoutPolicy = productLayout) {
+  useProductLayout(policy);
+  return isPartHiddenByProduct(part, policy);
 }

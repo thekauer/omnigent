@@ -22,6 +22,8 @@ export interface SidebarToggleHandlers {
   onToggleLeft?: () => void;
   /** Flip the right (Workspace) sidebar. Unset sides stay unclaimed. */
   onToggleRight?: () => void;
+  /** False while another mounted app on the page has the keybindings: the chord is left alone. */
+  isActive?: () => boolean;
 }
 
 // Rich-text editors keep ⌘B for Bold.
@@ -73,7 +75,7 @@ export function useSidebarToggleHotkeys(
           : side === "right"
             ? latest.current.onToggleRight
             : undefined;
-      if (!toggle) return;
+      if (!toggle || latest.current.isActive?.() === false) return;
       // Claim the chord: preventDefault drops any default action and
       // stopPropagation keeps it from reaching other keydown listeners.
       e.preventDefault();

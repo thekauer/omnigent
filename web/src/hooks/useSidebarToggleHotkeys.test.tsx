@@ -33,6 +33,20 @@ function setup(isMac = false) {
 }
 
 describe("useSidebarToggleHotkeys", () => {
+  it("leaves the chord to the active app when another app on the page has the keybindings", () => {
+    const active = vi.fn();
+    const inactive = vi.fn();
+    renderHook(() =>
+      useSidebarToggleHotkeys({ onToggleLeft: inactive, isActive: () => false }, false),
+    );
+    renderHook(() =>
+      useSidebarToggleHotkeys({ onToggleLeft: active, isActive: () => true }, false),
+    );
+    press();
+    expect(active).toHaveBeenCalledTimes(1);
+    expect(inactive).not.toHaveBeenCalled();
+  });
+
   it("Ctrl+Alt+[ toggles only the left sidebar (Win/Linux)", () => {
     const { onToggleLeft, onToggleRight } = setup(false);
     press({ ctrlKey: true, altKey: true }, "BracketLeft");

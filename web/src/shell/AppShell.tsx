@@ -215,6 +215,9 @@ import { useRailViewIds } from "./railViews";
 import { ActivityBar } from "./ActivityBar";
 import { activityBarWidthPx, useActivityBarLocation } from "@/workbench/activityBar";
 import { TITLE_BAR_VISIBLE_SETTING, useTitleBarSetting } from "@/workbench/titleBar";
+import { useProductHidesPart } from "@/workbench/productLayout";
+import { isActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
+import type { LayoutStateStore } from "@/workbench/layoutState";
 import { TitleBar } from "./TitleBar";
 import { setShellNavigator } from "@/workbench/navigationCommands";
 import {
@@ -494,7 +497,22 @@ function AppShellImpl() {
       : undefined;
   const [searchParams, setSearchParams] = useSearchParams();
   const agentsPanelRequested = searchParams.get("panel") === "agents";
-  const [sidebarOpen, setSidebarOpen] = useCanvasSidebar(canvasMode, initialSidebarOpen);
+  // This mount's own layout state (an embed's, read before it becomes the active one).
+  const workbenchScope = useWorkbenchScope();
+  const workbenchState = workbenchScope.state;
+  // With two apps on a page, the window's keybindings reach the one last mounted or used.
+  const isActiveMount = useCallback(() => isActiveWorkbenchScope(workbenchScope), [workbenchScope]);
+  const [sidebarOpen, setSidebarOpen] = useCanvasSidebar(canvasMode, () =>
+    initialSidebarOpen(workbenchState),
+  );
+  // Parts the product removed (`layout.hiddenParts`): not drawn, and nothing opens them.
+  const sidebarRemoved = useProductHidesPart(Parts.SIDEBAR_PART);
+  const auxiliaryBarRemoved = useProductHidesPart(Parts.AUXILIARYBAR_PART);
+  const sidebarRemovedRef = useRef(sidebarRemoved);
+  sidebarRemovedRef.current = sidebarRemoved;
+  useEffect(() => {
+    if (sidebarRemoved && sidebarOpen) setSidebarOpen(false);
+  }, [sidebarRemoved, sidebarOpen, setSidebarOpen]);
   // Extension pages own their top chrome. The shell header only carries the
   // collapsed-sidebar toggle there, so skip it while the sidebar is open and
   // let the page use the full height (ExtensionViewHost drops its inset).
@@ -558,7 +576,9 @@ function AppShellImpl() {
   // The title bar (`window.titleBar.visible`): never on phones, where its items fold away.
   // The macOS desktop app's own title strip holds the traffic lights (layout plan L9).
   const titleBarSetting = useTitleBarSetting();
-  const titleBarShown = titleBarSetting && !mobileViewport && !isMacElectronShell();
+  const titleBarRemoved = useProductHidesPart(Parts.TITLEBAR_PART);
+  const titleBarShown =
+    titleBarSetting && !mobileViewport && !titleBarRemoved && !isMacElectronShell();
   // The tabs host sits in the Workspace drawer once a narrow window has mounted it.
   const tabsInDrawer = mobileViewport && tabsDrawerTarget !== null;
   const sideBySideSidebar = useIsSideBySideSidebarViewport();
@@ -2205,6 +2225,8 @@ function AppShellImpl() {
   // cleared so we never leave `sidebarOpen` and `sidebarPeek` both true (a
   // floating-card layout the rest of the shell treats as a pushing panel).
   const toggleLeftSidebar = () => {
+    // A side bar the product removed doesn't open, by hotkey or palette either.
+    if (sidebarRemoved) return;
     // On /settings the sidebar holds the only exit (the Back row), so collapsing
     // it — by hotkey or command palette, the paths that bypass the hidden
     // title-bar toggle — would strand the user on the page. Opening is still
@@ -2344,6 +2366,7 @@ function AppShellImpl() {
   useSidebarToggleHotkeys({
     onToggleLeft: toggleLeftSidebar,
     onToggleRight: gridRoute ? undefined : toggleRightPanelFromHotkey,
+    isActive: isActiveMount,
   });
 
   // ⌘K (Ctrl+K) toggles the command palette. Bound capture-phase, so in the
@@ -2364,6 +2387,7 @@ function AppShellImpl() {
   }, [setSidebarOpen]);
   const handleSidebarOpen = useCallback(
     (peek = false) => {
+      if (sidebarRemovedRef.current) return;
       setSidebarOpen(!peek);
       setSidebarPeek(peek);
     },
@@ -2387,6 +2411,7 @@ function AppShellImpl() {
       setSessionSearch(true);
       setCommandPaletteOpen((prev) => !sessionSearch || !prev);
     },
+    isActiveMount,
   );
   useNewSessionHotkey();
   useSettingsHotkey();
@@ -3356,6 +3381,7 @@ function AppShellImpl() {
     }
   }, [narrowerThanAutoHide, setRightPanelOpenImmediately]);
   const workspacePanelVisible = Boolean(
+    !auxiliaryBarRemoved &&
     conversationId &&
     hasRailContent &&
     rightPanelOpen &&
@@ -3365,26 +3391,35 @@ function AppShellImpl() {
   );
   // The parts this shell draws, for the layout service (commands, context keys) to read and
   // change through the shell's own handlers.
-  useWorkbenchPart(Parts.SIDEBAR_PART, {
-    visible: sidebarOpen || sidebarPeek,
-    // On /settings the side bar holds the only exit: it opens, but never collapses (as the toggle).
-    setHidden: (hidden) => {
-      if (!hidden) handleSidebarOpen();
-      else if (!inSettings) handleSidebarClose();
+  useWorkbenchPart(
+    Parts.SIDEBAR_PART,
+    {
+      visible: sidebarOpen || sidebarPeek,
+      // On /settings the side bar holds the only exit: it opens, but never collapses (as the toggle).
+      setHidden: (hidden) => {
+        if (!hidden) handleSidebarOpen();
+        else if (!inSettings) handleSidebarClose();
+      },
+      toggle: toggleLeftSidebar,
     },
-    toggle: toggleLeftSidebar,
-  });
+    !sidebarRemoved,
+  );
   useWorkbenchPart(Parts.MAIN_PART, { visible: true, setHidden: () => {} });
-  useWorkbenchPart(Parts.TITLEBAR_PART, {
-    visible: titleBarShown,
-    setHidden: (hidden) => {
-      try {
-        configurationService.update(TITLE_BAR_VISIBLE_SETTING, !hidden);
-      } catch (error) {
-        console.warn("[layout] the title bar's setting can't be written", error);
-      }
+  // A part the product removed isn't drawn: nothing (the layout controls, commands) reaches it.
+  useWorkbenchPart(
+    Parts.TITLEBAR_PART,
+    {
+      visible: titleBarShown,
+      setHidden: (hidden) => {
+        try {
+          configurationService.update(TITLE_BAR_VISIBLE_SETTING, !hidden);
+        } catch (error) {
+          console.warn("[layout] the title bar's setting can't be written", error);
+        }
+      },
     },
-  });
+    !titleBarRemoved,
+  );
   // A grid route draws its own workspace, with its own toggle.
   useWorkbenchPart(
     Parts.AUXILIARYBAR_PART,
@@ -3396,7 +3431,7 @@ function AppShellImpl() {
       toggle: toggleRightPanelFromHotkey,
       toggleMaximized: toggleRightPanelMaximized,
     },
-    !gridRoute,
+    !gridRoute && !auxiliaryBarRemoved,
   );
   // The side bar's desktop open state outlives the window (layout state).
   useRememberSidebarVisible(
@@ -3441,7 +3476,7 @@ function AppShellImpl() {
   const activityBarBeside = activityBarLocation === "default" && !mobileViewport && (
     <ActivityBar location="default" />
   );
-  const sideBarElement = (
+  const sideBarElement = !sidebarRemoved && (
     <Sidebar
       open={sidebarOpen}
       onOpen={handleSidebarOpen}
@@ -3653,7 +3688,7 @@ function AppShellImpl() {
                     // spot — shifting the title sideways the instant the peek card
                     // appeared. Left collapsed, the breadcrumb stays put beneath
                     // the floating card (and in the title-bar strip on mac).
-                    sidebarOpen={sidebarOpen}
+                    sidebarOpen={sidebarOpen || sidebarRemoved}
                     settingsMode={inSettings}
                     onOpenSidebar={handleSidebarOpen}
                     isChildSession={isChildSession}
@@ -3790,7 +3825,7 @@ function AppShellImpl() {
               rectangle (e.g. a no-filesystem agent with no terminals).
               Sits inside the group so the header overlay spans it; the
               push panels below sit outside the group. */}
-                {conversationId && workspacePanelMounted && tabsSidebar && (
+                {conversationId && workspacePanelMounted && !auxiliaryBarRemoved && tabsSidebar && (
                   // One host for the rail and the narrow drawer, so a resize moves it with its drafts.
                   <ResponsiveViewerSlot
                     mobile={mobileViewport}
@@ -3851,78 +3886,85 @@ function AppShellImpl() {
                     </Suspense>
                   </ResponsiveViewerSlot>
                 )}
-                {conversationId && workspacePanelMounted && !tabsSidebar && (
-                  <WorkspacePanel
-                    side={auxiliaryBarSide}
-                    conversationId={conversationId}
-                    pending={pendingConversation}
-                    width={inlinePanelWidth}
-                    inert={!workspacePanelVisible || inlinePanelWidth === 0}
-                    open={workspacePanelVisible}
-                    resizing={inlinePanelResizing}
-                    animateVisibility={rightPanelVisibilityAnimating}
-                    handleProps={inlinePanelHandleProps}
-                    rightRailTab={rightRailTab}
-                    tabListRef={workspaceTabListRef}
-                    onRightRailTabChange={handleRightRailTabChange}
-                    openPanels={openPanels}
-                    onClosePanel={closeWorkspacePanel}
-                    showFilesPanel={showFilesPanel}
-                    showGithubTab={railTabsAvailable.github}
-                    showTasksTab={railTabsAvailable.tasks}
-                    showContentSearch={railTabsAvailable["content-search"]}
-                    showBrowserTab={railTabsAvailable.browser}
-                    onReveal={revealRightPanel}
-                    onHide={rightPanelOpen ? toggleRightPanel : undefined}
-                    rootSessionId={rootSessionId}
-                    selectedFilePath={selectedFilePath}
-                    filePosition={filePosition}
-                    mobileFileTarget={mobileFileTarget}
-                    onMobileFileClose={closeFileViewer}
-                    openFiles={openFiles}
-                    openFileViewer={openFileViewer}
-                    onCloseFile={closeFile}
-                    onShowScopeView={closeFileViewerToScope}
-                    onCommentsOpenChange={setFileViewerCommentsOpen}
-                    onShareFile={shareFile}
-                    shareDisabledReason={shareDisabledReason}
-                    openTerminalTab={openTerminalTab}
-                    openTerminals={openTerminals}
-                    selectedTerminalKey={selectedTerminalKey}
-                    autoFocusSelectedTerminal={
-                      autoFocusTerminalRef.current !== null &&
-                      autoFocusTerminalRef.current.conversationId === conversationId &&
-                      autoFocusTerminalRef.current.key === selectedTerminalKey
-                    }
-                    closingTerminalKey={closingTerminalKey}
-                    onCloseTerminal={requestCloseTerminal}
-                    maximized={rightPanelMaximized}
-                    onToggleMaximized={toggleRightPanelMaximized}
-                    permissionLevel={permissionLevel}
-                    filesPanelSort={filesPanelSort}
-                    liveness={liveness}
-                    onShellCreateStart={markShellCreateStarted}
-                    onShellCreateFailed={clearShellCreatePending}
-                    mobileSideChatsOpen={sideChatsPanelOpen}
-                    onMobileSideChatsOpenChange={setSideChatsPanelOpen}
-                    onHasSideChatTabsChange={setHasSideChatTabs}
-                  />
-                )}
+                {conversationId &&
+                  workspacePanelMounted &&
+                  !auxiliaryBarRemoved &&
+                  !tabsSidebar && (
+                    <WorkspacePanel
+                      side={auxiliaryBarSide}
+                      conversationId={conversationId}
+                      pending={pendingConversation}
+                      width={inlinePanelWidth}
+                      inert={!workspacePanelVisible || inlinePanelWidth === 0}
+                      open={workspacePanelVisible}
+                      resizing={inlinePanelResizing}
+                      animateVisibility={rightPanelVisibilityAnimating}
+                      handleProps={inlinePanelHandleProps}
+                      rightRailTab={rightRailTab}
+                      tabListRef={workspaceTabListRef}
+                      onRightRailTabChange={handleRightRailTabChange}
+                      openPanels={openPanels}
+                      onClosePanel={closeWorkspacePanel}
+                      showFilesPanel={showFilesPanel}
+                      showGithubTab={railTabsAvailable.github}
+                      showTasksTab={railTabsAvailable.tasks}
+                      showContentSearch={railTabsAvailable["content-search"]}
+                      showBrowserTab={railTabsAvailable.browser}
+                      onReveal={revealRightPanel}
+                      onHide={rightPanelOpen ? toggleRightPanel : undefined}
+                      rootSessionId={rootSessionId}
+                      selectedFilePath={selectedFilePath}
+                      filePosition={filePosition}
+                      mobileFileTarget={mobileFileTarget}
+                      onMobileFileClose={closeFileViewer}
+                      openFiles={openFiles}
+                      openFileViewer={openFileViewer}
+                      onCloseFile={closeFile}
+                      onShowScopeView={closeFileViewerToScope}
+                      onCommentsOpenChange={setFileViewerCommentsOpen}
+                      onShareFile={shareFile}
+                      shareDisabledReason={shareDisabledReason}
+                      openTerminalTab={openTerminalTab}
+                      openTerminals={openTerminals}
+                      selectedTerminalKey={selectedTerminalKey}
+                      autoFocusSelectedTerminal={
+                        autoFocusTerminalRef.current !== null &&
+                        autoFocusTerminalRef.current.conversationId === conversationId &&
+                        autoFocusTerminalRef.current.key === selectedTerminalKey
+                      }
+                      closingTerminalKey={closingTerminalKey}
+                      onCloseTerminal={requestCloseTerminal}
+                      maximized={rightPanelMaximized}
+                      onToggleMaximized={toggleRightPanelMaximized}
+                      permissionLevel={permissionLevel}
+                      filesPanelSort={filesPanelSort}
+                      liveness={liveness}
+                      onShellCreateStart={markShellCreateStarted}
+                      onShellCreateFailed={clearShellCreatePending}
+                      mobileSideChatsOpen={sideChatsPanelOpen}
+                      onMobileSideChatsOpenChange={setSideChatsPanelOpen}
+                      onHasSideChatTabsChange={setHasSideChatTabs}
+                    />
+                  )}
               </div>
 
-              {conversationId && workspacePanelMounted && tabsSidebar && mobileViewport && (
-                // The narrow layout's Workspace drawer, where the one tabs host moves; kept
-                // mounted so its shells and pages stay live.
-                <MobilePanelDrawer
-                  open={tabsDrawerOpen}
-                  title="Workspace"
-                  onClose={() => setTabsDrawerOpen(false)}
-                  testId="workspace-tabs-drawer"
-                  keepMounted
-                >
-                  <div ref={setTabsDrawerTarget} className="contents" />
-                </MobilePanelDrawer>
-              )}
+              {conversationId &&
+                workspacePanelMounted &&
+                !auxiliaryBarRemoved &&
+                tabsSidebar &&
+                mobileViewport && (
+                  // The narrow layout's Workspace drawer, where the one tabs host moves; kept
+                  // mounted so its shells and pages stay live.
+                  <MobilePanelDrawer
+                    open={tabsDrawerOpen}
+                    title="Workspace"
+                    onClose={() => setTabsDrawerOpen(false)}
+                    testId="workspace-tabs-drawer"
+                    keepMounted
+                  >
+                    <div ref={setTabsDrawerTarget} className="contents" />
+                  </MobilePanelDrawer>
+                )}
               <AppShellWorkspacePanels
                 conversationId={conversationId}
                 terminalFirst={terminalFirst}
@@ -4084,7 +4126,7 @@ function AppShellImpl() {
  * safe (returns false when window is undefined). The threshold is
  * Tailwind's `md` breakpoint, used in the Sidebar's responsive classes.
  */
-function initialSidebarOpen(): boolean {
+function initialSidebarOpen(store: LayoutStateStore): boolean {
   if (typeof window === "undefined") return false;
-  return isDesktopLayout() && (readSidebarVisible() ?? true);
+  return isDesktopLayout() && (readSidebarVisible(store) ?? true);
 }

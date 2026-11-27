@@ -424,9 +424,14 @@ export interface ServerInfo {
   branding?: Branding | null;
   /**
    * The operator's product configuration (server config `product:`), or null. Its
-   * `theme` is checked by `theme/productTheme.ts`, below an embed's and a build's.
+   * `theme` is checked by `theme/productTheme.ts`, its `settings` and `layout` by
+   * `product/productConfig.ts`, each below an embed's and a build's.
    */
-  product?: { readonly theme?: unknown } | null;
+  product?: {
+    readonly theme?: unknown;
+    readonly settings?: unknown;
+    readonly layout?: unknown;
+  } | null;
   /**
    * How the deployment curates the New Chat picker. Display only: it narrows
    * what the picker offers, never what exists, so a session already bound to
@@ -815,7 +820,11 @@ export async function resolveServerInfo(): Promise<ServerInfo> {
             typeof data.product === "object" &&
             data.product !== null &&
             !Array.isArray(data.product)
-              ? { theme: (data.product as { theme?: unknown }).theme }
+              ? {
+                  theme: (data.product as { theme?: unknown }).theme,
+                  settings: (data.product as { settings?: unknown }).settings,
+                  layout: (data.product as { layout?: unknown }).layout,
+                }
               : null,
         };
         return cachedServerInfo;

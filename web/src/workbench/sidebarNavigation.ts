@@ -10,6 +10,7 @@ import conversationsManifest from "@/builtinExtensions/omnigent.conversations/pa
 import { parseContributions } from "@/vscodeExtensions/contributions";
 import type { WhenClause } from "@/vscodeExtensions/when";
 import { LAYOUT_SLOTS, type LayoutStateStore, layoutState } from "./layoutState";
+import { useWorkbenchScope } from "./workbenchScope";
 
 export interface NavigationEntry {
   /** The command the entry runs (and its id for hiding). */
@@ -126,9 +127,10 @@ export function setNavigationEntryHidden(
 
 let hiddenCache: { text: string; ids: readonly string[] } | undefined;
 
-export function useHiddenNavigationEntries(
-  store: LayoutStateStore = layoutState,
-): readonly string[] {
+export function useHiddenNavigationEntries(given?: LayoutStateStore): readonly string[] {
+  // The mount's own layout state unless one is given.
+  const scoped = useWorkbenchScope().state;
+  const store = given ?? scoped;
   const subscribe = useCallback((listener: () => void) => store.subscribe(listener), [store]);
   return useSyncExternalStore(
     subscribe,

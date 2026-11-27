@@ -12,6 +12,7 @@ import { type LayoutStateStore, layoutState, RESETTABLE_LAYOUT_SLOTS } from "./l
 import { toast } from "sonner";
 import { type ViewContainerRegistry, viewContainers } from "./viewContainers";
 import { resetViewLocations } from "./viewLocations";
+import { isContainerHiddenByProduct } from "./productLayout";
 import type { ConfigurationService } from "@/configuration/configurationService";
 import { isDesktopLayout } from "@/hooks/useIsMobileViewport";
 
@@ -141,10 +142,14 @@ export function registerLayoutCommands(
       if (container.location === "panel") continue;
       current.add(container.id);
       if (viewCommands.has(container.id)) continue;
-      const open =
+      const show =
         container.location === "sidebar"
           ? () => layout.openViewContainer(container.id)
           : () => layout.setPartHidden(false, Parts.AUXILIARYBAR_PART);
+      // A container the product removed doesn't show.
+      const open = () => {
+        if (!isContainerHiddenByProduct(container.id)) show();
+      };
       try {
         viewCommands.set(container.id, register(viewContainerCommand(container.id), open));
       } catch {

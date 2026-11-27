@@ -59,11 +59,12 @@ export function useCommandPaletteHotkey(
   enabled = true,
   isMac = isMacPlatform(),
   onSessionSearch?: () => void,
+  isActive?: () => boolean,
 ): void {
   // Held in a ref so the bound handler always calls the latest closure without
   // re-registering on every render.
-  const latest = useRef({ onToggle, onSessionSearch });
-  latest.current = { onToggle, onSessionSearch };
+  const latest = useRef({ onToggle, onSessionSearch, isActive });
+  latest.current = { onToggle, onSessionSearch, isActive };
 
   useEffect(() => {
     if (!enabled) return;
@@ -74,7 +75,7 @@ export function useCommandPaletteHotkey(
         latest.current.onSessionSearch && matchesShortcut(e, "palette.sessions", { mac: isMac });
       if (!sessionSearch && !isCommandPaletteHotkey(e, isMac)) return;
       // Leave the chord to a surface that actually consumes it.
-      if (focusOwnsHotkey(e)) return;
+      if (focusOwnsHotkey(e) || latest.current.isActive?.() === false) return;
       // Claim the chord: preventDefault drops the browser default (Ctrl+K
       // focuses the address bar). stopPropagation mirrors the sibling hotkey
       // hooks; no other listener binds ⌘K, so it's belt-and-suspenders.

@@ -1,4 +1,10 @@
-import { embedLayoutScope, layoutState } from "@/workbench/layoutState";
+import {
+  activateWorkbenchScope,
+  createWorkbenchScope,
+  releaseWorkbenchScope,
+  type WorkbenchScope,
+  WorkbenchScopeProvider,
+} from "@/workbench/workbenchScope";
 import { applyMobileAppTargetAttribute } from "./lib/mobileAppTargets";
 import { appConfig, type SidebarConfig } from "./appConfig";
 import { IdentityAwareSidebarDataProvider } from "./hooks/useSidebarData";
@@ -75,6 +81,12 @@ import {
 } from "./theme/productTheme";
 import { themeService } from "./theme/themeService";
 import {
+  applyBootProductConfigs,
+  applyServerProductConfig,
+  createEmbedProductConfigSource,
+  parseProductConfig,
+} from "./product/productConfig";
+import {
   type RoutingApi,
   RoutingProvider,
   basenamedRouting,
@@ -144,7 +156,9 @@ export interface OmnigentAppProps extends OmnigentHostConfig {
    * the themes offered (`allowed`, ids or `*` patterns), a locked mode, locked tokens,
    * options and variants (applied over the user's settings), and hides the picker or the
    * customizations. Each field wins over the build's `web/product.json` and the server's
-   * `product.theme`. See `theme/productTheme.ts`.
+   * `product.theme`. `settings` (setting `defaults` and `locked` values, by key) and `layout`
+   * (`hiddenParts`, `hiddenContainers`, `hiddenViews`, `containerOrder`, `lockViewLocations`)
+   * merge the same way, per key and per field (`product/productConfig.ts`).
    */
   product?: ProductConfig;
 }
@@ -179,8 +193,9 @@ function EmbedCapabilitiesProvider({ children }: { children: ReactNode }) {
       if (alive) setInfo(resolved);
     });
     void boot.settled.then((resolved) => {
-      // The server's product theme, below the embed's and the build's.
+      // The server's product theme, settings and layout, below the embed's and the build's.
       applyServerProductTheme(resolved);
+      applyServerProductConfig(resolved);
       if (alive) setInfo(resolved);
     });
     return () => {
@@ -194,10 +209,12 @@ function OmnigentProviders({
   sidebarConfig: sidebarOverrides,
   routing,
   basename,
+  workbench,
 }: {
   sidebarConfig?: Partial<SidebarConfig>;
   routing: RoutingApi;
   basename?: string;
+  workbench: WorkbenchScope;
 }) {
   const isDarkMode = useResolvedThemeMode() === "dark";
   // Reuse the host's QueryClient (read from the ambient provider) and run the
@@ -230,19 +247,24 @@ function OmnigentProviders({
   // embed applies them once the scope root mounts. The inner `scopeRef` runs
   // first (child refs fire before parent refs), so `getEmbedRoot()` is already
   // set for the palette's dark-mode attribute stamping.
-  const scopeRootRef = useCallback((el: HTMLDivElement | null) => {
-    setEmbedScopeRoot(el);
-    if (el) {
-      applyMobileAppTargetAttribute();
-      applyStoredUiFontSize();
-      applyUiFontFamily(readUiFontFamily());
-      applyThemePalette(readThemePalette());
-      applyCustomTheme(readCustomTheme());
-      // The product's policy (this render's embed prop included) before the cache paints.
-      applyProductThemes();
-      themeService.applyCached();
-    }
-  }, []);
+  const scopeRootRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      // The parts lay out in this root: their sizes clamp to it, width rules read it.
+      workbench.layout.setRoot(el);
+      setEmbedScopeRoot(el);
+      if (el) {
+        applyMobileAppTargetAttribute();
+        applyStoredUiFontSize();
+        applyUiFontFamily(readUiFontFamily());
+        applyThemePalette(readThemePalette());
+        applyCustomTheme(readCustomTheme());
+        // The product's policy (this render's embed prop included) before the cache paints.
+        applyProductThemes();
+        themeService.applyCached();
+      }
+    },
+    [workbench],
+  );
 
   return (
     // Two nested wrappers on purpose:
@@ -294,6 +316,29 @@ function OmnigentProviders({
   );
 }
 
+/**
+ * Keeps `workbench` the active one while mounted, and again whenever the user points, types
+ * or focuses inside the app, so the window's commands and keybindings reach the app in use.
+ */
+function useMountedWorkbench(workbench: WorkbenchScope): void {
+  useLayoutEffect(() => {
+    activateWorkbenchScope(workbench);
+    const root = () => workbench.layout.getRoot();
+    const onUse = (event: Event) => {
+      const element = root();
+      if (element && event.target instanceof Node && element.contains(event.target)) {
+        activateWorkbenchScope(workbench);
+      }
+    };
+    const events = ["pointerdown", "keydown", "focusin"] as const;
+    for (const type of events) document.addEventListener(type, onUse, true);
+    return () => {
+      for (const type of events) document.removeEventListener(type, onUse, true);
+      releaseWorkbenchScope(workbench);
+    };
+  }, [workbench]);
+}
+
 /** Text of a plain-data prop, to compare renders by value; a prop that isn't JSON is invalid. */
 function plainDataKey(value: unknown): string {
   try {
@@ -329,6 +374,34 @@ function useEmbedProductTheme(product: ProductConfig | undefined) {
 }
 
 /**
+ * The product's settings and layout from the props, over the build's and the server's: this
+ * mount's own source, kept in step with the props (by value), cleared on unmount. Applied
+ * before the first paint, so it already has the product's defaults and hidden parts.
+ */
+function useEmbedProductConfig(product: ProductConfig | undefined) {
+  const key = plainDataKey([product?.settings, product?.layout]);
+  const latest = useRef(product);
+  latest.current = product;
+  const [source] = useState(() => {
+    applyBootProductConfigs({ apply: false });
+    // Set in the layout effect below (before the first paint): an initializer React discards
+    // must leave nothing behind.
+    return createEmbedProductConfigSource();
+  });
+  const applied = useRef(key);
+  useLayoutEffect(() => {
+    if (applied.current === key) return;
+    applied.current = key;
+    source.set(parseProductConfig(latest.current, "embed"));
+  }, [key, source]);
+  useLayoutEffect(() => {
+    // A strict mode remount sets it again before the release clears it.
+    source.set(parseProductConfig(latest.current, "embed"));
+    return () => source.release();
+  }, [source]);
+}
+
+/**
  * The Omnigent app for the SAME-ROOT path: a plain component the host renders
  * directly inside its OWN React tree + router. Renders NO `<Router>` (that
  * would throw "Router inside a Router").
@@ -355,15 +428,18 @@ export function OmnigentApp({
   // belt-and-suspenders that captures the first non-empty props.
   useState(() => {
     setOmnigentHostConfig(hostConfig);
-    // The embed's layout state is its own, by its mount path, not the standalone app's.
-    layoutState.setScope(embedLayoutScope(basename));
     return null;
   });
+  // This mount's own workbench: its layout state (kept by its mount path) and layout service,
+  // shared with no other app on the page.
+  const [workbench] = useState(() => createWorkbenchScope(basename));
+  useMountedWorkbench(workbench);
   // The built-in extensions (the Changes, Files, Pull Requests, Tasks, Agents and
   // Content search tabs) run in the window's extension host, as standalone. It is
   // shared by every OmnigentApp on the page. Dev-path extensions stay standalone only.
   useWindowExtensionHost();
   useEmbedProductTheme(product);
+  useEmbedProductConfig(product);
 
   const routingApi = useMemo<RoutingApi>(() => {
     // Host overrides compose UNDER the basename wrapper: merge the host's
@@ -384,11 +460,14 @@ export function OmnigentApp({
       <ExtensionProvider>
         <EmbeddedProvider isDarkMode={isDarkMode}>
           <ThemeProvider embedded>
-            <OmnigentProviders
-              routing={routingApi}
-              basename={basename}
-              sidebarConfig={sidebarConfig}
-            />
+            <WorkbenchScopeProvider scope={workbench}>
+              <OmnigentProviders
+                routing={routingApi}
+                basename={basename}
+                sidebarConfig={sidebarConfig}
+                workbench={workbench}
+              />
+            </WorkbenchScopeProvider>
           </ThemeProvider>
         </EmbeddedProvider>
       </ExtensionProvider>

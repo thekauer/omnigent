@@ -3,6 +3,7 @@
 // host. Built-ins load from the bundle, so their views register before the first
 // render and core tabs never show a blank panel.
 import { openMoveViewPicker } from "@/store/moveViewPicker";
+import { isContainerHiddenByProduct, isViewHiddenByProduct } from "@/workbench/productLayout";
 import { containerLocation, readViewLocations, viewContainerFor } from "@/workbench/viewLocations";
 import { builtInExtensions } from "@/builtinExtensions";
 import { registerLayoutCommands } from "@/workbench/layoutCommands";
@@ -135,11 +136,14 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
         extensionId,
         command,
         () => {
+          // A view the product removed doesn't show.
+          if (isViewHiddenByProduct(viewId)) return false;
           // Where the view is now: the user may have moved it.
           const view = registry.get(viewId);
           const containerId = view
             ? viewContainerFor(view, readViewLocations(), containerRegistry)
             : undefined;
+          if (containerId && isContainerHiddenByProduct(containerId)) return false;
           if (containerId && containerLocation(containerId, containerRegistry) === "sidebar") {
             (options.layout ?? layoutService).openViewContainer(containerId);
             return true;

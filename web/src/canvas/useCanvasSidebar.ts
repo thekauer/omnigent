@@ -6,7 +6,8 @@ import {
   useSyncExternalStore,
   type SetStateAction,
 } from "react";
-import { type LayoutService, layoutService } from "@/workbench/layoutService";
+import type { LayoutService } from "@/workbench/layoutService";
+import { useWorkbenchScope } from "@/workbench/workbenchScope";
 
 /**
  * The side bar's open state, kept by the layout service: collapse once on Canvas entry, and
@@ -15,8 +16,11 @@ import { type LayoutService, layoutService } from "@/workbench/layoutService";
 export function useCanvasSidebar(
   inCanvas: boolean,
   initialOpen: () => boolean,
-  service: LayoutService = layoutService,
+  given?: LayoutService,
 ) {
+  // The mount's own layout unless one is given.
+  const scoped = useWorkbenchScope().layout;
+  const service = given ?? scoped;
   const initial = useRef(initialOpen);
   initial.current = initialOpen;
   const open = useSyncExternalStore(

@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import os
 import warnings
 from collections.abc import Mapping
@@ -460,6 +461,289 @@ def load_product_theme(config: Mapping[str, Any]) -> dict[str, Any] | None:
         else:
             logger.warning("server config product.theme.%s must be true or false", key)
     _cap_product_theme(out)
+    return out or None
+
+
+# The product's settings and layout blocks (layout plan L8), each capped as the web counts it:
+# ``PRODUCT_SETTINGS_MAX_CHARS`` and ``PRODUCT_LAYOUT_MAX_CHARS`` in
+# ``web/src/product/productConfig.ts``, with the same per-value depth and node limits, so
+# what is served always fits and the web keeps all of it.
+PRODUCT_SETTINGS_MAX_CHARS = 131_072
+PRODUCT_LAYOUT_MAX_CHARS = 131_072
+PRODUCT_VALUE_MAX_DEPTH = 8
+PRODUCT_VALUE_MAX_NODES = 2_000
+PRODUCT_NUMBER_COST = 24
+_PRODUCT_SETTINGS_MAP_LIMIT = 500
+_PRODUCT_SETTING_KEY_LIMIT = 128
+_PRODUCT_LAYOUT_LIST_LIMIT = 200
+_PRODUCT_LAYOUT_ID_LIMIT = 200
+_PRODUCT_LAYOUT_LISTS = ("hidden_parts", "hidden_containers", "hidden_views", "container_order")
+_PRODUCT_LAYOUT_CAMEL_KEYS = {
+    "hiddenParts": "hidden_parts",
+    "hiddenContainers": "hidden_containers",
+    "hiddenViews": "hidden_views",
+    "containerOrder": "container_order",
+    "lockViewLocations": "lock_view_locations",
+}
+_PRODUCT_SETTINGS_CAMEL_KEYS = {"lockedInvalid": "locked_invalid"}
+_ASCII_WHITESPACE = " \t\n\r\f\v"
+
+
+def _is_setting_key(text: Any) -> bool:
+    """Return whether *text* names a setting: dotted letters, digits, ``_`` and ``-``."""
+    return (
+        isinstance(text, str)
+        and _product_theme_string(text, 1, _PRODUCT_SETTING_KEY_LIMIT)
+        and all(char.isascii() and (char.isalnum() or char in "._-") for char in text)
+    )
+
+
+def product_value_cost(value: Any) -> int | None:
+    """Return what a setting's *value* takes of :data:`PRODUCT_SETTINGS_MAX_CHARS`.
+
+    Counted as the web counts it (``productValueCost``): a string its JSON text in UTF-16 code
+    units, a number :data:`PRODUCT_NUMBER_COST`, ``true``/``null`` 4, ``false`` 5, a list or
+    mapping its brackets, commas, colons and members.
+
+    :param value: A plain value from the server config.
+    :returns: The cost, or ``None`` when the value can't be served as the web reads it: a lone
+        surrogate, a non-string key, a non-finite number, another type, or over
+        :data:`PRODUCT_VALUE_MAX_DEPTH` levels or :data:`PRODUCT_VALUE_MAX_NODES` values.
+    """
+    nodes = 0
+
+    def cost(item: Any, depth: int) -> int | None:
+        nonlocal nodes
+        nodes += 1
+        if nodes > PRODUCT_VALUE_MAX_NODES or depth > PRODUCT_VALUE_MAX_DEPTH:
+            return None
+        if item is None or item is True:
+            return 4
+        if item is False:
+            return 5
+        if isinstance(item, (int, float)):
+            # An int past a double's range is Infinity to the web, which drops it.
+            try:
+                finite = math.isfinite(float(item))
+            except OverflowError:
+                finite = False
+            return PRODUCT_NUMBER_COST if finite else None
+        if isinstance(item, str):
+            return product_theme_cost(item) if _utf16_length(item) is not None else None
+        if isinstance(item, list):
+            total = 2 + max(0, len(item) - 1)
+            for member in item:
+                member_cost = cost(member, depth + 1)
+                if member_cost is None:
+                    return None
+                total += member_cost
+            return total
+        if isinstance(item, Mapping):
+            total = 2 + max(0, len(item) - 1)
+            for key, member in item.items():
+                if not isinstance(key, str) or _utf16_length(key) is None:
+                    return None
+                member_cost = cost(member, depth + 1)
+                if member_cost is None:
+                    return None
+                total += product_theme_cost(key) + 1 + member_cost
+            return total
+        return None
+
+    return cost(value, 1)
+
+
+def _shown_key(name: Any) -> str:
+    """*name* for a log line: its escape when it can't be logged as text."""
+    if isinstance(name, str) and _utf16_length(name) is not None:
+        return name[:80]
+    return ascii(name)[:80]
+
+
+def load_product_settings(config: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Read the product's settings (``product: settings:``) from the server config.
+
+    ``defaults`` (what a first run and a reset get) and ``locked`` (applied last, refused on
+    write) map setting keys to values; the web checks each value against the setting's schema.
+    Each key fails open: a malformed key or a value of the wrong type is logged and left out.
+    A locked value that can't be served (a lone surrogate, too deep) still locks its key: it is
+    served in ``locked_invalid``, and the web applies the setting's default and refuses writes.
+    Entries over :data:`PRODUCT_SETTINGS_MAX_CHARS` (counted as the web counts) are dropped,
+    locks first spent, then the invalid locks, then the defaults.
+
+    :param config: Loaded server config carrying the optional ``product`` mapping.
+    :returns: The block as ``GET /v1/info`` serves it, or ``None`` when nothing is configured.
+    """
+    product = config.get(PRODUCT_KEY)
+    if not isinstance(product, Mapping):
+        return None
+    settings = product.get("settings")
+    if settings is None:
+        return None
+    if not isinstance(settings, Mapping):
+        logger.warning("server config product.settings must be a mapping; ignoring it")
+        return None
+    for camel, snake in _PRODUCT_SETTINGS_CAMEL_KEYS.items():
+        if camel in settings:
+            logger.warning(
+                "server config product.settings.%s is not a key; did you mean %s? ignoring it",
+                camel,
+                snake,
+            )
+    left = PRODUCT_SETTINGS_MAX_CHARS
+    out: dict[str, Any] = {}
+    invalid: list[str] = []
+    over: list[str] = []
+    for kind in ("locked", "defaults"):
+        raw = settings.get(kind)
+        if raw is None:
+            continue
+        if not isinstance(raw, Mapping):
+            logger.warning(
+                "server config product.settings.%s must be a mapping; ignoring it", kind
+            )
+            continue
+        entries: dict[str, Any] = {}
+        for index, (key, value) in enumerate(raw.items()):
+            if index >= _PRODUCT_SETTINGS_MAP_LIMIT:
+                logger.warning(
+                    "server config product.settings.%s has over %d entries",
+                    kind,
+                    _PRODUCT_SETTINGS_MAP_LIMIT,
+                )
+                break
+            if not _is_setting_key(key):
+                logger.warning(
+                    "server config product.settings.%s.%s is not a setting key; ignoring it",
+                    kind,
+                    _shown_key(key),
+                )
+                continue
+            cost = product_value_cost(value)
+            if cost is None:
+                logger.warning(
+                    "server config product.settings.%s.%s has a value the web can't read%s",
+                    kind,
+                    key,
+                    "; the key stays locked to its default"
+                    if kind == "locked"
+                    else "; ignoring it",
+                )
+                if kind == "locked":
+                    invalid.append(key)
+                continue
+            cost += product_theme_cost(key) + 2
+            if cost > left:
+                # A lock that doesn't fit still locks its key, to its default.
+                if kind == "locked":
+                    invalid.append(key)
+                else:
+                    over.append(key)
+                continue
+            left -= cost
+            entries[key] = value
+        if entries:
+            out[kind] = entries
+        if kind == "locked" and invalid:
+            kept_invalid: list[str] = []
+            for key in invalid:
+                cost = product_theme_cost(key) + 1
+                if cost > left:
+                    over.append(key)
+                    continue
+                left -= cost
+                kept_invalid.append(key)
+            if kept_invalid:
+                out["locked_invalid"] = kept_invalid
+    if over:
+        shown = ", ".join(name[:64] for name in over[:10])
+        more = f" and {len(over) - 10} more" if len(over) > 10 else ""
+        logger.warning(
+            "server config product.settings is over the %d-character limit; dropping %s%s",
+            PRODUCT_SETTINGS_MAX_CHARS,
+            shown,
+            more,
+        )
+    # Defaults spend after the locks, which matter more: reorder for a stable response.
+    return {
+        key: out[key] for key in ("defaults", "locked", "locked_invalid") if key in out
+    } or None
+
+
+def load_product_layout(config: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Read the product's layout (``product: layout:``) from the server config.
+
+    ``hidden_parts`` (part ids such as ``workbench.parts.titlebar``), ``hidden_containers``
+    and ``hidden_views`` (ids or ``*`` patterns), ``container_order`` (the activity bar's
+    default order) and ``lock_view_locations`` (views stay where their extensions put them).
+    Each key fails open: a malformed entry is logged and left out, as is an empty list. The
+    content is capped to :data:`PRODUCT_LAYOUT_MAX_CHARS` as the web counts it.
+
+    :param config: Loaded server config carrying the optional ``product`` mapping.
+    :returns: The block as ``GET /v1/info`` serves it, or ``None`` when nothing is configured.
+    """
+    product = config.get(PRODUCT_KEY)
+    if not isinstance(product, Mapping):
+        return None
+    layout = product.get("layout")
+    if layout is None:
+        return None
+    if not isinstance(layout, Mapping):
+        logger.warning("server config product.layout must be a mapping; ignoring it")
+        return None
+    for camel, snake in _PRODUCT_LAYOUT_CAMEL_KEYS.items():
+        if camel in layout:
+            logger.warning(
+                "server config product.layout.%s is not a key; did you mean %s? ignoring it",
+                camel,
+                snake,
+            )
+    left = PRODUCT_LAYOUT_MAX_CHARS
+    out: dict[str, Any] = {}
+    for key in _PRODUCT_LAYOUT_LISTS:
+        raw = layout.get(key)
+        if raw is None:
+            continue
+        items = raw if isinstance(raw, list) else [raw]
+        # ASCII whitespace only, as the web trims it.
+        ids = [
+            item.strip(_ASCII_WHITESPACE)
+            for item in items
+            if isinstance(item, str)
+            and _product_theme_string(item.strip(_ASCII_WHITESPACE), 1, _PRODUCT_LAYOUT_ID_LIMIT)
+            and all(
+                char.isascii() and (char.isalnum() or char in "._*/-")
+                for char in item.strip(_ASCII_WHITESPACE)
+            )
+        ]
+        if len(ids) != len(items):
+            logger.warning("server config product.layout.%s has malformed entries", key)
+        kept: list[str] = []
+        dropped: list[str] = []
+        for name in list(dict.fromkeys(ids))[:_PRODUCT_LAYOUT_LIST_LIMIT]:
+            cost = product_theme_cost(name) + 1
+            if cost > left:
+                dropped.append(name)
+                continue
+            left -= cost
+            kept.append(name)
+        if dropped:
+            logger.warning(
+                "server config product.layout.%s is over the %d-character limit; dropping %s",
+                key,
+                PRODUCT_LAYOUT_MAX_CHARS,
+                ", ".join(name[:64] for name in dropped[:10]),
+            )
+        if kept:
+            out[key] = kept
+    lock = layout.get("lock_view_locations")
+    if lock is not None:
+        if isinstance(lock, bool):
+            out["lock_view_locations"] = lock
+        else:
+            logger.warning(
+                "server config product.layout.lock_view_locations must be true or false"
+            )
     return out or None
 
 

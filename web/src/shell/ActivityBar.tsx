@@ -23,7 +23,8 @@ import {
   setActivityBarItemHidden,
   useActivityBarItems,
 } from "@/workbench/activityBar";
-import { layoutService, Parts, partHook } from "@/workbench/layoutService";
+import { type LayoutService, layoutService, Parts, partHook } from "@/workbench/layoutService";
+import { useWorkbenchScope } from "@/workbench/workbenchScope";
 import type { ViewContainerDescriptor } from "@/workbench/viewContainers";
 import { generatedContainerId } from "@/workbench/viewLocations";
 import {
@@ -62,13 +63,20 @@ export function useActivityBarEntries(): {
 }
 
 /** Clicking an item, as VS Code's: show the container, or hide the side bar for the active one. */
-export function activateViewContainer(containerId: string, active: boolean, open: boolean): void {
-  if (active && open) layoutService.setPartHidden(true, Parts.SIDEBAR_PART);
-  else layoutService.openViewContainer(containerId);
+export function activateViewContainer(
+  containerId: string,
+  active: boolean,
+  open: boolean,
+  layout: LayoutService = layoutService,
+): void {
+  if (active && open) layout.setPartHidden(true, Parts.SIDEBAR_PART);
+  else layout.openViewContainer(containerId);
 }
 
 export function ActivityBar({ location }: { location: Exclude<ActivityBarLocation, "hidden"> }) {
   const { shown, all, hidden } = useActivityBarEntries();
+  // This mount's own layout.
+  const layout = useWorkbenchScope().layout;
   const activeId = useActiveViewContainer();
   const sideBarOpen = usePartVisible(Parts.SIDEBAR_PART);
   const vertical = location === "default";
@@ -143,7 +151,9 @@ export function ActivityBar({ location }: { location: Exclude<ActivityBarLocatio
                     active={active}
                     selected={id === activeShown}
                     vertical={vertical}
-                    onClick={() => activateViewContainer(id, id === activeShown, sideBarOpen)}
+                    onClick={() =>
+                      activateViewContainer(id, id === activeShown, sideBarOpen, layout)
+                    }
                     onDragStart={() => setDragged(id)}
                     onDragEnd={() => setDragged(null)}
                     onDrop={() => {
@@ -174,7 +184,7 @@ export function ActivityBar({ location }: { location: Exclude<ActivityBarLocatio
                   // Hiding the container on screen shows the first one left.
                   if (!checked && entry.container.id === activeShown) {
                     const next = shown.find((other) => other.container.id !== entry.container.id);
-                    if (next) layoutService.setActiveViewContainer(next.container.id);
+                    if (next) layout.setActiveViewContainer(next.container.id);
                   }
                 }}
               >

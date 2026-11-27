@@ -8,6 +8,7 @@
 import { useCallback, useSyncExternalStore } from "react";
 import { LAYOUT_SLOTS, type LayoutStateStore, layoutState } from "./layoutState";
 import { type ProductLayoutPolicy, productLayout } from "./productLayout";
+import { useWorkbenchScope } from "./workbenchScope";
 import {
   HOST_CONTAINER_OWNER,
   RIGHT_PANEL_CONTAINER,
@@ -192,9 +193,12 @@ function snapshot(store: LayoutStateStore, policy: ProductLayoutPolicy): ViewLoc
 
 /** The stored moves, kept current (the same object while they don't change). */
 export function useViewLocations(
-  store: LayoutStateStore = layoutState,
+  given?: LayoutStateStore,
   policy: ProductLayoutPolicy = productLayout,
 ): ViewLocations {
+  // The mount's own layout state unless one is given.
+  const scoped = useWorkbenchScope().state;
+  const store = given ?? scoped;
   const subscribe = useCallback(
     (listener: () => void) => {
       const unsubscribers = [store.subscribe(listener), policy.subscribe(listener)];

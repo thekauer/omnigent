@@ -14,6 +14,11 @@ import {
   viewContainerFor,
 } from "@/workbench/viewLocations";
 import { isViewHidden, useViewsLayout } from "@/workbench/viewsLayout";
+import {
+  isContainerHiddenByProduct,
+  productLayout,
+  useProductLayout,
+} from "@/workbench/productLayout";
 
 /** A view's count badge on its tab, like VS Code's `ViewBadge`. */
 export interface RailViewBadge {
@@ -475,11 +480,15 @@ export function viewsOfContainer(
     byContainer = new Map();
     byLocations.set(locations, byContainer);
   }
-  let filtered = byContainer.get(container);
+  // The product's removed containers are part of what is drawn.
+  const cacheKey = `${container}\n${(productLayout.get().hiddenContainers ?? []).join("\n")}`;
+  let filtered = byContainer.get(cacheKey);
   if (!filtered) {
     // The classic rail draws every secondary side bar container's views as its tabs.
     const drawnHere = (view: RailViewContribution) => {
       const containerId = viewContainerOf(view, locations);
+      // A container the product removed draws nothing.
+      if (isContainerHiddenByProduct(containerId)) return false;
       return (
         containerId === container ||
         (container === RIGHT_PANEL_CONTAINER &&
@@ -490,7 +499,7 @@ export function viewsOfContainer(
       views: Object.freeze(snapshot.views.filter(drawnHere)),
       settled: snapshot.settled,
     });
-    byContainer.set(container, filtered);
+    byContainer.set(cacheKey, filtered);
   }
   return filtered;
 }
@@ -506,6 +515,7 @@ export function useRailViews(
     registry.getSnapshot,
   );
   const locations = useViewLocations();
+  useProductLayout();
   return viewsOfContainer(snapshot, container, locations);
 }
 

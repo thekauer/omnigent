@@ -17,6 +17,7 @@ import {
   isViewMoved,
   moveView,
   readViewLocations,
+  useViewLocations,
   viewContainerFor,
 } from "@/workbench/viewLocations";
 import { updateViewLayout } from "@/workbench/viewsLayout";
@@ -183,8 +184,9 @@ export function ViewMoveMenuItems({
   canHide: boolean;
   separatorBefore?: boolean;
 }) {
+  const locations = useViewLocations();
   if (!canMoveView(view)) return null;
-  const moved = isViewMoved(view, readViewLocations());
+  const moved = isViewMoved(view, locations);
   return (
     <>
       {separatorBefore && <ContextMenuSeparator />}

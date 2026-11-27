@@ -22,6 +22,7 @@ import {
 } from "./ViewContainerViews";
 import { useViewDropTarget } from "./viewMoves";
 import { setNavigationHandler } from "@/workbench/navigationCommands";
+import { isViewHiddenByProduct, useProductLayout } from "@/workbench/productLayout";
 import { ActivityBar } from "./ActivityBar";
 import { useInboxCount } from "./sideBarListViews";
 import { useActiveViewContainer } from "./useWorkbenchParts";
@@ -1927,6 +1928,7 @@ function SidebarNavigationView() {
 function useNavigationEntries(keys: Readonly<Record<string, boolean>>): readonly NavigationEntry[] {
   const contributed = useContributedNavigation();
   const hidden = useHiddenNavigationEntries();
+  useProductLayout();
   return allNavigationEntries(keys, contributed).filter((entry) => !hidden.includes(entry.id));
 }
 
@@ -1934,16 +1936,18 @@ function allNavigationEntries(
   keys: Readonly<Record<string, boolean>>,
   contributed: readonly (NavigationEntry & { active: boolean })[],
 ): readonly NavigationEntry[] {
+  // An entry the product removed (`layout.hiddenViews`) is neither drawn nor offered.
   return [
     ...builtInNavigationEntries().filter((entry) => whenHolds(entry.when, keys)),
     ...contributed.filter((entry) => entry.active),
-  ];
+  ].filter((entry) => !isViewHiddenByProduct(entry.id));
 }
 
 /** Right-click on the navigation: show or hide each entry (layout state). */
 function SidebarNavigationMenu({ children }: { children: ReactNode }) {
   const { automationsEnabled, workflowsPageEnabled, canvasEnabled, usagePageEnabled } =
     useSidebarViewProps().navigation;
+  useProductLayout();
   const contributed = useContributedNavigation();
   const all = allNavigationEntries(
     {

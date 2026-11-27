@@ -20,6 +20,7 @@ import { useRailViews, type RailViewContribution } from "./railViews";
 import { useSideBarContainers } from "./ViewContainerViews";
 import { closeMoveViewPicker, useMoveViewPickerStore } from "@/store/moveViewPicker";
 import { allViews, moveViewTo } from "./viewMoves";
+import { isViewHiddenByProduct } from "@/workbench/productLayout";
 
 type PageId = "views" | "destinations";
 
@@ -78,7 +79,7 @@ export function MoveViewPicker() {
   useViewContainers();
   const locations = useViewLocations();
   const sideBar = useSideBarContainers().map((entry) => entry.container);
-  const views = allViews().filter((view) => canMoveView(view));
+  const views = allViews().filter((view) => canMoveView(view) && !isViewHiddenByProduct(view.id));
   const titleOf = (containerId: string) =>
     sideBar.find((container) => container.id === containerId)?.title ??
     (containerLocation(containerId) === "auxiliarybar" ? SECONDARY_SIDE_BAR_GROUP : containerId);

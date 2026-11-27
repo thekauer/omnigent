@@ -292,10 +292,41 @@ class ProductThemeInfo(BaseModel):
     hide_customizations: bool | None = None
 
 
+class ProductSettingsInfo(BaseModel):
+    """The product's settings (server config ``product: settings:``).
+
+    Setting keys to values: ``defaults`` for a first run and a reset, ``locked`` applied last
+    and refused on write, ``locked_invalid`` keys locked to their defaults (their configured
+    value can't be served). The web app checks each value against the setting's schema and
+    applies them below an embedding product's and a build's own. Unset keys are null.
+    """
+
+    defaults: dict[str, Any] | None = None
+    locked: dict[str, Any] | None = None
+    locked_invalid: list[str] | None = None
+
+
+class ProductLayoutInfo(BaseModel):
+    """The product's layout (server config ``product: layout:``).
+
+    Parts, view containers and views it hides (ids or ``*`` patterns), the activity bar's
+    default order, and whether views stay where their extensions put them. The web app
+    applies them below an embedding product's and a build's own. Unset keys are null.
+    """
+
+    hidden_parts: list[str] | None = None
+    hidden_containers: list[str] | None = None
+    hidden_views: list[str] | None = None
+    container_order: list[str] | None = None
+    lock_view_locations: bool | None = None
+
+
 class ProductInfo(BaseModel):
     """The operator's product configuration served to the web app."""
 
     theme: ProductThemeInfo | None = None
+    settings: ProductSettingsInfo | None = None
+    layout: ProductLayoutInfo | None = None
 
 
 class FilesystemAttachmentsInfo(BaseModel):
@@ -2176,6 +2207,8 @@ def create_app(
         automation_trigger_poll_minutes,
         load_branding_snapshot,
         load_picker_curation,
+        load_product_layout,
+        load_product_settings,
         load_product_theme,
         load_server_config,
         session_title_instructions,
@@ -2185,6 +2218,15 @@ def create_app(
     branding_snapshot = load_branding_snapshot(resolved_server_config)
     picker_curation = load_picker_curation(resolved_server_config)
     product_theme = load_product_theme(resolved_server_config)
+    product_blocks = {
+        key: block
+        for key, block in (
+            ("theme", product_theme),
+            ("settings", load_product_settings(resolved_server_config)),
+            ("layout", load_product_layout(resolved_server_config)),
+        )
+        if block
+    }
     title_instructions = session_title_instructions(resolved_server_config)
     trigger_poll_minutes = automation_trigger_poll_minutes(resolved_server_config)
     resolved_feature_flags = feature_flags or resolve_feature_flags()
@@ -4265,7 +4307,7 @@ def create_app(
                 "automation_trigger_poll_minutes": trigger_poll_minutes,
                 "branding": branding_snapshot.config(),
                 "picker": picker_curation.config(),
-                "product": {"theme": product_theme} if product_theme else None,
+                "product": product_blocks or None,
             }
         )
 

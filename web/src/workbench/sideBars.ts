@@ -3,7 +3,8 @@
 // session opens the secondary side bar (`workbench.secondarySideBar.defaultVisibility`) and
 // the window width below which it hides (`omnigent.secondarySideBar.autoHideBelow`).
 
-import { useSyncExternalStore } from "react";
+import { useCallback, useSyncExternalStore } from "react";
+import { useWorkbenchScope } from "./workbenchScope";
 import {
   type ConfigurationService,
   configurationService,
@@ -50,19 +51,19 @@ export function readSecondarySideBarDefaultVisibility(
   return value === "visible" || value === "visibleInWorkspace" ? value : "hidden";
 }
 
-function subscribeWindowWidth(listener: () => void): () => void {
-  window.addEventListener("resize", listener);
-  return () => window.removeEventListener("resize", listener);
-}
-
 /**
- * Whether the window is narrower than `below` px (never for 0): the secondary side bar's
- * `autoHideBelow`.
+ * Whether the mount is narrower than `below` px (never for 0): the secondary side bar's
+ * `autoHideBelow`. The window's width for the standalone app, an embed's root's in an embed.
  */
 export function useNarrowerThan(below: number): boolean {
+  const { layout } = useWorkbenchScope();
+  const subscribe = useCallback(
+    (listener: () => void) => layout.onDidChangeRootSize(listener),
+    [layout],
+  );
   return useSyncExternalStore(
-    subscribeWindowWidth,
-    () => below > 0 && window.innerWidth < below,
+    subscribe,
+    () => below > 0 && layout.getRootSize().width < below,
     () => false,
   );
 }

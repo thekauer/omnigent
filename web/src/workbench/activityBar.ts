@@ -10,6 +10,8 @@ import {
 import { useConfigurationValue } from "@/configuration/useConfiguration";
 import { LAYOUT_SLOTS, type LayoutStateStore, layoutState } from "./layoutState";
 import { LayoutTokens, readLengthToken } from "./layoutTokens";
+import { matchesIdPattern, productLayout, useProductHidesPart } from "./productLayout";
+import { useWorkbenchScope } from "./workbenchScope";
 
 export const ACTIVITY_BAR_LOCATION_SETTING = "workbench.activityBar.location";
 
@@ -32,7 +34,11 @@ export function activityBarLocationOf(value: unknown): ActivityBarLocation {
 export function useActivityBarLocation(
   service: ConfigurationService = configurationService,
 ): ActivityBarLocation {
-  return activityBarLocationOf(useConfigurationValue(ACTIVITY_BAR_LOCATION_SETTING, service));
+  const location = activityBarLocationOf(
+    useConfigurationValue(ACTIVITY_BAR_LOCATION_SETTING, service),
+  );
+  // A product that hides the part removes it wherever the setting puts it.
+  return useProductHidesPart("workbench.parts.activitybar") ? "hidden" : location;
 }
 
 /** VS Code's toggle: a hidden bar comes back at `default`, any other location hides it. */
@@ -77,9 +83,22 @@ function writeActivityBarItems(state: ActivityBarItemsState, store: LayoutStateS
 export function orderActivityBarItems<T extends { readonly id: string }>(
   items: readonly T[],
   state: ActivityBarItemsState,
+  productOrder: readonly string[] = productLayout.get().containerOrder ?? [],
 ): T[] {
   const rank = new Map(state.order.map((id, index) => [id, index]));
-  return items
+  // The product's order (ids or `*` patterns) is the default the user's moves start from.
+  const productRank = (id: string) => {
+    const index = productOrder.findIndex((pattern) => matchesIdPattern(id, [pattern]));
+    return index < 0 ? Number.MAX_SAFE_INTEGER : index;
+  };
+  const byProduct = items
+    .map((item, index) => ({ item, index }))
+    .sort(
+      (left, right) =>
+        productRank(left.item.id) - productRank(right.item.id) || left.index - right.index,
+    )
+    .map(({ item }) => item);
+  return byProduct
     .map((item, index) => ({ item, index }))
     .sort(
       (left, right) =>
@@ -115,7 +134,10 @@ export function setActivityBarItemHidden(
 
 let cache: { text: string; state: ActivityBarItemsState } | undefined;
 
-export function useActivityBarItems(store: LayoutStateStore = layoutState): ActivityBarItemsState {
+export function useActivityBarItems(given?: LayoutStateStore): ActivityBarItemsState {
+  // The mount's own layout state unless one is given.
+  const scoped = useWorkbenchScope().state;
+  const store = given ?? scoped;
   const subscribe = useCallback((listener: () => void) => store.subscribe(listener), [store]);
   return useSyncExternalStore(
     subscribe,

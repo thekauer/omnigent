@@ -5,9 +5,10 @@
 import { useEffect, useLayoutEffect, useRef, useSyncExternalStore } from "react";
 
 import type { ContextKeyValue } from "@/vscodeExtensions/contextKeys";
-import { LAYOUT_SLOTS, layoutState } from "@/workbench/layoutState";
+import { LAYOUT_SLOTS, type LayoutStateStore, layoutState } from "@/workbench/layoutState";
+import { useWorkbenchScope } from "@/workbench/workbenchScope";
 import { type WorkbenchContext, workbenchContext } from "@/workbench/workbenchContext";
-import { type LayoutService, layoutService, type Part } from "@/workbench/layoutService";
+import type { LayoutService, Part } from "@/workbench/layoutService";
 
 export interface WorkbenchPartState {
   readonly visible: boolean;
@@ -27,8 +28,11 @@ export function useWorkbenchPart(
   part: Part,
   state: WorkbenchPartState,
   enabled = true,
-  service: LayoutService = layoutService,
+  given?: LayoutService,
 ): void {
+  // The mount's own layout unless one is given.
+  const scoped = useWorkbenchScope().layout;
+  const service = given ?? scoped;
   const latest = useRef(state);
   latest.current = state;
   useEffect(() => {
@@ -51,8 +55,8 @@ export function useWorkbenchPart(
 }
 
 /** The side bar's remembered desktop open state, or undefined when none is stored. */
-export function readSidebarVisible(): boolean | undefined {
-  const stored = layoutState.get(LAYOUT_SLOTS.sidebar);
+export function readSidebarVisible(store: LayoutStateStore = layoutState): boolean | undefined {
+  const stored = store.get(LAYOUT_SLOTS.sidebar);
   if (typeof stored !== "object" || stored === null) return undefined;
   const visible = (stored as Record<string, unknown>).visible;
   return typeof visible === "boolean" ? visible : undefined;
@@ -65,6 +69,7 @@ export function readSidebarVisible(): boolean | undefined {
  * stores nothing, and another window's choice stands until this one's user changes it.
  */
 export function useRememberSidebarVisible(open: boolean, remember: boolean): void {
+  const store = useWorkbenchScope().state;
   // The state when remembering last began or changed: coming back from Settings (or a narrow
   // window) to a state is not a choice, so only a change while remembering is written.
   const seen = useRef<boolean | null>(null);
@@ -76,10 +81,10 @@ export function useRememberSidebarVisible(open: boolean, remember: boolean): voi
     const previous = seen.current;
     seen.current = open;
     if (previous === null || previous === open) return;
-    const stored = readSidebarVisible();
+    const stored = readSidebarVisible(store);
     if ((stored ?? true) === open) return;
-    layoutState.set(LAYOUT_SLOTS.sidebar, { visible: open });
-  }, [open, remember]);
+    store.set(LAYOUT_SLOTS.sidebar, { visible: open });
+  }, [open, remember, store]);
 }
 
 /**
@@ -108,7 +113,9 @@ export function useWorkbenchContextKeys(
 }
 
 /** Whether `part` is on screen, kept current. */
-export function usePartVisible(part: Part, service: LayoutService = layoutService): boolean {
+export function usePartVisible(part: Part, given?: LayoutService): boolean {
+  const scoped = useWorkbenchScope().layout;
+  const service = given ?? scoped;
   return useSyncExternalStore(
     (listener) => service.onDidChangePartVisibility(listener),
     () => service.isVisible(part),
@@ -117,7 +124,9 @@ export function usePartVisible(part: Part, service: LayoutService = layoutServic
 }
 
 /** The view container the primary side bar shows, kept current. */
-export function useActiveViewContainer(service: LayoutService = layoutService): string {
+export function useActiveViewContainer(given?: LayoutService): string {
+  const scoped = useWorkbenchScope().layout;
+  const service = given ?? scoped;
   return useSyncExternalStore(
     service.onDidChangeSideBar,
     () => service.getActiveViewContainer(),

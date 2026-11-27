@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/context-menu";
 import { RIGHT_PANEL_CONTAINER } from "@/workbench/viewContainers";
 import { canMoveView } from "@/workbench/viewLocations";
+import { isViewHiddenByProduct } from "@/workbench/productLayout";
 import { isViewHidden, useViewsLayout } from "@/workbench/viewsLayout";
 import { extensionRailTabViewId, type RightRailTab } from "./railTabs";
 import type { RailView } from "./railViews";
@@ -30,7 +31,11 @@ export function RailTabStripMenu({
   const layout = useViewsLayout();
   const drop = useViewDropTarget(useCallback(() => RIGHT_PANEL_CONTAINER, []));
   const listed = views.filter(
-    (view) => view.builtInTab === undefined && view.active && canMoveView(view),
+    (view) =>
+      view.builtInTab === undefined &&
+      view.active &&
+      canMoveView(view) &&
+      !isViewHiddenByProduct(view.id),
   );
   // The view of the tab the menu opened on, if any.
   const [target, setTarget] = useState<RailView | undefined>(undefined);

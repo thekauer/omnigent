@@ -41,6 +41,7 @@ import { migrateLegacyProjectFolderPagination } from "./lib/projectFolderPaginat
 import { applyThemePalette, readThemePalette } from "./lib/themePalette";
 import { applyCustomTheme, readCustomTheme } from "./lib/customTheme";
 import { applyBootProductThemes, applyServerProductTheme } from "./theme/productTheme";
+import { applyBootProductConfigs, applyServerProductConfig } from "./product/productConfig";
 import { themeService } from "./theme/themeService";
 import { initChatStore } from "./store/chatStore";
 import { railViews } from "./shell/railViews";
@@ -152,6 +153,8 @@ applyThemePalette(readThemePalette());
 // The build's product theme (web/product.json) and the server's last, before the theme
 // first applies; the server's answer replaces its own.
 applyBootProductThemes();
+// The build's product settings and layout, and the server's last, before the first render.
+applyBootProductConfigs();
 // A contributed theme's last applied values, until its extension registers it.
 themeService.applyCached();
 
@@ -164,6 +167,7 @@ themeService.applyCached();
 const bootServerInfo = createBootServerInfo(resolveServerInfo());
 // The server's product theme, below the build's.
 void bootServerInfo.settled.then(applyServerProductTheme);
+void bootServerInfo.settled.then(applyServerProductConfig);
 
 // Same 1.5s safety net for the identity probe: a hung /v1/me must not
 // deadlock first paint. On timeout we render anyway and the app degrades

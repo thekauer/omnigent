@@ -14,7 +14,8 @@ import { Link } from "@/lib/routing";
 import { cn } from "@/lib/utils";
 import type { TitleBarItemKind } from "@/vscodeExtensions/contributions";
 import { currentExtensionHost } from "@/vscodeExtensions/extensionHost";
-import { Parts, layoutService, partHook } from "@/workbench/layoutService";
+import { type LayoutService, Parts, partHook } from "@/workbench/layoutService";
+import { useWorkbenchScope } from "@/workbench/workbenchScope";
 import {
   builtInTitleBarEntries,
   TITLE_BAR_REGIONS,
@@ -170,7 +171,7 @@ function Brand() {
 }
 
 /** Which side bars the shell draws, kept current (a part registering changes the layout). */
-function useDrawnParts(): string {
+function useDrawnParts(layoutService: LayoutService): string {
   return useSyncExternalStore(
     (listener) => layoutService.onDidChangeLayout(listener),
     () =>
@@ -182,7 +183,9 @@ function useDrawnParts(): string {
 }
 
 function LayoutControls() {
-  const drawn = useDrawnParts();
+  // This mount's own layout.
+  const layoutService = useWorkbenchScope().layout;
+  const drawn = useDrawnParts(layoutService);
   const sideBar = usePartVisible(Parts.SIDEBAR_PART);
   const auxiliaryBar = usePartVisible(Parts.AUXILIARYBAR_PART);
   const controls = [

@@ -12,7 +12,7 @@ import {
   useMemo,
   useSyncExternalStore,
 } from "react";
-import { layoutState } from "@/workbench/layoutState";
+import { useWorkbenchScope } from "@/workbench/workbenchScope";
 import { allBuiltInContainerViews } from "@/builtinExtensions/builtInContainers";
 import {
   ContextMenu,
@@ -23,7 +23,12 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import { productLayout } from "@/workbench/productLayout";
+import {
+  isContainerHiddenByProduct,
+  isViewHiddenByProduct,
+  productLayout,
+  useProductLayout,
+} from "@/workbench/productLayout";
 import {
   canMoveView,
   generatedContainers,
@@ -88,6 +93,8 @@ export function containerViews(
   layout: ViewsLayout,
   locations: ViewLocations = NO_LOCATIONS,
 ): readonly RailViewContribution[] {
+  // A container the product removed draws nothing.
+  if (isContainerHiddenByProduct(containerId)) return [];
   const views = withManifestViews(registered).filter(
     (view) => viewContainerOf(view, locations) === containerId,
   );
@@ -116,9 +123,12 @@ export function useContainerViews(
   const owner = useViewContainers(containers).containers.find(
     (container) => container.id === containerId,
   )?.extensionId;
+  // The product's hidden views and containers are part of what is drawn.
+  const product = useProductLayout();
   return useMemo(
     () => containerViews(registered, containerId, owner, layout, locations),
-    [registered, containerId, owner, layout, locations],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [registered, containerId, owner, layout, locations, product],
   );
 }
 
@@ -131,9 +141,11 @@ export function useSideBarContainers(
   const layout = useViewsLayout();
   const locations = useViewLocations();
   const snapshot = useViewContainers(containers);
+  const product = useProductLayout();
   return useMemo(
     () => sideBarContainersOf(registered, snapshot.containers, layout, locations),
-    [registered, layout, snapshot, locations],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [registered, layout, snapshot, locations, product],
   );
 }
 
@@ -145,7 +157,9 @@ function sideBarContainersOf(
 ): { container: ViewContainerDescriptor; views: readonly RailViewContribution[] }[] {
   // The side bar entries moving a view made follow the registered containers.
   const sideBar = [
-    ...all.filter((container) => container.location === "sidebar"),
+    ...all.filter(
+      (container) => container.location === "sidebar" && !isContainerHiddenByProduct(container.id),
+    ),
     ...generatedContainers(withManifestViews(registered), locations),
   ];
   // Before the host registered the built-ins, the sessions container is there anyway.
@@ -168,13 +182,14 @@ export function useSideBarContainerList(
   registry: RailViewRegistry = railViews,
   containers: ViewContainerRegistry = viewContainers,
 ): readonly ViewContainerDescriptor[] {
+  const store = useWorkbenchScope().state;
   const read = () =>
     JSON.stringify(
       sideBarContainersOf(
         registry.getSnapshot().views,
         containers.getSnapshot().containers,
-        readViewsLayout(),
-        readViewLocations(),
+        readViewsLayout(store),
+        readViewLocations(store),
       ).map(({ container }) => container),
     );
   const subscribe = useCallback(
@@ -182,14 +197,14 @@ export function useSideBarContainerList(
       const unsubscribers = [
         registry.subscribe(listener),
         containers.subscribe(listener),
-        layoutState.subscribe(listener),
+        store.subscribe(listener),
         productLayout.subscribe(listener),
       ];
       return () => {
         for (const unsubscribe of unsubscribers) unsubscribe();
       };
     },
-    [registry, containers],
+    [registry, containers, store],
   );
   const key = useSyncExternalStore(subscribe, read, read);
   return useMemo(() => JSON.parse(key) as ViewContainerDescriptor[], [key]);
@@ -310,8 +325,9 @@ export function ContainerViewsMenu({
   const owner = useViewContainers().containers.find(
     (container) => container.id === containerId,
   )?.extensionId;
+  // A view the product removed isn't offered to show again.
   const listed = containerViews(registered, containerId, owner, NO_VIEWS_LAYOUT, locations).filter(
-    (view) => canMoveView(view),
+    (view) => canMoveView(view) && !isViewHiddenByProduct(view.id),
   );
   return (
     <ContextMenu>

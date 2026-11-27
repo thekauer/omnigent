@@ -1,6 +1,7 @@
 vi.mock("@/lib/fetchSessionHostId", () => ({
   fetchSessionHostId: vi.fn().mockResolvedValue("local-host"),
 }));
+import { productLayout } from "@/workbench/productLayout";
 import { type BuiltInHarness, startBuiltIns } from "@/test/builtInExtensions";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vitest";
@@ -36,7 +37,7 @@ import { EmbeddedProvider } from "@/lib/embedded";
 import { RoutingProvider, reactRouterRouting, type RoutingApi } from "@/lib/routing";
 import { configurationService } from "@/configuration/configurationService";
 import { LAYOUT_SLOTS, layoutState } from "@/workbench/layoutState";
-import { layoutService, Parts } from "@/workbench/layoutService";
+import { layoutService, Parts, standaloneLayoutService } from "@/workbench/layoutService";
 import { readStoredSettings, SETTINGS_STORAGE_KEY } from "@/configuration/settingsDocument";
 import { FileViewerContext, useFileViewer } from "./FileViewerContext";
 import { ShellCommandContext, ShellCommandDraftContext } from "./ShellCommandContext";
@@ -2231,6 +2232,20 @@ describe("Workspace rail maximize", () => {
       expect(shell.className).not.toContain("flex-row-reverse");
     } finally {
       configurationService.update("workbench.sideBar.location", undefined, "memory");
+    }
+  });
+
+  it("leaves out the parts the product removes: not drawn, not registered, not reopened", () => {
+    productLayout.set({ hiddenParts: ["workbench.parts.sidebar", "workbench.parts.auxiliarybar"] });
+    try {
+      mockConversations([{ id: "conv_abc", permission_level: null }]);
+      renderShell("/c/conv_abc");
+      expect(screen.queryByTestId("sidebar")).toBeNull();
+      expect(standaloneLayoutService.hasPart(Parts.SIDEBAR_PART)).toBe(false);
+      expect(standaloneLayoutService.hasPart(Parts.AUXILIARYBAR_PART)).toBe(false);
+      expect(screen.queryByRole("complementary", { name: "Workspace" })).toBeNull();
+    } finally {
+      productLayout.set(null);
     }
   });
 
