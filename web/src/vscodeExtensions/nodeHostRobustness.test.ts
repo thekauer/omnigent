@@ -425,7 +425,7 @@ describe("command endpoint", () => {
       restartDelayMs: 400,
       log: { log: () => {}, warn: () => {}, error: () => {} },
     });
-    const endpoint = createCommandEndpoint({ token: TOKEN, host, port: () => port });
+    const endpoint = createCommandEndpoint({ token: TOKEN, host });
     server = createServer((req, res) =>
       endpoint(req, res, () => {
         res.statusCode = 418;

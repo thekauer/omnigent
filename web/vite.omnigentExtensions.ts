@@ -527,7 +527,6 @@ export function omnigentExtensionsDev(options: OmnigentExtensionsDevOptions = {}
   // Node entries and the endpoint the page runs their commands through: dev only.
   const commandToken = createCommandToken();
   const nodeHost = new NodeExtensionHost(options.nodeHost);
-  let listeningPort: number | undefined;
   const nodeExtensions = () =>
     scan.extensions.flatMap(({ id, version, directory, mainPath }) =>
       mainPath === undefined ? [] : [{ id, version, directory, mainPath }],
@@ -695,16 +694,8 @@ export function omnigentExtensionsDev(options: OmnigentExtensionsDevOptions = {}
       });
       server.middlewares.use(
         DEV_EXTENSIONS_ENDPOINT,
-        createCommandEndpoint({
-          token: commandToken,
-          host: nodeHost,
-          port: () => listeningPort,
-        }),
+        createCommandEndpoint({ token: commandToken, host: nodeHost }),
       );
-      server.httpServer?.on("listening", () => {
-        const address = server.httpServer?.address();
-        listeningPort = typeof address === "object" && address !== null ? address.port : undefined;
-      });
       server.httpServer?.on("close", () => {
         nodeHost.stop();
       });

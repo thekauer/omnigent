@@ -9,6 +9,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { omnigentExtensionsDev, readDevExtension } from "../../vite.omnigentExtensions";
 import {
   COMMAND_TOKEN_HEADER,
+  commandOriginRefusal,
   MAX_COMMAND_BODY_BYTES,
   NodeExtensionHost,
 } from "../../vite.omnigentNodeExtensions";
@@ -299,6 +300,29 @@ describe("Node extension host", () => {
     expect(answer.status).toBe(200);
   });
 
+  // A browser reaching the server through a forwarded port (an SSH tunnel from a
+  // laptop) sends that port in Origin and Host, not the one the server listens on.
+  it.each([
+    ["localhost:50286", "http://localhost:50286"],
+    ["127.0.0.1:8443", "http://127.0.0.1:8443"],
+    ["[::1]:50286", "http://[::1]:50286"],
+  ])("accepts a same-origin request through forwarded address %s", async (host, origin) => {
+    const answer = await post("acme.node", "acme.node.echo", [], { Origin: origin, Host: host });
+    expect(answer.status).toBe(200);
+  });
+
+  it.each([
+    ["another local port", "localhost:50286", "http://localhost:8080"],
+    ["another loopback name", "localhost:50286", "http://127.0.0.1:50286"],
+    ["a rebound name", "evil.example:50286", "http://evil.example:50286"],
+    ["an upper-case name", "LOCALHOST:50286", "http://LOCALHOST:50286"],
+    ["a trailing dot", "localhost.:50286", "http://localhost.:50286"],
+    ["a localhost subdomain trick", "localhost.evil.com:50286", "http://localhost.evil.com:50286"],
+  ])("refuses a forwarded request from %s", async (_label, host, origin) => {
+    const answer = await post("acme.node", "acme.node.echo", [], { Origin: origin, Host: host });
+    expect(answer.status).toBe(403);
+  });
+
   it("refuses a request without an Origin", async () => {
     const answer = await send(port, commandPath("acme.node", "acme.node.echo"), {
       headers: { "Content-Type": "application/json", [COMMAND_TOKEN_HEADER]: token },
@@ -399,4 +423,50 @@ describe("production build", () => {
       expect(output).not.toContain(forbidden);
     }
   }, 60_000);
+});
+
+describe("commandOriginRefusal", () => {
+  it.each([
+    ["localhost:30000", "http://localhost:30000"],
+    ["localhost:50286", "http://localhost:50286"],
+    ["127.0.0.1:50286", "http://127.0.0.1:50286"],
+    ["[::1]:50286", "http://[::1]:50286"],
+    ["localhost", "http://localhost"],
+    ["127.0.0.1:65535", "http://127.0.0.1:65535"],
+  ])("accepts Host %s with its own Origin", (host, origin) => {
+    expect(commandOriginRefusal(origin, host)).toBeUndefined();
+  });
+
+  it.each([
+    ["another port's Origin", "localhost:50286", "http://localhost:8080"],
+    ["an Origin without the port", "localhost:50286", "http://localhost"],
+    ["another loopback name's Origin", "localhost:50286", "http://127.0.0.1:50286"],
+    ["an https Origin", "localhost:50286", "https://localhost:50286"],
+    ["an Origin with a path", "localhost:50286", "http://localhost:50286/"],
+    ["the opaque null Origin", "localhost:50286", "null"],
+    ["no Origin", "localhost:50286", undefined],
+  ])("refuses %s", (_label, host, origin) => {
+    expect(commandOriginRefusal(origin, host)).toBe("Origin is not this dev server");
+  });
+
+  it.each([
+    ["no Host", undefined],
+    ["a remote name", "evil.example:50286"],
+    ["a rebound name without a port", "evil.example"],
+    ["an upper-case name", "LOCALHOST:50286"],
+    ["an upper-case name with a trailing dot", "LOCALHOST.:50286"],
+    ["a trailing dot", "localhost.:50286"],
+    ["a localhost subdomain", "localhost.evil.com:50286"],
+    ["a name ending in localhost", "evillocalhost:50286"],
+    ["another 127/8 address", "127.0.0.2:50286"],
+    ["an unbracketed IPv6 address", "::1:50286"],
+    ["a port out of range", "localhost:65536"],
+    ["a port with a leading zero", "localhost:050286"],
+    ["an empty port", "localhost:"],
+    ["userinfo", "user@localhost:50286"],
+  ])("refuses %s as Host", (_label, host) => {
+    expect(commandOriginRefusal(host === undefined ? undefined : `http://${host}`, host)).toBe(
+      "Host is not this dev server",
+    );
+  });
 });

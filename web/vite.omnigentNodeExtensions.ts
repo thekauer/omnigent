@@ -622,14 +622,36 @@ function sameToken(given: string, expected: string): boolean {
 export interface CommandEndpointOptions {
   token: string;
   host: Pick<NodeExtensionHost, "commandsOf" | "execute" | "status" | "ready">;
-  /** The port the dev server listens on, read per request. */
-  port: () => number | undefined;
   maxBodyBytes?: number;
 }
 
-/** Hosts a request for this dev server may name, in Origin and Host. */
-function allowedAuthorities(port: number): Set<string> {
-  return new Set([`127.0.0.1:${port}`, `localhost:${port}`]);
+/**
+ * A loopback `Host` header, with or without a port: `localhost`, `127.0.0.1` or
+ * `[::1]`, exactly as browsers send them (lower case, no trailing dot).
+ */
+const LOOPBACK_HOST = /^(?:localhost|127\.0\.0\.1|\[::1\])(?::([1-9][0-9]{0,4}))?$/;
+
+/**
+ * Why a request may not call this dev server's commands, or undefined when it may.
+ *
+ * The port is not fixed: the browser may reach the server through a forwarded
+ * port (an SSH tunnel from a laptop), so the page's origin is the authority the
+ * browser used, not the one the server listens on. What is required instead:
+ * `Host` is a loopback name (which stops DNS rebinding, whose Host is the
+ * attacker's name), and `Origin` is exactly `http://<Host>`, so the calling page
+ * is the one this server served at that address. A page on another local port
+ * has another Origin than the Host it sends to, and is refused.
+ */
+export function commandOriginRefusal(
+  origin: string | undefined,
+  host: string | undefined,
+): string | undefined {
+  const loopback = host === undefined ? null : LOOPBACK_HOST.exec(host);
+  if (loopback === null || (loopback[1] !== undefined && Number(loopback[1]) > 65535)) {
+    return "Host is not this dev server";
+  }
+  if (origin !== `http://${host}`) return "Origin is not this dev server";
+  return undefined;
 }
 
 function sendJsonError(res: ServerResponse, status: number, message: string): void {
@@ -693,22 +715,8 @@ export function createCommandEndpoint(options: CommandEndpointOptions) {
       res.setHeader("Allow", "POST");
       return sendJsonError(res, 405, "commands are run with POST");
     }
-    const port = options.port();
-    const authorities = port === undefined ? new Set<string>() : allowedAuthorities(port);
-    const origin = req.headers.origin;
-    let originAuthority: string | undefined;
-    try {
-      const parsed = origin === undefined ? undefined : new URL(origin);
-      originAuthority = parsed?.protocol === "http:" ? parsed.host : undefined;
-    } catch {
-      originAuthority = undefined;
-    }
-    if (originAuthority === undefined || !authorities.has(originAuthority)) {
-      return sendJsonError(res, 403, "Origin is not this dev server");
-    }
-    if (!authorities.has(req.headers.host ?? "")) {
-      return sendJsonError(res, 403, "Host is not this dev server");
-    }
+    const refusal = commandOriginRefusal(req.headers.origin, req.headers.host);
+    if (refusal !== undefined) return sendJsonError(res, 403, refusal);
     const token = req.headers[COMMAND_TOKEN_HEADER];
     if (typeof token !== "string" || !sameToken(token, options.token)) {
       return sendJsonError(res, 403, "missing or wrong extension token");

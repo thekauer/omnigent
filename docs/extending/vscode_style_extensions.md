@@ -1166,10 +1166,16 @@ can run local programs:
   (compared in constant time). Remote sites cannot read it. A page on another
   local port can: Vite's default CORS reflects any `localhost:*` or
   `127.0.0.1:*` Origin, so such a page can load the virtual module.
-- `Origin` must be exactly `http://127.0.0.1:<port>` or `http://localhost:<port>`
-  of this dev server, and `Host` must be `127.0.0.1:<port>` or
-  `localhost:<port>`, which also stops DNS rebinding. This exact check, not the
-  token, is what keeps other pages in the browser out.
+- `Host` must be a loopback name, `localhost`, `127.0.0.1` or `[::1]`, exactly
+  as browsers send it (lower case, no trailing dot), with any port; that stops
+  DNS rebinding, whose `Host` is the attacker's name. `Origin` must then be
+  exactly `http://<Host>`: the page calling is the one served at the address
+  the browser used, so a page on another local port (whose `Origin` differs
+  from the `Host` it sends to) is refused, and so is a request without an
+  `Origin`. The port is not pinned to the one the dev server listens on, so a
+  browser reaching it through a forwarded port (an SSH tunnel from a laptop to
+  `localhost:<another port>`) works. This check, not the token, is what keeps
+  other pages in the browser out.
 - Neither protects against local processes: anything that can reach the port
   can read the token and send any headers. On a machine shared with other OS
   users, they are not kept out.
