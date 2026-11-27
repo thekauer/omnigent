@@ -18,6 +18,7 @@
         {
           "id": "omnigent.content-search.view",
           "name": "Content search",
+          "when": "omnigent.session.hasWorkspace && omnigent.serverFeature.workspace_content_search",
           "icon": "search",
           "builtInTab": "content-search",
           "searchInput": {

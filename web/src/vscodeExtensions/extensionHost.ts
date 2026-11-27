@@ -5,6 +5,8 @@
 import { builtInExtensions } from "@/builtinExtensions";
 import { registerLayoutCommands } from "@/workbench/layoutCommands";
 import { type LayoutService, layoutService } from "@/workbench/layoutService";
+import { type WorkbenchContext, workbenchContext } from "@/workbench/workbenchContext";
+import type { ViewContainerRegistry } from "@/workbench/viewContainers";
 import {
   type ConfigurationService,
   configurationService,
@@ -54,6 +56,10 @@ export interface ExtensionRuntimeOptions {
   layout?: LayoutService;
   /** Where contributed settings go; the window's configuration service by default. */
   configuration?: ConfigurationService;
+  /** Where contributed view containers go; the window's by default. */
+  containers?: ViewContainerRegistry;
+  /** The shell's context keys mirrored into the runtime's; the window's by default. */
+  workbenchContext?: WorkbenchContext;
   /** Where contributed themes go; the window's theme service by default. */
   themes?: ThemeContributionSink & { markStarted?: () => void };
 }
@@ -96,8 +102,22 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
   };
   syncSettings();
   const settingsSubscription = workspace.onDidChangeConfiguration(syncSettings);
+  // The shell's workbench keys (`omnigent.session.*`, `omnigent.serverFeature.*`).
+  const shellContext = options.workbenchContext ?? workbenchContext;
+  const mirrorShellContext = (keys: readonly string[]) => {
+    for (const key of keys) {
+      try {
+        contextKeys.setHost(key, shellContext.get(key));
+      } catch {
+        // A key too long for a context key.
+      }
+    }
+  };
+  mirrorShellContext(Object.keys(shellContext.snapshot()));
+  const shellContextSubscription = new Disposable(shellContext.subscribe(mirrorShellContext));
   const views = new ViewsService({
     registry,
+    ...(options.containers ? { containers: options.containers } : {}),
     contextKeys,
     executeCommand: (command, args) => commands.execute(command, args, () => {}),
     showError: (message) => toastNotifications.error(message),
@@ -169,6 +189,7 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
       builtInCommands.dispose();
       layoutCommands.dispose();
       settingsSubscription.dispose();
+      shellContextSubscription.dispose();
       railSubscription.dispose();
       keybindings.dispose();
       views.dispose();

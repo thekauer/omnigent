@@ -52,6 +52,7 @@ import { partHook, Parts } from "@/workbench/layoutService";
 import {
   readSidebarVisible,
   useRememberSidebarVisible,
+  useWorkbenchContextKeys,
   useWorkbenchPart,
 } from "./useWorkbenchParts";
 import { useCommandPaletteHotkey } from "@/hooks/useCommandPaletteHotkey";
@@ -211,6 +212,8 @@ import {
 } from "./SessionOverview";
 import { extensionRailTabViewId, type RightRailTab } from "./railTabs";
 import { useRailViewIds } from "./railViews";
+import { builtInTabWhen } from "@/builtinExtensions/builtInTabWhen";
+import { serverFeatureKeys, WorkbenchContextKeys, whenHolds } from "@/workbench/workbenchContext";
 import { useWorkspaceBridgeSource } from "./useWorkspaceBridgeSource";
 import { WorkspacePullRequestsPublisher } from "./useWorkspacePullRequestsSource";
 import { WorkspaceTasksPublisher } from "./useWorkspaceTasksSource";
@@ -1248,37 +1251,48 @@ function AppShellImpl() {
   // Per-tab availability for the right workspace rail — the single source
   // of truth shared by the tab-fallback effect below, the rail's mount
   // gate, and the header's collapse toggle, so they can never disagree.
-  const railTabsAvailable = useMemo(
-    () =>
-      ({
-        files: showFilesPanel,
-        "content-search":
-          showFilesPanel && isFeatureEnabled(serverInfo, "workspace_content_search"),
-        // Changes tab shares the Files gate — same on-disk workspace, just the
-        // changed-files scope.
-        changes: showFilesPanel,
-        // Pull Requests tab: shares the Files/workspace gate. Non-git workspaces and
-        // other unavailable reasons are shown as empty states in the panel.
-        github: showFilesPanel,
-        // Existing native tasks remain available without workflow capabilities.
-        tasks:
-          hasNativeTasks ||
-          (isFeatureEnabled(serverInfo, "workflows") &&
-            serverInfo !== "loading" &&
-            serverInfo.session_journal === true),
-        // Browser soft tabs: available only when the shell hosts the embedded
-        // WebContentsView. Plain web and older desktop builds hide the "+"
-        // option entirely so they never surface a dead tab whose calls no-op.
-        browser: supportsBrowser(),
-        // Agents tab is unconditional: the panel always lists at least
-        // the main agent (its "main" row), so there's never a dead end.
-        subagents: true,
-        // Shells have no nav tab — they open as closable soft tabs in the
-        // rail's tab strip (see WorkspacePanel's TerminalTabsStrip / "+"
-        // menu). Mobile keeps a shells drawer (see ``showShellsTab`` below).
-      }) as const,
-    [showFilesPanel, serverInfo, hasNativeTasks],
+  const sessionHasTasks =
+    hasNativeTasks ||
+    (isFeatureEnabled(serverInfo, "workflows") &&
+      serverInfo !== "loading" &&
+      serverInfo.session_journal === true);
+  // The workbench's context keys for the session on screen: the built-in views' `when`
+  // clauses (their manifests) gate the rail's tabs, and extensions' clauses read them too.
+  const workbenchKeys = useMemo(
+    () => ({
+      ...serverFeatureKeys(serverInfo === "loading" ? undefined : serverInfo.features),
+      [WorkbenchContextKeys.sessionHasWorkspace]: showFilesPanel,
+      [WorkbenchContextKeys.sessionHasTasks]: sessionHasTasks,
+    }),
+    [serverInfo, showFilesPanel, sessionHasTasks],
   );
+  useWorkbenchContextKeys(workbenchKeys);
+  // Per-tab availability for the right workspace rail — the single source
+  // of truth shared by the tab-fallback effect below, the rail's mount
+  // gate, and the header's collapse toggle, so they can never disagree.
+  const railTabsAvailable = useMemo(() => {
+    const viewAvailable = (tab: string) => whenHolds(builtInTabWhen(tab), workbenchKeys);
+    return {
+      // Files, Changes and Pull Requests need the session's on-disk workspace; Pull
+      // Requests shows non-git workspaces and other unavailable reasons as empty states.
+      files: viewAvailable("files"),
+      "content-search": viewAvailable("content-search"),
+      changes: viewAvailable("changes"),
+      github: viewAvailable("github"),
+      // Existing native tasks remain available without workflow capabilities.
+      tasks: viewAvailable("tasks"),
+      // Browser soft tabs: available only when the shell hosts the embedded
+      // WebContentsView. Plain web and older desktop builds hide the "+"
+      // option entirely so they never surface a dead tab whose calls no-op.
+      browser: supportsBrowser(),
+      // Agents tab is unconditional: the panel always lists at least
+      // the main agent (its "main" row), so there's never a dead end.
+      subagents: viewAvailable("subagents"),
+      // Shells have no nav tab — they open as closable soft tabs in the
+      // rail's tab strip (see WorkspacePanel's TerminalTabsStrip / "+"
+      // menu). Mobile keeps a shells drawer (see ``showShellsTab`` below).
+    } as const;
+  }, [workbenchKeys]);
   // Whether the rail has anything at all to show. When false the workspace
   // card doesn't mount and the header hides its collapse toggle — a
   // no-filesystem agent with no terminals/sub-agents would otherwise

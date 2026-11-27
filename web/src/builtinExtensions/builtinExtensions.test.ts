@@ -23,6 +23,8 @@ import { createExtensionRuntime } from "@/vscodeExtensions/extensionHost";
 import { validateManifest } from "@/vscodeExtensions/manifest";
 import { memoryExtensionState } from "@/test/builtInExtensions";
 import { BUILT_IN_EXTENSIONS, builtInExtensions } from ".";
+import { CONVERSATIONS_CONTAINER, ViewContainerRegistry } from "@/workbench/viewContainers";
+import { WorkbenchContext } from "@/workbench/workbenchContext";
 
 const ROOT = path.dirname(new URL(import.meta.url).pathname);
 const folders = readdirSync(ROOT).filter((entry) => statSync(path.join(ROOT, entry)).isDirectory());
@@ -361,6 +363,7 @@ describe("built-in extensions", () => {
       "omnigent.agents",
       "omnigent.changes",
       "omnigent.content-search",
+      "omnigent.conversations",
       "omnigent.files",
       "omnigent.pull-requests",
       "omnigent.tasks",
@@ -394,6 +397,39 @@ describe("built-in extensions", () => {
     expect(registry.get("omnigent.tasks.view")?.plan).toBeDefined();
     await runtime.dispose();
     expect(registry.get("omnigent.changes.view")).toBeUndefined();
+  });
+
+  it("registers the sessions container and mirrors the shell's context keys", async () => {
+    const registry = new RailViewRegistry();
+    const containers = new ViewContainerRegistry();
+    const shell = new WorkbenchContext();
+    shell.update({ "omnigent.session.hasWorkspace": true });
+    const runtime = createExtensionRuntime({
+      registry,
+      containers,
+      workbenchContext: shell,
+      bridge: new WorkspaceBridge(),
+      hostOptions: { extensionState: memoryExtensionState() },
+    });
+    expect(containers.get(CONVERSATIONS_CONTAINER)).toMatchObject({
+      location: "sidebar",
+      builtIn: true,
+    });
+    expect(
+      registry
+        .getSnapshot()
+        .views.filter((view) => view.containerId === CONVERSATIONS_CONTAINER)
+        .map((view) => [view.id, view.builtInView]),
+    ).toEqual([
+      ["omnigent.conversations.navigation", "navigation"],
+      ["omnigent.conversations.list", "conversationList"],
+    ]);
+    expect(runtime.contextKeys.get("omnigent.session.hasWorkspace")).toBe(true);
+    shell.update({ "omnigent.session.hasWorkspace": undefined, "omnigent.session.hasTasks": true });
+    expect(runtime.contextKeys.get("omnigent.session.hasWorkspace")).toBeUndefined();
+    expect(runtime.contextKeys.get("omnigent.session.hasTasks")).toBe(true);
+    await runtime.dispose();
+    expect(containers.get(CONVERSATIONS_CONTAINER)).toBeUndefined();
   });
 
   it("shows a failed built-in as an error state, with the failure logged", async () => {

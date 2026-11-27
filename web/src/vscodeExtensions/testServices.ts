@@ -14,6 +14,7 @@ import { RailViewRegistry } from "@/shell/railViews";
 import { WorkspaceBridge } from "@/shell/workspaceBridge";
 import { ContextKeyService } from "./contextKeys";
 import { ViewsService } from "./viewsService";
+import { ViewContainerRegistry } from "@/workbench/viewContainers";
 import { WorkspaceService } from "./workspaceService";
 
 export interface RecordedNotification {
@@ -70,10 +71,12 @@ export function testViewsService(
     registry?: RailViewRegistry;
     contextKeys?: ContextKeyService;
     showError?: (message: string) => void;
+    containers?: ViewContainerRegistry;
   } = {},
 ): ViewsService {
   return new ViewsService({
     registry: options.registry ?? new RailViewRegistry(),
+    containers: options.containers ?? new ViewContainerRegistry(),
     contextKeys: options.contextKeys ?? new ContextKeyService(),
     executeCommand: (command, args) => commands.execute(command, args, () => {}),
     showError: options.showError ?? (() => {}),

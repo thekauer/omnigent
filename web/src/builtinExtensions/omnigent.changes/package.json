@@ -18,6 +18,7 @@
         {
           "id": "omnigent.changes.view",
           "name": "Changes",
+          "when": "omnigent.session.hasWorkspace",
           "icon": "file-diff",
           "builtInTab": "changes",
           "filter": {

@@ -18,6 +18,7 @@
         {
           "id": "omnigent.tasks.view",
           "name": "Tasks",
+          "when": "omnigent.session.hasTasks",
           "icon": "list-checks",
           "builtInTab": "tasks"
         }

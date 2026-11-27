@@ -23,6 +23,7 @@ import {
   type CommandContribution,
   type ExtensionContributions,
   type ViewContribution,
+  type ViewWelcomeContribution,
   type MenuItemContribution,
   OPEN_IN_SUBMENU,
   type SubmenuContribution,
@@ -32,6 +33,10 @@ import { createTreeViewModel } from "./treeView";
 import { planContentOf } from "./planContent";
 import { pullRequestContentOf } from "./pullRequestContent";
 import { WORKSPACE_SETTING_NAMES } from "./workspaceService";
+import {
+  type ViewContainerRegistry,
+  viewContainers as windowViewContainers,
+} from "@/workbench/viewContainers";
 
 const MAX_VIEW_TEXT = 200;
 // Room for a status line that quotes a long search query.
@@ -90,6 +95,8 @@ export interface ViewsWorkspace {
 
 export interface ViewsServiceOptions {
   registry: RailViewRegistry;
+  /** Where contributed view containers go; the window's by default. */
+  containers?: ViewContainerRegistry;
   contextKeys: ContextKeyService;
   /** Runs a command with JSON arguments (the window's command registry). */
   executeCommand: (command: string, args: readonly unknown[]) => Promise<unknown>;
@@ -136,6 +143,8 @@ interface ViewEntry {
   readonly handle: RailViewHandle;
   /** JSON of the actions last published, to skip no-op updates. */
   actionsKey: string;
+  /** JSON of the welcome contents last published. */
+  welcomeKey: string;
   tree: TreeViewEntry | undefined;
   /** The plan view's visibility events, while it has one. */
   plan: { readonly visibility: EventEmitter<omnigent.TreeViewVisibilityChangeEvent> } | undefined;
@@ -263,11 +272,32 @@ function interpolate(
     .slice(0, MAX_VIEW_TEXT);
 }
 
+/** JSON of the parts of title actions a drawn bar shows, to skip no-op updates. */
+function actionsKeyOf(actions: readonly RailViewTitleAction[]): string {
+  return JSON.stringify(
+    actions.map(({ id, kind, title, tooltip, icon, toggled, tone, group, items }) => [
+      id,
+      kind,
+      title,
+      tooltip,
+      icon,
+      toggled,
+      tone,
+      group,
+      items?.map((item) => [item.id, item.title, item.icon, item.toggled]),
+    ]),
+  );
+}
+
 export class ViewsService {
   private readonly options: ViewsServiceOptions;
   private readonly views = new Map<string, ViewEntry>();
   private readonly commandInfo = new Map<string, CommandContribution>();
   private readonly menus: { extensionId: string; item: MenuItemContribution }[] = [];
+  private readonly containerMenus: { extensionId: string; item: MenuItemContribution }[] = [];
+  private readonly welcome: { extensionId: string; entry: ViewWelcomeContribution }[] = [];
+  /** JSON of the container title actions last published. */
+  private containerActionsKey = "";
   private readonly submenus = new Map<string, SubmenuContribution>();
   private readonly unsubscribe: () => void;
   private workspaceSession: string | undefined;
@@ -283,6 +313,19 @@ export class ViewsService {
       subscription.dispose();
       workspaceSubscription?.dispose();
     };
+  }
+
+  private get containers(): ViewContainerRegistry {
+    return this.options.containers ?? windowViewContainers;
+  }
+
+  /** VS Code's `view.<id>.visible`: a drawn copy of the view is on screen. */
+  private setVisibleKey(viewId: string, visible: boolean): void {
+    try {
+      this.options.contextKeys.setHost(`view.${viewId}.visible`, visible ? true : undefined);
+    } catch {
+      // A view id too long for a context key: `when` can't read it.
+    }
   }
 
   private currentSession(): string | undefined {
@@ -376,6 +419,7 @@ export class ViewsService {
         if (view.shown === 1) {
           view.tree?.visibility.fire({ visible: true });
           view.plan?.visibility.fire({ visible: true });
+          this.setVisibleKey(viewId, true);
         }
         this.options.onViewShown?.(viewId);
         let done = false;
@@ -386,6 +430,7 @@ export class ViewsService {
           if (view.shown === 0) {
             view.tree?.visibility.fire({ visible: false });
             view.plan?.visibility.fire({ visible: false });
+            if (this.views.get(viewId) === view) this.setVisibleKey(viewId, false);
           }
         };
       },
@@ -447,9 +492,22 @@ export class ViewsService {
       if (!this.submenus.has(submenu.id)) this.submenus.set(submenu.id, submenu);
     }
     for (const item of contributions.viewTitleMenu) this.menus.push({ extensionId, item });
+    for (const item of contributions.viewContainerTitleMenu) {
+      this.containerMenus.push({ extensionId, item });
+    }
+    for (const entry of contributions.viewsWelcome) this.welcome.push({ extensionId, entry });
+    const removeContainers = contributions.viewsContainers.map((container) =>
+      this.containers.register({ ...container, extensionId, builtIn }),
+    );
     for (const view of contributions.views) {
       if (this.views.has(view.id) || this.options.registry.get(view.id)) {
         console.warn(`[omnigent-extensions] ${extensionId}: view ${view.id} already exists`);
+        continue;
+      }
+      if (!this.containers.get(view.containerId)) {
+        console.warn(
+          `[omnigent-extensions] ${extensionId}: unknown view container "${view.containerId}" for view ${view.id}; ignoring it`,
+        );
         continue;
       }
       const handle = this.options.registry.register(
@@ -462,6 +520,12 @@ export class ViewsService {
           ...(view.filter === undefined ? {} : { filter: view.filter }),
           ...(view.searchInput === undefined ? {} : { searchInput: view.searchInput }),
           ...(view.location ? { locationBar: true } : {}),
+          containerId: view.containerId,
+          ...(view.when === undefined ? {} : { when: view.when }),
+          ...(view.visibility === undefined ? {} : { visibility: view.visibility }),
+          ...(view.contextualTitle === undefined ? {} : { contextualTitle: view.contextualTitle }),
+          ...(view.initialSize === undefined ? {} : { initialSize: view.initialSize }),
+          ...(view.builtInView === undefined ? {} : { builtInView: view.builtInView }),
         },
         view.order,
       );
@@ -469,6 +533,7 @@ export class ViewsService {
         extensionId,
         handle,
         actionsKey: "",
+        welcomeKey: "[]",
         tree: undefined,
         plan: undefined,
         shown: 0,
@@ -494,8 +559,18 @@ export class ViewsService {
     }
     this.refreshActions();
     return () => {
+      for (const remove of removeContainers) remove();
+      for (let index = this.containerMenus.length - 1; index >= 0; index -= 1) {
+        if (this.containerMenus[index].extensionId === extensionId) {
+          this.containerMenus.splice(index, 1);
+        }
+      }
+      for (let index = this.welcome.length - 1; index >= 0; index -= 1) {
+        if (this.welcome[index].extensionId === extensionId) this.welcome.splice(index, 1);
+      }
       for (const focus of focusCommands) focus.dispose();
       for (const viewId of added) {
+        if ((this.views.get(viewId)?.shown ?? 0) > 0) this.setVisibleKey(viewId, false);
         this.views.get(viewId)?.handle.dispose();
         this.views.delete(viewId);
       }
@@ -563,9 +638,21 @@ export class ViewsService {
 
   /** The view/title actions of `viewId` under the current context keys. */
   titleActions(viewId: string): RailViewTitleAction[] {
-    const lookup = this.options.contextKeys.lookup({ view: viewId });
+    return this.menuActions(this.menus, { view: viewId });
+  }
+
+  /** The viewContainer/title actions of `containerId` under the current context keys. */
+  containerTitleActions(containerId: string): RailViewTitleAction[] {
+    return this.menuActions(this.containerMenus, { viewContainer: containerId });
+  }
+
+  private menuActions(
+    menus: readonly { extensionId: string; item: MenuItemContribution }[],
+    overrides: Readonly<Record<string, string>>,
+  ): RailViewTitleAction[] {
+    const lookup = this.options.contextKeys.lookup(overrides);
     const actions: RailViewTitleAction[] = [];
-    for (const { extensionId, item } of this.menus) {
+    for (const { extensionId, item } of menus) {
       const tooltipKeys = tooltipLookup(extensionId, lookup);
       // "navigation" is the title bar and "filter" the filter row; other groups
       // would need an overflow menu.
@@ -636,24 +723,41 @@ export class ViewsService {
   }
 
   private refreshActions(): void {
+    const lookup = this.options.contextKeys.lookup();
     for (const [viewId, entry] of this.views) {
       const actions = this.titleActions(viewId);
-      const key = JSON.stringify(
-        actions.map(({ id, kind, title, tooltip, icon, toggled, tone, group, items }) => [
-          id,
-          kind,
-          title,
-          tooltip,
-          icon,
-          toggled,
-          tone,
-          group,
-          items?.map((item) => [item.id, item.title, item.icon, item.toggled]),
-        ]),
-      );
-      if (key === entry.actionsKey) continue;
-      entry.actionsKey = key;
-      entry.handle.update({ actions });
+      const key = actionsKeyOf(actions);
+      if (key !== entry.actionsKey) {
+        entry.actionsKey = key;
+        entry.handle.update({ actions });
+      }
+      const view = this.options.registry.get(viewId);
+      // A view's `when` and its welcome blocks follow the context keys.
+      const active = !view?.when || view.when.evaluate(lookup);
+      const welcome = this.welcome
+        .filter(
+          ({ entry: block }) =>
+            block.view === viewId && (!block.when || block.when.evaluate(lookup)),
+        )
+        .map(({ entry: block }) => block.contents);
+      const welcomeKey = JSON.stringify(welcome);
+      if (welcomeKey !== entry.welcomeKey) {
+        entry.welcomeKey = welcomeKey;
+        entry.handle.update({ welcome: Object.freeze(welcome.map((contents) => ({ contents }))) });
+      }
+      entry.handle.update({ active });
+    }
+    const containerActions = new Map<string, readonly RailViewTitleAction[]>();
+    for (const container of this.containers.getSnapshot().containers) {
+      const actions = this.containerTitleActions(container.id);
+      if (actions.length > 0) containerActions.set(container.id, Object.freeze(actions));
+    }
+    const containerKey = JSON.stringify(
+      [...containerActions].map(([id, actions]) => [id, actionsKeyOf(actions)]),
+    );
+    if (containerKey !== this.containerActionsKey) {
+      this.containerActionsKey = containerKey;
+      this.containers.setTitleActions(containerActions);
     }
   }
 

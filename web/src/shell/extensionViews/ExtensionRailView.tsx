@@ -4,7 +4,7 @@
 // windowed like them.
 
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { FileIcon, FilterIcon, SearchIcon, XIcon } from "lucide-react";
+import { ChevronRightIcon, FileIcon, FilterIcon, SearchIcon, XIcon } from "lucide-react";
 import {
   Fragment,
   lazy,
@@ -464,6 +464,63 @@ function ViewMessageLine({
   );
 }
 
+/**
+ * The view's welcome content (`contributes.viewsWelcome`), drawn while it has nothing else to
+ * show: a line holding only a command link is a button, other links are inline.
+ */
+function ViewWelcome({ view }: { view: RailView }) {
+  return (
+    <div data-slot="view-welcome" className="flex flex-col gap-2 p-2 text-sm text-muted-foreground">
+      {view.welcome.flatMap((block, blockIndex) =>
+        block.contents
+          .split("\n")
+          .filter((line) => line.trim() !== "")
+          .map((line, lineIndex) => {
+            const key = `${blockIndex}:${lineIndex}`;
+            const alone = /^\s*\[([^\]]+)\]\(command:([A-Za-z0-9._-]+)\)\s*$/.exec(line);
+            if (alone) {
+              return (
+                <Button
+                  key={key}
+                  type="button"
+                  size="sm"
+                  className="w-full"
+                  onClick={() => view.host?.runCommand(alone[2])}
+                >
+                  {alone[1]}
+                </Button>
+              );
+            }
+            return <WelcomeLine key={key} view={view} line={line} />;
+          }),
+      )}
+    </div>
+  );
+}
+
+function WelcomeLine({ view, line }: { view: RailView; line: string }) {
+  const parts: ReactNode[] = [];
+  let last = 0;
+  for (const match of line.matchAll(MESSAGE_LINK)) {
+    const index = match.index ?? 0;
+    if (index > last) parts.push(line.slice(last, index));
+    const command = match[2];
+    parts.push(
+      <button
+        key={index}
+        type="button"
+        className="cursor-pointer text-foreground underline"
+        onClick={() => view.host?.runCommand(command)}
+      >
+        {match[1]}
+      </button>,
+    );
+    last = index + match[0].length;
+  }
+  if (last < line.length) parts.push(line.slice(last));
+  return <p className="break-words">{parts}</p>;
+}
+
 /** A task the view shows progress for (`withProgress` with the view's location). */
 function ViewProgress({ title }: { title: string }) {
   return (
@@ -595,7 +652,7 @@ function SubmenuButton({ action }: { action: RailViewTitleAction }) {
   );
 }
 
-function ActionList({
+export function ActionList({
   actions,
   renderHostAction,
 }: {
@@ -643,16 +700,24 @@ function ViewLocationBar({
   );
 }
 
+/** A stacked view's header toggles it, as a VS Code pane header. */
+export interface ViewCollapse {
+  readonly collapsed: boolean;
+  readonly onToggle: () => void;
+}
+
 function ViewTitle({
   view,
   onClose,
   closeLabel,
   conversationId,
+  collapse,
 }: {
   view: RailView;
   onClose?: () => void;
   closeLabel: string;
   conversationId: string | undefined;
+  collapse?: ViewCollapse;
 }) {
   const TagIcon = railViewIcon(view.tag?.icon);
   const navigation = view.actions.filter((action) => action.group === "navigation");
@@ -663,7 +728,24 @@ function ViewTitle({
       data-slot="view-title"
       className="flex h-(--ui-view-title-height) shrink-0 items-center gap-(--ui-view-title-gap) px-(--ui-view-title-padding-x)"
     >
-      {view.locationBar ? (
+      {collapse ? (
+        <button
+          type="button"
+          data-slot="view-title-label"
+          aria-expanded={!collapse.collapsed}
+          onClick={collapse.onToggle}
+          className="ui-label flex min-w-0 shrink-0 cursor-pointer items-center gap-1 font-medium text-ui"
+        >
+          <ChevronRightIcon
+            aria-hidden
+            className={cn(
+              "size-3.5 shrink-0 transition-transform",
+              !collapse.collapsed && "rotate-90",
+            )}
+          />
+          <span className="truncate">{view.title ?? view.name}</span>
+        </button>
+      ) : view.locationBar ? (
         <ViewLocationBar view={view} conversationId={conversationId} />
       ) : (
         <h2 data-slot="view-title-label" className="ui-label shrink-0 pl-1 font-medium text-ui">
@@ -691,7 +773,7 @@ function ViewTitle({
           </Tooltip>
         </TooltipProvider>
       )}
-      <div className="ml-auto flex items-center gap-[2px]">
+      <div className={cn("ml-auto flex items-center gap-[2px]", collapse?.collapsed && "hidden")}>
         {view.location && (
           // Its own provider, as each header control brings one.
           <TooltipProvider>
@@ -1131,6 +1213,9 @@ function ViewTree({
       {ready && !view.notice && view.message && (
         <ViewMessage view={view} spacious={view.searchInput !== undefined} small={matchLayout} />
       )}
+      {ready && !view.notice && !view.message && rows.length === 0 && view.welcome.length > 0 && (
+        <ViewWelcome view={view} />
+      )}
       <TooltipProvider>{body}</TooltipProvider>
     </section>
   );
@@ -1169,7 +1254,10 @@ export function ExtensionRailView({
   onFocused,
   onOpenPullRequest,
   bridge,
+  collapse,
 }: {
+  /** Stacked in a side bar: the title toggles the view, and a collapsed one draws only it. */
+  collapse?: ViewCollapse;
   viewId: string;
   /** Whether extensions have finished loading, so a missing view is really gone. */
   settled: boolean;
@@ -1189,7 +1277,7 @@ export function ExtensionRailView({
   /** The workspace bridge a page's list watch goes through (the window's by default). */
   bridge?: WorkspaceBridge;
 }) {
-  const { views } = useRailViews(registry);
+  const { views } = useRailViews(registry, null);
   const view = views.find((candidate) => candidate.id === viewId);
   const host = view?.host;
   const inputRef = useRef<HTMLInputElement>(null);
@@ -1265,49 +1353,58 @@ export function ExtensionRailView({
             onClose={onClose}
             closeLabel={closeLabel}
             conversationId={conversationId}
+            collapse={collapse}
           />
-          <div className="workspace-panel-header-divider shrink-0 border-t border-border" />
+          {!collapse?.collapsed && (
+            <div className="workspace-panel-header-divider shrink-0 border-t border-border" />
+          )}
         </>
       )}
-      <ViewFilter
-        key={`filter:${conversationId}`}
-        view={view}
-        conversationId={conversationId}
-        inputRef={view.searchInput ? undefined : inputRef}
-      />
-      {view.tree && view.presentation === "graph" ? (
-        <Suspense
-          fallback={
-            <div className="flex h-full flex-1 items-center justify-center text-sm text-muted-foreground">
-              Loading graph…
-            </div>
-          }
-        >
-          <ViewGraph
-            key={`graph:${conversationId}`}
-            tree={view.tree}
+      {collapse?.collapsed ? null : (
+        <>
+          <ViewFilter
+            key={`filter:${conversationId}`}
+            view={view}
             conversationId={conversationId}
+            inputRef={view.searchInput ? undefined : inputRef}
           />
-        </Suspense>
-      ) : view.tree ? (
-        <ViewTree
-          key={`tree:${conversationId}`}
-          view={view}
-          tree={view.tree}
-          conversationId={conversationId}
-        />
-      ) : (
-        <section className="min-h-0 flex-1 overflow-y-auto px-2 pt-1 pb-2">
-          {view.error ? (
-            <p role="alert" className="px-2 py-1 text-destructive text-sm">
-              {view.name} could not be loaded. Reload the page to try again.
-            </p>
+          {view.tree && view.presentation === "graph" ? (
+            <Suspense
+              fallback={
+                <div className="flex h-full flex-1 items-center justify-center text-sm text-muted-foreground">
+                  Loading graph…
+                </div>
+              }
+            >
+              <ViewGraph
+                key={`graph:${conversationId}`}
+                tree={view.tree}
+                conversationId={conversationId}
+              />
+            </Suspense>
+          ) : view.tree ? (
+            <ViewTree
+              key={`tree:${conversationId}`}
+              view={view}
+              tree={view.tree}
+              conversationId={conversationId}
+            />
           ) : (
-            <p className="px-2 py-1 text-muted-foreground text-sm">
-              {view.loading ? "Loading…" : (view.message ?? NO_PROVIDER_MESSAGE)}
-            </p>
+            <section className="min-h-0 flex-1 overflow-y-auto px-2 pt-1 pb-2">
+              {view.error ? (
+                <p role="alert" className="px-2 py-1 text-destructive text-sm">
+                  {view.name} could not be loaded. Reload the page to try again.
+                </p>
+              ) : !view.loading && view.message === undefined && view.welcome.length > 0 ? (
+                <ViewWelcome view={view} />
+              ) : (
+                <p className="px-2 py-1 text-muted-foreground text-sm">
+                  {view.loading ? "Loading…" : (view.message ?? NO_PROVIDER_MESSAGE)}
+                </p>
+              )}
+            </section>
           )}
-        </section>
+        </>
       )}
     </div>
   );

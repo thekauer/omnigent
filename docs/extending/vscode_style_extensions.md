@@ -468,9 +468,35 @@ sandboxProvider, resumable }`.
       the view in VS Code's "There is no data provider registered" state.
 14. **Contributions** (`contributions.ts`, `viewsService.ts`; `contributes` is
     passed through by the dev plugin and checked in the page).
-    - `contributes.views["omnigent.rightPanel"]`: `{ id, name, icon }`. Ids
-      must start with the extension id. Views register before the extension
-      activates and show "Loading" until it settled.
+    - `contributes.views["<container>"]`: `{ id, name, icon, when?, visibility?,
+      contextualTitle?, initialSize? }` (layout plan L3). Ids must start with the
+      extension id. The container is `omnigent.rightPanel` (the classic rail, drawn as
+      tabs), `omnigent.conversations` (the primary side bar's sessions) or one an
+      extension contributes; views of a container no one registered are refused with
+      a warning when they register. Views register before the extension activates and
+      show "Loading" until it settled. `when` gates the view (a rail tab, a side bar
+      pane); `visibility` `hidden` leaves it out and `collapsed` starts a stacked
+      view collapsed (the user's toggle is layout state, `workbench.views`).
+      `initialSize` is a stacked view's flex weight; `contextualTitle` is kept for a
+      view moved out of its container (reserved until views move). Built-in extensions may name a
+      host component as the body (`builtInView`: `navigation`, `conversationList`,
+      ...; `shell/builtInViews.ts`), the trusted tier's first seam.
+    - `contributes.viewsContainers`: `{ activitybar?, secondarySidebar?, panel? }`, each
+      an array of `{ id, title, icon? }`. `activitybar` containers are the primary side
+      bar's (it draws the sessions container; the activity bar switches to the others,
+      layout plan L4), `secondarySidebar` (an Omnigent key) containers' views are tabs of
+      the classic rail after its own, `panel` is reserved. A container id is the
+      extension id or starts with it.
+      The side bar stacks its container's views (a built-in view as drawn, a tree
+      view as a pane whose header collapses it); the right panel draws its views as
+      tabs.
+    - `contributes.viewsWelcome`: `{ view, contents, when? }`: a view's empty state
+      (no rows, no message, or no data provider yet). Each line of `contents` is a
+      paragraph; `[text](command:id)` is a link, a line holding only a link a button.
+    - `contributes.menus["viewContainer/title"]`: `{ command, when?, group }`, with the
+      `viewContainer` context key set to the container's id. Group `navigation` is
+      drawn in the side bar's header row (before the host's own search and collapse
+      buttons) or the rail's trailing controls.
     - `contributes.commands`: `{ command, title, icon, toggled? }`; `toggled`
       is a `when` clause, and a button of such a command has `aria-pressed`.
     - `contributes.menus["view/title"]`: `{ command, when?, group }`. Entries in
@@ -1233,7 +1259,10 @@ Plain ESM with `// @ts-check`; no build step.
 | `window.createOutputChannel(name, { log: true })`                    | `window.createOutputChannel(name)` (Node only)                | Lines go to the dev server output                   |
 | `workspace.registerRemoteAuthorityResolver`                          | `hosts.registerReconnectProvider`                             | For "Reconnect host"; plain host data               |
 | `import * as vscode from "vscode"` in `main`                         | `import * as omnigent from "omnigent/node"`                   | A smaller API than the page's                       |
-| `contributes.views` (view containers)                                | `contributes.views["omnigent.rightPanel"]`                    | Tabs in the classic workspace rail                  |
+| `contributes.views` (view containers)                                | same, keyed by `omnigent.rightPanel`, `omnigent.conversations` or a contributed container; `when`, `visibility`, `contextualTitle`, `initialSize` (layout plan L3) | Rail views are tabs; side bar views stack. No `type: "webview"` |
+| `contributes.viewsContainers` (`activitybar`, `panel`)               | same, plus `secondarySidebar` (layout plan L3)                | VS Code moves views to the secondary side bar instead |
+| `contributes.viewsWelcome`                                           | same                                                          | `[text](command:id)` links; no other markdown       |
+| `contributes.menus["viewContainer/title"]`                           | same, group `navigation`                                      | `viewContainer` context key                         |
 | `window.createTreeView(id, { treeDataProvider })`                    | same                                                          | Host-drawn rows; no DnD or multi-select             |
 | `TreeDataProvider`, `TreeItem`, `TreeItemCollapsibleState`           | same, plain data                                              | Plus `decoration` and `gitStatus` on items          |
 | `TreeView.title`, `.description`, `.message`, `.badge`               | same                                                          |                                                     |
@@ -1258,7 +1287,7 @@ Plain ESM with `// @ts-check`; no build step.
 | `ThemeColor`, `StatusBarItem.color`                                  | `ThemeColor`, `SessionHeaderItem.color`                       | Registry tokens and the extension's own colours     |
 | (none; webviews read `--vscode-*`)                                   | `window.getThemeToken(id)`                                    | A computed value as a string                        |
 | (none; product icon and font themes are separate in VS Code)         | `contributes.fonts`                                           | `.woff2` only, namespaced families                  |
-| `<view>.focus` and `view.<id>.visible` context keys                  | `<view>.focus` and `view.<id>.available`                      | Available: the tab is in the strip                  |
+| `<view>.focus` and `view.<id>.visible` context keys                  | same, plus `view.<id>.available`                              | Available: the tab is in the strip; visible: drawn on screen |
 | `withProgress({ location: { viewId } })`                             | same                                                          | Per chat session                                    |
 | `TreeItemLabel.highlights`, `AccessibilityInformation`               | same                                                          | Plus `TreeItem.line` for text matches               |
 | `WebviewView` (closest), `MarkdownString`                            | `window.createPlanView`, Markdown goals drawn by the host     | Plain data, host-drawn; see deviations              |
@@ -1312,6 +1341,15 @@ Deviations and why:
 - Context keys live in the page only; the Node side cannot set or read them.
 - A built-in extension's view can stand in for a built-in tab (`builtInTab`);
   VS Code has no such thing, but it keeps saved tab ids, digits and positions.
+- `contributes.viewsContainers.secondarySidebar` has no VS Code equivalent (VS Code
+  only lets the user move views there). The built-in rail tabs' availability is their
+  views' `when` clauses (the manifests), on the shell's keys
+  `omnigent.session.hasWorkspace`, `omnigent.session.hasTasks` and
+  `omnigent.serverFeature.<flag>`, which extensions' clauses read too.
+- `builtInView` has no VS Code equivalent: the sessions container's views are host
+  React components (VS Code's own views are workbench code). The side bar's header
+  row keeps its host-drawn search and collapse buttons; `viewContainer/title` entries
+  are drawn before them.
 - `TreeView.filter`, `notice`, `tag`, `messageSeverity`, `TreeItem.size` and
   the `filter` menu group, menu `tooltip` and `tone` have no VS Code
   equivalent: the classic Changes tab had a search field in its toolbar, a
@@ -1333,7 +1371,7 @@ Deviations and why:
   timeline-like views are built into the workbench, not drawn from an API.
   `findTextInFiles` returns one list instead of calling back per match (the
   route answers at once); `view.<id>.available` means the tab can be shown,
-  where VS Code's `view.<id>.visible` means it is on screen.
+  and `view.<id>.visible`, as in VS Code, that it is on screen.
 - The built-in extension is `omnigent.content-search` (manifest names are
   lowercase, as in VS Code), not `omnigent.contentSearch`.
 - The Agents graph's cards show the routed model next to the cost, as the

@@ -97,7 +97,10 @@ import type { ChangedSort } from "@/lib/changedSort";
 import { useTerminalStatuses } from "./useTerminalStatuses";
 import { extensionRailTab, extensionRailTabViewId, type RightRailTab } from "./railTabs";
 import { useWorkspaceRail } from "./useWorkspaceRail";
-import { builtInTabView, useRailViews } from "./railViews";
+import { builtInTabView, hasRailTab, useRailViews } from "./railViews";
+import { isViewHidden, useViewsLayout } from "@/workbench/viewsLayout";
+import { ViewContainerTitleActions } from "./ViewContainerTitleActions";
+import { RIGHT_PANEL_CONTAINER } from "@/workbench/viewContainers";
 import { ExtensionRailView, MissingBuiltInView } from "./extensionViews/ExtensionRailView";
 import {
   WORKSPACE_PANEL_TABS,
@@ -927,6 +930,7 @@ function WorkspacePanelImpl({
   const mobileViewport = useIsMobileViewport();
   const isMobile = mobileViewport && !contained;
   const { views: extensionViews, settled: extensionViewsSettled } = useRailViews();
+  const viewsLayout = useViewsLayout();
   const activeView = resolveWorkspaceActiveView(
     {
       rightRailTab,
@@ -1285,7 +1289,8 @@ function WorkspacePanelImpl({
     ...(showContentSearch && (pending || showFilesPanel) ? ["content-search" as const] : []),
     // Extension views follow the built-ins, in the registry's order.
     ...extensionViews
-      .filter((view) => view.builtInTab === undefined)
+      // A view whose `when` doesn't hold, or a hidden one, gets no tab.
+      .filter((view) => hasRailTab(view, (candidate) => isViewHidden(candidate, viewsLayout)))
       .map((view) => extensionRailTab(view.id)),
   ];
   const unpinnedTabs = availablePanels.filter((tab) => !pinnedTabs.includes(tab));
@@ -1947,6 +1952,7 @@ function WorkspacePanelImpl({
             pinned right outside the scrolling viewport; "+" joins it once tabs exist. */}
           <div className="ml-auto flex shrink-0 items-center gap-1 pl-1">
             {showOpenTabs && newTabMenu("end")}
+            <ViewContainerTitleActions containerId={RIGHT_PANEL_CONTAINER} />
             {panelOptions.length > 0 && (
               <DropdownMenu
                 onOpenChange={(isOpen) => {

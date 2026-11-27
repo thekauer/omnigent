@@ -108,7 +108,13 @@ describe("parseContributions", () => {
     });
     expect(warnings).toEqual([]);
     expect(contributions.views).toEqual([
-      { id: "pub.ext.view", name: "Changes 2", icon: "git-compare", order: 0 },
+      {
+        id: "pub.ext.view",
+        name: "Changes 2",
+        icon: "git-compare",
+        order: 0,
+        containerId: "omnigent.rightPanel",
+      },
     ]);
     expect(contributions.commands[0]).toMatchObject({
       command: "pub.ext.toggle",
@@ -140,7 +146,8 @@ describe("parseContributions", () => {
     expect(contributions.commands).toEqual([]);
     // An invalid when clause never holds.
     expect(contributions.viewTitleMenu[0].when?.evaluate(() => true)).toBe(false);
-    expect(warnings).toHaveLength(8);
+    // An unknown container (omnigent.leftPanel) is refused when the views register.
+    expect(warnings).toHaveLength(7);
   });
 
   it("accepts a manifest without contributions and refuses a non-object", () => {

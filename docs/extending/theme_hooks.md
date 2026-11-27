@@ -52,6 +52,16 @@ panel and statusbar parts are reserved: nothing draws them yet.
 | `main` | The main area (`[data-slot="main-area"]`): the chat header, the route's page and, on a session, the workspace rail beside it; the grid's own main area on a grid route. |
 | `auxiliarybar` | The secondary side bar: the workspace rail (`[data-slot="workspace-panel"]`), classic or tabs. |
 
+## View hooks
+
+Drawn only when an extension contributes them (layout plan L3), so not on the default pages.
+
+| Hook | Element |
+|---|---|
+| `[data-view="<view id>"]` | A contributed view stacked in the primary side bar (`data-collapsed` while collapsed). |
+| `[data-slot="view-container-actions"]` | A container's `viewContainer/title` buttons (`data-view-container` is its id). |
+| `[data-slot="view-welcome"]` | A view's welcome content (`contributes.viewsWelcome`). |
+
 ## Classes
 
 | Hook | Element |

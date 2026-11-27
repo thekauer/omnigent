@@ -4,7 +4,9 @@
 
 import { useEffect, useLayoutEffect, useRef } from "react";
 
+import type { ContextKeyValue } from "@/vscodeExtensions/contextKeys";
 import { LAYOUT_SLOTS, layoutState } from "@/workbench/layoutState";
+import { type WorkbenchContext, workbenchContext } from "@/workbench/workbenchContext";
 import { type LayoutService, layoutService, type Part } from "@/workbench/layoutService";
 
 export interface WorkbenchPartState {
@@ -72,4 +74,29 @@ export function useRememberSidebarVisible(open: boolean, remember: boolean): voi
     if ((stored ?? true) === open) return;
     layoutState.set(LAYOUT_SLOTS.sidebar, { visible: open });
   }, [open, remember]);
+}
+
+/**
+ * Publishes the shell's workbench context keys while mounted: keys left out of a later render
+ * are removed, and all of them on unmount.
+ */
+export function useWorkbenchContextKeys(
+  values: Readonly<Record<string, ContextKeyValue>>,
+  context: WorkbenchContext = workbenchContext,
+): void {
+  const published = useRef<readonly string[]>([]);
+  useEffect(() => {
+    const removed = Object.fromEntries(
+      published.current.filter((key) => !Object.hasOwn(values, key)).map((key) => [key, undefined]),
+    );
+    context.update({ ...removed, ...values });
+    published.current = Object.keys(values);
+  }, [context, values]);
+  useEffect(
+    () => () => {
+      context.update(Object.fromEntries(published.current.map((key) => [key, undefined])));
+      published.current = [];
+    },
+    [context],
+  );
 }

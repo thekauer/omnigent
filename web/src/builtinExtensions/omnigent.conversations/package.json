@@ -1,0 +1,40 @@
+{
+  "name": "conversations",
+  "displayName": "Sessions",
+  "description": "The primary side bar's sessions container: the navigation and the sessions and projects list.",
+  "publisher": "omnigent",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "omnigent": "*"
+  },
+  "activationEvents": [
+    "*"
+  ],
+  "browser": "./extension.ts",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "omnigent.conversations",
+          "title": "Sessions",
+          "icon": "messages-square"
+        }
+      ]
+    },
+    "views": {
+      "omnigent.conversations": [
+        {
+          "id": "omnigent.conversations.navigation",
+          "name": "Navigation",
+          "builtInView": "navigation"
+        },
+        {
+          "id": "omnigent.conversations.list",
+          "name": "Sessions",
+          "builtInView": "conversationList"
+        }
+      ]
+    }
+  }
+}

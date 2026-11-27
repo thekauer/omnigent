@@ -18,6 +18,7 @@
         {
           "id": "omnigent.files.view",
           "name": "Files",
+          "when": "omnigent.session.hasWorkspace",
           "icon": "folder-tree",
           "builtInTab": "files",
           "location": true,

@@ -16,14 +16,34 @@ import {
   parseConfigurationContributions,
 } from "@/configuration/configurationContributions";
 
-/** The view container of the classic workspace rail. */
-export const RIGHT_PANEL_CONTAINER = "omnigent.rightPanel";
+import {
+  RIGHT_PANEL_CONTAINER,
+  VIEW_CONTAINER_LOCATION_KEYS,
+  type ViewContainerLocation,
+} from "@/workbench/viewContainers";
+import { isBuiltInViewName } from "@/workbench/builtInViewNames";
+
+export { RIGHT_PANEL_CONTAINER };
+
+/** VS Code's `visibility` of a contributed view: shown, shown collapsed, or left out until asked for. */
+export type ViewVisibility = "visible" | "collapsed" | "hidden";
 
 export interface ViewContribution {
   readonly id: string;
   readonly name: string;
   readonly icon: string | undefined;
   readonly order: number;
+  /** The view container the view is in (`contributes.views` key). */
+  readonly containerId: string;
+  /** Shown only while this holds. */
+  readonly when?: WhenClause;
+  readonly visibility?: ViewVisibility;
+  /** The name used out of its container (a moved view), as VS Code's. */
+  readonly contextualTitle?: string;
+  /** A stacked view's share of its container's height, as a flex weight. */
+  readonly initialSize?: number;
+  /** Built-in extensions only: the view's body is this host component (builtInViews.ts). */
+  readonly builtInView?: string;
   /** Built-in extensions only: the built-in tab id the view stands in for. */
   readonly builtInTab?: string;
   /** A filter field drawn above the rows, with optional extra fields (such as globs). */
@@ -107,10 +127,31 @@ export interface SubmenuContribution {
   readonly items: readonly MenuItemContribution[];
 }
 
+/** One `contributes.viewsContainers` entry. */
+export interface ViewContainerContribution {
+  readonly id: string;
+  readonly title: string;
+  readonly icon: string | undefined;
+  readonly location: ViewContainerLocation;
+  readonly order: number;
+}
+
+/** One `contributes.viewsWelcome` entry: a view's empty state, with command links. */
+export interface ViewWelcomeContribution {
+  readonly view: string;
+  /** Lines of text; `[text](command:id)` links, a line of a link alone drawn as a button. */
+  readonly contents: string;
+  readonly when: WhenClause | undefined;
+}
+
 export interface ExtensionContributions {
   readonly views: readonly ViewContribution[];
+  readonly viewsContainers: readonly ViewContainerContribution[];
+  readonly viewsWelcome: readonly ViewWelcomeContribution[];
   readonly commands: readonly CommandContribution[];
   readonly viewTitleMenu: readonly MenuItemContribution[];
+  /** `contributes.menus["viewContainer/title"]`: a container's title bar, by `viewContainer`. */
+  readonly viewContainerTitleMenu: readonly MenuItemContribution[];
   readonly submenus: readonly SubmenuContribution[];
   readonly keybindings: readonly KeybindingContribution[];
   /** `contributes.themes`, `.colors` and `.fonts` (`theme/themeContributions.ts`). */
@@ -133,8 +174,11 @@ const MAX_TOOLTIP_LENGTH = 200;
 
 export const EMPTY_CONTRIBUTIONS: ExtensionContributions = Object.freeze({
   views: [],
+  viewsContainers: [],
+  viewsWelcome: [],
   commands: [],
   viewTitleMenu: [],
+  viewContainerTitleMenu: [],
   submenus: [],
   keybindings: [],
   theming: EMPTY_THEME_CONTRIBUTIONS,
@@ -142,6 +186,8 @@ export const EMPTY_CONTRIBUTIONS: ExtensionContributions = Object.freeze({
 });
 
 const MAX_HINT_LENGTH = 300;
+const MAX_WELCOME_LENGTH = 2000;
+const VIEW_VISIBILITIES = new Set<ViewVisibility>(["visible", "collapsed", "hidden"]);
 const MAX_INPUT_ENTRIES = 8;
 const INPUT_ENTRY_ID = /^[A-Za-z][A-Za-z0-9_-]{0,31}$/;
 const KEY_MODIFIERS = new Set(["ctrl", "shift", "alt", "cmd", "meta"]);
@@ -360,6 +406,91 @@ function menuItemOf(
   };
 }
 
+/** `contributes.viewsContainers`: `{ activitybar?, secondarySidebar?, panel? }` of `{ id, title, icon? }`. */
+function parseViewsContainers(
+  extensionId: string,
+  raw: unknown,
+  warnings: string[],
+): ViewContainerContribution[] {
+  const containers: ViewContainerContribution[] = [];
+  if (raw === undefined) return containers;
+  if (!isRecord(raw)) {
+    warnings.push('"contributes.viewsContainers" must be an object');
+    return containers;
+  }
+  for (const [key, entries] of Object.entries(raw)) {
+    const location = Object.hasOwn(VIEW_CONTAINER_LOCATION_KEYS, key)
+      ? VIEW_CONTAINER_LOCATION_KEYS[key]
+      : undefined;
+    if (location === undefined) {
+      warnings.push(
+        `contributes.viewsContainers: unknown location "${key}" (activitybar, secondarySidebar or panel); ignoring it`,
+      );
+      continue;
+    }
+    if (!Array.isArray(entries)) {
+      warnings.push(`contributes.viewsContainers["${key}"] must be an array`);
+      continue;
+    }
+    entries.slice(0, MAX_ENTRIES).forEach((entry: unknown, index) => {
+      const where = `contributes.viewsContainers["${key}"][${index}]`;
+      if (!isRecord(entry)) {
+        warnings.push(`${where} must be an object`);
+        return;
+      }
+      const { id } = entry;
+      if (!isExtensionViewId(id) || (id !== extensionId && !id.startsWith(`${extensionId}.`))) {
+        warnings.push(`${where}: "id" must be "${extensionId}" or "${extensionId}.<name>"`);
+        return;
+      }
+      if (containers.some((container) => container.id === id)) {
+        warnings.push(`${where}: duplicate view container id ${id}`);
+        return;
+      }
+      const title = textOf(entry.title, MAX_NAME_LENGTH);
+      if (title === undefined) {
+        warnings.push(`${where}: "title" must be a non-empty string`);
+        return;
+      }
+      containers.push({
+        id,
+        title,
+        icon: iconOf(entry.icon, where, warnings),
+        location,
+        order: containers.length,
+      });
+    });
+  }
+  return containers;
+}
+
+/** `contributes.viewsWelcome`: `[{ view, contents, when? }]`. */
+function parseViewsWelcome(raw: unknown, warnings: string[]): ViewWelcomeContribution[] {
+  const welcome: ViewWelcomeContribution[] = [];
+  if (raw === undefined) return welcome;
+  if (!Array.isArray(raw)) {
+    warnings.push('"contributes.viewsWelcome" must be an array');
+    return welcome;
+  }
+  raw.slice(0, MAX_ENTRIES).forEach((entry: unknown, index) => {
+    const where = `contributes.viewsWelcome[${index}]`;
+    if (!isRecord(entry) || !isExtensionViewId(entry.view)) {
+      warnings.push(`${where}: "view" must be a view id`);
+      return;
+    }
+    if (typeof entry.contents !== "string" || entry.contents.trim() === "") {
+      warnings.push(`${where}: "contents" must be a non-empty string`);
+      return;
+    }
+    welcome.push({
+      view: entry.view,
+      contents: entry.contents.slice(0, MAX_WELCOME_LENGTH),
+      when: whenOf(entry.when, where, warnings),
+    });
+  });
+  return welcome;
+}
+
 export function parseContributions(
   extensionId: string,
   raw: unknown,
@@ -377,8 +508,10 @@ export function parseContributions(
       warnings.push('"contributes.views" must be an object of view containers');
     } else {
       for (const [container, entries] of Object.entries(raw.views)) {
-        if (container !== RIGHT_PANEL_CONTAINER) {
-          warnings.push(`contributes.views: unknown view container "${container}"; ignoring it`);
+        // Whether the container exists is checked when the views register: it may be another
+        // extension's.
+        if (!isExtensionViewId(container)) {
+          warnings.push(`contributes.views: invalid view container id "${container}"; ignoring it`);
           continue;
         }
         if (!Array.isArray(entries)) {
@@ -443,11 +576,54 @@ export function parseContributions(
             entry.searchInput === undefined
               ? undefined
               : searchInputOf(entry.searchInput, where, warnings);
+          let visibility: ViewVisibility | undefined;
+          if (entry.visibility !== undefined) {
+            if (VIEW_VISIBILITIES.has(entry.visibility as ViewVisibility)) {
+              visibility = entry.visibility as ViewVisibility;
+            } else {
+              warnings.push(
+                `${where}: "visibility" must be "visible", "collapsed" or "hidden"; ignoring it`,
+              );
+            }
+          }
+          let initialSize: number | undefined;
+          if (entry.initialSize !== undefined) {
+            if (
+              typeof entry.initialSize === "number" &&
+              Number.isFinite(entry.initialSize) &&
+              entry.initialSize > 0
+            ) {
+              initialSize = entry.initialSize;
+            } else {
+              warnings.push(`${where}: "initialSize" must be a positive number; ignoring it`);
+            }
+          }
+          let builtInView: string | undefined;
+          if (entry.builtInView !== undefined) {
+            if (!options.builtIn) {
+              warnings.push(`${where}: "builtInView" is for built-in extensions; ignoring it`);
+            } else if (!isBuiltInViewName(entry.builtInView)) {
+              warnings.push(`${where}: unknown built-in view ${JSON.stringify(entry.builtInView)}`);
+            } else {
+              builtInView = entry.builtInView;
+            }
+          }
+          if (entry.type !== undefined && entry.type !== "tree") {
+            warnings.push(`${where}: only "tree" views are supported; ignoring "type"`);
+          }
+          const contextualTitle = textOf(entry.contextualTitle, MAX_NAME_LENGTH);
+          const when = whenOf(entry.when, where, warnings);
           views.push({
             id,
             name: name.trim().slice(0, MAX_NAME_LENGTH),
             icon: iconOf(entry.icon, where, warnings),
             order: views.length,
+            containerId: container,
+            ...(when === undefined ? {} : { when }),
+            ...(visibility === undefined ? {} : { visibility }),
+            ...(contextualTitle === undefined ? {} : { contextualTitle }),
+            ...(initialSize === undefined ? {} : { initialSize }),
+            ...(builtInView === undefined ? {} : { builtInView }),
             ...(builtInTab === undefined ? {} : { builtInTab }),
             ...(filter === undefined ? {} : { filter }),
             ...(searchInput === undefined ? {} : { searchInput }),
@@ -457,6 +633,9 @@ export function parseContributions(
       }
     }
   }
+
+  const viewsContainers = parseViewsContainers(extensionId, raw.viewsContainers, warnings);
+  const viewsWelcome = parseViewsWelcome(raw.viewsWelcome, warnings);
 
   const commands: CommandContribution[] = [];
   if (raw.commands !== undefined) {
@@ -511,13 +690,14 @@ export function parseContributions(
   }
 
   const viewTitleMenu: MenuItemContribution[] = [];
+  const viewContainerTitleMenu: MenuItemContribution[] = [];
   if (raw.menus !== undefined) {
     if (!isRecord(raw.menus)) {
       warnings.push('"contributes.menus" must be an object');
     } else {
       for (const [menu, entries] of Object.entries(raw.menus)) {
         const submenuIndex = submenus.findIndex((submenu) => submenu.id === menu);
-        if (menu !== "view/title" && submenuIndex === -1) {
+        if (menu !== "view/title" && menu !== "viewContainer/title" && submenuIndex === -1) {
           warnings.push(`contributes.menus: menu "${menu}" is not supported yet; ignoring it`);
           continue;
         }
@@ -558,6 +738,7 @@ export function parseContributions(
           items.push(item);
         });
         if (menu === "view/title") viewTitleMenu.push(...items);
+        else if (menu === "viewContainer/title") viewContainerTitleMenu.push(...items);
         else submenus[submenuIndex] = { ...submenus[submenuIndex], items: Object.freeze(items) };
       }
     }
@@ -617,8 +798,11 @@ export function parseContributions(
       configuration: configuration.contributions,
       keybindings: Object.freeze(keybindings),
       views: Object.freeze(views),
+      viewsContainers: Object.freeze(viewsContainers),
+      viewsWelcome: Object.freeze(viewsWelcome),
       commands: Object.freeze(commands),
       viewTitleMenu: Object.freeze(viewTitleMenu),
+      viewContainerTitleMenu: Object.freeze(viewContainerTitleMenu),
       submenus: Object.freeze(submenus),
     }),
     warnings,

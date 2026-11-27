@@ -5,6 +5,9 @@
 import type * as omnigent from "omnigent";
 import { useMemo, useSyncExternalStore } from "react";
 import type { WorkspaceChangedFile } from "@/hooks/useWorkspaceChangedFiles";
+import type { WhenClause } from "@/vscodeExtensions/when";
+import { RIGHT_PANEL_CONTAINER, viewContainers } from "@/workbench/viewContainers";
+import { isViewHidden, useViewsLayout } from "@/workbench/viewsLayout";
 
 /** A view's count badge on its tab, like VS Code's `ViewBadge`. */
 export interface RailViewBadge {
@@ -248,6 +251,15 @@ export interface RailViewState {
   readonly location: RailViewLocation | undefined;
   /** Bumped when the extension set the filter text, so a drawn field shows it. */
   readonly filterRevision: number;
+  /** Whether the view's `when` holds under the current context keys. */
+  readonly active: boolean;
+  /** The view's empty state (`contributes.viewsWelcome`) whose `when` holds, in order. */
+  readonly welcome: readonly RailViewWelcome[];
+}
+
+/** One welcome block: lines of text with `[text](command:id)` links. */
+export interface RailViewWelcome {
+  readonly contents: string;
 }
 
 /** A task shown as progress in a view, while the chat session it started in is on screen. */
@@ -261,6 +273,15 @@ export interface RailViewContribution {
   readonly id: string;
   readonly extensionId: string;
   readonly name: string;
+  /** The view container it is in; the classic rail's when unset. */
+  readonly containerId?: string;
+  /** Shown only while this holds (`contributes.views[].when`). */
+  readonly when?: WhenClause;
+  readonly visibility?: "visible" | "collapsed" | "hidden";
+  readonly contextualTitle?: string;
+  readonly initialSize?: number;
+  /** The host component drawn as the view's body (a built-in extension's `builtInView`). */
+  readonly builtInView?: string;
   /** A name from the rail icon allowlist; unknown names fall back to a generic icon. */
   readonly icon: string | undefined;
   /** The built-in tab (such as "changes") a built-in extension's view stands in for. */
@@ -310,6 +331,8 @@ const INITIAL_STATE: RailViewState = {
   progress: [],
   location: undefined,
   filterRevision: 0,
+  active: true,
+  welcome: [],
 };
 
 interface Entry {
@@ -400,21 +423,85 @@ export class RailViewRegistry {
 /** The window's rail views. */
 export const railViews = new RailViewRegistry();
 
-export function useRailViews(registry: RailViewRegistry = railViews): RailViewsSnapshot {
-  return useSyncExternalStore(registry.subscribe, registry.getSnapshot, registry.getSnapshot);
+/**
+ * Whether an extension view gets a tab in the classic rail: its `when` holds and it isn't
+ * hidden (by its `visibility`, or by the user in the layout state's `hidden`).
+ */
+export function hasRailTab(
+  view: RailView,
+  hidden: (view: RailView) => boolean = (candidate) => candidate.visibility === "hidden",
+): boolean {
+  return view.builtInTab === undefined && view.active && !hidden(view);
+}
+
+/** The container a view is in. */
+export function viewContainerOf(view: RailViewContribution): string {
+  return view.containerId ?? RIGHT_PANEL_CONTAINER;
+}
+
+const containerSnapshots = new WeakMap<RailViewsSnapshot, Map<string, RailViewsSnapshot>>();
+
+/** The snapshot's views of `container` (every view for `null`), the same object per snapshot. */
+export function viewsOfContainer(
+  snapshot: RailViewsSnapshot,
+  container: string | null,
+): RailViewsSnapshot {
+  if (container === null) return snapshot;
+  let byContainer = containerSnapshots.get(snapshot);
+  if (!byContainer) {
+    byContainer = new Map();
+    containerSnapshots.set(snapshot, byContainer);
+  }
+  let filtered = byContainer.get(container);
+  if (!filtered) {
+    // The classic rail draws every secondary side bar container's views as its tabs.
+    const drawnHere = (view: RailViewContribution) =>
+      viewContainerOf(view) === container ||
+      (container === RIGHT_PANEL_CONTAINER &&
+        viewContainers.get(viewContainerOf(view))?.location === "auxiliarybar");
+    filtered = Object.freeze({
+      views: Object.freeze(snapshot.views.filter(drawnHere)),
+      settled: snapshot.settled,
+    });
+    byContainer.set(container, filtered);
+  }
+  return filtered;
+}
+
+/** The views of `container` (the classic rail's by default; `null` for every view). */
+export function useRailViews(
+  registry: RailViewRegistry = railViews,
+  container: string | null = RIGHT_PANEL_CONTAINER,
+): RailViewsSnapshot {
+  const snapshot = useSyncExternalStore(
+    registry.subscribe,
+    registry.getSnapshot,
+    registry.getSnapshot,
+  );
+  return viewsOfContainer(snapshot, container);
 }
 
 /**
- * The registered view ids, one per line, and whether loading settled: enough to
- * validate a stored tab, without re-rendering when a view's badge or message changes.
+ * The rail's view ids (built-in tabs' and the extension views that have a tab), and whether
+ * loading settled: enough to validate a stored tab, without re-rendering when a view's badge
+ * or message changes.
  */
 export function useRailViewIds(registry: RailViewRegistry = railViews): {
   ids: readonly string[];
   settled: boolean;
 } {
+  const layout = useViewsLayout();
   const key = useSyncExternalStore(registry.subscribe, () => {
-    const snapshot = registry.getSnapshot();
-    return `${snapshot.settled ? "1" : "0"}${snapshot.views.map((view) => `\n${view.id}`).join("")}`;
+    const snapshot = viewsOfContainer(registry.getSnapshot(), RIGHT_PANEL_CONTAINER);
+    // Built-in tabs' views always count; an extension tab only while it has a tab.
+    const ids = snapshot.views
+      .filter(
+        (view) =>
+          view.builtInTab !== undefined ||
+          hasRailTab(view, (candidate) => isViewHidden(candidate, layout)),
+      )
+      .map((view) => `\n${view.id}`);
+    return `${snapshot.settled ? "1" : "0"}${ids.join("")}`;
   });
   return useMemo(() => {
     const [settled, ...ids] = key.split("\n");

@@ -18,6 +18,7 @@
         {
           "id": "omnigent.pull-requests.view",
           "name": "Pull Requests",
+          "when": "omnigent.session.hasWorkspace",
           "icon": "git-pull-request",
           "builtInTab": "github"
         }

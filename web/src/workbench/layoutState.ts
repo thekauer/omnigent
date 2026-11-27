@@ -22,6 +22,8 @@ export const LAYOUT_SLOTS = Object.freeze({
   expandedProjects: "omnigent.conversations.list.expandedProjects",
   /** Ids of the collapsed session families. */
   collapsedFamilies: "omnigent.conversations.list.collapsedFamilies",
+  /** `{ [view id]: { collapsed?: boolean, hidden?: boolean } }`: stacked views the user changed. */
+  views: "workbench.views",
 });
 
 /** The keys each slot was stored under before the layout state document. */
