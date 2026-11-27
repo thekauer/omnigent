@@ -1,6 +1,7 @@
 # Layout plan: workbench parts, view containers, activity bar, title bar (Stage 2)
 
-Draft for review. Nothing here is implemented. Stage 1 (theming) is
+Approved by the user on 2026-11-27 with every recommended decision (end of this doc). Execute
+milestone by milestone. Stage 1 (theming) is
 [theming_plan.md](theming_plan.md); the extension API is
 [vscode_style_extensions.md](vscode_style_extensions.md); stable selectors are
 [theme_hooks.md](theme_hooks.md).
@@ -11,8 +12,9 @@ The durable state to resume from. Update it in the same commit that lands each m
 
 | # | State | Notes |
 |---|---|---|
-| Plan | Draft | Waiting for the user's decisions (end of this doc). |
-| L0 to L11 | Not started | |
+| Plan | Approved | 2026-11-27: all 14 recommended decisions (end of this doc). |
+| L0 | Done | Harness (my-extensions `ebc9c42`, `e7a6b26`, `24a4a69`, `dev/verify/screens.py`): every shot also writes its layout to `layout.json` (`<selection>/<screen>`: each part found by today's hooks, `.app-shell`, `.conversations-sidebar`, `[data-slot=main-area]`, `header.chat-header`, the composer, `[data-slot=workspace-panel]`, `.omnigent-app`, plus every `[data-part]` as `part:<id>`, with its box, visibility, hooks and state attributes); `--compare` fails on a changed box, visibility, state or a removed hook and lists added hooks and `part:*` entries as additions (`layout.json.diff.txt`). New screens in default light and dark, each in a page of its own: `layout-sidebar-collapsed`, `layout-rail-open`, `layout-rail-closed`, `layout-band` (960x900), `layout-phone-drawer` (390x844), `layout-grid`, `layout-canvas`, `layout-embed-narrow` (a 1000px host box). Baselines of `1c665e0167`, identical for `85c0aaca0e`; two runs 0 px apart from the known flakes, identical dumps. Two harness races the dump caught are fixed (the running session's Tasks tab auto-open, the new-chat list still loading). |
+| L3 to L11 | Not started | |
 
 Paths are relative to the omnigent repo root unless they start with `my-extensions/`.
 
@@ -320,7 +322,7 @@ theming plan's tolerances.
 | L8 | Product layout: `product.settings` and `product.layout` from the three sources, server block and `/v1/info` (`openapi.json`), embed sizing to the scope root, state keyed by basename | Vitest, `embed.test.tsx`, pytest for the server block; harness embed checks |
 | L9 | Narrow and mobile pass per the table above | Narrow and phone screens; RTL on drawers |
 | L10 | Extension API read side: `window.onDidChangeLayout`-style events, context keys, the vendored typings and docs (`vscode_style_extensions.md` mapping rows, `theme_hooks.md` part hooks) | API tests; typings check |
-| L11 | DevHub layout in `my-extensions/dev`: `configurationDefaults`, tokens, side-by-sides with the design | `--only-layout` DevHub checks; new `devhub-*-layout` baselines; side-by-sides |
+| L11 | DevHub layout in `my-extensions/dev`: `configurationDefaults`, tokens, side-by-sides with the design; also the tokens M11 left unmatched: Vercel's muted idle sidebar rows, the accent Send button, the accent avatar, mono timestamps | `--only-layout` DevHub checks; new `devhub-*-layout` baselines; side-by-sides |
 
 Order: L0 > L1 > L2 > L3 > L4. L5 and L7 need L3. L6 needs L5. L8 needs L1 and L2. L9 needs L4,
 L5 and L7. L10 can follow each part. L11 needs L4, L5, L7 and L8.
@@ -341,6 +343,19 @@ L5 and L7. L10 can follow each part. L11 needs L4, L5, L7 and L8.
 | Scope creep into menus and the trusted tier | Only the menus a part needs; React slots stay reserved ids |
 
 ## Decisions for the user
+
+**Decided 2026-11-27:** the user accepted all 14 recommendations: 1 (a), 2 (a), 3 (a), 4 (a),
+5 (a), 6 (a), 7 (a), 8 (a), 9 (a), 10 (a), 11 (a), 12 (a), 13 (a), 14 (a). The user's answers to
+the theming plan's M11 questions, recorded here because they set L11's scope:
+
+- Vercel keeps its inline code border (`code-inline-border`).
+- Orange stays the default for Share and Stop on Console and Paper.
+- The product mark as the logo and favicon is right.
+- The DevHub tokens M11 left unmatched (Vercel's muted idle sidebar rows, the accent Send button,
+  the accent avatar, mono timestamps) go into L11.
+
+The options as reviewed:
+
 
 1. **Part names.** (a) VS Code's: Title Bar, Activity Bar, Primary/Secondary Side Bar, Panel,
    Status Bar, ids `workbench.parts.*`; (b) Omnigent names (left sidebar, right panel).
