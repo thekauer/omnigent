@@ -43,14 +43,15 @@ The shadcn primitives' own slots (`button`, `tabs-trigger`, `dropdown-menu-conte
 ## `data-part` hooks
 
 `[data-part="<name>"]` on the element that draws a workbench part (layout plan L2), named as
-VS Code's parts (`workbench.parts.<name>` in the layout service). The titlebar, panel and
-statusbar parts are reserved: nothing draws them yet.
+VS Code's parts (`workbench.parts.<name>` in the layout service). The panel and statusbar
+parts are reserved: nothing draws them yet.
 
 | Hook | Element |
 |---|---|
 | `sidebar` | The primary side bar (`aside.conversations-sidebar`), open or closed. |
 | `main` | The main area (`[data-slot="main-area"]`): the chat header, the route's page and, on a session, the workspace rail beside it; the grid's own main area on a grid route. |
 | `auxiliarybar` | The secondary side bar: the workspace rail (`[data-slot="workspace-panel"]`), classic or tabs. |
+| `titlebar` | The title bar, when `window.titleBar.visible` is on (layout plan L7; not on phones), class `.titlebar`, over the shell's top strip (`.app-shell[data-titlebar]` makes room for it); its regions are `[data-slot="titlebar-left"]`, `-center` and `-right`, its built-in items `[data-titlebar-item="brand" \| "commandCenter" \| "layoutControls"]` (the account is the profile and Settings buttons), an extension's `titleBar/*` entries `[data-titlebar-command="<command>"]`, its text items `[data-titlebar-text-item="<id>"]`. Not on the default pages. |
 | `activitybar` | The activity bar, when `workbench.activityBar.location` shows it (layout plan L4): beside the side bar (`data-location="default"`, class `.activitybar`) or a row in its header or bottom (`top`, `bottom`). Not on the default pages. |
 
 ## View hooks

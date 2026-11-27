@@ -1,6 +1,11 @@
 // Window-wide views: registers the views extensions contribute in the rail's view
 // registry, keeps each view's title actions in step with the context keys, keeps
 // each view's filter text per chat session, and backs `window.createTreeView`.
+import {
+  compareTitleBarEntries,
+  type ContributedTitleBarEntry,
+  contributedTitleBarEntries,
+} from "@/workbench/titleBar";
 import { commandIdProblem } from "./commands";
 import type * as omnigent from "omnigent";
 import type {
@@ -26,6 +31,7 @@ import {
   type ViewContribution,
   type ViewWelcomeContribution,
   type MenuItemContribution,
+  type TitleBarMenuItemContribution,
   OPEN_IN_SUBMENU,
   type SubmenuContribution,
   TOGGLE_FILTER_FIELDS_COMMAND,
@@ -105,6 +111,8 @@ export interface ViewsServiceOptions {
   containers?: ViewContainerRegistry;
   /** Where other extensions' side bar navigation entries go; the window's by default. */
   navigation?: { set: (entries: readonly ContributedNavigationEntry[]) => void };
+  /** Where other extensions' `titleBar/*` entries go; the window's by default. */
+  titleBar?: { set: (entries: readonly ContributedTitleBarEntry[]) => void };
   contextKeys: ContextKeyService;
   /** Runs a command with JSON arguments (the window's command registry). */
   executeCommand: (command: string, args: readonly unknown[]) => Promise<unknown>;
@@ -310,6 +318,8 @@ export class ViewsService {
   private readonly welcome: { extensionId: string; entry: ViewWelcomeContribution }[] = [];
   /** Other extensions' `sidebar/navigation` entries (the built-ins' are the host's rows). */
   private readonly navigation: { extensionId: string; item: MenuItemContribution }[] = [];
+  /** Other extensions' `titleBar/*` command entries (the built-ins' are the host's items). */
+  private readonly titleBar: { extensionId: string; item: TitleBarMenuItemContribution }[] = [];
   /** JSON of the container title actions last published. */
   private containerActionsKey = "";
   private readonly submenus = new Map<string, SubmenuContribution>();
@@ -532,6 +542,13 @@ export class ViewsService {
         if (this.navigation.some((entry) => entry.item.command === item.command)) continue;
         this.navigation.push({ extensionId, item });
       }
+      for (const item of contributions.titleBarMenu) {
+        // One button per command and region.
+        const listed = this.titleBar.some(
+          (entry) => entry.item.command === item.command && entry.item.region === item.region,
+        );
+        if (item.command !== "" && !listed) this.titleBar.push({ extensionId, item });
+      }
     }
     const removeContainers = contributions.viewsContainers.map((container) =>
       this.containers.register({ ...container, extensionId, builtIn }),
@@ -607,6 +624,9 @@ export class ViewsService {
       }
       for (let index = this.navigation.length - 1; index >= 0; index -= 1) {
         if (this.navigation[index].extensionId === extensionId) this.navigation.splice(index, 1);
+      }
+      for (let index = this.titleBar.length - 1; index >= 0; index -= 1) {
+        if (this.titleBar[index].extensionId === extensionId) this.titleBar.splice(index, 1);
       }
       for (const focus of focusCommands) focus.dispose();
       for (const viewId of added) {
@@ -800,6 +820,25 @@ export class ViewsService {
           active: !item.when || item.when.evaluate(lookup),
         };
       }),
+    );
+    (this.options.titleBar ?? contributedTitleBarEntries).set(
+      [...this.titleBar]
+        .sort((left, right) => compareTitleBarEntries(left.item, right.item))
+        .map(({ extensionId, item }) => {
+          const info = this.commandInfo.get(item.command);
+          return {
+            region: item.region,
+            command: item.command,
+            builtInItem: undefined,
+            title: info?.title ?? item.command,
+            icon: info?.icon,
+            tooltip: item.tooltip,
+            when: item.when,
+            extensionId,
+            group: item.group,
+            active: !item.when || item.when.evaluate(lookup),
+          };
+        }),
     );
     const containerActions = new Map<string, readonly RailViewTitleAction[]>();
     for (const container of this.containers.getSnapshot().containers) {

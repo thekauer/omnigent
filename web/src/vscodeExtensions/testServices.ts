@@ -1,4 +1,5 @@
 // Host services for tests: real registries, recorded notifications.
+import { TitleBarItemRegistry } from "@/workbench/titleBar";
 import { HostProgressLocations } from "@/lib/hostProgress";
 import { HostReconnectProviderRegistry } from "@/lib/hostReconnectProviders";
 import type { HostServices } from "./api";
@@ -102,5 +103,6 @@ export function hostServices(overrides: Partial<HostServices> = {}): HostService
     ...(overrides.themes ? { themes: overrides.themes } : {}),
     ...(overrides.colorThemes ? { colorThemes: overrides.colorThemes } : {}),
     ...(overrides.configuration ? { configuration: overrides.configuration } : {}),
+    titleBarItems: overrides.titleBarItems ?? new TitleBarItemRegistry(),
   };
 }

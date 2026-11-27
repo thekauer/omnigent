@@ -1131,6 +1131,11 @@ html:not(.dark) .app-shell[data-sidebar-location="right"] .conversations-sidebar
   border-left-width: 1px;
 }
 
+/* The title bar sits over the shell's top strip; the shell's parts start below it. */
+.app-shell[data-titlebar] {
+  padding-top: var(--ui-titlebar-height, 48px);
+}
+
 /* A place a dragged view can land on, while it is over it. */
 [data-view-drop-target] {
   outline: 2px solid var(--ring);

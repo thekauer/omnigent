@@ -42,6 +42,13 @@ export const VARIANT_SURFACE_TOKENS = defineTokens("variant", [
     default: { light: "var(--ui-sheet-gap)" },
   },
   {
+    id: "ui-sheet-gap-top-titlebar",
+    kind: "length",
+    description:
+      "The floating sheet's margin from the title bar while it shows (`window.titleBar.visible`), `ui-sheet-gap`.",
+    default: { light: "var(--ui-sheet-gap)" },
+  },
+  {
     id: "ui-sheet-radius",
     kind: "length",
     description: "The floating sheet's corner radius, 12px.",

@@ -164,6 +164,34 @@ declare module "omnigent" {
     dispose: () => void;
   }
 
+  /** Which region of the title bar an item sits in (layout plan L7). */
+  export type TitleBarRegion = "left" | "center" | "right";
+
+  /**
+   * A short text item in the title bar, as VS Code's status bar item: one per window, shown
+   * once the title bar is on (`window.titleBar.visible`). Clicking it runs its command.
+   */
+  export interface TitleBarItem {
+    /** `<extension id>.<id>`; the id given at creation or a generated one. */
+    readonly id: string;
+    readonly region: TitleBarRegion;
+    /** Higher priority sits further left within its region. */
+    readonly priority: number | undefined;
+    /** Plain text, single line. The host truncates it to 40 characters. */
+    text: string;
+    /** Plain text tooltip. The host truncates it to 200 characters. */
+    tooltip: string | undefined;
+    /** As {@link SessionHeaderItem.color}. */
+    color: string | ThemeColor | undefined;
+    /** The command run on click: its id, or a {@link Command} with arguments. */
+    command: string | Command | undefined;
+    /** Show the item. New items are hidden until shown. */
+    show: () => void;
+    hide: () => void;
+    /** Remove the item for good. */
+    dispose: () => void;
+  }
+
   /**
    * A colour of the theme by id, as `vscode.ThemeColor`: a registry token id
    * (`muted-foreground`, `primary`, ...) or one of this extension's own
@@ -766,6 +794,19 @@ declare module "omnigent" {
       alignment?: SessionHeaderItemAlignment,
       priority?: number,
     ): SessionHeaderItem;
+
+    /**
+     * Create a title bar item, as `createStatusBarItem`.
+     *
+     * @param id Identifier of the item, unique within the extension.
+     * @param region Defaults to `"right"`.
+     * @param priority Higher sits further left within the region.
+     */
+    export function createTitleBarItem(
+      id?: string,
+      region?: TitleBarRegion,
+      priority?: number,
+    ): TitleBarItem;
 
     /**
      * Give a view the extension contributes (`contributes.views`) its data. Its

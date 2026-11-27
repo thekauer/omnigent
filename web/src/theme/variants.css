@@ -415,6 +415,10 @@
   [data-omni-sheet="floating"] .app-shell:not([data-sidebar-open]) [data-slot="main-area"] {
     margin-left: var(--ui-sheet-gap);
   }
+  /* Under the title bar the sheet's top gap is the title bar's own. */
+  [data-omni-sheet="floating"] .app-shell[data-titlebar] [data-slot="main-area"] {
+    margin-top: var(--ui-sheet-gap-top-titlebar);
+  }
 }
 [data-omni-sheet="floating"]
   [data-slot="main-area"]:where([data-desktop-app], [data-desktop-app] *) {
@@ -432,4 +436,9 @@
   .app-shell:not([data-sidebar-open])
   [data-slot="main-area"]:where([data-desktop-app], [data-desktop-app] *) {
   margin-left: var(--ui-sheet-gap);
+}
+[data-omni-sheet="floating"]
+  .app-shell[data-titlebar]
+  [data-slot="main-area"]:where([data-desktop-app], [data-desktop-app] *) {
+  margin-top: var(--ui-sheet-gap-top-titlebar);
 }

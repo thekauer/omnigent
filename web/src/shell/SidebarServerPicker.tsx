@@ -112,9 +112,12 @@ function currentOriginPicker(): ServerPickerInfo {
 export function SidebarServerPicker({
   placement = "sidebar",
 }: {
-  placement?: "sidebar" | "activitybar";
+  placement?: "sidebar" | "activitybar" | "titlebar";
 } = {}) {
-  const inActivityBar = placement === "activitybar";
+  // The activity bar's and the title bar's are icon buttons: a column, or a row.
+  const inActivityBar = placement !== "sidebar";
+  const inTitleBar = placement === "titlebar";
+  const testIdPrefix = inTitleBar ? "titlebar" : "activitybar";
   const nativeServerPicker = supportsNativeServerPicker();
   const [info, setInfo] = useState<ServerPickerInfo | null>(() =>
     nativeServerPicker ? null : currentOriginPicker(),
@@ -203,11 +206,13 @@ export function SidebarServerPicker({
     // list above (flex-1) gives up space instead of squashing it.
     <div
       className={
-        inActivityBar
-          ? "flex shrink-0 flex-col items-center gap-1"
-          : "flex shrink-0 items-stretch gap-1 px-2 pt-1 pb-2 max-md:items-center max-md:pr-4 max-md:pb-4"
+        inTitleBar
+          ? "flex shrink-0 items-center gap-1"
+          : inActivityBar
+            ? "flex shrink-0 flex-col items-center gap-1"
+            : "flex shrink-0 items-stretch gap-1 px-2 pt-1 pb-2 max-md:items-center max-md:pr-4 max-md:pb-4"
       }
-      data-testid={inActivityBar ? "activitybar-global-items" : "sidebar-server-picker-row"}
+      data-testid={inActivityBar ? `${testIdPrefix}-global-items` : "sidebar-server-picker-row"}
     >
       <DropdownMenu
         onOpenChange={(open) => {
@@ -226,16 +231,18 @@ export function SidebarServerPicker({
             type="button"
             variant="ghost"
             className={cn(
-              inActivityBar
-                ? "size-10 justify-center rounded-(--radius-otto-button) border-0 p-0"
-                : "h-9 min-w-0 flex-1 justify-start gap-2 rounded-[var(--radius-otto-button)] border-0 px-2 py-1 max-md:h-auto max-md:gap-3",
+              inTitleBar
+                ? "size-8 justify-center rounded-(--radius-otto-button) border-0 p-0"
+                : inActivityBar
+                  ? "size-10 justify-center rounded-(--radius-otto-button) border-0 p-0"
+                  : "h-9 min-w-0 flex-1 justify-start gap-2 rounded-[var(--radius-otto-button)] border-0 px-2 py-1 max-md:h-auto max-md:gap-3",
               "text-muted-foreground",
               "hover:bg-muted hover:text-foreground dark:hover:bg-muted/50",
               "data-[state=open]:bg-muted data-[state=open]:text-foreground",
             )}
             aria-label={`${userName}. Server: ${currentDescription}. Open profile menu`}
             title={currentDescription}
-            data-testid={inActivityBar ? "activitybar-accounts" : "sidebar-server-picker"}
+            data-testid={inActivityBar ? `${testIdPrefix}-accounts` : "sidebar-server-picker"}
           >
             <Avatar className="size-7 after:hidden max-md:size-9">
               <AvatarFallback className="bg-secondary font-medium text-sm text-secondary-foreground">
@@ -265,7 +272,7 @@ export function SidebarServerPicker({
             a long host (the default menu is w-max) truncates in place instead of
             overflowing the viewport on a narrow phone. */}
         <DropdownMenuContent
-          side={inActivityBar ? "right" : "top"}
+          side={inTitleBar ? "bottom" : inActivityBar ? "right" : "top"}
           align={inActivityBar ? "end" : "start"}
           className="min-w-[var(--radix-dropdown-menu-trigger-width)] max-w-[min(20rem,calc(100vw-1rem))]"
         >
@@ -380,10 +387,10 @@ export function SidebarServerPicker({
         </DropdownMenuContent>
       </DropdownMenu>
       <SidebarSettingsButton
-        testId={inActivityBar ? "activitybar-manage" : "sidebar-profile-settings"}
+        testId={inActivityBar ? `${testIdPrefix}-manage` : "sidebar-profile-settings"}
         className={cn(
           "shrink-0 rounded-[var(--radius-otto-button)]",
-          inActivityBar ? "size-10" : "size-9",
+          inTitleBar ? "size-8" : inActivityBar ? "size-10" : "size-9",
         )}
         to={inSettings ? "/" : "/settings"}
         label={inSettings ? "Home" : "Settings"}

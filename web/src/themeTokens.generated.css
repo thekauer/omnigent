@@ -490,6 +490,7 @@
   --ui-bubble-radius: calc(var(--ui-radius-base) * 1.5);
   --ui-sheet-gap: calc(var(--spacing) * 2);
   --ui-sheet-gap-top: var(--ui-sheet-gap);
+  --ui-sheet-gap-top-titlebar: var(--ui-sheet-gap);
   --ui-sheet-radius: calc(var(--ui-radius-base) * 1.5);
   /* prettier-ignore */
   --ui-sheet-shadow: initial;
@@ -1465,6 +1466,7 @@
   --ui-bubble-radius: calc(var(--ui-radius-base) * 1.5);
   --ui-sheet-gap: calc(var(--spacing) * 2);
   --ui-sheet-gap-top: var(--ui-sheet-gap);
+  --ui-sheet-gap-top-titlebar: var(--ui-sheet-gap);
   --ui-sheet-radius: calc(var(--ui-radius-base) * 1.5);
   --ui-cta-font: var(--ui-font-mono);
   --ui-context-strip-radius: var(--ui-radius-sm);
@@ -1640,6 +1642,7 @@
   --ui-bubble-radius: calc(var(--ui-radius-base) * 1.5);
   --ui-sheet-gap: calc(var(--spacing) * 2);
   --ui-sheet-gap-top: var(--ui-sheet-gap);
+  --ui-sheet-gap-top-titlebar: var(--ui-sheet-gap);
   --ui-sheet-radius: calc(var(--ui-radius-base) * 1.5);
   --ui-cta-font: var(--ui-font-mono);
   --ui-context-strip-radius: var(--ui-radius-sm);

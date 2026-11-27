@@ -1,5 +1,9 @@
 // Builds the `omnigent` module an extension imports. One instance per extension,
 // like VS Code's per-extension `vscode` module, so every call is attributable.
+import {
+  type TitleBarItemRegistry,
+  titleBarItems as windowTitleBarItems,
+} from "@/workbench/titleBar";
 import type { ConfigurationContributions } from "@/configuration/configurationContributions";
 import type * as omnigent from "omnigent";
 import type { ThemeContributionSink } from "@/theme/themeService";
@@ -75,6 +79,8 @@ export const TreeItemCollapsibleState = Object.freeze({ None: 0, Collapsed: 1, E
 
 export interface HostServices {
   headerItems: SessionHeaderItemRegistry;
+  /** `window.createTitleBarItem`'s items; the window's when unset. */
+  titleBarItems?: TitleBarItemRegistry;
   sessions: SessionsService;
   commands: CommandRegistry;
   notifications: Notifications;
@@ -208,6 +214,32 @@ export function createExtensionApi(
     const item = services.headerItems.create(extensionId, id, alignment, itemPriority, (value) =>
       colors.cssColor(extensionId, value, "SessionHeaderItem.color"),
     );
+    const dispose = item.dispose;
+    item.dispose = () => {
+      resources.delete(item);
+      dispose();
+    };
+    return track(item);
+  }
+
+  function createTitleBarItem(
+    id?: string,
+    region?: omnigent.TitleBarRegion,
+    priority?: number,
+  ): omnigent.TitleBarItem {
+    const registry = services.titleBarItems ?? windowTitleBarItems;
+    const item = registry.create(
+      extensionId,
+      typeof id === "string" ? id : undefined,
+      region,
+      typeof priority === "number" ? priority : undefined,
+      (value) => colors.cssColor(extensionId, value, "TitleBarItem.color"),
+    );
+    if (disposed) {
+      refuse("createTitleBarItem");
+      item.dispose();
+      return item;
+    }
     const dispose = item.dispose;
     item.dispose = () => {
       resources.delete(item);
@@ -641,6 +673,7 @@ export function createExtensionApi(
       onDidChangeActiveColorTheme,
       getThemeToken: (id: string) => colors.getToken(extensionId, id),
       createSessionHeaderItem,
+      createTitleBarItem,
       createTreeView,
       createPlanView,
       createPullRequestView,

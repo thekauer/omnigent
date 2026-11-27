@@ -53,7 +53,7 @@ export const LAYOUT_TOKENS = defineTokens("layout", [
   {
     id: "ui-titlebar-height",
     kind: "length",
-    description: "Height of the title bar (reserved: the title bar is a later stage), 48px.",
+    description: "Height of the title bar (`window.titleBar.visible`), 48px.",
     default: { light: "48px" },
   },
 ]);

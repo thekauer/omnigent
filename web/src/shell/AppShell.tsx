@@ -214,6 +214,8 @@ import { extensionRailTabViewId, type RightRailTab } from "./railTabs";
 import { useRailViewIds } from "./railViews";
 import { ActivityBar } from "./ActivityBar";
 import { activityBarWidthPx, useActivityBarLocation } from "@/workbench/activityBar";
+import { TITLE_BAR_VISIBLE_SETTING, useTitleBarSetting } from "@/workbench/titleBar";
+import { TitleBar } from "./TitleBar";
 import { setShellNavigator } from "@/workbench/navigationCommands";
 import {
   otherSide,
@@ -553,6 +555,10 @@ function AppShellImpl() {
   // Below md an open sidebar is a full-window drawer, so narrowing closes it
   // (except the settings menu) and remembers the desktop state for widening.
   const mobileViewport = useIsMobileViewport();
+  // The title bar (`window.titleBar.visible`): never on phones, where its items fold away.
+  // The macOS desktop app's own title strip holds the traffic lights (layout plan L9).
+  const titleBarSetting = useTitleBarSetting();
+  const titleBarShown = titleBarSetting && !mobileViewport && !isMacElectronShell();
   // The tabs host sits in the Workspace drawer once a narrow window has mounted it.
   const tabsInDrawer = mobileViewport && tabsDrawerTarget !== null;
   const sideBySideSidebar = useIsSideBySideSidebarViewport();
@@ -3369,6 +3375,16 @@ function AppShellImpl() {
     toggle: toggleLeftSidebar,
   });
   useWorkbenchPart(Parts.MAIN_PART, { visible: true, setHidden: () => {} });
+  useWorkbenchPart(Parts.TITLEBAR_PART, {
+    visible: titleBarShown,
+    setHidden: (hidden) => {
+      try {
+        configurationService.update(TITLE_BAR_VISIBLE_SETTING, !hidden);
+      } catch (error) {
+        console.warn("[layout] the title bar's setting can't be written", error);
+      }
+    },
+  });
   // A grid route draws its own workspace, with its own toggle.
   useWorkbenchPart(
     Parts.AUXILIARYBAR_PART,
@@ -3490,6 +3506,7 @@ function AppShellImpl() {
           <div
             className={cn("app-shell relative flex h-dvh bg-sidebar text-foreground")}
             data-sidebar-location={sideBarLocation === "right" ? "right" : undefined}
+            data-titlebar={titleBarShown ? "true" : undefined}
             style={
               {
                 // The activity bar beside the side bar is part of the shell's left edge.
@@ -3507,6 +3524,7 @@ function AppShellImpl() {
             data-ios-native={isIOSShell() ? "true" : undefined}
             data-android-native={isAndroidShell() ? "true" : undefined}
           >
+            {titleBarShown && <TitleBar onOpenCommandCenter={handleOpenSearch} />}
             <TasksTabOnOpen
               conversationId={serverConversationId}
               skip={canvasMode || hasWorkspaceUrlSignal(searchParams)}

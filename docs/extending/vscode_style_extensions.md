@@ -1249,6 +1249,8 @@ Plain ESM with `// @ts-check`; no build step.
 | `Disposable`, `Disposable.from`                                      | same                                                          |                                                     |
 | `Event<T>`, `EventEmitter<T>`                                        | same                                                          | Errors reported against the extension               |
 | `window.createStatusBarItem(id?, alignment?, priority?)`             | `window.createSessionHeaderItem(id?, alignment?, priority?)`  | Header slot left of the agent info button           |
+| `window.createStatusBarItem` (text, tooltip, command, color)          | `window.createTitleBarItem(id?, region?, priority?)` (layout plan L7) | A text item in the title bar's `left`, `center` or `right` region (`right` by default); higher priority further left |
+| Title bar: `window.commandCenter`, `workbench.layoutControl.enabled` | same, plus `window.titleBar.visible` (off by default; VS Code's custom title bar is always there) and `contributes.menus["titleBar/left" \| "titleBar/center" \| "titleBar/right"]` (command buttons with `when`) | Brand, command center, layout controls and account are the built-in `omnigent.workbench` extension's entries; never on phones |
 | `StatusBarAlignment`                                                 | `SessionHeaderItemAlignment`                                  | `Right` sits next to the anchor                     |
 | `StatusBarItem.text`, `.tooltip`, `.show()`, `.hide()`, `.dispose()` | same                                                          | Plain text; no `$(icon)`, no `command`, no colors   |
 | `window.activeTextEditor`, `onDidChangeActiveTextEditor`             | `sessions.activeSession`, `onDidChangeActiveSession`          |                                                     |
@@ -1409,6 +1411,23 @@ Deviations and why:
   (the rail draws its containers' views as one strip). A product's `lockViewLocations` keeps
   every view where its extension put it: no moving, hiding or dragging, and the user's stored
   moves and hidden views don't apply while it holds.
+- The title bar (layout plan L7) is a part above the workbench (`[data-part="titlebar"]`,
+  height `ui-titlebar-height`), off unless `window.titleBar.visible` (an Omnigent key: VS Code's
+  custom title bar is always on), never on phones, and not yet in the macOS desktop app, whose
+  own title strip holds the traffic lights (layout plan L9). Its regions `left`, `center` and
+  `right` each draw the built-in items, then other extensions' `titleBar/*` menu entries
+  (command buttons with the command's icon, or its title without one, gated by `when`, ordered
+  by `group` as VS Code's menus are: `navigation` first, then `@order`; one per command and
+  region), then `window.createTitleBarItem` text items (their `priority` orders them among
+  themselves only; item ids are unique across the regions). The built-in items are the built-in
+  `omnigent.workbench` extension's `titleBar/*` entries, which name a host-drawn item
+  (`builtInItem`, built-ins only, as `builtInView`): the brand (the theme's logo and app
+  name) on the left, the command center (it opens ⌘K; `window.commandCenter`) in the middle,
+  the layout controls (`workbench.layoutControl.enabled`) and the account (profile and Settings)
+  on the right. With the floating sheet the main area's top gap under the bar is the
+  `ui-sheet-gap-top-titlebar` token. A product's own items that need React (a workspace
+  switcher) wait for the trusted tier's slots on the same region ids; on phones the bar's items
+  are to fold into the chat header's menu (layout plan L9).
 - `builtInView` has no VS Code equivalent: the sessions container's views are host
   React components (VS Code's own views are workbench code). The side bar's header
   row keeps its host-drawn search and collapse buttons; `viewContainer/title` entries

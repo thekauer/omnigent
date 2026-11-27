@@ -1,7 +1,7 @@
 {
   "name": "workbench",
   "displayName": "Workbench layout",
-  "description": "The workbench's layout settings: where the activity bar and the side bars sit, and when the secondary side bar shows.",
+  "description": "The workbench's layout settings: where the activity bar and the side bars sit, when the secondary side bar shows, and the title bar and its built-in items.",
   "publisher": "omnigent",
   "version": "1.0.0",
   "private": true,
@@ -75,6 +75,27 @@
           "scope": "window",
           "defaultOverridable": true,
           "description": "Hides the secondary side bar while the window is narrower than this many pixels (0: never), and shows it again when the window widens."
+        },
+        "window.titleBar.visible": {
+          "type": "boolean",
+          "default": false,
+          "scope": "window",
+          "defaultOverridable": true,
+          "description": "Shows the title bar above the workbench: the brand, the command center, the layout controls and the account, with the items extensions add (`titleBar/*` menus, `window.createTitleBarItem`). Not on phones."
+        },
+        "window.commandCenter": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "defaultOverridable": true,
+          "description": "Shows the command center (it opens the command palette) in the title bar's middle."
+        },
+        "workbench.layoutControl.enabled": {
+          "type": "boolean",
+          "default": true,
+          "scope": "window",
+          "defaultOverridable": true,
+          "description": "Shows the layout controls (toggle the primary and secondary side bars) in the title bar."
         }
       }
     },
@@ -101,6 +122,28 @@
         "command": "workbench.action.resetLayout",
         "title": "View: Reset Layout"
       }
-    ]
+    ],
+    "menus": {
+      "titleBar/left": [
+        {
+          "builtInItem": "brand"
+        }
+      ],
+      "titleBar/center": [
+        {
+          "builtInItem": "commandCenter",
+          "when": "config.window.commandCenter"
+        }
+      ],
+      "titleBar/right": [
+        {
+          "builtInItem": "layoutControls",
+          "when": "config.workbench.layoutControl.enabled"
+        },
+        {
+          "builtInItem": "account"
+        }
+      ]
+    }
   }
 }

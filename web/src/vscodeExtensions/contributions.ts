@@ -117,6 +117,36 @@ export interface MenuItemContribution {
   readonly tooltip?: string;
   /** Omnigent: draws the button in the warning color. */
   readonly tone?: "warning";
+  /** A built-in extension's title bar item the host draws itself (`TITLE_BAR_ITEM_KINDS`). */
+  readonly builtInItem?: TitleBarItemKind;
+}
+
+/** The title bar's menus, one per region (layout plan L7). */
+export const TITLE_BAR_MENUS = Object.freeze({
+  "titleBar/left": "left",
+  "titleBar/center": "center",
+  "titleBar/right": "right",
+} as const);
+
+export type TitleBarRegion = (typeof TITLE_BAR_MENUS)[keyof typeof TITLE_BAR_MENUS];
+
+/** The title bar items the host draws for built-in extensions' `builtInItem` entries. */
+export const TITLE_BAR_ITEM_KINDS = Object.freeze([
+  /** The theme's brand logo and the app's name. */
+  "brand",
+  /** VS Code's command center: opens the command palette. */
+  "commandCenter",
+  /** VS Code's layout controls: toggle the side bars. */
+  "layoutControls",
+  /** The profile (Accounts) and Settings (Manage). */
+  "account",
+] as const);
+
+export type TitleBarItemKind = (typeof TITLE_BAR_ITEM_KINDS)[number];
+
+/** A `titleBar/*` menu entry, with its region. */
+export interface TitleBarMenuItemContribution extends MenuItemContribution {
+  readonly region: TitleBarRegion;
 }
 
 export interface SubmenuContribution {
@@ -154,6 +184,8 @@ export interface ExtensionContributions {
   readonly viewContainerTitleMenu: readonly MenuItemContribution[];
   /** `contributes.menus["sidebar/navigation"]`: the side bar's navigation entries, in order. */
   readonly navigationMenu: readonly MenuItemContribution[];
+  /** `contributes.menus["titleBar/left" | "titleBar/center" | "titleBar/right"]`, in order. */
+  readonly titleBarMenu: readonly TitleBarMenuItemContribution[];
   readonly submenus: readonly SubmenuContribution[];
   readonly keybindings: readonly KeybindingContribution[];
   /** `contributes.themes`, `.colors` and `.fonts` (`theme/themeContributions.ts`). */
@@ -182,6 +214,7 @@ export const EMPTY_CONTRIBUTIONS: ExtensionContributions = Object.freeze({
   viewTitleMenu: [],
   viewContainerTitleMenu: [],
   navigationMenu: [],
+  titleBarMenu: [],
   submenus: [],
   keybindings: [],
   theming: EMPTY_THEME_CONTRIBUTIONS,
@@ -379,14 +412,28 @@ function menuItemOf(
   entry: unknown,
   where: string,
   warnings: string[],
+  builtInItems = false,
 ): MenuItemContribution | undefined {
   if (!isRecord(entry)) {
     warnings.push(`${where} must be an object`);
     return undefined;
   }
+  let builtInItem: TitleBarItemKind | undefined;
+  if (entry.builtInItem !== undefined) {
+    if (!builtInItems) {
+      warnings.push(
+        `${where}: "builtInItem" is for built-in extensions' title bar items; ignoring it`,
+      );
+    } else if (TITLE_BAR_ITEM_KINDS.includes(entry.builtInItem as TitleBarItemKind)) {
+      builtInItem = entry.builtInItem as TitleBarItemKind;
+    } else {
+      warnings.push(`${where}: unknown "builtInItem" ${JSON.stringify(entry.builtInItem)}`);
+      return undefined;
+    }
+  }
   const command = typeof entry.command === "string" ? entry.command : "";
   const submenu = typeof entry.submenu === "string" && entry.submenu !== "" ? entry.submenu : "";
-  if (command === "" && submenu === "") {
+  if (command === "" && submenu === "" && builtInItem === undefined) {
     warnings.push(`${where}: "command" must be a non-empty string`);
     return undefined;
   }
@@ -406,6 +453,7 @@ function menuItemOf(
       ? {}
       : { tooltip: textOf(entry.tooltip, MAX_TOOLTIP_LENGTH) }),
     ...(entry.tone === "warning" ? { tone: "warning" as const } : {}),
+    ...(builtInItem === undefined ? {} : { builtInItem }),
   };
 }
 
@@ -695,6 +743,7 @@ export function parseContributions(
   const viewTitleMenu: MenuItemContribution[] = [];
   const viewContainerTitleMenu: MenuItemContribution[] = [];
   const navigationMenu: MenuItemContribution[] = [];
+  const titleBarMenu: TitleBarMenuItemContribution[] = [];
   if (raw.menus !== undefined) {
     if (!isRecord(raw.menus)) {
       warnings.push('"contributes.menus" must be an object');
@@ -705,6 +754,7 @@ export function parseContributions(
           menu !== "view/title" &&
           menu !== "viewContainer/title" &&
           menu !== "sidebar/navigation" &&
+          !Object.hasOwn(TITLE_BAR_MENUS, menu) &&
           submenuIndex === -1
         ) {
           warnings.push(`contributes.menus: menu "${menu}" is not supported yet; ignoring it`);
@@ -716,7 +766,12 @@ export function parseContributions(
         }
         const items: MenuItemContribution[] = [];
         entries.slice(0, MAX_ENTRIES).forEach((entry: unknown, index) => {
-          const item = menuItemOf(entry, `contributes.menus["${menu}"][${index}]`, warnings);
+          const item = menuItemOf(
+            entry,
+            `contributes.menus["${menu}"][${index}]`,
+            warnings,
+            options.builtIn === true && Object.hasOwn(TITLE_BAR_MENUS, menu),
+          );
           if (!item) return;
           // The host draws these entries itself (the Open In menu, the filter's fields toggle).
           if (
@@ -750,6 +805,13 @@ export function parseContributions(
         else if (menu === "viewContainer/title") viewContainerTitleMenu.push(...items);
         else if (menu === "sidebar/navigation") {
           navigationMenu.push(...items.filter((item) => item.submenu === undefined));
+        } else if (Object.hasOwn(TITLE_BAR_MENUS, menu)) {
+          const region = TITLE_BAR_MENUS[menu as keyof typeof TITLE_BAR_MENUS];
+          titleBarMenu.push(
+            ...items
+              .filter((item) => item.submenu === undefined)
+              .map((item) => Object.freeze({ ...item, region })),
+          );
         } else submenus[submenuIndex] = { ...submenus[submenuIndex], items: Object.freeze(items) };
       }
     }
@@ -815,6 +877,7 @@ export function parseContributions(
       viewTitleMenu: Object.freeze(viewTitleMenu),
       viewContainerTitleMenu: Object.freeze(viewContainerTitleMenu),
       navigationMenu: Object.freeze(navigationMenu),
+      titleBarMenu: Object.freeze(titleBarMenu),
       submenus: Object.freeze(submenus),
     }),
     warnings,
