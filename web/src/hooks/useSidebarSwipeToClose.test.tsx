@@ -8,6 +8,7 @@ const HOLD_MS = 250;
 
 function Harness(props: {
   enabled?: boolean;
+  side?: "left" | "right";
   onDragProgress: (progress: number | null) => void;
   onSettle: (close: boolean) => void;
 }) {
@@ -20,6 +21,7 @@ function Harness(props: {
     holdMs: HOLD_MS,
     onDragProgress: props.onDragProgress,
     onSettle: props.onSettle,
+    side: props.side,
   });
   return (
     <>
@@ -35,11 +37,11 @@ function Harness(props: {
   );
 }
 
-function setup(enabled = true) {
+function setup(enabled = true, side?: "left" | "right") {
   const onDragProgress = vi.fn();
   const onSettle = vi.fn();
   const view = render(
-    <Harness enabled={enabled} onDragProgress={onDragProgress} onSettle={onSettle} />,
+    <Harness enabled={enabled} side={side} onDragProgress={onDragProgress} onSettle={onSettle} />,
   );
   const drawer = view.getByTestId("drawer");
   drawer.getBoundingClientRect = () => ({ width: DRAWER_WIDTH }) as DOMRect;
@@ -305,5 +307,18 @@ describe("useSidebarSwipeToClose", () => {
 
     expect(onDragProgress).toHaveBeenLastCalledWith(null);
     expect(onSettle).toHaveBeenCalledExactlyOnceWith(true);
+  });
+
+  it("mirrors with the drawer on the right: a rightward swipe closes, a leftward one doesn't", () => {
+    const { getByTestId, onDragProgress, onSettle } = setup(true, "right");
+    const row = getByTestId("row");
+
+    swipe(row, { x: 100, dx: -150, steps: 5, stepMs: 40 });
+    expect(onDragProgress).not.toHaveBeenCalled();
+    expect(onSettle).not.toHaveBeenCalled();
+
+    swipe(row, { x: 100, dx: 150, steps: 5, stepMs: 40 });
+    expect(onDragProgress).toHaveBeenCalledWith(0.5);
+    expect(onSettle).toHaveBeenLastCalledWith(true);
   });
 });

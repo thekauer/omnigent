@@ -1153,10 +1153,12 @@ function SidebarImpl({
   // A wide phone (unfolded foldable, landscape) docks the open sidebar beside
   // the chat instead of over it.
   const sideBySide = useIsSideBySideSidebarViewport();
-  // The swipes assume a drawer on the left: off with the side bar on the right (layout plan L9).
-  const closeSwipeEnabled = open && mobileLayout && dragProgress == null && !onRight;
-  const openSwipeEnabled = !open && !peek && mobileLayout && dragProgress == null && !onRight;
+  // The swipes mirror with the side bar on the right: it opens leftward, closes rightward.
+  const closeSwipeEnabled = open && mobileLayout && dragProgress == null;
+  const openSwipeEnabled = !open && !peek && mobileLayout && dragProgress == null;
+  const swipeSide = onRight ? "right" : "left";
   useSidebarSwipeToOpen({
+    side: swipeSide,
     enabled: openSwipeEnabled,
     drawerRef,
     surfaceSelector: ".app-shell",
@@ -1167,6 +1169,7 @@ function SidebarImpl({
     },
   });
   useSidebarSwipeToClose({
+    side: swipeSide,
     enabled: closeSwipeEnabled,
     drawerRef,
     scrimRef,
@@ -1516,9 +1519,13 @@ function SidebarImpl({
             "--sidebar-width": `${sidebarWidth}px`,
             ...(keyboardInset > 0 ? { paddingBottom: keyboardInset } : null),
             // Track the finger: map the 0→1 open fraction to translateX
-            // -100%→0% and kill the transition so it follows the drag exactly.
+            // -100%→0% (100%→0% on the right) and kill the transition so it follows
+            // the drag exactly.
             ...(dragging
-              ? { transform: `translateX(${(liveDragProgress - 1) * 100}%)`, transition: "none" }
+              ? {
+                  transform: `translateX(${(onRight ? 1 - liveDragProgress : liveDragProgress - 1) * 100}%)`,
+                  transition: "none",
+                }
               : null),
           } as CSSProperties
         }

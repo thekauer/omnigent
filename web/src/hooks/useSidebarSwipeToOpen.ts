@@ -1,4 +1,5 @@
-// A rightward swipe across the chat slides the closed mobile drawer open under
+// A swipe across the chat toward the drawer's far side (rightward for a drawer on
+// the left, leftward on the right) slides the closed mobile drawer open under
 // the finger — the mirror of useSidebarSwipeToClose. Unlike the iOS shell's
 // native gesture it starts anywhere on the page rather than at the screen edge:
 // on Android 10+ (and in mobile Safari) the OS back gesture owns the edges.
@@ -16,7 +17,7 @@ import {
   type TouchSample,
 } from "./useSidebarSwipeToClose";
 
-// Touches this close to the left screen edge belong to the OS / shell back or
+// Touches this close to the drawer's screen edge belong to the OS / shell back or
 // edge-swipe gesture, so this gesture never competes with it.
 export const EDGE_EXCLUSION_PX = 24;
 // Text inputs and terminals handle their own horizontal touch (caret moves,
@@ -57,6 +58,8 @@ export interface SidebarSwipeToOpenOptions {
   onDragProgress: (progress: number | null) => void;
   /** Release decision: `true` opens the drawer, `false` slides it back shut. */
   onSettle: (open: boolean) => void;
+  /** The drawer's side (`workbench.sideBar.location`): the swipe opens away from it. */
+  side?: "left" | "right";
 }
 
 /** Attach the swipe-right-to-open gesture to a closed sidebar drawer. */
@@ -67,6 +70,7 @@ export function useSidebarSwipeToOpen({
   holdMs,
   onDragProgress,
   onSettle,
+  side = "left",
 }: SidebarSwipeToOpenOptions): void {
   // Read callbacks through a ref so per-frame re-renders (each progress update
   // sets state) don't re-subscribe the listeners and drop the gesture mid-drag.
@@ -77,6 +81,7 @@ export function useSidebarSwipeToOpen({
 
   useEffect(() => {
     if (!enabled) return;
+    const direction = side === "left" ? 1 : -1;
 
     let tracking = false;
     let dragging = false;
@@ -103,7 +108,8 @@ export function useSidebarSwipeToOpen({
       const target = event.target instanceof Element ? event.target : null;
       if (!drawer || !surface || !target) return;
       const touch = event.touches[0];
-      if (touch.clientX < EDGE_EXCLUSION_PX || ignoresTouch(target, surface)) return;
+      const fromEdge = side === "left" ? touch.clientX : window.innerWidth - touch.clientX;
+      if (fromEdge < EDGE_EXCLUSION_PX || ignoresTouch(target, surface)) return;
       tracking = true;
       startX = touch.clientX;
       startY = touch.clientY;
@@ -120,13 +126,14 @@ export function useSidebarSwipeToOpen({
         return;
       }
       const touch = event.touches[0];
-      const dx = touch.clientX - startX;
+      // Travel toward opening: rightward for a drawer on the left, leftward on the right.
+      const dx = (touch.clientX - startX) * direction;
       const dy = touch.clientY - startY;
       recordTouchSample(samples, touch.clientX, event.timeStamp);
       if (!dragging) {
         if (Math.abs(dx) < DECIDE_SLOP_PX && Math.abs(dy) < DECIDE_SLOP_PX) return;
-        // Vertical scrolls, leftward swipes, and hold-then-drag belong to the
-        // transcript, the page, and long-press gestures respectively.
+        // Vertical scrolls, swipes toward the drawer's side, and hold-then-drag
+        // belong to the transcript, the page, and long-press gestures respectively.
         if (Math.abs(dy) >= Math.abs(dx) || dx < 0 || event.timeStamp - startTime >= holdMs) {
           tracking = false;
           return;
@@ -144,7 +151,7 @@ export function useSidebarSwipeToOpen({
         const flicking =
           event !== null &&
           event.timeStamp - lastMoveTime <= FLICK_MAX_IDLE_MS &&
-          windowVelocity(samples) >= SWIPE_FLICK_VELOCITY;
+          windowVelocity(samples) * direction >= SWIPE_FLICK_VELOCITY;
         const open = flicking || progress >= SWIPE_SETTLE_FRACTION;
         // A completed drag must not also activate whatever is under the finger.
         if (event?.cancelable) event.preventDefault();
@@ -168,5 +175,5 @@ export function useSidebarSwipeToOpen({
       document.removeEventListener("touchcancel", onTouchCancel);
       if (dragging) callbacks.current.onDragProgress(null);
     };
-  }, [enabled, drawerRef, surfaceSelector, holdMs]);
+  }, [enabled, drawerRef, surfaceSelector, holdMs, side]);
 }

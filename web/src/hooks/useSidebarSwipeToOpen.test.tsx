@@ -8,6 +8,7 @@ const HOLD_MS = 250;
 
 function Harness(props: {
   enabled?: boolean;
+  side?: "left" | "right";
   onDragProgress: (progress: number | null) => void;
   onSettle: (open: boolean) => void;
 }) {
@@ -19,6 +20,7 @@ function Harness(props: {
     holdMs: HOLD_MS,
     onDragProgress: props.onDragProgress,
     onSettle: props.onSettle,
+    side: props.side,
   });
   return (
     <>
@@ -40,11 +42,11 @@ function Harness(props: {
   );
 }
 
-function setup(enabled = true) {
+function setup(enabled = true, side?: "left" | "right") {
   const onDragProgress = vi.fn();
   const onSettle = vi.fn();
   const view = render(
-    <Harness enabled={enabled} onDragProgress={onDragProgress} onSettle={onSettle} />,
+    <Harness enabled={enabled} side={side} onDragProgress={onDragProgress} onSettle={onSettle} />,
   );
   view.getByTestId("drawer").getBoundingClientRect = () => ({ width: DRAWER_WIDTH }) as DOMRect;
   const scroller = view.getByTestId("scroller");
@@ -188,5 +190,30 @@ describe("useSidebarSwipeToOpen", () => {
     touch(chat, "touchend", 0, 0, 300);
 
     expect(onSettle).toHaveBeenCalledTimes(1);
+  });
+
+  it("mirrors with the drawer on the right: a leftward swipe opens, away from the right edge", () => {
+    const { getByTestId, onDragProgress, onSettle } = setup(true, "right");
+    const chat = getByTestId("chat");
+    const right = window.innerWidth;
+
+    // A rightward swipe moves away from opening.
+    swipe(chat, { x: right - 200, dx: 150, steps: 5, stepMs: 40 });
+    expect(onDragProgress).not.toHaveBeenCalled();
+    expect(onSettle).not.toHaveBeenCalled();
+
+    // From the right edge's OS gesture zone: left alone.
+    swipe(chat, { x: right - EDGE_EXCLUSION_PX / 2, dx: -200, steps: 5, stepMs: 40 });
+    expect(onSettle).not.toHaveBeenCalled();
+
+    // A slow leftward drag past a third of the drawer opens it, tracking the finger.
+    swipe(chat, { x: right - 60, dx: -150, steps: 5, stepMs: 40 });
+    expect(onDragProgress).toHaveBeenCalledWith(0.5);
+    expect(onSettle).toHaveBeenLastCalledWith(true);
+
+    // From the left edge (no OS zone on the drawer's far side) a leftward swipe still counts.
+    onSettle.mockClear();
+    swipe(chat, { x: 200, dx: -150, steps: 5, stepMs: 40 });
+    expect(onSettle).toHaveBeenLastCalledWith(true);
   });
 });

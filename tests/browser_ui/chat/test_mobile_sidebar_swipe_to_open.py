@@ -8,6 +8,8 @@ chat instead of over it.
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from playwright.sync_api import CDPSession, Page, expect
 
@@ -43,17 +45,21 @@ def _drawer_box(page: Page) -> dict[str, float]:
     )
 
 
-def _expect_drawer_open(page: Page) -> None:
+def _expect_drawer_open(page: Page, *, side: str = "left") -> None:
     expect(page.locator(_DRAWER)).not_to_have_attribute("data-collapsed", "true")
+    on_screen = "r.x > -1" if side == "left" else "r.right < window.innerWidth + 1"
     page.wait_for_function(
-        f"() => document.querySelector('{_DRAWER}').getBoundingClientRect().x > -1"
+        f"() => {{ const r = document.querySelector('{_DRAWER}').getBoundingClientRect();"
+        f" return {on_screen}; }}"
     )
 
 
-def _expect_drawer_closed(page: Page) -> None:
+def _expect_drawer_closed(page: Page, *, side: str = "left") -> None:
     expect(page.locator(_DRAWER)).to_have_attribute("data-collapsed", "true")
+    off_screen = "r.right < 1" if side == "left" else "r.left > window.innerWidth - 1"
     page.wait_for_function(
-        f"() => document.querySelector('{_DRAWER}').getBoundingClientRect().right < 1"
+        f"() => {{ const r = document.querySelector('{_DRAWER}').getBoundingClientRect();"
+        f" return {off_screen}; }}"
     )
 
 
@@ -153,3 +159,29 @@ def test_wide_phone_docks_sidebar_beside_chat(page: Page, chat_session_contract)
 
     page.locator(_DRAWER).get_by_role("button", name="Close sidebar").tap()
     _expect_drawer_closed(page)
+
+
+def test_sidebar_on_the_right_mirrors_the_swipes(page: Page, chat_session_contract) -> None:
+    """CUJ-4: with ``workbench.sideBar.location: right`` a left swipe opens, a right one closes."""
+    chat = chat_session_contract
+    settings = {"workbench.sideBar.location": "right"}
+    document = {"version": 1, "text": json.dumps(settings), "values": settings}
+    page.add_init_script(
+        f"localStorage.setItem('omnigent:ui-settings', {json.dumps(json.dumps(document))})"
+    )
+    cdp = _open_app(page, chat)
+    _expect_drawer_closed(page, side="right")
+
+    # The right edge belongs to the OS gesture: a swipe from it leaves the drawer shut.
+    box = _drag(cdp, page, x=390 - 8, y=420, dx=-260, steps=16, step_ms=30)
+    assert box["left"] > 389, f"an edge swipe moved the drawer: {box}"
+    _expect_drawer_closed(page, side="right")
+
+    box = _drag(cdp, page, x=310, y=420, dx=-200, steps=16, step_ms=30)
+    # Its left edge follows the finger.
+    assert abs(box["left"] - (390 - 200)) < 30, f"the drawer did not track the finger: {box}"
+    _expect_drawer_open(page, side="right")
+    assert page.url == chat.url
+
+    _drag(cdp, page, x=80, y=500, dx=240, steps=16, step_ms=30)
+    _expect_drawer_closed(page, side="right")

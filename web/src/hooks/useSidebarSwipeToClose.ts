@@ -1,5 +1,5 @@
-// A leftward swipe on the open mobile drawer (or the scrim beside it) slides it
-// shut, reporting the same progress → settle contract as the native open swipe.
+// A swipe toward the drawer's side (leftward for a drawer on the left, rightward
+// on the right) on the open mobile drawer (or the scrim beside it) slides it shut, reporting the same progress → settle contract as the native open swipe.
 
 import { useEffect, useLayoutEffect, useRef, type RefObject } from "react";
 
@@ -79,6 +79,8 @@ export interface SidebarSwipeToCloseOptions {
   onDragProgress: (progress: number | null) => void;
   /** Release decision: `true` closes the drawer, `false` springs it back open. */
   onSettle: (close: boolean) => void;
+  /** The drawer's side (`workbench.sideBar.location`): the swipe closes toward it. */
+  side?: "left" | "right";
 }
 
 /** Attach the swipe-left-to-close gesture to an open sidebar drawer. */
@@ -89,6 +91,7 @@ export function useSidebarSwipeToClose({
   holdMs,
   onDragProgress,
   onSettle,
+  side = "left",
 }: SidebarSwipeToCloseOptions): void {
   // Read callbacks through a ref so per-frame re-renders (each progress update
   // sets state) don't re-subscribe the listeners and drop the gesture mid-drag.
@@ -99,6 +102,8 @@ export function useSidebarSwipeToClose({
 
   useEffect(() => {
     if (!enabled) return;
+    // Travel toward closing is negative: leftward on the left, rightward on the right.
+    const direction = side === "left" ? 1 : -1;
 
     let tracking = false;
     let dragging = false;
@@ -144,7 +149,7 @@ export function useSidebarSwipeToClose({
         return;
       }
       const touch = event.touches[0];
-      const dx = touch.clientX - startX;
+      const dx = (touch.clientX - startX) * direction;
       const dy = touch.clientY - startY;
       recordSample(touch.clientX, event.timeStamp);
       if (!dragging) {
@@ -168,7 +173,7 @@ export function useSidebarSwipeToClose({
         const flicking =
           event !== null &&
           event.timeStamp - lastMoveTime <= FLICK_MAX_IDLE_MS &&
-          windowVelocity(samples) <= -SWIPE_FLICK_VELOCITY;
+          windowVelocity(samples) * direction <= -SWIPE_FLICK_VELOCITY;
         const close = flicking || progress <= 1 - SWIPE_SETTLE_FRACTION;
         // A completed drag must not also activate the row under the finger.
         if (event?.cancelable) event.preventDefault();
@@ -192,5 +197,5 @@ export function useSidebarSwipeToClose({
       document.removeEventListener("touchcancel", onTouchCancel);
       if (dragging) callbacks.current.onDragProgress(null);
     };
-  }, [enabled, drawerRef, scrimRef, holdMs]);
+  }, [enabled, drawerRef, scrimRef, holdMs, side]);
 }
