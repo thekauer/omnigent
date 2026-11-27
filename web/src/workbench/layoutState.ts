@@ -38,6 +38,22 @@ export const LAYOUT_SLOTS = Object.freeze({
   viewLocations: "workbench.views.locations",
 });
 
+/**
+ * The slots View: Reset Layout clears: the parts, sizes, containers, views and navigation the
+ * user moved, hid or toggled. The conversation list's own preferences (its view, order and
+ * folded sections) are the list's, not the layout's, and stay.
+ */
+export const RESETTABLE_LAYOUT_SLOTS: readonly string[] = Object.freeze([
+  LAYOUT_SLOTS.sidebar,
+  LAYOUT_SLOTS.activeViewContainer,
+  LAYOUT_SLOTS.auxiliaryBarLastVisibility,
+  LAYOUT_SLOTS.activityBar,
+  LAYOUT_SLOTS.panelSizes,
+  LAYOUT_SLOTS.hiddenNavigationEntries,
+  LAYOUT_SLOTS.views,
+  LAYOUT_SLOTS.viewLocations,
+]);
+
 /** The keys each slot was stored under before the layout state document. */
 export const LEGACY_LAYOUT_STORAGE_KEYS: Readonly<Record<string, string>> = Object.freeze({
   "omnigent:panel-size-preferences": LAYOUT_SLOTS.panelSizes,
@@ -217,15 +233,7 @@ export class LayoutStateStore {
     if (value === undefined && !Object.hasOwn(current, slot)) return;
     const next = Object.fromEntries(Object.entries(current).filter(([key]) => key !== slot));
     if (value !== undefined) next[slot] = value;
-    const values = Object.freeze(next);
-    if (this.persist(values)) {
-      this.unsaved = null;
-      this.cache = { stored: this.storedTexts(), values };
-    } else {
-      if (this.unsaved === null) this.warnUnsaved();
-      this.unsaved = values;
-    }
-    this.fire({ slots: [slot] });
+    this.write(next, [slot]);
   }
 
   private warnedUnsaved = false;
@@ -240,7 +248,42 @@ export class LayoutStateStore {
     });
   }
 
-  /** Removes every slot (View: Reset Layout). */
+  /**
+   * Removes `slots` in one write (View: Reset Layout's), returning what they held, for an
+   * undo; listeners hear those slots.
+   */
+  resetSlots(slots: readonly string[]): Record<string, unknown> {
+    const removed: Record<string, unknown> = {};
+    if (typeof window === "undefined") return removed;
+    const current = this.values();
+    for (const slot of slots) if (Object.hasOwn(current, slot)) removed[slot] = current[slot];
+    if (Object.keys(removed).length === 0) return removed;
+    this.write(
+      Object.fromEntries(Object.entries(current).filter(([slot]) => !slots.includes(slot))),
+      slots,
+    );
+    return removed;
+  }
+
+  /** Puts `values` back into their slots (an undone reset), keeping the others. */
+  restoreSlots(values: Readonly<Record<string, unknown>>): void {
+    if (typeof window === "undefined" || Object.keys(values).length === 0) return;
+    this.write({ ...this.values(), ...values }, Object.keys(values));
+  }
+
+  private write(next: Record<string, unknown>, slots: readonly string[]): void {
+    const values = Object.freeze(next);
+    if (this.persist(values)) {
+      this.unsaved = null;
+      this.cache = { stored: this.storedTexts(), values };
+    } else {
+      if (this.unsaved === null) this.warnUnsaved();
+      this.unsaved = values;
+    }
+    this.fire({ slots: [...slots] });
+  }
+
+  /** Removes every slot. */
   reset(): void {
     if (typeof window === "undefined") return;
     this.unsaved = null;

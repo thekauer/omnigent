@@ -71,10 +71,15 @@ export function escapeMarkdown(text: string): string {
     .replace(/^(\s*)([#>+-]|\d+\.)/gm, "$1\\$2");
 }
 
-/** Markdown with images (which would load remote URLs) and raw HTML tags left out. */
+/**
+ * Markdown with no images (which would load remote URLs) and no raw HTML: the bracket of every
+ * `![` is escaped, so no image of any form (inline, nested brackets, reference) starts; reference
+ * definitions, which only images and links read, are dropped; tags are left out.
+ */
 export function sanitizeMarkdown(markdown: string): string {
   return markdown
-    .replace(/!\[([^\]]*)\](?:\([^)]*\)|\[[^\]]*\])/g, "$1")
+    .replace(/^ {0,3}\[(?:[^\]\\]|\\.)+\]:.*(?:\n|$)/gm, "")
+    .replace(/!\[/g, "!\\[")
     .replace(/<\/?[A-Za-z][^>]*>/g, "");
 }
 

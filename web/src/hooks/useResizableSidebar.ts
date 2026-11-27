@@ -17,7 +17,8 @@ import {
   readLengthToken,
   subscribeLayoutTokens,
 } from "@/workbench/layoutTokens";
-import { layoutState } from "@/workbench/layoutState";
+import { LAYOUT_SLOTS, layoutState } from "@/workbench/layoutState";
+import { isDesktopLayout } from "@/hooks/useIsMobileViewport";
 
 // Default 320px (20rem) — wider than the old fixed ``md:w-64`` (256px) sidebar
 // so conversation titles have more room before truncating. The floor keeps the
@@ -34,6 +35,27 @@ function defaultWidth(): number {
   return readLengthToken(LayoutTokens.sidebarWidth, () => DEFAULT_WIDTH_PX);
 }
 
+/** The narrowest the chat stays beside the side bar, whatever the width tokens say. */
+export const MIN_CHAT_WIDTH_PX = 360;
+
+/**
+ * `w` within the tokens' floor and ceiling, and never so wide that the chat (and the activity
+ * bar beside the side bar) has less than {@link MIN_CHAT_WIDTH_PX}; the floor never exceeds
+ * the ceiling, so absurd tokens can't hide the chat.
+ */
+export function clampSidebarWidth(
+  w: number,
+  floorToken: number,
+  ceilingToken: number,
+  windowWidth: number,
+  besideWidth = 0,
+): number {
+  const room = Math.max(0, windowWidth - besideWidth - MIN_CHAT_WIDTH_PX);
+  const ceiling = Math.max(0, Math.min(ceilingToken, room));
+  const floor = Math.min(Math.max(0, floorToken), ceiling);
+  return Math.max(floor, Math.min(w, ceiling));
+}
+
 function clamp(w: number): number {
   // No viewport available off the DOM (SSR / node test env) — this runs during
   // render, so guard before reading ``window`` to avoid a hard throw.
@@ -43,7 +65,18 @@ function clamp(w: number): number {
     LayoutTokens.sidebarMaxWidth,
     () => window.innerWidth * MAX_WIDTH_RATIO,
   );
-  return Math.max(floor, Math.min(w, ceiling));
+  // A phone's drawer goes over the chat: only beside it does the chat need its room.
+  if (!isDesktopLayout()) return Math.max(floor, Math.min(w, ceiling));
+  return clampSidebarWidth(w, floor, ceiling, window.innerWidth, activityBarBeside());
+}
+
+/** The activity bar's width when it sits beside the side bar (it shares the window). */
+function activityBarBeside(): number {
+  if (typeof document === "undefined") return 0;
+  const bar = document.querySelector<HTMLElement>(
+    '[data-part="activitybar"][data-location="default"]',
+  );
+  return bar ? bar.getBoundingClientRect().width : 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -87,7 +120,7 @@ export function resetSidebarWidth(): void {
 
 // View: Reset Layout clears the layout state: the dragged width goes with it.
 layoutState.subscribe((change) => {
-  if (change.slots !== undefined) return;
+  if (change.slots !== undefined && !change.slots.includes(LAYOUT_SLOTS.panelSizes)) return;
   preferredWidth = readPanelSizePreference("sidebarWidthPx");
   setStoredWidthRaw(preferredWidth);
 });
@@ -127,6 +160,9 @@ export function useResizableSidebar(side: "left" | "right" = "left") {
   sideRef.current = side;
   const width = clamp(raw ?? defaultWidth());
   const dragging = useRef(false);
+  // The side bar's outer edge when the drag began (its left edge on the left, its right edge
+  // on the right): the width is the cursor's distance from it, whatever sits beside it.
+  const anchor = useRef(0);
   // Mirrors `dragging` for rendering, so the open/close width animation can
   // stay off while the user drags the edge.
   const [resizing, setResizing] = useState(false);
@@ -144,6 +180,15 @@ export function useResizableSidebar(side: "left" | "right" = "left") {
 
   const onMouseDown = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
+    const aside = (e.currentTarget as HTMLElement | null)?.closest?.("aside");
+    const box = aside?.getBoundingClientRect();
+    anchor.current = box
+      ? sideRef.current === "left"
+        ? box.left
+        : box.right
+      : sideRef.current === "left"
+        ? 0
+        : window.innerWidth;
     dragging.current = true;
     setResizing(true);
     document.body.style.cursor = "col-resize";
@@ -173,7 +218,9 @@ export function useResizableSidebar(side: "left" | "right" = "left") {
       // Left panel: width is the cursor's distance from the viewport's left
       // edge. Update the live width only; persist once on release to avoid a
       // synchronous localStorage write per mousemove.
-      setStoredWidth(clamp(sideRef.current === "left" ? e.clientX : window.innerWidth - e.clientX));
+      setStoredWidth(
+        clamp(sideRef.current === "left" ? e.clientX - anchor.current : anchor.current - e.clientX),
+      );
     }
 
     function onMouseUp() {

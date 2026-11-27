@@ -35,7 +35,6 @@ import { DEFAULT_RAIL_VIEW_ICON, railViewIcon } from "./railViewIcons";
 import { TAB_BADGE_BASE } from "./railTabs";
 import type { RailView, RailViewContribution } from "./railViews";
 import { SidebarServerPicker } from "./SidebarServerPicker";
-import { SIDEBAR_ELEMENT_ID } from "./sidebarStyles";
 import { useActiveViewContainer, usePartVisible, useWorkbenchPart } from "./useWorkbenchParts";
 import { useSideBarContainers } from "./ViewContainerViews";
 import { useViewDropTarget } from "./viewMoves";
@@ -79,9 +78,10 @@ export function ActivityBar({ location }: { location: Exclude<ActivityBarLocatio
     (items.find((item) => item.getAttribute("aria-selected") === "true") ?? items[0])?.focus();
   }, []);
   // The bar beside the side bar is the activity bar part; the rows inside it are its placement.
+  // At `top` and `bottom` it is in the side bar: on screen only while the side bar is.
   useWorkbenchPart(
     Parts.ACTIVITYBAR_PART,
-    { visible: true, setHidden: () => {}, focus: focusActive },
+    { visible: vertical || sideBarOpen, setHidden: () => {}, focus: focusActive },
     true,
   );
   const [dragged, setDragged] = useState<string | null>(null);
@@ -211,7 +211,11 @@ function ActivityBarItem({
 }) {
   const { container, views } = entry;
   const Icon = railViewIcon(container.icon) ?? DEFAULT_RAIL_VIEW_ICON;
-  const badge = useContainerBadge(views);
+  // A built-in container's badge counts its own views only: another extension's view stacked
+  // in it can't make the host's container claim its count.
+  const badge = useContainerBadge(
+    container.builtIn ? views.filter((view) => view.extensionId === container.extensionId) : views,
+  );
   const [dropTarget, setDropTarget] = useState(false);
   // A view dropped on the item moves into its container.
   const containerId = container.id;
@@ -226,7 +230,6 @@ function ActivityBarItem({
           type="button"
           role="tab"
           aria-selected={selected}
-          aria-controls={SIDEBAR_ELEMENT_ID}
           aria-label={label}
           tabIndex={selected ? 0 : -1}
           draggable
@@ -281,7 +284,7 @@ function ActivityBarItem({
                 "absolute top-0.5 right-0.5 bg-primary text-[0.625rem] font-medium text-primary-foreground",
               )}
             >
-              {badge.label ?? badge.value}
+              {badge.label ?? badgeText(badge.value)}
             </span>
           )}
         </button>
@@ -289,6 +292,11 @@ function ActivityBarItem({
       <TooltipContent side={vertical ? "right" : "bottom"}>{container.title}</TooltipContent>
     </Tooltip>
   );
+}
+
+/** A badge's count as drawn: up to 99, then `99+`. */
+export function badgeText(value: number): string {
+  return value > 99 ? "99+" : String(value);
 }
 
 /** The container's badge: its tree views' badges summed, with its built-in views' own. */

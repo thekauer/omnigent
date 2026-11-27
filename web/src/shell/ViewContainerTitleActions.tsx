@@ -14,9 +14,11 @@ export function ViewContainerTitleActions({
   className?: string;
 }) {
   const { titleActions } = useViewContainers();
-  const actions = (titleActions.get(containerId) ?? []).filter(
-    (action) => action.group === "navigation",
-  );
+  // The header row has room for icon buttons only: an action without an icon draws the
+  // generic one, its title its tooltip and name, never text over the host's buttons.
+  const actions = (titleActions.get(containerId) ?? [])
+    .filter((action) => action.group === "navigation")
+    .map((action) => (action.icon === undefined ? { ...action, icon: "puzzle" } : action));
   if (actions.length === 0) return null;
   return (
     <div

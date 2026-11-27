@@ -728,6 +728,10 @@ function AppShellImpl() {
   );
   // Set while `autoHideBelow` closed the rail; a toggle of the user's own clears it.
   const autoHiddenRef = useRef(false);
+  const autoHideBelow = useSecondarySideBarAutoHideBelow();
+  const narrowerThanAutoHide = useNarrowerThan(autoHideBelow);
+  // What the last session switch's restore auto-hid (applied to the ref after the render).
+  const [restoredAutoHidden, setRestoredAutoHidden] = useState(false);
   const workspaceTabListRef = useRef<HTMLDivElement>(null);
   const focusWorkspaceTabsOnOpenRef = useRef(false);
   const rightPanelOpenRef = useRef(rightPanelOpen);
@@ -1611,7 +1615,11 @@ function AppShellImpl() {
 
       // ?file= / ?comment= deep links reveal the rail even if this session left
       // it closed, so the linked target isn't rendered into a collapsed panel.
-      setRightPanelOpen(restoredRailOpen(conversationId, canvasMode, searchParams));
+      // While the window is narrower than `autoHideBelow`, a session that would open the rail
+      // starts with it auto-hidden, to reopen when the window widens.
+      const restoredOpen = restoredRailOpen(conversationId, canvasMode, searchParams);
+      setRightPanelOpen(restoredOpen && !narrowerThanAutoHide);
+      setRestoredAutoHidden(restoredOpen && narrowerThanAutoHide);
     }
   }
   if (previousRootSessionId !== rootSessionId) setPreviousRootSessionId(rootSessionId);
@@ -1623,6 +1631,8 @@ function AppShellImpl() {
     pendingShellCreateRef.current = null;
     autoFocusTerminalRef.current = null;
     stateConvRef.current = conversationId ?? null;
+    // A new session's rail is auto-hidden only if the restore just did it.
+    autoHiddenRef.current = restoredAutoHidden;
     cancelRightPanelVisibilityMotion();
     if (restoredWorkspace?.exitedMaximized) restoreSidebarAfterMaximize();
   }, [restoredWorkspace]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -3325,8 +3335,6 @@ function AppShellImpl() {
   );
   // `omnigent.secondarySideBar.autoHideBelow`: narrowing past it closes the rail for the window
   // (the session keeps its own state), widening back reopens what it closed.
-  const autoHideBelow = useSecondarySideBarAutoHideBelow();
-  const narrowerThanAutoHide = useNarrowerThan(autoHideBelow);
   const lastNarrowerRef = useRef<boolean | null>(null);
   useLayoutEffect(() => {
     const previous = lastNarrowerRef.current;
@@ -3412,6 +3420,34 @@ function AppShellImpl() {
     focusWorkspaceTabs();
   }, [workspacePanelVisible, focusWorkspaceTabs]);
 
+  // The activity bar (`workbench.activityBar.location`: default) beside the side bar. With the
+  // side bar on the right they follow the chat in the document too, so Tab goes in screen order.
+  const activityBarBeside = activityBarLocation === "default" && !mobileViewport && (
+    <ActivityBar location="default" />
+  );
+  const sideBarElement = (
+    <Sidebar
+      open={sidebarOpen}
+      onOpen={handleSidebarOpen}
+      peek={sidebarPeek}
+      dragProgress={sidebarDragProgress}
+      onClose={handleSidebarClose}
+      onOpenSearch={handleOpenSearch}
+    />
+  );
+  const sideBarParts =
+    sideBarLocation === "right" ? (
+      <>
+        {sideBarElement}
+        {activityBarBeside}
+      </>
+    ) : (
+      <>
+        {activityBarBeside}
+        {sideBarElement}
+      </>
+    );
+
   return (
     <AppShellRootProviders
       command={{
@@ -3452,11 +3488,7 @@ function AppShellImpl() {
         sidebar below the traffic lights and supplies a drag strip in the
         freed space. */}
           <div
-            className={cn(
-              "app-shell relative flex h-dvh bg-sidebar text-foreground",
-              // `workbench.sideBar.location: right`: the activity bar and side bar on the right.
-              sideBarLocation === "right" && "flex-row-reverse",
-            )}
+            className={cn("app-shell relative flex h-dvh bg-sidebar text-foreground")}
             data-sidebar-location={sideBarLocation === "right" ? "right" : undefined}
             style={
               {
@@ -3533,18 +3565,8 @@ function AppShellImpl() {
           header — which is taller and also anchored at top-0 — so a centered
           "<thread> — <host>" label here collided with the header's action
           cluster on a narrow window. The strip stays pure drag surface. */}
-            {/* The activity bar beside the side bar (`workbench.activityBar.location`: default). */}
-            {activityBarLocation === "default" && !mobileViewport && (
-              <ActivityBar location="default" />
-            )}
-            <Sidebar
-              open={sidebarOpen}
-              onOpen={handleSidebarOpen}
-              peek={sidebarPeek}
-              dragProgress={sidebarDragProgress}
-              onClose={handleSidebarClose}
-              onOpenSearch={handleOpenSearch}
-            />
+            {/* The activity bar and the side bar, left of the chat (on its right after it). */}
+            {sideBarLocation !== "right" && sideBarParts}
 
             {/* Content region (everything right of the sidebar): a relative
           flex row holding the chat+workspace group and the push panels
@@ -3926,6 +3948,7 @@ function AppShellImpl() {
                 active={!canvasMode && !gridRoute}
               />
             </GridWorkspace>
+            {sideBarLocation === "right" && sideBarParts}
           </div>
           {conversationId && (
             <PermissionsModal

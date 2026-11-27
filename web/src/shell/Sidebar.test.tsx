@@ -1,3 +1,4 @@
+import { LAYOUT_SLOTS, layoutState } from "@/workbench/layoutState";
 import { contributedNavigation, readHiddenNavigationEntries } from "@/workbench/sidebarNavigation";
 import {
   addNestedSessionDraft,
@@ -1184,6 +1185,19 @@ describe("Sidebar session list", () => {
     expect(await screen.findByTestId("sidebar-profile-settings")).toBeInTheDocument();
     expect(screen.getByTestId("sidebar-server-picker")).toBeInTheDocument();
     expect(screen.getByTestId("sidebar-server-picker-row")).toBeInTheDocument();
+  });
+
+  it("lists the extension pages entry only when there are pages, and shows the sessions with no activity bar", () => {
+    mockConversations(THREE_TYPE_CONVERSATIONS);
+    // A container remembered from when the activity bar was on: with none, no way back.
+    layoutState.set(LAYOUT_SLOTS.activeViewContainer, "omnigent.inbox");
+    renderSidebar();
+    const primaryNav = screen.getByTestId("sidebar-primary-nav");
+    fireEvent.pointerDown(primaryNav, { button: 2 });
+    fireEvent.contextMenu(primaryNav);
+    expect(screen.getByRole("menuitemcheckbox", { name: "New session" })).toBeInTheDocument();
+    expect(screen.queryByRole("menuitemcheckbox", { name: /extension pages/i })).toBeNull();
+    layoutState.set(LAYOUT_SLOTS.activeViewContainer, undefined);
   });
 
   it("hides a navigation entry from the navigation's right-click menu, in the layout state", () => {

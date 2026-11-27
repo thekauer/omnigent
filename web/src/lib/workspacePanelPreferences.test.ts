@@ -64,6 +64,17 @@ describe("workspacePanelPreferences — read/write", () => {
     expect(readWorkspacePanelDefault()).toBe("open");
   });
 
+  it("keeps the old key while the settings JSON refuses the intent (it doesn't parse)", () => {
+    localStorage.setItem(STORAGE_KEY, "open");
+    localStorage.setItem(
+      SETTINGS_STORAGE_KEY,
+      JSON.stringify({ version: 1, text: "{ broken", values: {} }),
+    );
+    configurationService.reload();
+    migrateLegacyDefault();
+    expect(localStorage.getItem(STORAGE_KEY)).toBe("open");
+  });
+
   it("follows a change of the intent over the last toggle", () => {
     writeDefaultWorkspacePanelOpen(true);
     expect(readWorkspacePanelDefault()).toBe("open");

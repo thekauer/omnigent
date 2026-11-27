@@ -1,5 +1,5 @@
 // Layout tokens (layout plan L5): the default, smallest and largest widths of the side bars
-// and the activity bar's width, so a theme sets them (DevHub's `clamp(220px, 20vw, 280px)`
+// and the activity bar's width, so a theme sets them (a `clamp(220px, 20vw, 280px)`
 // side bar) and a product locks them (`lockedTokens`). A drag's width is layout state, clamped
 // to the min and max; double-clicking the edge or View: Reset Layout returns to the default.
 

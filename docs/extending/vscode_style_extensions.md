@@ -1365,7 +1365,14 @@ Deviations and why:
   product locks (`lockedTokens`), measured on the theme root (`px`, `rem`, `em`, `vw`,
   `vh`); a drag's width is layout state (the secondary side bar's stays per session, as the
   plan keeps it, so View: Reset Layout leaves it), and double-clicking the edge returns to the
-  token. `workbench.secondarySideBar.defaultVisibility` is the intent (Appearance's Workspace
+  token. A locked width token is the default a drag starts from, not a fixed width: the user
+  can still drag within the min and max, which a product locks to bound it (a locked min equal
+  to the max fixes it). Whatever the tokens say, the side bar leaves the chat at least 360px
+  and its floor never passes its ceiling; the width tokens stay within 0..4000px (`vw` taken
+  at a 4000px window). View: Reset Layout clears the layout's own slots (parts, sizes,
+  containers, the activity bar, views and their moves, hidden navigation entries) and offers
+  to undo; the conversation list's own preferences (its view, order and folded sections)
+  stay. `workbench.secondarySideBar.defaultVisibility` is the intent (Appearance's Workspace
   panel row writes it; the old `omnigent:default-workspace-panel` "open" carries into it);
   collapsing or expanding the rail is layout state (`workbench.auxiliaryBar.lastVisibility`)
   and carries into the next session, as before, until the intent changes.

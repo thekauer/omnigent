@@ -2216,6 +2216,24 @@ describe("Workspace rail maximize", () => {
     expect(screen.getByTestId("sidebar")).toHaveAttribute("data-open", "true");
   });
 
+  it("puts the side bar after the chat in the document when it sits on the right", () => {
+    configurationService.update("workbench.sideBar.location", "right", "memory");
+    try {
+      mockConversations([{ id: "conv_abc", permission_level: null }]);
+      renderShell("/c/conv_abc");
+      const shell = document.querySelector(".app-shell")!;
+      const parts = [...shell.querySelectorAll('[data-testid="sidebar"], [data-slot="main-area"]')];
+      // Tab follows the screen: the chat, then the side bar on its right; no reversed row.
+      expect(parts.map((part) => part.getAttribute("data-testid") ?? "main")).toEqual([
+        "main",
+        "sidebar",
+      ]);
+      expect(shell.className).not.toContain("flex-row-reverse");
+    } finally {
+      configurationService.update("workbench.sideBar.location", undefined, "memory");
+    }
+  });
+
   it("reflects the docked sidebar state and width on the app shell", () => {
     // The maximized rail's traffic-light clearance (index.css) must drop when
     // the sidebar is reopened over it — the sidebar then covers the window
@@ -3562,6 +3580,39 @@ describe("Right workspace card visibility", () => {
     expect(screen.getByRole("complementary", { name: "Workspace" })).toBeInTheDocument();
     expect(screen.getByTestId("file-viewer-inline")).toHaveAttribute("data-path", "README.md");
     expect(screen.getByTestId("url-params")).toHaveTextContent("file=README.md");
+  });
+
+  it("keeps the rail auto-hidden on a session switch while the window is narrower than autoHideBelow", async () => {
+    configurationService.update("omnigent.secondarySideBar.autoHideBelow", 10_000, "memory");
+    writeSessionWorkspaceState("conv_narrow", { open: false });
+    writeSessionWorkspaceState("conv_narrow_other", { open: true });
+    useEnvironmentMock.mockReturnValue({
+      data: { available: true, root: null, home: null },
+      isLoading: false,
+    } as unknown as ReturnType<typeof useWorkspaceEnvironment>);
+    mockConversations([
+      { id: "conv_narrow", permission_level: null },
+      { id: "conv_narrow_other", permission_level: null },
+    ]);
+    try {
+      renderShell("/c/conv_narrow", undefined, { sessionNavTo: "/c/conv_narrow_other" });
+      fireEvent.click(screen.getByTestId("nav-session"));
+      // The next session would open its rail, but the window is too narrow: it stays closed.
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "Expand right panel" })).toBeInTheDocument(),
+      );
+      expect(screen.queryByRole("complementary", { name: "Workspace" })).toBeNull();
+      // Widening past it opens what the auto-hide kept closed.
+      act(() =>
+        configurationService.update("omnigent.secondarySideBar.autoHideBelow", 0, "memory"),
+      );
+      await waitFor(() =>
+        expect(screen.getByRole("complementary", { name: "Workspace" })).toBeInTheDocument(),
+      );
+    } finally {
+      configurationService.update("omnigent.secondarySideBar.autoHideBelow", undefined, "memory");
+      cleanup();
+    }
   });
 
   it.each([false, true])(

@@ -421,6 +421,11 @@ const MATH_LITERAL_LIMIT = 10_000;
 const CHANNEL_RANGE = [-1000, 1000] as const;
 const GRADIENT_STOP_LIMIT = 32;
 const ROW_RANGE = [0, 400] as const;
+/**
+ * The side bars' widths, in px: no wider than the widest window `vw` is taken at (4000px), so
+ * `calc(100vw + 400px)` or `10000px` can't push the chat off the screen.
+ */
+const SIDE_BAR_WIDTH_RANGE = [0, 4000] as const;
 const DURATION_RANGE = [0, 10_000] as const;
 const TEXT_SIZE_RANGE = [0, 200] as const;
 const TRACKING_RANGE = [-100, 100] as const;
@@ -483,12 +488,12 @@ export const TOKEN_CONSTRAINTS: Readonly<Record<string, TokenConstraint>> = {
   "syntax-theme-light": { syntaxTheme: true },
   "syntax-theme-dark": { syntaxTheme: true },
   "ui-border-width": { lengthRange: [0, 32] },
-  "ui-sidebar-width": { viewportUnits: true },
-  "ui-sidebar-min-width": { viewportUnits: true },
-  "ui-sidebar-max-width": { viewportUnits: true },
-  "ui-auxiliarybar-width": { viewportUnits: true },
-  "ui-auxiliarybar-min-width": { viewportUnits: true },
-  "ui-auxiliarybar-max-width": { viewportUnits: true },
+  "ui-sidebar-width": { viewportUnits: true, lengthRange: SIDE_BAR_WIDTH_RANGE },
+  "ui-sidebar-min-width": { viewportUnits: true, lengthRange: SIDE_BAR_WIDTH_RANGE },
+  "ui-sidebar-max-width": { viewportUnits: true, lengthRange: SIDE_BAR_WIDTH_RANGE },
+  "ui-auxiliarybar-width": { viewportUnits: true, lengthRange: SIDE_BAR_WIDTH_RANGE },
+  "ui-auxiliarybar-min-width": { viewportUnits: true, lengthRange: SIDE_BAR_WIDTH_RANGE },
+  "ui-auxiliarybar-max-width": { viewportUnits: true, lengthRange: SIDE_BAR_WIDTH_RANGE },
   "ui-activitybar-width": { lengthRange: [0, 200] },
   "ui-titlebar-height": { lengthRange: [0, 200] },
   "ui-scrollbar-size": { lengthRange: [0, 64] },

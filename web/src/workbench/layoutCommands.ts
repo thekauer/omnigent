@@ -8,7 +8,8 @@ import type { CommandRegistry } from "@/vscodeExtensions/commands";
 import { ContextKeyService } from "@/vscodeExtensions/contextKeys";
 import { type LayoutService, Parts } from "./layoutService";
 import { toggleActivityBarVisibility } from "./activityBar";
-import { type LayoutStateStore, layoutState } from "./layoutState";
+import { type LayoutStateStore, layoutState, RESETTABLE_LAYOUT_SLOTS } from "./layoutState";
+import { toast } from "sonner";
 import { type ViewContainerRegistry, viewContainers } from "./viewContainers";
 import { resetViewLocations } from "./viewLocations";
 import type { ConfigurationService } from "@/configuration/configurationService";
@@ -33,13 +34,18 @@ export function viewContainerCommand(containerId: string): string {
 }
 
 /**
- * View: Reset Layout: what the user dragged and toggled goes (the layout state), the settings
- * stay; the side bar opens again on its default container.
+ * View: Reset Layout: what the user dragged and toggled goes (the layout state's layout slots),
+ * the settings and the conversation list's own preferences stay; the side bar opens again on
+ * its default container. A toast offers to undo it.
  */
 export function resetLayout(layout: LayoutService, store: LayoutStateStore = layoutState): void {
-  store.reset();
+  const removed = store.resetSlots(RESETTABLE_LAYOUT_SLOTS);
   // A phone's side bar is a drawer: it stays as it is.
   if (isDesktopLayout()) layout.setPartHidden(false, Parts.SIDEBAR_PART);
+  if (Object.keys(removed).length === 0) return;
+  toast.success("Layout reset", {
+    action: { label: "Undo", onClick: () => store.restoreSlots(removed) },
+  });
 }
 
 /** The palette's ids for the same toggles, before the VS Code ids. */

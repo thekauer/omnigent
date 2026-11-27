@@ -53,7 +53,6 @@ export function migrateLegacyDefault(): void {
   try {
     const legacy = window.localStorage.getItem(STORAGE_KEY);
     if (legacy === null) return;
-    window.localStorage.removeItem(STORAGE_KEY);
     if (
       legacy === "open" &&
       configurationService.inspect(SECONDARY_SIDE_BAR_DEFAULT_VISIBILITY_SETTING).userValue ===
@@ -64,8 +63,10 @@ export function migrateLegacyDefault(): void {
         "visibleInWorkspace",
       );
     }
+    // Only once the intent is written: a settings JSON that refuses it keeps the old key.
+    window.localStorage.removeItem(STORAGE_KEY);
   } catch {
-    // Storage or the settings JSON refused: the product default stands.
+    // Storage or the settings JSON refused: the old key stays for the next load.
   }
 }
 

@@ -107,7 +107,8 @@ describe("useResizableSidebar", () => {
     expect(readPanelSizePreference("sidebarWidthPx")).toBe(900);
 
     // Shrink the viewport: ceiling = 700*0.5 = 350. Live width clamps down to
-    // 350 but the saved 900 preference is untouched.
+    // 350 (a window this narrow is a phone's: its drawer goes over the chat, which needs no
+    // room beside it), but the saved 900 preference is untouched.
     setInnerWidth(700);
     act(() => window.dispatchEvent(new Event("resize")));
     expect(result.current.width).toBe(350);

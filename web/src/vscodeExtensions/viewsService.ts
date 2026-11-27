@@ -1,6 +1,7 @@
 // Window-wide views: registers the views extensions contribute in the rail's view
 // registry, keeps each view's title actions in step with the context keys, keeps
 // each view's filter text per chat session, and backs `window.createTreeView`.
+import { commandIdProblem } from "./commands";
 import type * as omnigent from "omnigent";
 import type {
   RailViewLocation,
@@ -179,6 +180,9 @@ function trimSessions(map: Map<string, unknown>): void {
   }
 }
 
+/** The largest badge count kept; a badge draws `99+` past 99. */
+export const MAX_BADGE_VALUE = 1_000_000;
+
 function badgeOf(value: unknown): RailViewBadge | undefined {
   if (typeof value !== "object" || value === null) return undefined;
   const {
@@ -190,7 +194,8 @@ function badgeOf(value: unknown): RailViewBadge | undefined {
   if (typeof count !== "number" || !Number.isFinite(count)) return undefined;
   const text = typeof label === "string" && label !== "" ? label.slice(0, 12) : undefined;
   return Object.freeze({
-    value: Math.max(0, Math.floor(count)),
+    // A count past any list's: capped, so it stays a number the badge can draw.
+    value: Math.min(MAX_BADGE_VALUE, Math.max(0, Math.floor(count))),
     tooltip: typeof tooltip === "string" ? tooltip.slice(0, MAX_VIEW_TEXT) : "",
     ...(text === undefined ? {} : { label: text }),
     ...(tone === "success" || tone === "muted" ? { tone: tone as "success" | "muted" } : {}),
@@ -495,6 +500,14 @@ export class ViewsService {
     const added: string[] = [];
     const focusCommands: Disposable[] = [];
     for (const command of contributions.commands) {
+      // An extension titles only its own commands: another's (a host command, say) keeps
+      // its own owner's title and icon, so a menu entry can't pass for something else.
+      if (!builtIn && commandIdProblem(extensionId, command.command) !== undefined) {
+        console.warn(
+          `[omnigent-extensions] ${extensionId}: contributes.commands ${command.command} is not one of its commands; ignoring it`,
+        );
+        continue;
+      }
       if (!this.commandInfo.has(command.command)) this.commandInfo.set(command.command, command);
     }
     for (const submenu of contributions.submenus) {
@@ -507,14 +520,16 @@ export class ViewsService {
     for (const entry of contributions.viewsWelcome) this.welcome.push({ extensionId, entry });
     if (!builtIn) {
       // The built-in entries' ids are the host's rows: another extension's entry can't take one.
-      const reserved = new Set(builtInNavigationEntries().map((entry) => entry.id));
+      const reserved = new Set(builtInNavigationEntries().map((entry) => entry.id.toLowerCase()));
       for (const item of contributions.navigationMenu) {
-        if (reserved.has(item.command)) {
+        if (reserved.has(item.command.toLowerCase())) {
           console.warn(
             `[omnigent-extensions] ${extensionId}: sidebar/navigation entry ${item.command} is a built-in entry; ignoring it`,
           );
           continue;
         }
+        // One row per command.
+        if (this.navigation.some((entry) => entry.item.command === item.command)) continue;
         this.navigation.push({ extensionId, item });
       }
     }

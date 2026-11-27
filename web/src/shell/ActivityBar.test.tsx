@@ -94,6 +94,12 @@ describe("ActivityBar", () => {
     expect(tab("Inbox")).toHaveAttribute("data-active", "true");
   });
 
+  it("names no control it sits inside, and in the side bar is visible only while the side bar is", () => {
+    render(<ActivityBar location="top" />);
+    expect(tab("Sessions")).not.toHaveAttribute("aria-controls");
+    expect(layoutService.isVisible(Parts.ACTIVITYBAR_PART)).toBe(sideBarOpen);
+  });
+
   it("hides the side bar when the active item is clicked, and shows it again", () => {
     render(<ActivityBar location="top" />);
     fireEvent.click(tab("Sessions"));

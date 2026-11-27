@@ -5,9 +5,13 @@ import { parseConfigurationContributions } from "@/configuration/configurationCo
 import { ConfigurationRegistry } from "@/configuration/configurationRegistry";
 import { ConfigurationService } from "@/configuration/configurationService";
 import { SettingsStore } from "@/configuration/settingsStore";
-import { useResizableSidebar } from "@/hooks/useResizableSidebar";
+import {
+  clampSidebarWidth,
+  MIN_CHAT_WIDTH_PX,
+  useResizableSidebar,
+} from "@/hooks/useResizableSidebar";
 import { LAYOUT_SLOTS, layoutState } from "./layoutState";
-import { TOKEN_CONSTRAINTS, validateTokenValue } from "@/theme/validate";
+import { measureTokenValue, TOKEN_CONSTRAINTS, validateTokenValue } from "@/theme/validate";
 import { invalidateLayoutTokens, LayoutTokens, readLengthToken } from "./layoutTokens";
 import {
   builtInNavigationEntries,
@@ -118,6 +122,45 @@ describe("the layout tokens", () => {
     fireEvent.doubleClick(edge());
     expect(edge()).toHaveAttribute("data-width", "320");
   });
+
+  it("measure a drag from the side bar's own edge, past an activity bar beside it", () => {
+    vi.spyOn(window, "innerWidth", "get").mockReturnValue(1600);
+    invalidateLayoutTokens();
+    function Aside({ side }: { side: "left" | "right" }) {
+      const { width, handleProps } = useResizableSidebar(side);
+      return (
+        <aside data-testid="aside">
+          <div data-testid="edge" data-width={width} {...handleProps} />
+        </aside>
+      );
+    }
+    const { rerender } = render(<Aside side="left" />);
+    const aside = screen.getByTestId("aside");
+    // The side bar starts after a 48px activity bar.
+    aside.getBoundingClientRect = () => ({ left: 48, right: 368 }) as DOMRect;
+    fireEvent.mouseDown(screen.getByTestId("edge"));
+    fireEvent.mouseMove(window, { clientX: 448 });
+    fireEvent.mouseUp(window);
+    expect(screen.getByTestId("edge")).toHaveAttribute("data-width", "400");
+    rerender(<Aside side="right" />);
+    screen.getByTestId("aside").getBoundingClientRect = () =>
+      ({ left: 1232, right: 1552 }) as DOMRect;
+    fireEvent.mouseDown(screen.getByTestId("edge"));
+    fireEvent.mouseMove(window, { clientX: 1252 });
+    fireEvent.mouseUp(window);
+    expect(screen.getByTestId("edge")).toHaveAttribute("data-width", "300");
+  });
+});
+
+describe("the side bar's width clamp", () => {
+  it("keeps the chat's minimum, and never lets the floor pass the ceiling", () => {
+    // A floor past the window: the side bar stops where the chat's minimum starts.
+    expect(clampSidebarWidth(500, 10_000, 720, 1440)).toBe(720);
+    expect(clampSidebarWidth(500, 10_000, 10_000, 1440)).toBe(1440 - MIN_CHAT_WIDTH_PX);
+    // The activity bar beside the side bar shares the window.
+    expect(clampSidebarWidth(2000, 220, 10_000, 1440, 48)).toBe(1440 - 48 - MIN_CHAT_WIDTH_PX);
+    expect(clampSidebarWidth(100, 220, 720, 1440)).toBe(220);
+  });
 });
 
 describe("the layout tokens' values", () => {
@@ -128,6 +171,13 @@ describe("the layout tokens' values", () => {
     expect(check("ui-sidebar-width", "clamp(220px, 20vw, 280px)")).toBe(true);
     expect(check("ui-auxiliarybar-max-width", "min(720px, 50vw)")).toBe(true);
     expect(check("ui-sidebar-max-width", "150vw")).toBe(false);
+    // A width past any window can't push the chat off the screen.
+    expect(check("ui-sidebar-min-width", "10000px")).toBe(false);
+    // A calc() with vw is checked when its value resolves (vw taken at a 4000px window at most).
+    const measure = (id: string, value: string) =>
+      measureTokenValue(id, "length", value, () => undefined).ok;
+    expect(measure("ui-sidebar-min-width", "calc(100vw + 400px)")).toBe(false);
+    expect(measure("ui-auxiliarybar-max-width", "calc(50vw + 100px)")).toBe(true);
     // Other lengths stay off the window's size.
     expect(check("ui-header-height", "5vh")).toBe(false);
   });

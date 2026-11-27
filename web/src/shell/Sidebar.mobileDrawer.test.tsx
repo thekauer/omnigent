@@ -1,3 +1,4 @@
+import { configurationService } from "@/configuration/configurationService";
 import { renderSidebar } from "@/test/sidebarTestHelpers";
 import { conversation as conv, conversationPage } from "@/test/sidebarMockHelpers";
 // Mobile drawer: a strip of chat stays visible and dismisses it on tap, Search
@@ -392,6 +393,26 @@ describe("mobile sidebar drawer swipe to close", () => {
 
     expect(drawer.style.transform).toBe(transform);
     expect(onClose).not.toHaveBeenCalled();
+  });
+
+  // The swipes assume a drawer on the left, so they are off with the side bar on the right.
+  it("ignores the swipe with the side bar on the right", () => {
+    stubMobileLayout(true);
+    configurationService.update("workbench.sideBar.location", "right", "memory");
+    try {
+      const { onClose, drawer } = renderDrawer();
+
+      touch(drawer, "touchstart", 300, 0);
+      touch(drawer, "touchmove", 250, 80);
+      touch(drawer, "touchmove", 100, 160);
+      expect(drawer.style.transform).toBe("");
+      touch(drawer, "touchend", 0, 400);
+
+      expect(drawer.style.transform).toBe("");
+      expect(onClose).not.toHaveBeenCalled();
+    } finally {
+      configurationService.update("workbench.sideBar.location", undefined, "memory");
+    }
   });
 });
 

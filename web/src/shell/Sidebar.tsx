@@ -1117,7 +1117,10 @@ function SidebarImpl({
   const activityBarPlacement =
     activityBarLocation === "default" && mobileLayout ? "top" : activityBarLocation;
   const sideBarContainers = useSideBarContainerList();
-  const storedContainer = useActiveViewContainer();
+  // With no activity bar there is no way to switch: the side bar shows the sessions.
+  const rememberedContainer = useActiveViewContainer();
+  const storedContainer =
+    activityBarLocation === "hidden" ? CONVERSATIONS_CONTAINER : rememberedContainer;
   // A container with nothing to show (or gone) falls back to the sessions.
   const activeContainer =
     sideBarContainers.find((container) => container.id === storedContainer) ??
@@ -1149,8 +1152,9 @@ function SidebarImpl({
   // A wide phone (unfolded foldable, landscape) docks the open sidebar beside
   // the chat instead of over it.
   const sideBySide = useIsSideBySideSidebarViewport();
-  const closeSwipeEnabled = open && mobileLayout && dragProgress == null;
-  const openSwipeEnabled = !open && !peek && mobileLayout && dragProgress == null;
+  // The swipes assume a drawer on the left: off with the side bar on the right (layout plan L9).
+  const closeSwipeEnabled = open && mobileLayout && dragProgress == null && !onRight;
+  const openSwipeEnabled = !open && !peek && mobileLayout && dragProgress == null && !onRight;
   useSidebarSwipeToOpen({
     enabled: openSwipeEnabled,
     drawerRef,
@@ -1901,8 +1905,16 @@ function SidebarNavigationView() {
         className={cn("flex flex-col gap-px px-2 pt-2 pb-0 max-md:pt-0", SIDEBAR_ROW_MOBILE_INSET)}
         data-testid="sidebar-primary-nav"
       >
-        {entries.map((entry) => (
+        {entries.map((entry, index) => (
           <Fragment key={entry.id}>
+            {/* Other extensions' rows sit apart from the host's, so none passes for one. */}
+            {!entry.builtIn && (index === 0 || entries[index - 1]!.builtIn) && (
+              <div
+                role="separator"
+                data-slot="navigation-extensions-separator"
+                className="mx-2 my-1 h-px shrink-0 bg-border"
+              />
+            )}
             {entry.builtIn ? (rows[entry.id] ?? null) : <CommandNavigationRow entry={entry} />}
           </Fragment>
         ))}
@@ -1943,6 +1955,13 @@ function SidebarNavigationMenu({ children }: { children: ReactNode }) {
     contributed,
   );
   const hidden = useHiddenNavigationEntries();
+  // The extension pages' entry is listed only while there are pages to show.
+  const hasExtensionPages = useExtensions().some(
+    (extension) => extension.primary_navigation.length > 0,
+  );
+  const listed = all.filter(
+    (entry) => entry.id !== NavigationEntries.extensionPages || hasExtensionPages,
+  );
   // A link keeps the browser's own menu (open in a new tab, copy the link): the entries'
   // menu opens on the rest of the navigation and on command rows.
   const [onLink, setOnLink] = useState(false);
@@ -1960,7 +1979,7 @@ function SidebarNavigationMenu({ children }: { children: ReactNode }) {
         {children}
       </ContextMenuTrigger>
       <ContextMenuContent data-testid="sidebar-navigation-menu">
-        {all.map((entry) => (
+        {listed.map((entry) => (
           <ContextMenuCheckboxItem
             key={entry.id}
             checked={!hidden.includes(entry.id)}
