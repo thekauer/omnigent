@@ -26,7 +26,8 @@ hook only for what no token covers yet.
 | `share-button` | The session header's Share button (enabled, disabled and pending). |
 | `panel-toggle` | The session header's right panel toggle; `data-panel-open` is set while the panel is open. |
 | `composer-stop` | The composer's send button while it interrupts the running turn. |
-| `composer-send` | The composer's send button otherwise. |
+| `composer-send` | The composer's send button otherwise (its colours: `ui-composer-send-background` and `-foreground`, while it can send). |
+| `account-avatar` | The account avatar's fallback: the activity bar's Accounts item and the title bar's account item (its colours: `ui-account-avatar-background` and `-foreground`). |
 | `user-bubble` | A user message's bubble. |
 | `working-indicator` | The transcript's "Working..." row (contains `.otto-working`). |
 | `fold-label` | The label of the transcript's fold row ("Worked for 5s"). Also `.ui-label`. |
@@ -63,7 +64,7 @@ Drawn only when an extension contributes them (layout plan L3), so not on the de
 | `[data-view="<view id>"]` | A contributed view stacked in the primary side bar (`data-collapsed` while collapsed). |
 | `[data-slot="view-container-actions"]` | A container's `viewContainer/title` buttons (`data-view-container` is its id). |
 | `[data-slot="view-welcome"]` | A view's welcome content (`contributes.viewsWelcome`). |
-| `.activitybar-item` | An activity bar item (`data-view-container` is its container, `data-active` while it shows in the open side bar), with its `[data-slot="activitybar-badge"]`. |
+| `.activitybar-item` | An activity bar item (`data-view-container` is its container, `data-active` while it shows in the open side bar), with its `[data-slot="activitybar-badge"]`. Its colours are the `ui-activitybar-*` tokens (layout plan L11). |
 | `[data-slot="view-container-title"]` | The side bar's header title for a container other than the sessions. |
 | `[data-navigation-entry="<command>"]` | Another extension's `sidebar/navigation` row. |
 | `.app-shell[data-sidebar-location="right"]` | The shell with `workbench.sideBar.location: right`; the rail then carries `[data-side="left"]`. |
@@ -79,7 +80,7 @@ Drawn only when an extension contributes them (layout plan L3), so not on the de
 | `.app-shell` | The application shell. |
 | `.conversations-sidebar` | The left sidebar. |
 | `.sidebar-header-row` | The sidebar's top row (brand and actions). |
-| `.sidebar-row` | A sidebar row: a session, a nav entry or a project header. Its height and line box are the density tokens `ui-row-height` and `ui-row-line`. |
+| `.sidebar-row` | A sidebar row: a session, a nav entry or a project header. Its height and line box are the density tokens `ui-row-height` and `ui-row-line`; a session's idle text is `ui-sidebar-row-idle-foreground`. |
 | `.chat-header` | The session header. With `.session-header-glass` while a session or titled page shows. |
 | `.workspace-tab-strip` | The right panel's tab strip. |
 | `.otto-working` | The working indicator's animated logo. |

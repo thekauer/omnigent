@@ -188,6 +188,17 @@
   --onboarding-wizard-background: #fcfbfb;
   --onboarding-modal-border: #0000001a;
   --composer-header-bg: color-mix(in srgb, var(--background) 94%, black);
+  --ui-sidebar-row-idle-foreground: var(--foreground);
+  --ui-composer-send-background: initial;
+  --ui-composer-send-foreground: initial;
+  --ui-account-avatar-background: var(--secondary);
+  --ui-account-avatar-foreground: var(--secondary-foreground);
+  --ui-activitybar-foreground: var(--muted-foreground);
+  --ui-activitybar-active-foreground: var(--sidebar-active-foreground);
+  --ui-activitybar-active-background: var(--sidebar-active);
+  --ui-activitybar-active-border: var(--sidebar-active-foreground);
+  --ui-activitybar-badge-background: var(--primary);
+  --ui-activitybar-badge-foreground: var(--primary-foreground);
   --ui-color-swatch-border: color-mix(in oklab, var(--color-white) 25%, transparent);
   --ui-color-swatch-ring: color-mix(in oklab, var(--color-black) 10%, transparent);
   --ui-color-picker-ring: color-mix(in oklab, var(--color-black) 5%, transparent);
@@ -263,6 +274,7 @@
   --ui-font-mono: "Geist Mono Variable", "JetBrains Mono", ui-monospace, monospace;
   --ui-font-code: var(--ui-font-mono);
   --ui-font-label: var(--ui-font-ui);
+  --ui-font-timestamp: initial;
   --ui-weight-normal: 450;
   --ui-weight-medium: 500;
   --ui-weight-strong: 600;
@@ -540,6 +552,15 @@
   --segmented-active-bg: rgb(255 255 255 / 12%);
   --segmented-inactive-bg: transparent;
   --segmented-trough-bg: rgb(255 255 255 / 6%);
+  --ui-sidebar-row-idle-foreground: var(--foreground);
+  --ui-account-avatar-background: var(--secondary);
+  --ui-account-avatar-foreground: var(--secondary-foreground);
+  --ui-activitybar-foreground: var(--muted-foreground);
+  --ui-activitybar-active-foreground: var(--sidebar-active-foreground);
+  --ui-activitybar-active-background: var(--sidebar-active);
+  --ui-activitybar-active-border: var(--sidebar-active-foreground);
+  --ui-activitybar-badge-background: var(--primary);
+  --ui-activitybar-badge-foreground: var(--primary-foreground);
   --success: #2ea65c;
   --warning: #d4972a;
   --info: #3b8ff5;
@@ -1305,6 +1326,15 @@
 :root:not(.dark)[data-theme],
 :root > :not(.dark)[data-theme] {
   --composer-header-bg: color-mix(in srgb, var(--background) 94%, black);
+  --ui-sidebar-row-idle-foreground: var(--foreground);
+  --ui-account-avatar-background: var(--secondary);
+  --ui-account-avatar-foreground: var(--secondary-foreground);
+  --ui-activitybar-foreground: var(--muted-foreground);
+  --ui-activitybar-active-foreground: var(--sidebar-active-foreground);
+  --ui-activitybar-active-background: var(--sidebar-active);
+  --ui-activitybar-active-border: var(--sidebar-active-foreground);
+  --ui-activitybar-badge-background: var(--primary);
+  --ui-activitybar-badge-foreground: var(--primary-foreground);
   --ui-color-swatch-border: color-mix(in oklab, var(--color-white) 25%, transparent);
   --ui-color-swatch-ring: color-mix(in oklab, var(--color-black) 10%, transparent);
   --ui-color-picker-ring: color-mix(in oklab, var(--color-black) 5%, transparent);
@@ -1481,6 +1511,15 @@
   --menu-surface-bg: var(--composer-surface-bg);
   /* prettier-ignore */
   --card-surface-bg: color-mix(in srgb, color-mix(in srgb, var(--card) 95%, white) 75%, transparent);
+  --ui-sidebar-row-idle-foreground: var(--foreground);
+  --ui-account-avatar-background: var(--secondary);
+  --ui-account-avatar-foreground: var(--secondary-foreground);
+  --ui-activitybar-foreground: var(--muted-foreground);
+  --ui-activitybar-active-foreground: var(--sidebar-active-foreground);
+  --ui-activitybar-active-background: var(--sidebar-active);
+  --ui-activitybar-active-border: var(--sidebar-active-foreground);
+  --ui-activitybar-badge-background: var(--primary);
+  --ui-activitybar-badge-foreground: var(--primary-foreground);
   --ui-color-swatch-border: color-mix(in oklab, var(--color-white) 25%, transparent);
   --ui-color-swatch-ring: color-mix(in oklab, var(--color-black) 10%, transparent);
   --ui-color-picker-ring: color-mix(in oklab, var(--color-black) 5%, transparent);

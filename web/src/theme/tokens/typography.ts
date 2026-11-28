@@ -44,6 +44,13 @@ export const TYPOGRAPHY_TOKENS = defineTokens("typography", [
     default: { light: "var(--ui-font-ui)" },
   },
   {
+    id: "ui-font-timestamp",
+    kind: "font",
+    description:
+      "Font of message and list timestamps. Unset, they inherit the document font (the Appearance font setting included).",
+    default: {},
+  },
+  {
     id: "ui-weight-normal",
     kind: "number",
     description: "Body text weight, `font-normal`.",

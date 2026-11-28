@@ -1438,7 +1438,7 @@ function UserBubble({ bubble }: { bubble: Extract<Bubble, { kind: "user" }> }) {
           >
             {ts && (
               <span
-                className="shrink-0 select-none whitespace-nowrap text-sm leading-4 text-foreground/56"
+                className="shrink-0 select-none whitespace-nowrap font-(family-name:--ui-font-timestamp) text-sm leading-4 text-foreground/56"
                 data-testid="message-timestamp"
               >
                 {ts}
@@ -1744,7 +1744,7 @@ function AssistantBubble({
               </MessageActions>
               {ts && (
                 <span
-                  className="select-none text-sm leading-4 text-foreground/56"
+                  className="select-none font-(family-name:--ui-font-timestamp) text-sm leading-4 text-foreground/56"
                   data-testid="message-timestamp"
                 >
                   {ts}

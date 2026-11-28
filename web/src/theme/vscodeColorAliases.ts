@@ -62,6 +62,13 @@ export const VSCODE_COLOR_ALIASES: readonly ColorAlias[] = [
   ["sideBar.foreground", ["sidebar-foreground"]],
   ["sideBar.border", ["sidebar-border"]],
   ["sideBarSectionHeader.foreground", ["sidebar-foreground"]],
+  // The activity bar: its icons, the active one's background and edge, and its count badges.
+  ["activityBar.foreground", ["ui-activitybar-foreground", "ui-activitybar-active-foreground"]],
+  ["activityBar.inactiveForeground", ["ui-activitybar-foreground"]],
+  ["activityBar.activeBackground", ["ui-activitybar-active-background"]],
+  ["activityBar.activeBorder", ["ui-activitybar-active-border"]],
+  ["activityBarBadge.background", ["ui-activitybar-badge-background"]],
+  ["activityBarBadge.foreground", ["ui-activitybar-badge-foreground"]],
   // The code surfaces.
   ["editor.selectionBackground", ["code-selection"]],
   ["editor.lineHighlightBackground", ["viewer-active-line"]],

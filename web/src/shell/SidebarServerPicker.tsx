@@ -245,7 +245,10 @@ export function SidebarServerPicker({
             data-testid={inActivityBar ? `${testIdPrefix}-accounts` : "sidebar-server-picker"}
           >
             <Avatar className="size-7 after:hidden max-md:size-9">
-              <AvatarFallback className="bg-secondary font-medium text-sm text-secondary-foreground">
+              <AvatarFallback
+                data-slot="account-avatar"
+                className="bg-secondary font-medium text-sm text-secondary-foreground"
+              >
                 {userInitials(userName.replace(/\s+/g, "."))}
               </AvatarFallback>
             </Avatar>

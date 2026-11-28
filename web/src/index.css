@@ -923,6 +923,14 @@
         --mobile-icon-button-foreground: var(--primary-cta-foreground);
       }
 
+      &[data-slot="composer-send"][data-variant="default"]:not(:disabled) {
+        --mobile-icon-button-background: var(--ui-composer-send-background, var(--primary-cta));
+        --mobile-icon-button-foreground: var(
+          --ui-composer-send-foreground,
+          var(--primary-cta-foreground)
+        );
+      }
+
       &[data-variant="default"]:disabled {
         --mobile-icon-button-background: var(--muted);
         --mobile-icon-button-foreground: var(--muted-foreground);
@@ -2017,6 +2025,17 @@ body {
   @variant max-md {
     font-size: var(--mobile-ui-font-size);
   }
+}
+
+/* The composer's send button and the account avatar, in their theme tokens (theme_hooks.md).
+ * Unlayered, so they win over the utilities the sites use; a disabled send keeps its muted look. */
+[data-slot="composer-send"]:not(:disabled) {
+  background: var(--ui-composer-send-background, var(--primary-cta));
+  color: var(--ui-composer-send-foreground, var(--primary-cta-foreground));
+}
+[data-slot="account-avatar"] {
+  background: var(--ui-account-avatar-background, var(--secondary));
+  color: var(--ui-account-avatar-foreground, var(--secondary-foreground));
 }
 
 /* Keep mobile sidebar glyphs uniform. Desktop icon geometry is unchanged. */

@@ -6959,7 +6959,7 @@ function ConversationRowImpl({
         onDragStart={gridsEnabled ? (event) => event.preventDefault() : undefined}
         className={cn(
           SIDEBAR_ROW,
-          "relative flex text-left text-foreground transition-colors",
+          "relative flex text-left text-(--ui-sidebar-row-idle-foreground) transition-colors",
           // With the harness icon the row takes a project row's shape: a leading
           // icon centered against the title and meta column.
           showHarness ? "items-center" : "flex-col justify-center",
@@ -7243,7 +7243,7 @@ function ConversationRowImpl({
           className={cn(
             SESSION_STATE_SLOT_CLASS,
             overlayTop,
-            "right-2 text-sm text-muted-foreground",
+            "right-2 font-(family-name:--ui-font-timestamp) text-sm text-muted-foreground",
           )}
         >
           <SessionUpdatedLabel updatedAt={conversation.updated_at} />

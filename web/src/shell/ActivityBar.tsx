@@ -277,13 +277,14 @@ function ActivityBarItem({
           }}
           data-view-drop-target={viewDrop["data-view-drop-target"]}
           className={cn(
-            "activitybar-item relative flex cursor-pointer items-center justify-center rounded-(--radius-otto-button) text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring",
+            "activitybar-item relative flex cursor-pointer items-center justify-center rounded-(--radius-otto-button) text-(--ui-activitybar-foreground) transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring",
             vertical ? "size-10" : "size-8",
-            active && "bg-[var(--sidebar-active)] text-[var(--sidebar-active-foreground)]",
+            active &&
+              "bg-(--ui-activitybar-active-background) text-(--ui-activitybar-active-foreground)",
             active &&
               (vertical
-                ? "before:absolute before:inset-y-2 before:-left-1 before:w-0.5 before:rounded-full before:bg-[var(--sidebar-active-foreground)]"
-                : "before:absolute before:inset-x-2 before:-bottom-1 before:h-0.5 before:rounded-full before:bg-[var(--sidebar-active-foreground)]"),
+                ? "before:absolute before:inset-y-2 before:-left-1 before:w-0.5 before:rounded-full before:bg-(--ui-activitybar-active-border)"
+                : "before:absolute before:inset-x-2 before:-bottom-1 before:h-0.5 before:rounded-full before:bg-(--ui-activitybar-active-border)"),
             dropTarget && "ring-2 ring-ring",
           )}
         >
@@ -294,7 +295,7 @@ function ActivityBarItem({
               aria-hidden
               className={cn(
                 TAB_BADGE_BASE,
-                "absolute top-0.5 right-0.5 bg-primary text-[0.625rem] font-medium text-primary-foreground",
+                "absolute top-0.5 right-0.5 bg-(--ui-activitybar-badge-background) text-[0.625rem] font-medium text-(--ui-activitybar-badge-foreground)",
               )}
             >
               {badge.label ?? badgeText(badge.value)}

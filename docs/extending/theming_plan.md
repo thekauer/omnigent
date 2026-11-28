@@ -369,6 +369,18 @@ Defaults must match today exactly.
   `variantSurfaces.ts`. An unset colour in a shorthand (`border-right: 1px solid var(--x)`,
   `box-shadow: inset ... var(--x)`) makes the declaration invalid, so nothing is drawn; an
   unset inherited property (`font-family`, `letter-spacing`) inherits as before.
+- **Item colours** (layout plan L11, `workbench.ts` and `typography.ts`; each at today's value,
+  `theme/surfaceTokens.test.ts` and `theme/itemTokens.test.ts`): ui-sidebar-row-idle-foreground
+  (a session row that is neither active nor hovered, `foreground`), ui-composer-send-background/
+  -foreground (the send button while it can send; unset: the primary call-to-action, the
+  disabled send keeps its muted look), ui-account-avatar-background (an image: a gradient
+  works)/-foreground (the account avatar in the activity bar's Accounts item and the title bar's
+  account item), ui-font-timestamp (message and list timestamps; unset: the document font), and
+  the activity bar's ui-activitybar-foreground (an item's icon), -active-foreground,
+  -active-background, -active-border (its 2px edge) and -badge-background/-foreground. The
+  activity bar's ids have VS Code aliases (`activityBar.foreground`, `.inactiveForeground`,
+  `.activeBackground`, `.activeBorder`, `activityBarBadge.background`/`.foreground`); the others
+  have none in VS Code.
 
 ## Theme contribution API (VS Code-shaped)
 

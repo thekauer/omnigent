@@ -227,6 +227,73 @@ export const WORKBENCH_TOKENS = defineTokens("workbench", [
     description: "Segmented control trough in dark mode.",
     default: { dark: "rgb(255 255 255 / 6%)" },
   },
+  // Item colours (layout plan L11): each defaults to what the item uses today.
+  {
+    id: "ui-sidebar-row-idle-foreground",
+    description: "Text of a session row that is neither active nor hovered.",
+    default: { light: "var(--foreground)", dark: "var(--foreground)" },
+  },
+  {
+    id: "ui-composer-send-background",
+    description:
+      "The composer's send button while it can send (disabled keeps its muted look). Unset: the primary call-to-action.",
+    default: {},
+  },
+  {
+    id: "ui-composer-send-foreground",
+    description:
+      "Text and glyph of the composer's send button. Unset: the primary call-to-action's text.",
+    default: {},
+  },
+  {
+    id: "ui-account-avatar-background",
+    kind: "image",
+    description:
+      "The account avatar's background, a colour or a gradient, in the activity bar's Accounts item and the title bar's account item.",
+    default: { light: "var(--secondary)", dark: "var(--secondary)" },
+  },
+  {
+    id: "ui-account-avatar-foreground",
+    description: "The account avatar's initials.",
+    default: { light: "var(--secondary-foreground)", dark: "var(--secondary-foreground)" },
+  },
+  {
+    id: "ui-activitybar-foreground",
+    description: "An activity bar item's icon, while it is not the active one.",
+    default: { light: "var(--muted-foreground)", dark: "var(--muted-foreground)" },
+  },
+  {
+    id: "ui-activitybar-active-foreground",
+    description: "The active activity bar item's icon.",
+    default: {
+      light: "var(--sidebar-active-foreground)",
+      dark: "var(--sidebar-active-foreground)",
+    },
+  },
+  {
+    id: "ui-activitybar-active-background",
+    description: "The active activity bar item's background.",
+    default: { light: "var(--sidebar-active)", dark: "var(--sidebar-active)" },
+  },
+  {
+    id: "ui-activitybar-active-border",
+    description:
+      "The 2px bar on the active activity bar item's edge (its left, or bottom at `top`).",
+    default: {
+      light: "var(--sidebar-active-foreground)",
+      dark: "var(--sidebar-active-foreground)",
+    },
+  },
+  {
+    id: "ui-activitybar-badge-background",
+    description: "An activity bar item's count badge.",
+    default: { light: "var(--primary)", dark: "var(--primary)" },
+  },
+  {
+    id: "ui-activitybar-badge-foreground",
+    description: "Text of an activity bar item's count badge.",
+    default: { light: "var(--primary-foreground)", dark: "var(--primary-foreground)" },
+  },
   // Colour picker chrome (ThemeColorPicker): edges that read on any picked colour.
   {
     id: "ui-color-swatch-border",
