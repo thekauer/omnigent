@@ -12,6 +12,7 @@ import { LAYOUT_SLOTS, type LayoutStateStore, layoutState } from "./layoutState"
 import { LayoutTokens, readLengthToken } from "./layoutTokens";
 import { matchesIdPattern, productLayout, useProductHidesPart } from "./productLayout";
 import type { LayoutService } from "./layoutService";
+import { createStableSnapshot } from "./stableSnapshot";
 import { useWorkbenchScope } from "./workbenchScope";
 
 export const ACTIVITY_BAR_LOCATION_SETTING = "workbench.activityBar.location";
@@ -134,21 +135,16 @@ export function setActivityBarItemHidden(
   writeActivityBarItems({ ...state, hidden: hidden ? [...others, id] : others }, store);
 }
 
-let cache: { text: string; state: ActivityBarItemsState } | undefined;
+const snapshot = createStableSnapshot<ActivityBarItemsState>();
 
 export function useActivityBarItems(given?: LayoutStateStore): ActivityBarItemsState {
-  // The mount's own layout state unless one is given.
-  const scoped = useWorkbenchScope().state;
-  const store = given ?? scoped;
+  // The mount's own layout state and product policy unless given.
+  const scope = useWorkbenchScope();
+  const store = given ?? scope.state;
   const subscribe = useCallback((listener: () => void) => store.subscribe(listener), [store]);
   return useSyncExternalStore(
     subscribe,
-    () => {
-      const state = readActivityBarItems(store);
-      const text = JSON.stringify(state);
-      if (cache?.text !== text) cache = { text, state };
-      return cache.state;
-    },
+    () => snapshot(store, scope.productLayout, () => readActivityBarItems(store)),
     () => EMPTY,
   );
 }

@@ -414,6 +414,19 @@ describe("embed workbenches", () => {
     again.unmount();
     await act(async () => {});
   });
+
+  it("hand the global embed root back to the embed still mounted when another unmounts", async () => {
+    const first = render(embedApp({ basename: "/root-first", workbenchId: "first" }));
+    const firstRoot = getEmbedRoot();
+    const second = render(embedApp({ basename: "/root-second", workbenchId: "second" }));
+    expect(getEmbedRoot()).not.toBe(firstRoot);
+    second.unmount();
+    await act(async () => {});
+    expect(getEmbedRoot()).toBe(firstRoot);
+    first.unmount();
+    await act(async () => {});
+    expect(getEmbedRoot()).toBeNull();
+  });
 });
 
 describe("mobile app embed target scope", () => {

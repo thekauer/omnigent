@@ -450,6 +450,23 @@ const wake = () => {
 useChatStore.subscribe(wake);
 conversationRegistry.subscribe(wake);
 
+// Each session with a request not yet sent stays live while it waits: its state is what the
+// outbox sends from, and a released entry would leave the request with nothing to wake on.
+const sessionHolds = new Map<string, () => void>();
+useDesignOutbox.subscribe(({ requests }) => {
+  const sessions = new Set(requests.filter(unsettled).map((request) => request.conversationId));
+  for (const conversationId of sessions) {
+    if (!sessionHolds.has(conversationId)) {
+      sessionHolds.set(conversationId, conversationRegistry.retain(conversationId));
+    }
+  }
+  for (const [conversationId, release] of sessionHolds) {
+    if (sessions.has(conversationId)) continue;
+    sessionHolds.delete(conversationId);
+    release();
+  }
+});
+
 // Tell the chat which sessions have requests to show.
 useDesignOutbox.subscribe(({ requests }) =>
   setDesignRequestSessions(

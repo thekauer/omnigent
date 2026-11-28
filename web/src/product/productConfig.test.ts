@@ -408,3 +408,19 @@ describe("the server's last-known policy, per server", () => {
     expect(service.isLocked("acme.layout.location")).toBe(true);
   });
 });
+
+describe("an embedder without a serverIdentity", () => {
+  it("warns once per origin that its last-known policy is shared with other such embeds", () => {
+    const warn = vi.mocked(console.warn);
+    setOmnigentHostConfig({ fetcher: vi.fn() } as unknown as Parameters<
+      typeof setOmnigentHostConfig
+    >[0]);
+    lastServerProductConfigKey();
+    lastServerProductConfigKey();
+    const embedWarnings = warn.mock.calls.filter(([message]) =>
+      String(message).includes("serverIdentity"),
+    );
+    expect(embedWarnings).toHaveLength(1);
+    expect(String(embedWarnings[0]![0])).toContain(window.location.origin);
+  });
+});

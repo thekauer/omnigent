@@ -9,6 +9,18 @@ import {
   WorkbenchScopeProvider,
 } from "@/workbench/workbenchScope";
 
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogTitle,
+} from "./dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "./dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "./popover";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./tooltip";
 
@@ -71,6 +83,51 @@ describe("overlays of two embeds on one page", () => {
     expect(first.root.textContent).not.toContain("second");
     expect(second.root.textContent).toContain("second popover");
     expect(second.root.textContent).toContain("second tooltip");
+    expect(second.root.textContent).not.toContain("first");
+  });
+
+  it("portal a dialog and a dropdown menu of each embed into that embed's own root", () => {
+    const first = embed("overlay-dialog-first");
+    const second = embed("overlay-dialog-second");
+    const FirstWrapper = first.wrapper;
+    const SecondWrapper = second.wrapper;
+    render(
+      <FirstWrapper>
+        <Dialog open>
+          <DialogContent>
+            <DialogTitle>first dialog</DialogTitle>
+            <DialogDescription>first dialog text</DialogDescription>
+          </DialogContent>
+        </Dialog>
+        <DropdownMenu open>
+          <DropdownMenuTrigger>first menu trigger</DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuItem>first menu item</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </FirstWrapper>,
+    );
+    render(
+      <SecondWrapper>
+        <Dialog open>
+          <DialogContent>
+            <DialogTitle>second dialog</DialogTitle>
+            <DialogDescription>second dialog text</DialogDescription>
+          </DialogContent>
+        </Dialog>
+        <DropdownMenu open>
+          <DropdownMenuTrigger>second menu trigger</DropdownMenuTrigger>
+          <DropdownMenuContent>
+            <DropdownMenuItem>second menu item</DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </SecondWrapper>,
+    );
+    expect(first.root.textContent).toContain("first dialog");
+    expect(first.root.textContent).toContain("first menu item");
+    expect(first.root.textContent).not.toContain("second");
+    expect(second.root.textContent).toContain("second dialog");
+    expect(second.root.textContent).toContain("second menu item");
     expect(second.root.textContent).not.toContain("first");
   });
 });

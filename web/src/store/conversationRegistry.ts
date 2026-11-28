@@ -138,14 +138,17 @@ export class ConversationRegistry {
    * conversation out of eviction whichever view is active, so a mount that is not the one
    * last used keeps its stream. Returns the release for this view; a release after the view
    * has moved to another conversation changes nothing. A release that leaves the conversation
-   * held by nothing (no retain, no other view, not the active projection) disposes it.
+   * held by nothing (no retain, no other view, not the active projection) disposes it, once the
+   * current task has run.
    */
   view(viewKey: string, conversationId: string): () => void {
     this.viewedIds.set(viewKey, conversationId);
     return () => {
       if (this.viewedIds.get(viewKey) !== conversationId) return;
       this.viewedIds.delete(viewKey);
-      this.disposeIfUnheld(conversationId);
+      // Checked after the task: a strict mode effect's cleanup is followed by its setup in
+      // the same task, which views the conversation again.
+      queueMicrotask(() => this.disposeIfUnheld(conversationId));
     };
   }
 

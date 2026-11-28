@@ -422,6 +422,31 @@ describe("design outbox", () => {
     expect(unload()).toBe(false);
   });
 
+  it("keeps a session with a waiting request live when its view lets go, so the request still goes", async () => {
+    const other = browserViewId("conv_held_wait", "tab_1");
+    const entry = conversationRegistry.acquire("conv_held_wait");
+    entry.setState({ boundAgentId: "agent_3", status: "idle", sessionStatus: "running" });
+    const release = conversationRegistry.view("workbench-held", "conv_held_wait");
+    try {
+      const id = queueDesignRequest({ tabId: other, label: "Annotate", text: "Still here" });
+      await flush();
+      expect(send).not.toHaveBeenCalled();
+      release();
+      await flush();
+      expect(entry.disposed).toBe(false);
+      entry.setState({ sessionStatus: "idle" });
+      await flush();
+      expect(send).toHaveBeenCalledWith(
+        "Still here",
+        "agent_3",
+        [],
+        expect.objectContaining({ pinnedConversationId: "conv_held_wait", stableId: id }),
+      );
+    } finally {
+      conversationRegistry.release("conv_held_wait");
+    }
+  });
+
   it("waits for a session this tab hasn't loaded, and goes once it's ready, without polling", async () => {
     const timers = vi.spyOn(globalThis, "setTimeout");
     const other = browserViewId("conv_elsewhere", "tab_1");

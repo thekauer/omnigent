@@ -233,12 +233,10 @@ function OmnigentProviders({
 }) {
   const isDarkMode = useResolvedThemeMode() === "dark";
   // Reuse the host's QueryClient (read from the ambient provider) and run the
-  // one-time side effects (wire the chat store to that client + resolve
-  // identity). `initChatStore` is idempotent per window: a second embed on the
-  // page finds the client already wired and leaves live conversations alone.
+  // one-time side effects (the session host resolver, identity). The chat store is
+  // wired to that client by the mount (`useMountedWorkbench`).
   const hostQueryClient = useQueryClient();
   useState(() => {
-    initChatStore(hostQueryClient);
     // Resolve a session's routing host on demand (a hostless sub-agent child
     // walks up to its host-bound ancestor) before host-scoped requests key.
     setSessionHostResolver((sessionId, options) =>
@@ -258,8 +256,11 @@ function OmnigentProviders({
       const previous = innerRoot.current;
       innerRoot.current = el;
       workbench.overlayRoot.set(el);
-      if (el) setEmbedRoot(el);
-      else if (previous !== null && getEmbedRoot() === previous) setEmbedRoot(null);
+      if (previous !== null) forgetEmbedRoot(previous);
+      if (el !== null) {
+        liveEmbedRoots.push(el);
+        setEmbedRoot(el);
+      }
     },
     [workbench],
   );
@@ -341,18 +342,34 @@ function OmnigentProviders({
 
 /** Each mount's current mount run: a run that is replaced (a strict mode remount) has ended. */
 const currentMountRuns = new WeakMap<WorkbenchScope, object>();
+/** Each mount's hold on the chat store's client, kept across a strict mode remount. */
+const chatStoreHolds = new WeakMap<WorkbenchScope, () => void>();
+/** The roots of the embeds on the page that are mounted, the last mounted last. */
+const liveEmbedRoots: HTMLElement[] = [];
+
+/**
+ * Drops an unmounted embed's root. The global root (for callers outside React) is the last
+ * embed still mounted, not null, while one is.
+ */
+function forgetEmbedRoot(root: HTMLElement): void {
+  const index = liveEmbedRoots.lastIndexOf(root);
+  if (index >= 0) liveEmbedRoots.splice(index, 1);
+  if (getEmbedRoot() === root) setEmbedRoot(liveEmbedRoots[liveEmbedRoots.length - 1] ?? null);
+}
 
 /**
  * Keeps `workbench` the active one while mounted, and again whenever the user points, types
  * or focuses inside the app, so the window's commands and keybindings reach the app in use.
  * Holds its layout key while mounted (a mount on a key another mount holds keeps its layout
- * in memory, `workbench/workbenchScope.ts`). Unmounting releases its conversations, so their
- * streams stop with it.
+ * in memory, `workbench/workbenchScope.ts`), and its hold on the chat store's `client`.
+ * Unmounting releases its conversations, so their streams stop with it.
  */
-function useMountedWorkbench(workbench: WorkbenchScope): void {
+function useMountedWorkbench(workbench: WorkbenchScope, client: QueryClient): void {
   useLayoutEffect(() => {
     const releaseLayoutKey = holdWorkbenchLayoutKey(workbench);
     activateWorkbenchScope(workbench);
+    // A strict mode remount keeps the hold its first run took.
+    if (!chatStoreHolds.has(workbench)) chatStoreHolds.set(workbench, initChatStore(client));
     const run = {};
     currentMountRuns.set(workbench, run);
     return () => {
@@ -363,9 +380,11 @@ function useMountedWorkbench(workbench: WorkbenchScope): void {
         if (currentMountRuns.get(workbench) !== run) return;
         currentMountRuns.delete(workbench);
         conversationRegistry.releaseMountView(workbench.id);
+        chatStoreHolds.get(workbench)?.();
+        chatStoreHolds.delete(workbench);
       });
     };
-  }, [workbench]);
+  }, [workbench, client]);
   useActivateWorkbenchOnUse(workbench);
 }
 
@@ -465,7 +484,7 @@ export function OmnigentApp({
   // This mount's own workbench: its layout state (kept by its basename and id), layout service
   // and product layout, shared with no other app on the page.
   const [workbench] = useState(() => createWorkbenchScope(basename, workbenchId));
-  useMountedWorkbench(workbench);
+  useMountedWorkbench(workbench, queryClient);
   // The built-in extensions (the Changes, Files, Pull Requests, Tasks, Agents and
   // Content search tabs) run in the window's extension host, as standalone. It is
   // shared by every OmnigentApp on the page. Dev-path extensions stay standalone only.

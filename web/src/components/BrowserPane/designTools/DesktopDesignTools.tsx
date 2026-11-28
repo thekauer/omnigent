@@ -15,6 +15,7 @@ import {
 import { createPortal } from "react-dom";
 import { Separator } from "@/components/ui/separator";
 import { isImeCompositionKeyEvent } from "@/lib/ime";
+import { useOverlayRoot } from "@/workbench/workbenchScope";
 import { closeTool, tabTools, toggleTool, useTabTools } from "./core/designToolsStore";
 import { desktopDesignTools } from "./desktopBridge";
 import { setTabDesignPlatform } from "./core/designPlatform";
@@ -150,8 +151,15 @@ export function DesktopDesignTools({
   container,
 }: DesktopDesignToolsProps) {
   const bridge = useMemo(desktopDesignTools, []);
+  // The mount's overlay root (an embed's own), read when the overlay opens.
+  const overlayRoot = useOverlayRoot();
+  const overlayRootRef = useRef<HTMLElement | null>(overlayRoot);
+  useLayoutEffect(() => {
+    overlayRootRef.current = overlayRoot;
+  }, [overlayRoot]);
   const overlay = useMemo(
-    () => (bridge ? new DesignOverlay(bridge, viewId) : null),
+    () =>
+      bridge ? new DesignOverlay(bridge, viewId, undefined, () => overlayRootRef.current) : null,
     [bridge, viewId],
   );
   // This view's page is the tools' platform for its tab (core/designPlatform.ts). Set in

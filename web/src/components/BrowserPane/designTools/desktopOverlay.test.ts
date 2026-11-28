@@ -102,6 +102,23 @@ describe("DesignOverlay", () => {
     await expect(overlay.request("scroll")).rejects.toThrow("isn't open");
   });
 
+  it("mirrors the app into the overlay root it is given, its own subtree and attributes", async () => {
+    const { bridge, next } = heldBridge();
+    const windows = frames();
+    const portalRoot = document.createElement("div");
+    portalRoot.setAttribute("data-overlay-test", "own-root");
+    document.body.append(portalRoot);
+    const overlay = new DesignOverlay(bridge, "view_1", windows.open, () => portalRoot);
+    overlay.start(true);
+    (await next("start")).answer({ ok: true, session: "s1", frame: "f1" });
+    await vi.waitFor(() => expect(overlay.current()).not.toBeNull());
+    // The mirror of the root's element carries its attributes, and the portals go inside it.
+    const mirrored = overlay.current()!.root.parentElement!;
+    expect(mirrored.getAttribute("data-overlay-test")).toBe("own-root");
+    overlay.stop();
+    portalRoot.remove();
+  });
+
   it("says a capture of an element off the page's screen needs it scrolled to", async () => {
     const { bridge, next } = heldBridge();
     const overlay = new DesignOverlay(bridge, "view_1", frames().open);

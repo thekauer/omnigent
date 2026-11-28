@@ -260,6 +260,8 @@ export function isActiveWorkbenchScopeForEvent(scope: WorkbenchScope, event: Eve
  */
 export function useStandaloneWorkbenchActivation(): void {
   useLayoutEffect(() => {
+    // Intended: last mounted wins. The standalone app takes the window's commands when it
+    // mounts, even after an earlier embed.
     activateWorkbenchScope(WINDOW_SCOPE);
   }, []);
 }

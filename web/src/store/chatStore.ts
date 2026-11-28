@@ -1591,10 +1591,14 @@ export interface ChatState extends ConversationState, AppChatState, ChatActions 
 let queryClient: QueryClient | null = null;
 /**
  * Every QueryClient wired to the store, the standalone app's and each embed's own, each with its
- * mutation listener. The store's cache writes and invalidations go to each of them
- * (`eachQueryClient`), so every app on the page sees the store's updates.
+ * mutation listener and the count of holds on it. The store's cache writes and invalidations go
+ * to each of them (`eachQueryClient`), so every app on the page sees the store's updates.
  */
-const wiredQueryClients = new Map<QueryClient, () => void>();
+interface WiredQueryClient {
+  readonly unsubscribe: () => void;
+  holds: number;
+}
+const wiredQueryClients = new Map<QueryClient, WiredQueryClient>();
 
 function eachQueryClient(apply: (client: QueryClient) => void): void {
   for (const client of wiredQueryClients.keys()) apply(client);
@@ -2179,17 +2183,35 @@ export function bindConversationForTest(
 
 /**
  * Initialize the store with the app's QueryClient. Called at app boot from
- * `main.tsx`, and once per mounted `OmnigentApp` from `embed.tsx`. Without this
- * the store can't fetch items through the cache or invalidate the conversations
- * query when a new conversation is created.
+ * `main.tsx` (which never releases it), and once per mounted `OmnigentApp` from
+ * `embed.tsx`. Without this the store can't fetch items through the cache or
+ * invalidate the conversations query when a new conversation is created.
  *
- * Idempotent per client: a call with a client already wired is a no-op. Each
- * client wired gets the store's cache writes and invalidations (the standalone
- * app and each embed have their own), and live conversations are left alone.
+ * Each call holds the client once; the returned release drops that hold, and the
+ * client's wiring goes when its last hold does. Each client wired gets the store's
+ * cache writes and invalidations (the standalone app and each embed have their
+ * own), and live conversations are left alone.
  */
-export function initChatStore(client: QueryClient): void {
-  if (wiredQueryClients.has(client)) return;
-  wireQueryClient(client);
+export function initChatStore(client: QueryClient): () => void {
+  const wired = wiredQueryClients.get(client) ?? wireQueryClient(client);
+  wired.holds += 1;
+  let held = true;
+  return () => {
+    if (!held) return;
+    held = false;
+    releaseChatStore(client);
+  };
+}
+
+/** Drops one hold on `client` (see `initChatStore`); its wiring goes with the last one. */
+function releaseChatStore(client: QueryClient): void {
+  const wired = wiredQueryClients.get(client);
+  if (wired === undefined) return;
+  wired.holds -= 1;
+  if (wired.holds > 0) return;
+  wired.unsubscribe();
+  wiredQueryClients.delete(client);
+  if (queryClient === client) queryClient = wiredQueryClients.keys().next().value ?? null;
 }
 
 /**
@@ -2212,13 +2234,13 @@ export function resetChatStoreForTest(client: QueryClient): void {
   // The send's latch is per-conversation state, cleared with the registry above.
   sendChains.clear();
   startupReads.clear();
-  for (const unsubscribe of wiredQueryClients.values()) unsubscribe();
+  for (const wired of wiredQueryClients.values()) wired.unsubscribe();
   wiredQueryClients.clear();
   queryClient = null;
   wireQueryClient(client);
 }
 
-function wireQueryClient(client: QueryClient): void {
+function wireQueryClient(client: QueryClient): WiredQueryClient {
   const unsubscribe = client.getMutationCache().subscribe((event) => {
     if (event.type !== "updated" || !["success", "error"].includes(event.action.type)) return;
     const [kind, conversationId] = event.mutation.options.mutationKey ?? [];
@@ -2227,8 +2249,10 @@ function wireQueryClient(client: QueryClient): void {
     useChatStore.getState().maybeFlushQueuedHead(conversationId);
     useChatStore.getState().flushBackgroundQueues();
   });
-  wiredQueryClients.set(client, unsubscribe);
+  const wired = { unsubscribe, holds: 0 };
+  wiredQueryClients.set(client, wired);
   queryClient ??= client;
+  return wired;
 }
 
 function scheduleWorkspaceFilesystemInvalidation(sessionId: string): void {

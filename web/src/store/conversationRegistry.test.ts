@@ -152,7 +152,7 @@ describe("ConversationRegistry", () => {
     expect(registry.evictLruEvictable()).toBe("b");
   });
 
-  it("keeps each mount's viewed conversation out of eviction, whichever one is active", () => {
+  it("keeps each mount's viewed conversation out of eviction, whichever one is active", async () => {
     // Two embeds on the page each show their own session; the root's active entry is
     // a third one. Eviction must take the unviewed entry and nothing else.
     registry.acquire("conv_one");
@@ -166,30 +166,35 @@ describe("ConversationRegistry", () => {
     expect(registry.evictLruEvictable()).toBeNull();
     // A view that lets go of a conversation nothing else holds disposes it.
     releaseFirstMount();
+    await Promise.resolve();
     expect(registry.has("conv_one")).toBe(false);
     releaseSecondMount();
+    await Promise.resolve();
     expect(registry.ids()).toEqual(["conv_active"]);
   });
 
-  it("disposes a conversation when its last view is released and nothing else holds it", () => {
+  it("disposes a conversation when its last view is released and nothing else holds it", async () => {
     const entry = registry.acquire("conv_a");
     const release = registry.view("workbench-1", "conv_a");
     release();
+    await Promise.resolve();
     expect(entry.disposed).toBe(true);
     expect(registry.has("conv_a")).toBe(false);
   });
 
-  it("keeps a released conversation that is still the active projection, a retain, or another view's", () => {
+  it("keeps a released conversation that is still the active projection, a retain, or another view's", async () => {
     registry.acquire("active");
     registry.setActive("active");
     const releaseActive = registry.view("window", "active");
     releaseActive();
+    await Promise.resolve();
     expect(registry.has("active")).toBe(true);
 
     registry.acquire("retained");
     const releaseRetain = registry.retain("retained");
     const releaseView = registry.view("workbench-1", "retained");
     releaseView();
+    await Promise.resolve();
     expect(registry.has("retained")).toBe(true);
     releaseRetain();
 
@@ -197,15 +202,32 @@ describe("ConversationRegistry", () => {
     const releaseFirst = registry.view("workbench-1", "shared");
     const releaseSecond = registry.view("workbench-2", "shared");
     releaseFirst();
+    await Promise.resolve();
     expect(registry.has("shared")).toBe(true);
     releaseSecond();
+    await Promise.resolve();
     expect(registry.has("shared")).toBe(false);
   });
 
-  it("keeps a released conversation with unsent work until the composer restores it", () => {
+  it("keeps a view's conversation through a strict mode release and view in one task, beside another mount's active projection", async () => {
+    // A standalone page's view under strict mode's effect cleanup and setup, while an embed's
+    // conversation is the active projection: the cleanup must not dispose the live stream.
+    const entry = registry.acquire("conv_page");
+    registry.acquire("conv_projection");
+    registry.setActive("conv_projection");
+    const cleanup = registry.view("window", "conv_page");
+    cleanup();
+    registry.view("window", "conv_page");
+    await Promise.resolve();
+    expect(entry.disposed).toBe(false);
+    expect(registry.peek("conv_page")).toBe(entry);
+  });
+
+  it("keeps a released conversation with unsent work until the composer restores it", async () => {
     registry.acquire("conv_unsent").setState({ pendingUserMessages: [unsentBubble("pend_x")] });
     const release = registry.view("workbench-1", "conv_unsent");
     release();
+    await Promise.resolve();
     expect(registry.has("conv_unsent")).toBe(true);
   });
 

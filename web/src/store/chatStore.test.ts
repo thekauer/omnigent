@@ -24631,18 +24631,21 @@ describe("one chat store per window", () => {
     const entry = conversationRegistry.peek("conv_kept");
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 
-    initChatStore(new QueryClient({ defaultOptions: { queries: { retry: false } } }));
+    const release = initChatStore(
+      new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+    );
 
     expect(entry?.disposed).toBe(false);
     expect(conversationRegistry.peek("conv_kept")).toBe(entry);
     expect(warn).not.toHaveBeenCalled();
+    release();
     warn.mockRestore();
   });
 
   it("sends the store's invalidations to every wired client", () => {
     // The standalone app's client and an embed's: both see a child's finished turn.
     const embedClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-    initChatStore(embedClient);
+    const release = initChatStore(embedClient);
     client.setQueryData(["session", "conv_child2"], { parentSessionId: "conv_parent2" });
     const firstSpy = vi.spyOn(client, "invalidateQueries");
     const embedSpy = vi.spyOn(embedClient, "invalidateQueries");
@@ -24654,6 +24657,30 @@ describe("one chat store per window", () => {
     const parentList = { queryKey: childSessionsQueryKey("conv_parent2") };
     expect(firstSpy).toHaveBeenCalledWith(parentList);
     expect(embedSpy).toHaveBeenCalledWith(parentList);
+    release();
+  });
+
+  it("stops writing to a client once its last hold is released, and keeps it while one is held", () => {
+    // Each embed mount holds the shared client; a remount's extra hold must not leak.
+    const embedClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const embedSpy = vi.spyOn(embedClient, "invalidateQueries");
+    const parentList = (id: string) => ({ queryKey: childSessionsQueryKey(id) });
+    const invalidateChildOf = (parent: string, child: string) => {
+      client.setQueryData(["session", child], { parentSessionId: parent });
+      handleSessionEvent({ type: "session_status", conversationId: child, status: "idle" });
+    };
+
+    const releaseFirst = initChatStore(embedClient);
+    const releaseSecond = initChatStore(embedClient);
+    releaseFirst();
+    releaseFirst();
+    invalidateChildOf("conv_parent_held", "conv_child_held");
+    expect(embedSpy).toHaveBeenCalledWith(parentList("conv_parent_held"));
+
+    releaseSecond();
+    embedSpy.mockClear();
+    invalidateChildOf("conv_parent_gone", "conv_child_gone");
+    expect(embedSpy).not.toHaveBeenCalled();
   });
 
   it("keeps the entry of each mount's session live while the other mount's is active", async () => {

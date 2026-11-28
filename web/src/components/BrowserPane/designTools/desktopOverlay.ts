@@ -1,7 +1,6 @@
 // The desktop app's side of a Browser view's design tools overlay (main's side is
 // web/electron/src/designTools.js): a document this app opens, which main shows in a
 // transparent view just above the native page, so the tools render into it with portals.
-import { getEmbedRoot } from "@/lib/host";
 import type { Answer, DesignToolsBridge } from "./desktopBridge";
 
 /** An open overlay's document: its window, and the element the tools portal into. */
@@ -53,12 +52,23 @@ export class DesignOverlay {
 
   private readonly bridge: DesignToolsBridge;
   private readonly openWindow: Opener;
+  private readonly overlayRoot: () => HTMLElement | null;
   readonly viewId: string;
 
-  constructor(bridge: DesignToolsBridge, viewId: string, openWindow: Opener = openBlank) {
+  /**
+   * `overlayRoot` is the calling mount's overlay root (null: the document body), read when an
+   * opening starts, so the overlay's portals sit in the same themed subtree as its app's.
+   */
+  constructor(
+    bridge: DesignToolsBridge,
+    viewId: string,
+    openWindow: Opener = openBlank,
+    overlayRoot: () => HTMLElement | null = () => null,
+  ) {
     this.bridge = bridge;
     this.viewId = viewId;
     this.openWindow = openWindow;
+    this.overlayRoot = overlayRoot;
   }
 
   private call(op: string, args: Record<string, unknown> = {}): Promise<Answer> {
@@ -129,7 +139,7 @@ export class DesignOverlay {
         for (const listener of this.failures) listener(error);
         return;
       }
-      const mirror = mirrorAppDocument(win);
+      const mirror = mirrorAppDocument(win, document, this.overlayRoot() ?? document.body);
       // Closed from outside (main ended it, the window went): the opening's over.
       const onHide = () => {
         if (this.shown?.win === win) this.lost();
@@ -284,7 +294,7 @@ function copyAttributes(from: Element, to: Element, extraStyle = ""): void {
 export function mirrorAppDocument(
   win: Window,
   appDocument: Document = document,
-  portalParent: HTMLElement = getEmbedRoot() ?? appDocument.body,
+  portalParent: HTMLElement = appDocument.body,
 ): { root: HTMLElement; dispose: () => void } {
   const doc = win.document;
   doc.open();

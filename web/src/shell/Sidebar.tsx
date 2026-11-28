@@ -325,7 +325,7 @@ import { SessionImportStatus } from "./SessionImportStatus";
 import { useSessionImportStore } from "@/store/sessionImport";
 import { useSettingsRoute, useTrackSettingsReturn } from "./settingsNav";
 import { SettingsSidebar } from "./settingsSearch/SettingsSidebar";
-import { LAYOUT_SLOTS, layoutState } from "@/workbench/layoutState";
+import { LAYOUT_SLOTS, type LayoutStateStore } from "@/workbench/layoutState";
 import { type LayoutService, partHook, Parts } from "@/workbench/layoutService";
 import {
   type ActiveChatOverride,
@@ -2686,15 +2686,18 @@ function ConversationList({
   const grids = useGridSessions();
   const nestedDrafts = useNestedSessionDrafts();
   const draftQueryClient = useQueryClient();
+  // The mount's own layout state: an embed's collapse and expand preferences are its own.
+  const { state: sidebarState } = useWorkbenchScope();
   const [collapsedFamilies, setCollapsedFamilies] = useState<Set<string>>(
-    () => new Set(readStoredStringList(LAYOUT_SLOTS.collapsedFamilies)),
+    () => new Set(readStoredStringList(LAYOUT_SLOTS.collapsedFamilies, sidebarState)),
   );
   useEffect(() => {
     writeStoredStringList(
       LAYOUT_SLOTS.collapsedFamilies,
       [...collapsedFamilies].slice(-MAX_STORED_COLLAPSED_SESSION_FAMILIES),
+      sidebarState,
     );
-  }, [collapsedFamilies]);
+  }, [collapsedFamilies, sidebarState]);
   const toggleFamily = useCallback((familyId: string) => {
     setCollapsedFamilies((previous) => {
       const next = new Set(previous);
@@ -3256,18 +3259,21 @@ function ConversationList({
   // Collapsed section titles — persisted like pins so the preference
   // survives reloads. Lifted here (not per-section state) because the
   // baseline group's "Recent" title comes and goes with its siblings.
-  const [collapsedSections, setCollapsedSections] = useState<string[]>(
-    readCollapsedSidebarSections,
+  const [collapsedSections, setCollapsedSections] = useState<string[]>(() =>
+    readCollapsedSidebarSections(sidebarState),
   );
-  const toggleSectionCollapsed = useCallback((sectionTitle: string) => {
-    setCollapsedSections((prev) => {
-      const next = prev.includes(sectionTitle)
-        ? prev.filter((t) => t !== sectionTitle)
-        : [...prev, sectionTitle];
-      writeCollapsedSidebarSections(next);
-      return next;
-    });
-  }, []);
+  const toggleSectionCollapsed = useCallback(
+    (sectionTitle: string) => {
+      setCollapsedSections((prev) => {
+        const next = prev.includes(sectionTitle)
+          ? prev.filter((t) => t !== sectionTitle)
+          : [...prev, sectionTitle];
+        writeCollapsedSidebarSections(next, sidebarState);
+        return next;
+      });
+    },
+    [sidebarState],
+  );
 
   // Auto-expand the Pinned section when a session is newly pinned, so a
   // freshly-pinned chat can't hide inside a collapsed group. Only reacts to
@@ -3282,11 +3288,11 @@ function ConversationList({
       setCollapsedSections((prevCollapsed) => {
         if (!prevCollapsed.includes("Pinned")) return prevCollapsed;
         const next = prevCollapsed.filter((t) => t !== "Pinned");
-        writeCollapsedSidebarSections(next);
+        writeCollapsedSidebarSections(next, sidebarState);
         return next;
       });
     }
-  }, [pinnedConversationIds]);
+  }, [pinnedConversationIds, sidebarState]);
 
   // When a search query appears, auto-expand all sections so results
   // in collapsed groups are visible. The user can still manually collapse
@@ -3316,37 +3322,48 @@ function ConversationList({
   // Project folders default to COLLAPSED, so we track the inverse — names the
   // user has expanded — persisted across reloads. A project shows its rows only
   // while its name is in this set.
-  const [expandedProjects, setExpandedProjects] = useState<string[]>(readExpandedProjectSections);
-  const toggleProjectExpanded = useCallback((projectName: string) => {
-    setExpandedProjects((prev) => {
-      const next = prev.includes(projectName)
-        ? prev.filter((n) => n !== projectName)
-        : [...prev, projectName];
-      writeExpandedProjectSections(next);
-      return next;
-    });
-  }, []);
+  const [expandedProjects, setExpandedProjects] = useState<string[]>(() =>
+    readExpandedProjectSections(sidebarState),
+  );
+  const toggleProjectExpanded = useCallback(
+    (projectName: string) => {
+      setExpandedProjects((prev) => {
+        const next = prev.includes(projectName)
+          ? prev.filter((n) => n !== projectName)
+          : [...prev, projectName];
+        writeExpandedProjectSections(next, sidebarState);
+        return next;
+      });
+    },
+    [sidebarState],
+  );
   // Expand a project (idempotent). Called right after a session is filed into
   // one, so the freshly populated folder — especially a brand-new project —
   // opens to reveal the session instead of appearing collapsed.
-  const expandProject = useCallback((projectName: string) => {
-    setExpandedProjects((prev) => {
-      if (prev.includes(projectName)) return prev;
-      const next = [...prev, projectName];
-      writeExpandedProjectSections(next);
-      return next;
-    });
-  }, []);
+  const expandProject = useCallback(
+    (projectName: string) => {
+      setExpandedProjects((prev) => {
+        if (prev.includes(projectName)) return prev;
+        const next = [...prev, projectName];
+        writeExpandedProjectSections(next, sidebarState);
+        return next;
+      });
+    },
+    [sidebarState],
+  );
   // Expansion is keyed by name, so carry it over a rename; otherwise the
   // renamed folder reopens collapsed, listing only the open session.
-  const renameExpandedProject = useCallback((oldName: string, newName: string) => {
-    setExpandedProjects((prev) => {
-      if (!prev.includes(oldName)) return prev;
-      const next = [...prev.filter((n) => n !== oldName && n !== newName), newName];
-      writeExpandedProjectSections(next);
-      return next;
-    });
-  }, []);
+  const renameExpandedProject = useCallback(
+    (oldName: string, newName: string) => {
+      setExpandedProjects((prev) => {
+        if (!prev.includes(oldName)) return prev;
+        const next = [...prev.filter((n) => n !== oldName && n !== newName), newName];
+        writeExpandedProjectSections(next, sidebarState);
+        return next;
+      });
+    },
+    [sidebarState],
+  );
 
   const revealedDrafts = useRef(new Set<string>());
   useEffect(() => {
@@ -3370,11 +3387,12 @@ function ConversationList({
       setCollapsedSections((previous) => {
         if (!previous.includes(section)) return previous;
         const next = previous.filter((title) => title !== section);
-        writeCollapsedSidebarSections(next);
+        writeCollapsedSidebarSections(next, sidebarState);
         return next;
       });
     }
   }, [
+    sidebarState,
     nestedDrafts,
     allConversations,
     pinnedSet,
@@ -3614,18 +3632,21 @@ function ConversationList({
     ],
   );
 
-  const expandAllProjects = useCallback((allNames: string[]) => {
-    setExpandedProjects(() => {
-      writeExpandedProjectSections(allNames);
-      return allNames;
-    });
-  }, []);
+  const expandAllProjects = useCallback(
+    (allNames: string[]) => {
+      setExpandedProjects(() => {
+        writeExpandedProjectSections(allNames, sidebarState);
+        return allNames;
+      });
+    },
+    [sidebarState],
+  );
   const collapseAllProjects = useCallback(() => {
     setExpandedProjects(() => {
-      writeExpandedProjectSections([]);
+      writeExpandedProjectSections([], sidebarState);
       return [];
     });
-  }, []);
+  }, [sidebarState]);
 
   // Each folder's loaded rows and how many it lists above "Show more", by name.
   // Projects-scope selection resolves against these, so a member the global
@@ -8847,35 +8868,35 @@ export function isMobileViewport(layout?: LayoutService): boolean {
 // starts expanded. Archived no longer lives in the sidebar (it's on the
 // Settings page). Once the user toggles any header, the stored array (even an
 // empty one) becomes the preference and persists across reloads.
-function readCollapsedSidebarSections(): string[] {
-  return readStoredStringList(LAYOUT_SLOTS.collapsedSections);
+function readCollapsedSidebarSections(state: LayoutStateStore): string[] {
+  return readStoredStringList(LAYOUT_SLOTS.collapsedSections, state);
 }
 
-function writeCollapsedSidebarSections(titles: string[]) {
-  writeStoredStringList(LAYOUT_SLOTS.collapsedSections, titles);
+function writeCollapsedSidebarSections(titles: string[], state: LayoutStateStore) {
+  writeStoredStringList(LAYOUT_SLOTS.collapsedSections, titles, state);
 }
 
 // Project folders default to collapsed, so the persisted set is the EXPANDED
 // names (empty by default = every project starts collapsed).
-function readExpandedProjectSections(): string[] {
-  return readStoredStringList(LAYOUT_SLOTS.expandedProjects);
+function readExpandedProjectSections(state: LayoutStateStore): string[] {
+  return readStoredStringList(LAYOUT_SLOTS.expandedProjects, state);
 }
 
-function writeExpandedProjectSections(names: string[]) {
-  writeStoredStringList(LAYOUT_SLOTS.expandedProjects, names);
+function writeExpandedProjectSections(names: string[], state: LayoutStateStore) {
+  writeStoredStringList(LAYOUT_SLOTS.expandedProjects, names, state);
 }
 
 // Same contract as pins: corrupt storage means "back to defaults", never a
-// broken sidebar. The lists live in the layout state (`layoutState.ts`).
-function readStoredStringList(slot: string): string[] {
+// broken sidebar. The lists live in the mount's layout state (`workbench/layoutState.ts`).
+function readStoredStringList(slot: string, state: LayoutStateStore): string[] {
   if (typeof window === "undefined") return [];
-  const parsed = layoutState.get(slot);
+  const parsed = state.get(slot);
   if (!Array.isArray(parsed)) return [];
   return parsed.filter((value): value is string => typeof value === "string");
 }
 
-function writeStoredStringList(slot: string, values: readonly string[]) {
+function writeStoredStringList(slot: string, values: readonly string[], state: LayoutStateStore) {
   if (typeof window === "undefined") return;
   // Collapse state is a local navigation preference; losing it is fine.
-  layoutState.set(slot, [...values]);
+  state.set(slot, [...values]);
 }

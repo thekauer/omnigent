@@ -570,11 +570,26 @@ function sameOriginLegacyKey(): string {
   return `${LAST_SERVER_PRODUCT_CONFIG_STORAGE_KEY}@${window.location.origin}`;
 }
 
+/**
+ * Origins already warned about an embedder without a `serverIdentity`. Its entry is shared by
+ * every such embed on the origin: one embed's server policy can then apply to another's after a
+ * failed probe. The key is kept anyway, since it fails closed for locks (a server's locks hold
+ * rather than lift); a `serverIdentity` per server keeps each one's policy apart.
+ */
+const warnedUnidentifiedOrigins = new Set<string>();
+
 /** The key the server the app talks to keeps its last-known configuration under. */
 export function lastServerProductConfigKey(): string {
   const identity = getOmnigentServerIdentity();
   if (identity !== null) return `${LAST_SERVER_PRODUCT_CONFIG_STORAGE_KEY}@${identity}`;
-  return `${LAST_SERVER_PRODUCT_CONFIG_STORAGE_KEY}@unidentified:${window.location.origin}`;
+  const origin = window.location.origin;
+  if (!warnedUnidentifiedOrigins.has(origin)) {
+    warnedUnidentifiedOrigins.add(origin);
+    console.warn(
+      `[product] an embed on ${origin} has a fetcher but no serverIdentity; its last-known product policy is shared with other such embeds on this origin. Set serverIdentity to keep each server's policy apart.`,
+    );
+  }
+  return `${LAST_SERVER_PRODUCT_CONFIG_STORAGE_KEY}@unidentified:${origin}`;
 }
 
 /** The build's file and the server's last-known configuration, before the server answers. */
@@ -641,4 +656,5 @@ export function resetProductConfigsForTests(): void {
   configured.clear();
   mounted.clear();
   appliedKey = "";
+  warnedUnidentifiedOrigins.clear();
 }
