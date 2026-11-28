@@ -20,7 +20,7 @@ vi.mock("./App", () => ({
     const { theme, setTheme } = useTheme();
     const resolved = useResolvedThemeMode();
     return (
-      <div className="app-shell">
+      <div className="app-shell" data-window-corner="main">
         <div className="electron-drag-strip" />
         <div className="sidebar-header-row" />
         <div className="traffic-light-clearance" />
@@ -127,7 +127,8 @@ describe("macOS Electron embed", () => {
     render(createPortal(<div role="menu">Menu</div>, getEmbedRoot()!));
     expect(getByRole("menu").matches(controlsSelector)).toBe(expected);
 
-    scope.querySelector(".app-shell")!.setAttribute("data-sidebar-open", "true");
+    // The side bar open at the window's corner: the maximized rail starts to its right.
+    scope.querySelector(".app-shell")!.setAttribute("data-window-corner", "sidebar");
     expect(
       scope.querySelector(".workspace-tab-strip")!.matches(selectorFor(".workspace-tab-strip")),
     ).toBe(false);

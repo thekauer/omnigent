@@ -1546,8 +1546,12 @@ html[data-electron-mac] [data-pane-strip-zoomable] .pane-strip-window-inset {
  * the left (the side bar on the right) always does. Once the sidebar opens on the left, the
  * rail starts to its right and needs no clearance. */
 html[data-electron-mac]
-  .app-shell:is([data-window-corner="main"], [data-window-corner="auxiliarybar"])
-  aside[aria-label="Workspace"]:is([data-maximized], [data-side="left"])
+  .app-shell[data-window-corner="main"]
+  aside[aria-label="Workspace"][data-maximized]
+  .workspace-tab-strip,
+html[data-electron-mac]
+  .app-shell[data-window-corner="auxiliarybar"]
+  aside[aria-label="Workspace"][data-side="left"]
   .workspace-tab-strip {
   padding-left: var(--mac-header-actions-clearance);
 }

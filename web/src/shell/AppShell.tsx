@@ -587,15 +587,25 @@ function AppShellImpl() {
   const lastMobileViewportRef = useRef(mobileViewport);
   const lastSidebarOpenRef = useRef(sidebarOpen);
   const sidebarOpenBeforeNarrowRef = useRef(false);
+  const rootMeasuredRef = useRef(workbenchScope.layout.getRootViewport() !== null);
   useLayoutEffect(() => {
     const opened = sidebarOpen && !lastSidebarOpenRef.current;
     lastSidebarOpenRef.current = sidebarOpen;
+    const rootMeasured = workbenchScope.layout.getRootViewport() !== null;
+    const firstRootMeasure = rootMeasured && !rootMeasuredRef.current;
+    rootMeasuredRef.current = rootMeasured;
     if (lastMobileViewportRef.current === mobileViewport) {
       // Opening the drawer while narrow replaces the remembered desktop state.
       if (mobileViewport && opened && !inSettings) sidebarOpenBeforeNarrowRef.current = false;
       return;
     }
     lastMobileViewportRef.current = mobileViewport;
+    // An embed's first render reads the window: when its root's first box picks the desktop
+    // layout, the side bar starts as it would have there (open, unless stored closed).
+    if (firstRootMeasure && !mobileViewport && !inSettings) {
+      setSidebarOpen(initialSidebarOpen(workbenchState, workbenchScope.layout));
+      return;
+    }
     if (!mobileViewport) {
       const reopen = sidebarOpenBeforeNarrowRef.current;
       sidebarOpenBeforeNarrowRef.current = false;
@@ -613,7 +623,15 @@ function AppShellImpl() {
     if (atSettingsRoot) return;
     setSidebarOpen(false);
     setSidebarPeek(false);
-  }, [mobileViewport, sidebarOpen, inSettings, atSettingsRoot, setSidebarOpen]);
+  }, [
+    mobileViewport,
+    sidebarOpen,
+    inSettings,
+    atSettingsRoot,
+    setSidebarOpen,
+    workbenchScope.layout,
+    workbenchState,
+  ]);
 
   // Reads the same module-level store Sidebar drives, so the rail's ceiling
   // tracks the live sidebar width (including a drag) rather than a guess.

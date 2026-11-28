@@ -965,13 +965,21 @@ describe("index.css layout variants", () => {
       `${variantBlock("md")}\n${variantBlock("max-md")}\n${dark}\n@tailwind utilities;`,
     );
     const classes = ["dark:hidden", "md:flex", "max-md:hidden", "dark:max-md:block"];
-    const css = compiler.build([...classes, "hover:max-md:grid"]).replace(/\s+/g, " ");
-    const desktopApp = "[data-desktop-app], [data-desktop-app] *";
+    const css = compiler
+      .build([...classes, "hover:max-md:grid"])
+      .replace(/\s+/g, " ")
+      .replace(/\( /g, "(")
+      .replace(/ \)/g, ")");
+    // An embed's root carries the layout its own box picks, which wins inside it (decision 14).
+    const desktopRoot = '[data-layout-width="desktop"], [data-layout-width="desktop"] *';
+    const mobileRoot = '[data-layout-width="mobile"], [data-layout-width="mobile"] *';
+    const desktopApp = `[data-desktop-app], [data-desktop-app] *, ${desktopRoot}`;
     const mobileOnly = (declaration: string) =>
-      `@media (width < ${BREAKPOINT_MD}) { &:where(:not(${desktopApp})) { ${declaration} } }`;
+      `@media (width < ${BREAKPOINT_MD}) { &:where(:not(${desktopApp})) { ${declaration} } } ` +
+      `&:where(${mobileRoot}) { ${declaration} }`;
 
     expect(css).toContain(
-      String.raw`.md\:flex { @media (width >= ${BREAKPOINT_MD}) { display: flex; } ` +
+      String.raw`.md\:flex { @media (width >= ${BREAKPOINT_MD}) { &:where(:not(${mobileRoot})) { display: flex; } } ` +
         `&:where(${desktopApp}) { display: flex; } }`,
     );
     expect(css).toContain(String.raw`.max-md\:hidden { ${mobileOnly("display: none;")} }`);
@@ -1532,7 +1540,7 @@ describe("index.css electron-mac sidebar header", () => {
     // The toggle comes first in the DOM, so nothing reorders the cluster.
     expect(stripActionsRule).not.toMatch(/order:/);
     expect(cssSource).toMatch(
-      /\.app-shell\[data-sidebar-open\]\s+\.electron-sidebar-header-actions\s+\[data-testid="history-navigation-buttons"\]\s*\{[^}]*margin-left:\s*auto/,
+      /\.app-shell\[data-window-corner="sidebar"\]\s+\.electron-sidebar-header-actions\s+\[data-testid="history-navigation-buttons"\]\s*\{[^}]*margin-left:\s*auto/,
     );
   });
 
@@ -1594,7 +1602,8 @@ describe("index.css electron-mac sidebar header", () => {
  * (z above the rail) then covers that corner — the lights sit over IT, and the
  * strip starts to the sidebar's right with nothing to clear — so the clearance
  * must drop, or the padding shoves the tabs into the middle. The rule keys off
- * `data-sidebar-open` on the app shell (set by AppShell) under the
+ * `data-window-corner` on the app shell (set by AppShell: `sidebar` while the side bar
+ * is open on the left, `main` while the chat reaches the corner) under the
  * `data-electron-mac` root (set on <html> at boot); asserted at
  * the CSS level because the lights are painted by macOS OUTSIDE the page, so no
  * DOM test or screenshot can see them. This selector IS the alignment.
@@ -1641,7 +1650,7 @@ describe("index.css maximized workspace rail traffic-light clearance", () => {
   });
 
   it("clears the lights on the mac shell while the sidebar is collapsed", () => {
-    const strip = makeStrip(true);
+    const strip = makeStrip(true, { "data-window-corner": "main" });
     expect(strip.matches(selector)).toBe(true);
     strip.closest(".app-shell")?.remove();
   });
@@ -1649,7 +1658,19 @@ describe("index.css maximized workspace rail traffic-light clearance", () => {
   it("drops the clearance once the sidebar is reopened over the maximized rail", () => {
     // The exact bug: sidebar open covers the window corner, so the 10.5rem
     // padding has nothing to clear and would push the tabs into the middle.
-    const strip = makeStrip(true, { "data-sidebar-open": "true" });
+    const strip = makeStrip(true, { "data-window-corner": "sidebar" });
+    expect(strip.matches(selector)).toBe(false);
+    strip.closest(".app-shell")?.remove();
+  });
+
+  it("clears a rail on the left (the side bar on the right) whenever it reaches the corner", () => {
+    const strip = makeStrip(true, { "data-window-corner": "auxiliarybar" });
+    const rail = strip.closest("aside")!;
+    rail.removeAttribute("data-maximized");
+    rail.setAttribute("data-side", "left");
+    expect(strip.matches(selector)).toBe(true);
+    // A rail on the right never sits at the corner unless maximized.
+    rail.removeAttribute("data-side");
     expect(strip.matches(selector)).toBe(false);
     strip.closest(".app-shell")?.remove();
   });
@@ -1750,7 +1771,7 @@ describe("index.css pane strip window-corner inset", () => {
   it("is hidden by default and shown on the Mac with the sidebar closed, clearing the header's room", () => {
     expect(ruleFor(".pane-strip-window-inset")).toContain("display: none");
     const shown = ruleFor(
-      "html[data-electron-mac] .app-shell:not([data-sidebar-open]) .pane-strip-window-inset",
+      'html[data-electron-mac] .app-shell[data-window-corner="main"] .pane-strip-window-inset',
     );
     expect(shown).toContain("display: block");
     expect(shown).toContain("width: var(--mac-header-actions-clearance)");

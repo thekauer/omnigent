@@ -221,25 +221,35 @@ describe("variants.css", () => {
 
   it("insets the floating sheet as md does: from md up, and in the desktop app at any width", () => {
     expect(variantsCss).toMatch(
-      /@media \(width >= 73\.8125rem\) \{\s*\[data-omni-sheet="floating"\] \[data-slot="main-area"\] \{\s*margin: var\(--ui-sheet-gap-top\)/,
+      /@media \(width >= 73\.8125rem\) \{\s*\[data-omni-sheet="floating"\] \[data-slot="main-area"\]:where\(:not\(\[data-layout-width="mobile"\] \*\)\) \{\s*margin: var\(--ui-sheet-gap-top\)/,
     );
-    expect(variantsCss).toContain(
-      '[data-omni-sheet="floating"] .app-shell:not([data-sidebar-open]) [data-slot="main-area"]',
+    expect(variantsCss.replace(/\s+/g, " ")).toContain(
+      '[data-omni-sheet="floating"] .app-shell:not([data-sidebar-open]) [data-slot="main-area"]:where(:not([data-layout-width="mobile"] *))',
     );
     // The same breakpoint and desktop-app rule as index.css's md variant.
     const indexCss = readFileSync(resolve(__dirname, "../index.css"), "utf8");
     expect(indexCss).toMatch(
-      /@custom-variant md \{\s*@media \(width >= 73\.8125rem\)[\s\S]*?&:where\(\[data-desktop-app\], \[data-desktop-app\] \*\)/,
+      /@custom-variant md \{\s*@media \(width >= 73\.8125rem\)[\s\S]*?&:where\(\s*\[data-desktop-app\],\s*\[data-desktop-app\] \*,\s*\[data-layout-width="desktop"\]/,
     );
     // Any run of whitespace between a selector's parts: a formatter wraps long ones.
     const rule = (selector: string) =>
       new RegExp(
-        `${selector.replace(/[[\]().*:"=]/g, "\\$&").replace(/\s+/g, "\\s+")}\\s*\\{([^}]*)\\}`,
+        `${selector
+          .replace(/[[\]().*:"=]/g, "\\$&")
+          .replace(/\s+/g, "\\s+")
+          .replaceAll("\\(", "\\(\\s*")
+          .replaceAll("\\)", "\\s*\\)")
+          .replaceAll(",", ",\\s*")}\\s*\\{([^}]*)\\}`,
         "g",
       );
-    const desktop = ":where([data-desktop-app], [data-desktop-app] *)";
+    const desktop =
+      ':where([data-desktop-app], [data-desktop-app] *, [data-layout-width="desktop"] *)';
     const [width, app] = [
-      ...variantsCss.matchAll(rule('[data-omni-sheet="floating"] [data-slot="main-area"]')),
+      ...variantsCss.matchAll(
+        rule(
+          '[data-omni-sheet="floating"] [data-slot="main-area"]:where(:not([data-layout-width="mobile"] *))',
+        ),
+      ),
       ...variantsCss.matchAll(
         rule(`[data-omni-sheet="floating"] [data-slot="main-area"]${desktop}`),
       ),
@@ -249,7 +259,7 @@ describe("variants.css", () => {
     const declarations = (match: RegExpMatchArray | undefined) =>
       (match?.[1] ?? "").replace(/\s+/g, " ").trim();
     expect(declarations(app)).toBe(declarations(width));
-    expect(variantsCss.replace(/\s+/g, " ")).toContain(
+    expect(variantsCss.replace(/\s+/g, " ").replace(/\( /g, "(").replace(/ \)/g, ")")).toContain(
       `[data-omni-sheet="floating"] .app-shell:not([data-sidebar-open]) [data-slot="main-area"]${desktop} { margin-left: var(--ui-sheet-gap); }`,
     );
   });

@@ -6,6 +6,7 @@
 //   3. Link button appears for addressed comments too (after switching the tab).
 //   4. No link button is rendered when onCopyCommentLink is omitted.
 
+import { stubWindowMediaQueries } from "@/test/windowMediaQueries";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Comment } from "@/hooks/useComments";
@@ -432,10 +433,12 @@ describe("CommentsPanel resize affordance", () => {
   function withInnerWidth(width: number, run: () => void) {
     const orig = window.innerWidth;
     Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
+    stubWindowMediaQueries();
     try {
       run();
     } finally {
       Object.defineProperty(window, "innerWidth", { configurable: true, value: orig });
+      vi.unstubAllGlobals();
     }
   }
 

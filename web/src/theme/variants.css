@@ -398,10 +398,11 @@
  * session grid) on a rounded sheet inset from the window's edges: beside the sidebar
  * with no left margin, symmetric while it is collapsed. Below `md` (phones, where the
  * sidebar is a drawer) the main area stays full bleed. As index.css's `md` variant, the
- * desktop app (`data-desktop-app`) keeps it at every width: the same rules twice, under
- * the width and under the attribute (`:where()`, so neither outweighs the other). */
+ * desktop app (`data-desktop-app`) keeps it at every width, and an embed's root
+ * (`data-layout-width`) decides inside it: the same rules twice, under the width and under
+ * the attribute (`:where()`, so neither outweighs the other). */
 @media (width >= 73.8125rem) {
-  [data-omni-sheet="floating"] [data-slot="main-area"] {
+  [data-omni-sheet="floating"] [data-slot="main-area"]:where(:not([data-layout-width="mobile"] *)) {
     margin: var(--ui-sheet-gap-top) var(--ui-sheet-gap) var(--ui-sheet-gap) 0;
     overflow: hidden;
     border-radius: var(--ui-sheet-radius);
@@ -412,16 +413,24 @@
       var(--ui-shadow-2xl)
     );
   }
-  [data-omni-sheet="floating"] .app-shell:not([data-sidebar-open]) [data-slot="main-area"] {
+  [data-omni-sheet="floating"]
+    .app-shell:not([data-sidebar-open])
+    [data-slot="main-area"]:where(:not([data-layout-width="mobile"] *)) {
     margin-left: var(--ui-sheet-gap);
   }
   /* Under the title bar the sheet's top gap is the title bar's own. */
-  [data-omni-sheet="floating"] .app-shell[data-titlebar] [data-slot="main-area"] {
+  [data-omni-sheet="floating"]
+    .app-shell[data-titlebar]
+    [data-slot="main-area"]:where(:not([data-layout-width="mobile"] *)) {
     margin-top: var(--ui-sheet-gap-top-titlebar);
   }
 }
 [data-omni-sheet="floating"]
-  [data-slot="main-area"]:where([data-desktop-app], [data-desktop-app] *) {
+  [data-slot="main-area"]:where(
+    [data-desktop-app],
+    [data-desktop-app] *,
+    [data-layout-width="desktop"] *
+  ) {
   margin: var(--ui-sheet-gap-top) var(--ui-sheet-gap) var(--ui-sheet-gap) 0;
   overflow: hidden;
   border-radius: var(--ui-sheet-radius);
@@ -434,11 +443,19 @@
 }
 [data-omni-sheet="floating"]
   .app-shell:not([data-sidebar-open])
-  [data-slot="main-area"]:where([data-desktop-app], [data-desktop-app] *) {
+  [data-slot="main-area"]:where(
+    [data-desktop-app],
+    [data-desktop-app] *,
+    [data-layout-width="desktop"] *
+  ) {
   margin-left: var(--ui-sheet-gap);
 }
 [data-omni-sheet="floating"]
   .app-shell[data-titlebar]
-  [data-slot="main-area"]:where([data-desktop-app], [data-desktop-app] *) {
+  [data-slot="main-area"]:where(
+    [data-desktop-app],
+    [data-desktop-app] *,
+    [data-layout-width="desktop"] *
+  ) {
   margin-top: var(--ui-sheet-gap-top-titlebar);
 }
