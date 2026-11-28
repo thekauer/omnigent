@@ -23,7 +23,7 @@ import {
   useProductLayout,
   isViewHiddenByProduct,
 } from "./productLayout";
-import { isViewHidden } from "./viewsLayout";
+import { isViewHidden, useViewsLayout } from "./viewsLayout";
 import { WorkbenchContext } from "./workbenchContext";
 import {
   activateWorkbenchScope,
@@ -31,13 +31,16 @@ import {
   createWorkbenchScope,
   holdWorkbenchLayoutKey,
   isActiveWorkbenchScope,
+  isActiveWorkbenchScopeForEvent,
   releaseWorkbenchScope,
   useIsActiveWorkbenchScope,
   standaloneWorkbenchScope,
   useActivateWorkbenchOnUse,
+  useStandaloneWorkbenchActivation,
   type WorkbenchScope,
   WorkbenchScopeProvider,
 } from "./workbenchScope";
+import { useViewLocations } from "./viewLocations";
 
 afterEach(() => {
   cleanup();
@@ -168,8 +171,8 @@ describe("id patterns", () => {
 describe("the product's layout", () => {
   it("hides views by id or pattern, and orders the activity bar before the user", () => {
     productLayout.set({ hiddenViews: ["acme.*"], containerOrder: ["omnigent.inbox", "acme.*"] });
-    expect(isViewHidden({ id: "acme.tools.list" }, {})).toBe(true);
-    expect(isViewHidden({ id: "omnigent.inbox.list" }, {})).toBe(false);
+    expect(isViewHidden({ id: "acme.tools.list" }, {}, productLayout)).toBe(true);
+    expect(isViewHidden({ id: "omnigent.inbox.list" }, {}, productLayout)).toBe(false);
     const items = ["omnigent.conversations", "acme.tools", "omnigent.inbox"].map((id) => ({ id }));
     expect(orderActivityBarItems(items, { order: [], hidden: [] }).map((item) => item.id)).toEqual([
       "omnigent.inbox",
@@ -557,12 +560,13 @@ describe("each mount's product layout", () => {
 describe("the standalone app's re-activation on use", () => {
   it("takes the window's commands back from an embed when the user uses the standalone app", () => {
     const root = document.createElement("div");
+    root.id = "root";
     const control = document.createElement("button");
     root.appendChild(control);
     document.body.appendChild(root);
     const embed = createWorkbenchScope("/embed");
     activateWorkbenchScope(embed);
-    renderHook(() => useActivateWorkbenchOnUse(standaloneWorkbenchScope, () => root));
+    renderHook(() => useActivateWorkbenchOnUse(standaloneWorkbenchScope));
     try {
       // The embed is used last, so it still has the window's commands.
       expect(isActiveWorkbenchScope(embed)).toBe(true);
@@ -581,12 +585,13 @@ describe("the standalone app's re-activation on use", () => {
 
   it("ignores use outside the standalone app's tree", () => {
     const root = document.createElement("div");
+    root.id = "root";
     document.body.appendChild(root);
     const outside = document.createElement("div");
     document.body.appendChild(outside);
     const embed = createWorkbenchScope("/embed");
     activateWorkbenchScope(embed);
-    renderHook(() => useActivateWorkbenchOnUse(standaloneWorkbenchScope, () => root));
+    renderHook(() => useActivateWorkbenchOnUse(standaloneWorkbenchScope));
     try {
       outside.dispatchEvent(new Event("pointerdown", { bubbles: true }));
       expect(isActiveWorkbenchScope(embed)).toBe(true);
@@ -665,5 +670,105 @@ describe("window context keys follow the active mount", () => {
       releaseWorkbenchScope(second);
       releaseWorkbenchScope(first);
     }
+  });
+});
+
+/** A page's embed: its own scope and root (`.omnigent-app`) holding one input. */
+function embedOn(parent: HTMLElement, name: string): { scope: WorkbenchScope; input: HTMLElement } {
+  const root = document.createElement("div");
+  root.className = "omnigent-app";
+  const input = document.createElement("input");
+  root.appendChild(input);
+  parent.appendChild(root);
+  const scope = createWorkbenchScope(`/${name}`);
+  scope.layout.setRoot(root);
+  return { scope, input };
+}
+
+describe("the standalone app's activation at mount", () => {
+  it("is the active mount when it mounts after an embed, and a later embed takes over", () => {
+    const embed = createWorkbenchScope("/mounted-first");
+    activateWorkbenchScope(embed);
+    const { unmount } = renderHook(() => useStandaloneWorkbenchActivation());
+    try {
+      expect(isActiveWorkbenchScope(standaloneWorkbenchScope)).toBe(true);
+      expect(isActiveWorkbenchScope(embed)).toBe(false);
+      activateWorkbenchScope(embed);
+      expect(isActiveWorkbenchScope(embed)).toBe(true);
+    } finally {
+      unmount();
+      releaseWorkbenchScope(embed);
+    }
+  });
+});
+
+describe("the key gate in a mount's tree", () => {
+  it("activates the mount a key is typed in, so the first key of an inactive mount runs", () => {
+    const host = document.createElement("div");
+    document.body.appendChild(host);
+    const first = embedOn(host, "gate-first");
+    const second = embedOn(host, "gate-second");
+    activateWorkbenchScope(second.scope);
+    try {
+      const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true });
+      first.input.dispatchEvent(event);
+      expect(isActiveWorkbenchScopeForEvent(first.scope, event)).toBe(true);
+      expect(isActiveWorkbenchScope(second.scope)).toBe(false);
+    } finally {
+      releaseWorkbenchScope(second.scope);
+      releaseWorkbenchScope(first.scope);
+      host.remove();
+    }
+  });
+
+  it("doesn't activate the standalone app for a key typed in an embed placed inside its root", () => {
+    const root = document.createElement("div");
+    root.id = "root";
+    document.body.appendChild(root);
+    const control = document.createElement("button");
+    root.appendChild(control);
+    const embed = embedOn(root, "inside-root");
+    activateWorkbenchScope(embed.scope);
+    renderHook(() => useActivateWorkbenchOnUse(standaloneWorkbenchScope));
+    try {
+      const event = new KeyboardEvent("keydown", { bubbles: true, cancelable: true });
+      embed.input.dispatchEvent(event);
+      expect(isActiveWorkbenchScopeForEvent(standaloneWorkbenchScope, event)).toBe(false);
+      embed.input.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      expect(isActiveWorkbenchScope(embed.scope)).toBe(true);
+      expect(isActiveWorkbenchScope(standaloneWorkbenchScope)).toBe(false);
+      // The standalone app's own controls, inside #root, still take the window's commands.
+      control.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      expect(isActiveWorkbenchScope(standaloneWorkbenchScope)).toBe(true);
+    } finally {
+      releaseWorkbenchScope(embed.scope);
+      root.remove();
+    }
+  });
+});
+
+describe("each mount's layout snapshots", () => {
+  it("keep their values while another mount with different hidden views is read", () => {
+    const first = createWorkbenchScope("/snapshot-first");
+    const second = createWorkbenchScope("/snapshot-second");
+    first.state.set(LAYOUT_SLOTS.views, { "acme.one": { hidden: true } });
+    second.state.set(LAYOUT_SLOTS.views, { "acme.two": { hidden: true } });
+    first.state.set(LAYOUT_SLOTS.viewLocations, { "acme.one": "omnigent.inbox" });
+    second.state.set(LAYOUT_SLOTS.viewLocations, { "acme.two": "omnigent.inbox" });
+    const inMount = (scope: WorkbenchScope) =>
+      function Wrapper({ children }: { children: ReactNode }) {
+        return <WorkbenchScopeProvider scope={scope}>{children}</WorkbenchScopeProvider>;
+      };
+    const firstViews = renderHook(() => useViewsLayout(), { wrapper: inMount(first) });
+    const firstLocations = renderHook(() => useViewLocations(), { wrapper: inMount(first) });
+    const before = [firstViews.result.current, firstLocations.result.current];
+    // The other mount's reads come between the first mount's.
+    renderHook(() => useViewsLayout(), { wrapper: inMount(second) });
+    renderHook(() => useViewLocations(), { wrapper: inMount(second) });
+    firstViews.rerender();
+    firstLocations.rerender();
+    expect(firstViews.result.current).toBe(before[0]);
+    expect(firstLocations.result.current).toBe(before[1]);
+    expect(Object.keys(firstViews.result.current)).toEqual(["acme.one"]);
   });
 });

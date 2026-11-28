@@ -5,7 +5,7 @@ import { isMacPlatform } from "@/lib/hotkeys";
 import { isNativeShell } from "@/lib/nativeBridge";
 import { useNavigate } from "@/lib/routing";
 import { matchesShortcut } from "@/lib/shortcuts/registry";
-import { isActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
+import { isActiveWorkbenchScopeForEvent, useWorkbenchScope } from "@/workbench/workbenchScope";
 
 /** Browser Cmd/Ctrl+Shift+O; native shells Cmd/Ctrl+N. */
 export function isNewSessionHotkey(
@@ -25,7 +25,7 @@ export function useNewSessionHotkey(enabled = true, isMac = isMacPlatform()): vo
   useEffect(() => {
     if (!enabled) return;
     const handler = (e: globalThis.KeyboardEvent): void => {
-      if (!isActiveWorkbenchScope(scope)) return;
+      if (!isActiveWorkbenchScopeForEvent(scope, e)) return;
       if (e.repeat || !isNewSessionHotkey(e, isMac)) return;
       const embedRoot = scope.layout.getRoot();
       if (isEmbedded && (!embedRoot || !e.composedPath().includes(embedRoot))) return;

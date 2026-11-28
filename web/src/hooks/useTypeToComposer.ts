@@ -10,7 +10,7 @@ import { useIsEmbedded } from "@/lib/embedded";
 import { isFocusInDialogOrMenu, isKeyOwningOverlayOpen, isTextEntry } from "@/lib/hotkeys";
 import { isImeCompositionKeyEvent } from "@/lib/ime";
 import { isNativeShell } from "@/lib/nativeBridge";
-import { isActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
+import { isActiveWorkbenchScopeForEvent, useWorkbenchScope } from "@/workbench/workbenchScope";
 
 /** An embed's scope root, or its wrapper that takes focus: no control, so typing still counts. */
 function isEmbedRootElement(element: HTMLElement, embedRoot: HTMLElement | null): boolean {
@@ -64,7 +64,7 @@ export function useTypeToComposer(
     if (!enabled) return;
     // Bubble phase on window, so a waiting question's capture-phase keys go first.
     const handler = (event: KeyboardEvent): void => {
-      if (!isActiveWorkbenchScope(scope)) return;
+      if (!isActiveWorkbenchScopeForEvent(scope, event)) return;
       // Embedded, typing in the host page around the app stays there. A native
       // shell has no host page, and its unfocusable root leaves a click on
       // transcript text with focus on the body.

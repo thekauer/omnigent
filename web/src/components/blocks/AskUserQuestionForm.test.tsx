@@ -11,9 +11,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ClaudeQuestion } from "@/lib/askUserQuestion";
 import { COMPOSER_SEND_SHORTCUT_STORAGE_KEY } from "@/lib/composerSendShortcutPreferences";
 import { EmbeddedProvider } from "@/lib/embedded";
-import { setEmbedRoot } from "@/lib/host";
 import { ApprovalCard } from "./ApprovalCard";
 import { AskUserQuestionForm } from "./AskUserQuestionForm";
+import { embedMount } from "@/test/workbenchScopeWrapper";
 
 const framework: ClaudeQuestion = {
   id: "framework",
@@ -266,7 +266,6 @@ describe("AskUserQuestionForm — Escape", () => {
     document.body.append(root);
     const hostButton = document.createElement("button");
     document.body.append(hostButton);
-    setEmbedRoot(root);
     try {
       const onReject = vi.fn();
       render(
@@ -279,7 +278,7 @@ describe("AskUserQuestionForm — Escape", () => {
             keyboardActive
           />
         </EmbeddedProvider>,
-        { container: root },
+        { container: root, wrapper: embedMount(root) },
       );
       // A host-page control outside the app.
       expect(fireEvent.keyDown(hostButton, { key: "2" })).toBe(true);
@@ -293,7 +292,6 @@ describe("AskUserQuestionForm — Escape", () => {
       expect(onReject).toHaveBeenCalledTimes(1);
     } finally {
       cleanup();
-      setEmbedRoot(null);
       root.remove();
       hostButton.remove();
     }

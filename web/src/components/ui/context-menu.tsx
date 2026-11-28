@@ -1,7 +1,7 @@
 import * as React from "react";
 import * as ContextMenuPrimitive from "radix-ui/context-menu";
 
-import { getEmbedRoot } from "@/lib/host";
+import { useOverlayRoot } from "@/workbench/workbenchScope";
 import { cn } from "@/lib/utils";
 import { CheckIcon, ChevronRightIcon } from "lucide-react";
 import { MobileMenuGlassSurface } from "@/components/MobileMenuGlassSurface";
@@ -11,10 +11,11 @@ function ContextMenu({ ...props }: React.ComponentProps<typeof ContextMenuPrimit
 }
 
 function ContextMenuPortal({ ...props }: React.ComponentProps<typeof ContextMenuPrimitive.Portal>) {
+  const overlayRoot = useOverlayRoot();
   return (
     <ContextMenuPrimitive.Portal
       data-slot="context-menu-portal"
-      container={getEmbedRoot() ?? undefined}
+      container={overlayRoot ?? undefined}
       {...props}
     />
   );
@@ -33,8 +34,9 @@ function ContextMenuContent({
 }: React.ComponentProps<typeof ContextMenuPrimitive.Content>) {
   // Context menus position at the pointer (no trigger anchor), so there's no
   // `align`/`sideOffset` and no trigger-width var — the menu sizes to content.
+  const overlayRoot = useOverlayRoot();
   return (
-    <ContextMenuPrimitive.Portal container={getEmbedRoot() ?? undefined}>
+    <ContextMenuPrimitive.Portal container={overlayRoot ?? undefined}>
       <ContextMenuPrimitive.Content
         data-slot="context-menu-content"
         className={cn(
@@ -237,8 +239,9 @@ function ContextMenuSubContent({
   // parent and gets clipped by its `overflow-x: hidden` (invisible in dark
   // mode only). Portaling lifts the wrapper out of that subtree; Radix still
   // positions it against the sub-trigger ref, not DOM ancestry.
+  const overlayRoot = useOverlayRoot();
   return (
-    <ContextMenuPrimitive.Portal container={getEmbedRoot() ?? undefined}>
+    <ContextMenuPrimitive.Portal container={overlayRoot ?? undefined}>
       <ContextMenuPrimitive.SubContent
         data-slot="context-menu-sub-content"
         sideOffset={sideOffset}

@@ -22,8 +22,8 @@ import { afterEach, beforeEach, describe, expect, it, onTestFinished } from "vit
 import { Editor } from "@tiptap/core";
 import { Table, TableCell, TableHeader, TableRow } from "@tiptap/extension-table";
 import { StarterKit } from "@tiptap/starter-kit";
-import { setEmbedRoot } from "@/lib/host";
 import { TableHandles } from "./TableBubbleMenu";
+import { embedMount } from "@/test/workbenchScopeWrapper";
 
 /** Minimal 3×3 table: one header row + two body rows. */
 const TABLE_3X3 = `
@@ -64,9 +64,9 @@ function allCellText(): string[] {
   return rows().flatMap(rowText);
 }
 
-function renderHandles() {
+function renderHandles(wrapper?: ReturnType<typeof embedMount>) {
   const ref = createRef<HTMLDivElement>();
-  return render(<TableHandles editor={editor} scrollContainerRef={ref} />);
+  return render(<TableHandles editor={editor} scrollContainerRef={ref} />, { wrapper });
 }
 
 /** Hovers the cell at (rowIndex, colIndex), revealing the grips. */
@@ -99,7 +99,6 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   editor.destroy();
-  setEmbedRoot(null);
 });
 
 describe("TableHandles — grip visibility", () => {
@@ -227,8 +226,7 @@ describe("TableHandles — embedded portal target", () => {
     const embedRoot = document.createElement("div");
     document.body.appendChild(embedRoot);
     onTestFinished(() => embedRoot.remove());
-    setEmbedRoot(embedRoot);
-    renderHandles();
+    renderHandles(embedMount(embedRoot));
     // Any portal into <body> would add a direct child beyond these.
     const bodyChildren = Array.from(document.body.children);
 

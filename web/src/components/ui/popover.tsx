@@ -3,7 +3,7 @@
 import * as React from "react";
 import * as PopoverPrimitive from "radix-ui/popover";
 
-import { getEmbedRoot } from "@/lib/host";
+import { useOverlayRoot } from "@/workbench/workbenchScope";
 import { cn } from "@/lib/utils";
 import { MobileMenuGlassSurface } from "@/components/MobileMenuGlassSurface";
 
@@ -26,8 +26,9 @@ function PopoverContent({
   /** Where it opens; default the app's portal root. */
   container?: HTMLElement | null;
 }) {
+  const overlayRoot = useOverlayRoot();
   return (
-    <PopoverPrimitive.Portal container={container ?? getEmbedRoot() ?? undefined}>
+    <PopoverPrimitive.Portal container={container ?? overlayRoot ?? undefined}>
       <PopoverPrimitive.Content
         data-slot="popover-content"
         align={align}

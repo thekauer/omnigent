@@ -18,7 +18,7 @@ import { AtSignIcon, MessageSquarePlusIcon } from "lucide-react";
 import type { OnMount } from "@monaco-editor/react";
 import type { Comment } from "@/hooks/useComments";
 import type { ActiveSelection } from "./codeViewerHelpers";
-import { getEmbedRoot } from "@/lib/host";
+import { useOverlayRoot } from "@/workbench/workbenchScope";
 import { useChatStore } from "@/store/chatStore";
 
 // The IStandaloneCodeEditor instance, derived from the onMount signature so we
@@ -127,6 +127,7 @@ export function useMonacoCommentLayer({
   path,
   attachToAgent = false,
 }: UseMonacoCommentLayerOptions): React.ReactNode {
+  const overlayRoot = useOverlayRoot();
   const canAttachToAgent = !!path && attachToAgent;
   const decorationsRef = useRef<DecorationsCollection | null>(null);
   // Floating "Add comment" button position in viewport coords, or null.
@@ -350,6 +351,6 @@ export function useMonacoCommentLayer({
         </button>
       )}
     </div>,
-    getEmbedRoot() ?? document.body,
+    overlayRoot ?? document.body,
   );
 }

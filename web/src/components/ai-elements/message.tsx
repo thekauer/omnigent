@@ -5,7 +5,7 @@ import { ButtonGroup, ButtonGroupText } from "@/components/ui/button-group";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { copyText } from "@/lib/clipboard";
 import { toggleCodeBlockWordWrap, useCodeBlockWordWrap } from "@/lib/codeWrapPreferences";
-import { getEmbedRoot } from "@/lib/host";
+import { useOverlayRoot } from "@/workbench/workbenchScope";
 import { useResolvedThemeMode } from "@/components/theme/useResolvedThemeMode";
 import { syntaxThemeKey, useSyntaxThemeNames } from "@/lib/syntaxTheme";
 import { cn } from "@/lib/utils";
@@ -463,6 +463,7 @@ function tableControlEnabled(
 type ChatTableProps = ComponentProps<"table"> & { node?: unknown };
 
 function ChatTable({ children, className, node: _node, ...props }: ChatTableProps) {
+  const overlayRoot = useOverlayRoot();
   const { controls, isAnimating } = useContext(StreamdownContext);
   const [fullscreen, setFullscreen] = useState(false);
   const showCopy = tableControlEnabled(controls, "copy");
@@ -519,7 +520,7 @@ function ChatTable({ children, className, node: _node, ...props }: ChatTableProp
             </div>
           </div>
         </div>,
-        getEmbedRoot() ?? document.body,
+        overlayRoot ?? document.body,
       )
     : null;
 

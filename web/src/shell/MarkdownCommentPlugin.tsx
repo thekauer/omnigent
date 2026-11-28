@@ -21,7 +21,7 @@ import type { Comment } from "@/hooks/useComments";
 import type { ActiveSelection } from "./codeViewerHelpers";
 import { commentDecorationKey, type CommentDecorationState } from "./TipTapCommentExtension";
 import { computeSelectionData } from "./TipTapEditorHelpers";
-import { getEmbedRoot } from "@/lib/host";
+import { useOverlayRoot } from "@/workbench/workbenchScope";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -69,6 +69,7 @@ export function MarkdownCommentPlugin({
   pendingBodyRef,
   canEdit = true,
 }: MarkdownCommentPluginProps): ReactElement | null {
+  const overlayRoot = useOverlayRoot();
   const contentRef = useRef(content);
   useEffect(() => {
     contentRef.current = content;
@@ -253,6 +254,6 @@ export function MarkdownCommentPlugin({
       <MessageSquarePlusIcon className="size-3.5" />
       Add comment
     </button>,
-    getEmbedRoot() ?? document.body,
+    overlayRoot ?? document.body,
   );
 }

@@ -4,6 +4,7 @@
 
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { useWorkbenchScope } from "@/workbench/workbenchScope";
 import { isViewHidden, useViewsLayout } from "@/workbench/viewsLayout";
 import { DEFAULT_RAIL_VIEW_ICON, railViewIcon } from "./railViewIcons";
 import { hasRailTab, type RailView, useRailViews } from "./railViews";
@@ -13,7 +14,10 @@ import { TAB_BADGE_BASE } from "./railTabs";
 export function usePhoneMenuViews(): readonly RailView[] {
   const { views } = useRailViews();
   const layout = useViewsLayout();
-  return views.filter((view) => hasRailTab(view, (candidate) => isViewHidden(candidate, layout)));
+  const { productLayout: policy } = useWorkbenchScope();
+  return views.filter((view) =>
+    hasRailTab(view, (candidate) => isViewHidden(candidate, layout, policy)),
+  );
 }
 
 export function PhoneMenuViewItems({

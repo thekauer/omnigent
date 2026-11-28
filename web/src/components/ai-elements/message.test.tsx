@@ -13,7 +13,6 @@ import { AskUserQuestionForm } from "@/components/blocks/AskUserQuestionForm";
 import { useApproveHotkey } from "@/hooks/useApproveHotkey";
 import type { AnyBlock } from "@/lib/blocks";
 import { CODE_BLOCK_WORD_WRAP_STORAGE_KEY, readCodeBlockWordWrap } from "@/lib/codeWrapPreferences";
-import { setEmbedRoot } from "@/lib/host";
 import { useChatStore } from "@/store/chatStore";
 import { MermaidPreview } from "@/shell/MermaidPreview";
 import { ShellCommandContext } from "@/shell/ShellCommandContext";
@@ -26,13 +25,13 @@ import {
   MessageContent,
   MessageResponse,
 } from "./message";
+import { embedMount } from "@/test/workbenchScopeWrapper";
 
 const clipboardDescriptor = Object.getOwnPropertyDescriptor(Navigator.prototype, "clipboard");
 const execCommandDescriptor = Object.getOwnPropertyDescriptor(Document.prototype, "execCommand");
 
 afterEach(() => {
   localStorage.removeItem(CODE_BLOCK_WORD_WRAP_STORAGE_KEY);
-  setEmbedRoot(null);
   vi.unstubAllGlobals();
   cleanup();
   vi.restoreAllMocks();
@@ -365,9 +364,11 @@ describe.each([true, false])("Mermaid fullscreen (embedded=%s)", (embedded) => {
       const root = document.createElement("div");
       root.className = "omnigent-app";
       document.body.appendChild(root);
-      setEmbedRoot(embedded ? root : null);
       try {
-        const { container } = render(content(), { container: root });
+        const { container } = render(content(), {
+          container: root,
+          wrapper: embedded ? embedMount(root) : undefined,
+        });
         await waitFor(
           () => {
             expect(container.querySelector('svg[id^="mermaid-"]')).not.toBeNull();
@@ -568,8 +569,7 @@ describe("MessageResponse table fullscreen", () => {
   it("opens inside the embed root and closes from the fullscreen control", async () => {
     const embedRoot = document.createElement("div");
     document.body.appendChild(embedRoot);
-    setEmbedRoot(embedRoot);
-    render(<MessageResponse>{tableMarkdown}</MessageResponse>);
+    render(<MessageResponse>{tableMarkdown}</MessageResponse>, { wrapper: embedMount(embedRoot) });
 
     fireEvent.click(await screen.findByRole("button", { name: "View fullscreen" }));
 

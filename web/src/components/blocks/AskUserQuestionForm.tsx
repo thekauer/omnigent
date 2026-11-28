@@ -24,7 +24,7 @@ import {
 } from "@/lib/askUserQuestionDrafts";
 import { readSubmitWithModEnter } from "@/lib/composerSendShortcutPreferences";
 import { useIsEmbedded } from "@/lib/embedded";
-import { getEmbedRoot } from "@/lib/host";
+import { useOverlayRoot } from "@/workbench/workbenchScope";
 import {
   isEscapeOwnerOpen,
   isFocusInDialogOrMenu,
@@ -143,6 +143,8 @@ export function AskUserQuestionForm({
   // Arrow keys check each radio they pass, which doesn't mean the custom row was chosen.
   const radioArrowKeyRef = useRef(false);
   const isEmbedded = useIsEmbedded();
+  // The mount's own root: the keys of this app's embed, not the last mounted embed's.
+  const overlayRoot = useOverlayRoot();
 
   // Currently-visible question (carousel index).
   const [currentIndex, setCurrentIndex] = useState(draft?.currentIndex ?? 0);
@@ -312,7 +314,7 @@ export function AskUserQuestionForm({
       const sideChat = target.closest("[data-side-chat-pane]");
       if (sideChat && !sideChat.contains(rootRef.current)) return;
       // Embedded, keys from the host page around the app aren't the app's.
-      const embedRoot = getEmbedRoot();
+      const embedRoot = overlayRoot;
       if (isEmbedded && (!embedRoot || !event.composedPath().includes(embedRoot))) return;
     }
     // An open overlay keeps the keys even when focus wandered back into the form behind it.

@@ -56,6 +56,7 @@ import { createBootServerInfo } from "./lib/bootCapabilities";
 import { resolveServerInfo, type ServerInfo } from "./lib/capabilities";
 import { EmbeddedProvider } from "./lib/embedded";
 import {
+  getEmbedRoot,
   type OmnigentHostConfig,
   setEmbedRoot,
   setEmbedScopeRoot,
@@ -96,6 +97,7 @@ import {
   reactRouterRouting,
 } from "./lib/routing";
 import { initChatStore } from "./store/chatStore";
+import { conversationRegistry } from "./store/conversationRegistry";
 import { cn } from "./lib/utils";
 import "katex/dist/katex.min.css";
 import "streamdown/styles.css";
@@ -246,13 +248,21 @@ function OmnigentProviders({
     return null;
   });
 
-  // Register the theme wrapper as the Radix portal container so overlays land
-  // inside the themed subtree (and clear it on unmount). It's the inner div —
-  // not the `.omnigent-app` scope root — so portaled overlays inherit the
-  // `.dark` token overrides too.
-  const scopeRef = useCallback((el: HTMLDivElement | null) => {
-    setEmbedRoot(el);
-  }, []);
+  // Register the theme wrapper as this mount's portal container so its overlays land inside the
+  // themed subtree. It's the inner div, not the `.omnigent-app` scope root, so portaled
+  // overlays inherit the `.dark` token overrides too. The global one (for callers outside React)
+  // is the last mount's; an unmount clears it only while it is this mount's.
+  const innerRoot = useRef<HTMLDivElement | null>(null);
+  const scopeRef = useCallback(
+    (el: HTMLDivElement | null) => {
+      const previous = innerRoot.current;
+      innerRoot.current = el;
+      workbench.overlayRoot.set(el);
+      if (el) setEmbedRoot(el);
+      else if (previous !== null && getEmbedRoot() === previous) setEmbedRoot(null);
+    },
+    [workbench],
+  );
 
   // The outer `.omnigent-app` scope root is where the scoped `:root` tokens
   // live, so per-device preferences (UI font, color palette, custom theme) must
@@ -329,22 +339,34 @@ function OmnigentProviders({
   );
 }
 
+/** Each mount's current mount run: a run that is replaced (a strict mode remount) has ended. */
+const currentMountRuns = new WeakMap<WorkbenchScope, object>();
+
 /**
  * Keeps `workbench` the active one while mounted, and again whenever the user points, types
  * or focuses inside the app, so the window's commands and keybindings reach the app in use.
  * Holds its layout key while mounted (a mount on a key another mount holds keeps its layout
- * in memory, `workbench/workbenchScope.ts`).
+ * in memory, `workbench/workbenchScope.ts`). Unmounting releases its conversations, so their
+ * streams stop with it.
  */
 function useMountedWorkbench(workbench: WorkbenchScope): void {
   useLayoutEffect(() => {
     const releaseLayoutKey = holdWorkbenchLayoutKey(workbench);
     activateWorkbenchScope(workbench);
+    const run = {};
+    currentMountRuns.set(workbench, run);
     return () => {
       releaseWorkbenchScope(workbench);
       releaseLayoutKey();
+      // A strict mode remount in this task starts a new run before this one's release runs.
+      queueMicrotask(() => {
+        if (currentMountRuns.get(workbench) !== run) return;
+        currentMountRuns.delete(workbench);
+        conversationRegistry.releaseMountView(workbench.id);
+      });
     };
   }, [workbench]);
-  useActivateWorkbenchOnUse(workbench, () => workbench.layout.getRoot());
+  useActivateWorkbenchOnUse(workbench);
 }
 
 /** Text of a plain-data prop, to compare renders by value; a prop that isn't JSON is invalid. */

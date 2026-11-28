@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { getEmbedRoot } from "@/lib/host";
+import { useOverlayRoot } from "@/workbench/workbenchScope";
 import { cn } from "@/lib/utils";
 import type { ComponentProps, ReactNode, RefObject } from "react";
 import { cloneElement, isValidElement, useCallback, useEffect, useRef, useState } from "react";
@@ -30,6 +30,7 @@ export function isMermaidPre(children: ReactNode): boolean {
 
 // Reuse the sanitized inline SVG without rerunning Mermaid or copying toolbar icons.
 function MermaidFullscreen({ blockRef }: { blockRef: RefObject<HTMLDivElement | null> }) {
+  const overlayRoot = useOverlayRoot();
   const [svgMarkup, setSvgMarkup] = useState<string | null>(null);
   const close = useCallback(() => setSvgMarkup(null), []);
 
@@ -84,7 +85,7 @@ function MermaidFullscreen({ blockRef }: { blockRef: RefObject<HTMLDivElement | 
               role="presentation"
             />
           </div>,
-          getEmbedRoot() ?? document.body,
+          overlayRoot ?? document.body,
         )
       : null;
 

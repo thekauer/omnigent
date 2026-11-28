@@ -9,7 +9,7 @@
 import { useLayoutEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
-import { getEmbedRoot } from "@/lib/host";
+import { useOverlayRoot } from "@/workbench/workbenchScope";
 
 /** The marker on the overflow widgets node. */
 export const OVERFLOW_WIDGETS_ATTRIBUTE = "data-settings-json-overflow-widgets";
@@ -60,16 +60,17 @@ export interface OverflowWidgetsProps {
 
 export function OverflowWidgets({ onNode }: OverflowWidgetsProps) {
   const [host, setHost] = useState<HTMLDivElement | null>(null);
+  const overlayRoot = useOverlayRoot();
   // Appended in a layout effect, after the commit placed the dialog: a portal nested in the
   // dialog's portal is placed before the dialog's own nodes when both mount in one commit.
   useLayoutEffect(() => {
     const node = createHost();
-    const detach = attachHost(node, getEmbedRoot() ?? document.body);
+    const detach = attachHost(node, overlayRoot ?? document.body);
     setHost(node);
     return () => {
       detach();
       setHost(null);
     };
-  }, []);
+  }, [overlayRoot]);
   return host ? createPortal(<div ref={onNode} />, host) : null;
 }

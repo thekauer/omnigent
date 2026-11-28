@@ -1,7 +1,7 @@
 import * as React from "react";
 import * as DropdownMenuPrimitive from "radix-ui/dropdown-menu";
 
-import { getEmbedRoot } from "@/lib/host";
+import { useOverlayRoot } from "@/workbench/workbenchScope";
 import { cn } from "@/lib/utils";
 import { CheckIcon, ChevronRightIcon } from "lucide-react";
 import { MenuItem } from "./menu-item";
@@ -14,10 +14,11 @@ function DropdownMenu({ ...props }: React.ComponentProps<typeof DropdownMenuPrim
 function DropdownMenuPortal({
   ...props
 }: React.ComponentProps<typeof DropdownMenuPrimitive.Portal>) {
+  const overlayRoot = useOverlayRoot();
   return (
     <DropdownMenuPrimitive.Portal
       data-slot="dropdown-menu-portal"
-      container={getEmbedRoot() ?? undefined}
+      container={overlayRoot ?? undefined}
       {...props}
     />
   );
@@ -36,8 +37,9 @@ const DropdownMenuContent = React.forwardRef<
   { className, children, align = "start", sideOffset = 4, ...props },
   ref,
 ) {
+  const overlayRoot = useOverlayRoot();
   return (
-    <DropdownMenuPrimitive.Portal container={getEmbedRoot() ?? undefined}>
+    <DropdownMenuPrimitive.Portal container={overlayRoot ?? undefined}>
       <DropdownMenuPrimitive.Content
         ref={ref}
         data-slot="dropdown-menu-content"
@@ -257,8 +259,9 @@ const DropdownMenuSubContent = React.forwardRef<
   // parent and gets clipped by its `overflow-x: hidden` (invisible in dark
   // mode only). Portaling lifts the wrapper out of that subtree; Radix still
   // positions it against the sub-trigger ref, not DOM ancestry.
+  const overlayRoot = useOverlayRoot();
   return (
-    <DropdownMenuPrimitive.Portal container={getEmbedRoot() ?? undefined}>
+    <DropdownMenuPrimitive.Portal container={overlayRoot ?? undefined}>
       <DropdownMenuPrimitive.SubContent
         ref={ref}
         data-slot="dropdown-menu-sub-content"

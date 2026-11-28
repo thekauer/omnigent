@@ -33,6 +33,7 @@ import {
   TOGGLE_ACTIVITY_BAR_COMMAND,
 } from "@/workbench/layoutCommands";
 import { layoutService } from "@/workbench/layoutService";
+import { layoutState } from "@/workbench/layoutState";
 import { activeWorkbenchScope } from "@/workbench/workbenchScope";
 import { resetViewLocations } from "@/workbench/viewLocations";
 
@@ -146,7 +147,7 @@ export function useAppCommands({
         label: "View: Reset View Locations",
         icon: LayoutTemplateIcon,
         keywords: ["move", "view", "reset", "locations", RESET_VIEW_LOCATIONS_COMMAND],
-        run: () => resetViewLocations(),
+        run: () => resetViewLocations(layoutState),
       },
     ],
     [

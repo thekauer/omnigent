@@ -6,6 +6,7 @@ import { EmbeddedProvider } from "@/lib/embedded";
 import {
   activateWorkbenchScope,
   createWorkbenchScope,
+  isActiveWorkbenchScope,
   releaseWorkbenchScope,
   WorkbenchScopeProvider,
   type WorkbenchScope,
@@ -59,20 +60,16 @@ function pressNewSession(target: HTMLElement): KeyboardEvent {
 }
 
 describe("window shortcuts on a page with two embeds", () => {
-  it("runs only in the active mount, and switches with the mount in use", () => {
+  it("runs the shortcut of the mount a key is typed in, which becomes the active one", () => {
     const firstInput = mountEmbed("first");
     const secondInput = mountEmbed("second");
-    // The second mount was mounted last, so it is the active one.
-    expect(pressNewSession(firstInput).defaultPrevented).toBe(false);
-    expect(navigate).not.toHaveBeenCalled();
-    expect(pressNewSession(secondInput).defaultPrevented).toBe(true);
+    // The second mount was mounted last, and is active until the first is used.
+    expect(isActiveWorkbenchScope(mounted[1]!)).toBe(true);
+    // No focus or pointer went to the first mount before this key: it still runs there.
+    expect(pressNewSession(firstInput).defaultPrevented).toBe(true);
     expect(navigate).toHaveBeenCalledTimes(1);
-
-    // The first mount is used: its own shortcut runs, the second's stops.
-    activateWorkbenchScope(mounted[0]!);
-    pressNewSession(firstInput);
-    expect(navigate).toHaveBeenCalledTimes(2);
-    pressNewSession(secondInput);
+    expect(isActiveWorkbenchScope(mounted[0]!)).toBe(true);
+    expect(pressNewSession(secondInput).defaultPrevented).toBe(true);
     expect(navigate).toHaveBeenCalledTimes(2);
   });
 
@@ -86,6 +83,16 @@ describe("window shortcuts on a page with two embeds", () => {
     expect(pressNewSession(host).defaultPrevented).toBe(false);
     expect(navigate).not.toHaveBeenCalled();
     expect(pressNewSession(firstInput).defaultPrevented).toBe(true);
+    expect(navigate).toHaveBeenCalledExactlyOnceWith("/");
+  });
+});
+
+describe("window shortcuts on a page with only the standalone app", () => {
+  it("runs a gated shortcut with no provider and no embed", () => {
+    renderHook(() => useNewSessionHotkey(true, false));
+    const target = document.createElement("div");
+    document.body.appendChild(target);
+    expect(pressNewSession(target).defaultPrevented).toBe(true);
     expect(navigate).toHaveBeenCalledExactlyOnceWith("/");
   });
 });

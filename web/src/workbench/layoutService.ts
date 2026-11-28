@@ -124,6 +124,8 @@ export class LayoutService {
   private readonly visible = new Map<Part, boolean>();
   private readonly visibilityListeners = new Set<Listener<PartVisibilityChange>>();
   private readonly layoutListeners = new Set<Listener<void>>();
+  /** One configuration listener for every layout listener: the side bar's side changed. */
+  private stopListeningToConfiguration: (() => void) | null = null;
   private readonly store: LayoutStateStore;
   /** The side bar's pinned open state; undefined until a shell first reads it. */
   private sideBarOpen: boolean | undefined;
@@ -442,13 +444,16 @@ export class LayoutService {
 
   onDidChangeLayout(listener: Listener<void>): () => void {
     this.layoutListeners.add(listener);
-    // The side bar's side is a setting: its change moves parts in every mount.
-    const offLocation = configurationService.onDidChangeConfiguration((event) => {
-      if (event.affectsConfiguration(SIDE_BAR_LOCATION_KEY)) listener(undefined);
+    // The side bar's side is a setting: its change moves parts in every mount. One listener to
+    // the configuration serves every layout listener, while there are any.
+    this.stopListeningToConfiguration ??= configurationService.onDidChangeConfiguration((event) => {
+      if (event.affectsConfiguration(SIDE_BAR_LOCATION_KEY)) fire(this.layoutListeners, undefined);
     });
     return () => {
       this.layoutListeners.delete(listener);
-      offLocation();
+      if (this.layoutListeners.size > 0) return;
+      this.stopListeningToConfiguration?.();
+      this.stopListeningToConfiguration = null;
     };
   }
 }

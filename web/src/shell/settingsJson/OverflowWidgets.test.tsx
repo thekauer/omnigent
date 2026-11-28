@@ -7,10 +7,10 @@ import { createPortal } from "react-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
-import { setEmbedRoot } from "@/lib/host";
 
 import { OVERFLOW_WIDGETS_ATTRIBUTE, OverflowWidgets } from "./OverflowWidgets";
 import { SettingsJsonEditor } from "./SettingsJsonEditor";
+import { embedMount } from "@/test/workbenchScopeWrapper";
 
 const editorOptions = vi.hoisted(() => ({ current: null as Record<string, unknown> | null }));
 
@@ -28,7 +28,6 @@ vi.mock("../monacoTheme", () => ({ useMonacoTheme: () => "theme" }));
 
 afterEach(() => {
   cleanup();
-  setEmbedRoot(null);
   editorOptions.current = null;
 });
 
@@ -96,8 +95,7 @@ describe("OverflowWidgets", () => {
     const scope = document.body.appendChild(document.createElement("div"));
     const inner = scope.appendChild(document.createElement("div"));
     inner.setAttribute("data-embed-inner", "");
-    setEmbedRoot(inner);
-    render(<DialogWithWidgets />);
+    render(<DialogWithWidgets />, { wrapper: embedMount(inner) });
     expect(overflowNode()!.parentElement).toBe(inner);
     expect(screen.getByTestId("dialog").compareDocumentPosition(overflowNode()!)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
@@ -163,8 +161,7 @@ describe("OverflowWidgets", () => {
   it("renders on the embed's inner root, inside the theme scope", () => {
     const scope = document.body.appendChild(document.createElement("div"));
     const inner = scope.appendChild(document.createElement("div"));
-    setEmbedRoot(inner);
-    render(<OverflowWidgets onNode={() => {}} />);
+    render(<OverflowWidgets onNode={() => {}} />, { wrapper: embedMount(inner) });
     expect(overflowNode()!.parentElement).toBe(inner);
     cleanup();
     scope.remove();

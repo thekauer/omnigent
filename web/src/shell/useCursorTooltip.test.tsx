@@ -1,8 +1,8 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { setEmbedRoot } from "@/lib/host";
 import { useCursorTooltip } from "./useCursorTooltip";
+import { embedMount } from "@/test/workbenchScopeWrapper";
 
 // jsdom has no layout: a 1000x800 viewport and a 200x30 tooltip box.
 beforeEach(() => {
@@ -16,7 +16,6 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
-  setEmbedRoot(null);
   document.body.replaceChildren();
   vi.restoreAllMocks();
 });
@@ -34,8 +33,8 @@ function TransformedRow() {
   );
 }
 
-function hoverAt(clientX: number, clientY: number) {
-  render(<TransformedRow />);
+function hoverAt(clientX: number, clientY: number, wrapper?: ReturnType<typeof embedMount>) {
+  render(<TransformedRow />, { wrapper });
   fireEvent.mouseMove(screen.getByText("file.ts"), { clientX, clientY });
   return screen.getByText("folder/file.ts");
 }
@@ -55,9 +54,8 @@ describe("useCursorTooltip", () => {
   it("portals into the embed root when one is registered", () => {
     const embedRoot = document.createElement("div");
     document.body.appendChild(embedRoot);
-    setEmbedRoot(embedRoot);
 
-    expect(hoverAt(120, 200).parentElement).toBe(embedRoot);
+    expect(hoverAt(120, 200, embedMount(embedRoot)).parentElement).toBe(embedRoot);
   });
 
   // Margin 8, 14px below the pointer, 8px above it.

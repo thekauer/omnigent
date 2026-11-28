@@ -72,7 +72,8 @@ export function moveViewDestinations(
 /** Mounted while open (the overlays mount it), so each opening starts on its first page. */
 export function MoveViewPicker() {
   // This mount's picker and product policy.
-  const { moveViewPicker, productLayout: policy } = useWorkbenchScope();
+  const scope = useWorkbenchScope();
+  const { moveViewPicker, productLayout: policy } = scope;
   const { store } = moveViewPicker;
   const open = useStore(store, (state) => state.open);
   const givenViewId = useStore(store, (state) => state.viewId);
@@ -93,12 +94,12 @@ export function MoveViewPicker() {
   const view = views.find((candidate) => candidate.id === (givenViewId ?? chosenViewId));
   const items: QuickPickItem<Value>[] = onDestinations
     ? view
-      ? moveViewDestinations(view, viewContainerFor(view, locations), sideBar)
+      ? moveViewDestinations(view, viewContainerFor(view, locations, policy), sideBar)
       : []
     : views.map((candidate) => ({
         id: `view:${candidate.id}`,
         label: candidate.name,
-        group: titleOf(viewContainerFor(candidate, locations)),
+        group: titleOf(viewContainerFor(candidate, locations, policy)),
         opensPage: true,
         value: { kind: "view", viewId: candidate.id },
       }));
@@ -124,7 +125,7 @@ export function MoveViewPicker() {
           return "keepOpen" as const;
         }
         const viewId = givenViewId ?? chosenViewId;
-        if (viewId !== undefined) moveViewTo(viewId, item.value.containerId);
+        if (viewId !== undefined) moveViewTo(viewId, item.value.containerId, scope);
         moveViewPicker.close();
         return undefined;
       }}

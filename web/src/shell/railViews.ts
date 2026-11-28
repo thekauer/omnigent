@@ -18,7 +18,6 @@ import {
   isContainerHiddenByProduct,
   isViewRemovedByProduct,
   type ProductLayoutPolicy,
-  productLayout,
   useProductLayout,
 } from "@/workbench/productLayout";
 import { useWorkbenchScope } from "@/workbench/workbenchScope";
@@ -451,12 +450,11 @@ export function hasRailTab(
 /** The container a view is in: where the user moved it (`locations`), else its own. */
 export function viewContainerOf(
   view: RailViewContribution,
-  locations: ViewLocations = NO_LOCATIONS,
+  locations: ViewLocations,
+  policy: ProductLayoutPolicy,
 ): string {
-  return viewContainerFor(view, locations);
+  return viewContainerFor(view, locations, policy);
 }
-
-const NO_LOCATIONS: ViewLocations = Object.freeze({});
 
 const containerSnapshots = new WeakMap<
   RailViewsSnapshot,
@@ -470,8 +468,8 @@ const containerSnapshots = new WeakMap<
 export function viewsOfContainer(
   snapshot: RailViewsSnapshot,
   container: string | null,
-  locations: ViewLocations = NO_LOCATIONS,
-  policy: ProductLayoutPolicy = productLayout,
+  locations: ViewLocations,
+  policy: ProductLayoutPolicy,
 ): RailViewsSnapshot {
   if (container === null) return snapshot;
   let byLocations = containerSnapshots.get(snapshot);
@@ -497,7 +495,7 @@ export function viewsOfContainer(
     const drawnHere = (view: RailViewContribution) => {
       // A view the product removed isn't drawn anywhere, moved or not.
       if (isViewRemovedByProduct(view, policy)) return false;
-      const containerId = viewContainerOf(view, locations);
+      const containerId = viewContainerOf(view, locations, policy);
       // A container the product removed draws nothing.
       if (isContainerHiddenByProduct(containerId, policy)) return false;
       return (
@@ -556,7 +554,7 @@ export function useRailViewIds(registry: RailViewRegistry = railViews): {
       .filter(
         (view) =>
           view.builtInTab !== undefined ||
-          hasRailTab(view, (candidate) => isViewHidden(candidate, layout)),
+          hasRailTab(view, (candidate) => isViewHidden(candidate, layout, policy)),
       )
       .map((view) => `\n${view.id}`);
     return `${snapshot.settled ? "1" : "0"}${ids.join("")}`;

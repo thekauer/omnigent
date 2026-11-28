@@ -137,13 +137,48 @@ export class ConversationRegistry {
    * Each mount has one view. Viewing another conversation moves it. A view keeps its
    * conversation out of eviction whichever view is active, so a mount that is not the one
    * last used keeps its stream. Returns the release for this view; a release after the view
-   * has moved to another conversation changes nothing.
+   * has moved to another conversation changes nothing. A release that leaves the conversation
+   * held by nothing (no retain, no other view, not the active projection) disposes it.
    */
   view(viewKey: string, conversationId: string): () => void {
     this.viewedIds.set(viewKey, conversationId);
     return () => {
-      if (this.viewedIds.get(viewKey) === conversationId) this.viewedIds.delete(viewKey);
+      if (this.viewedIds.get(viewKey) !== conversationId) return;
+      this.viewedIds.delete(viewKey);
+      this.disposeIfUnheld(conversationId);
     };
+  }
+
+  /**
+   * An embed's mount went away: its view's conversation is released with it, including the
+   * window's active projection (the mount's own), unless another view or a retain holds it.
+   */
+  releaseMountView(viewKey: string): void {
+    const conversationId = this.viewedIds.get(viewKey);
+    this.viewedIds.delete(viewKey);
+    if (conversationId === undefined) return;
+    if (this.isViewed(conversationId) || this.retainedIds.has(conversationId)) return;
+    if (this.activeId === conversationId) this.activeId = null;
+    this.disposeIfUnheld(conversationId);
+  }
+
+  private isViewed(conversationId: string): boolean {
+    for (const viewed of this.viewedIds.values()) {
+      if (viewed === conversationId) return true;
+    }
+    return false;
+  }
+
+  /**
+   * Disposes `conversationId` unless something holds it: a retain, a view, the active projection,
+   * or unsent work the server has no record of (dropping that would lose the user's message).
+   */
+  private disposeIfUnheld(conversationId: string): void {
+    if (this.activeId === conversationId || this.retainedIds.has(conversationId)) return;
+    if (this.isViewed(conversationId)) return;
+    const entry = this.entries.get(conversationId);
+    if (entry === undefined || hasUnsentWork(entry.getState())) return;
+    this.release(conversationId);
   }
 
   /** Keep a visible secondary pane live until its owner unmounts. */

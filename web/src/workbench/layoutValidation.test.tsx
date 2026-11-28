@@ -35,6 +35,8 @@ import { focusedViewId, resetLayout } from "@/workbench/layoutCommands";
 import { productLayout } from "@/workbench/productLayout";
 import { ViewContainerRegistry, viewContainers } from "@/workbench/viewContainers";
 import { generatedContainerId, moveView, viewContainerFor } from "@/workbench/viewLocations";
+// The window's stores: what a window-level move takes.
+const windowOptions = { store: layoutState, policy: productLayout };
 import {
   activateWorkbenchScope,
   createWorkbenchScope,
@@ -103,11 +105,11 @@ describe("hiddenContainers holds for the container's views wherever they go", ()
   it("a view of a product-hidden container can't move, and isn't drawn where a move put it", () => {
     const { registry } = setup();
     const view = registry.get("acme.tools.list")!;
-    expect(moveView(view, "acme.other")).toBe(true);
+    expect(moveView(view, "acme.other", windowOptions)).toBe(true);
     productLayout.set({ hiddenContainers: ["acme.tools"] });
     const other = render(<ViewContainerViews containerId="acme.other" registry={registry} />);
     expect(paneIds(other.container)).toEqual([]);
-    expect(moveView(view, generatedContainerId(view.id))).toBe(false);
+    expect(moveView(view, generatedContainerId(view.id), windowOptions)).toBe(false);
   });
   it("a forged layout state makes no generated side bar entry for it", () => {
     const { registry } = setup();
@@ -122,22 +124,31 @@ describe("hiddenContainers holds for the container's views wherever they go", ()
   it("a view can't move into a container the product removed", () => {
     const { registry } = setup();
     productLayout.set({ hiddenContainers: ["acme.other"] });
-    expect(moveView(registry.get("acme.tools.list")!, "acme.other")).toBe(false);
+    expect(moveView(registry.get("acme.tools.list")!, "acme.other", windowOptions)).toBe(false);
     layoutState.set(LAYOUT_SLOTS.viewLocations, { "acme.tools.list": "acme.other" });
     expect(
-      viewContainerFor(registry.get("acme.tools.list")!, { "acme.tools.list": "acme.other" }),
+      viewContainerFor(
+        registry.get("acme.tools.list")!,
+        { "acme.tools.list": "acme.other" },
+        productLayout,
+      ),
     ).toBe("acme.tools");
   });
   it("a stored move into a container that disappeared falls back", () => {
     const { registry } = setup();
     const view = registry.get("acme.tools.list")!;
-    expect(viewContainerFor(view, { "acme.tools.list": "gone.container" })).toBe("acme.tools");
-    expect(viewContainerFor(view, { "acme.tools.list": "" } as never)).toBe("acme.tools");
+    expect(viewContainerFor(view, { "acme.tools.list": "gone.container" }, productLayout)).toBe(
+      "acme.tools",
+    );
+    expect(viewContainerFor(view, { "acme.tools.list": "" } as never, productLayout)).toBe(
+      "acme.tools",
+    );
   });
   it("a container's views follow a later change to the product's removed views", () => {
     const { registry } = setup();
     const snapshot = registry.getSnapshot();
-    const ids = () => viewsOfContainer(snapshot, "acme.tools").views.map((view) => view.id);
+    const ids = () =>
+      viewsOfContainer(snapshot, "acme.tools", {}, productLayout).views.map((view) => view.id);
     expect(ids()).toEqual(["acme.tools.list"]);
     productLayout.set({ hiddenViews: ["acme.tools.list"] });
     expect(ids()).toEqual([]);

@@ -14,7 +14,14 @@ import { ContextKeyService } from "@/vscodeExtensions/contextKeys";
 import { parseContributions } from "@/vscodeExtensions/contributions";
 import { testViewsService } from "@/vscodeExtensions/testServices";
 import { LAYOUT_SLOTS, layoutState } from "@/workbench/layoutState";
+import { productLayout } from "@/workbench/productLayout";
 import { CONVERSATIONS_CONTAINER, ViewContainerRegistry } from "@/workbench/viewContainers";
+import {
+  activateWorkbenchScope,
+  createWorkbenchScope,
+  releaseWorkbenchScope,
+  WorkbenchScopeProvider,
+} from "@/workbench/workbenchScope";
 import { builtInViewComponent, registerBuiltInView } from "./builtInViews";
 import { hasRailTab, RailViewRegistry, useRailViewIds } from "./railViews";
 import { useWorkbenchContextKeys } from "./useWorkbenchParts";
@@ -123,6 +130,29 @@ describe("ViewContainerViews", () => {
   });
 });
 
+describe("a view's visibility in the mount it is drawn in", () => {
+  it("follows that mount's product policy, not the active mount's", () => {
+    const { registry } = setup({
+      views: { "omnigent.rightPanel": [{ id: "acme.tools.plain", name: "Plain" }] },
+    });
+    // The active mount hides the view; the mount that draws it does not.
+    const active = createWorkbenchScope("/visibility-active");
+    const drawn = createWorkbenchScope("/visibility-drawn");
+    active.productLayout.set({ hiddenViews: ["acme.tools.plain"] });
+    activateWorkbenchScope(active);
+    try {
+      const { result } = renderHook(() => useRailViewIds(registry), {
+        wrapper: ({ children }) => (
+          <WorkbenchScopeProvider scope={drawn}>{children}</WorkbenchScopeProvider>
+        ),
+      });
+      expect(result.current.ids).toEqual(["acme.tools.plain"]);
+    } finally {
+      releaseWorkbenchScope(active);
+    }
+  });
+});
+
 describe("the rail's extension tabs and the shell's context keys", () => {
   it("validates a stored tab only while its view has a tab (when, hidden)", () => {
     const { registry, contextKeys } = setup({
@@ -137,7 +167,7 @@ describe("the rail's extension tabs and the shell's context keys", () => {
     expect(result.current.ids).toEqual(["acme.tools.plain"]);
     act(() => contextKeys.set("acme.tools.on", true));
     expect(result.current.ids).toEqual(["acme.tools.gated", "acme.tools.plain"]);
-    act(() => updateViewLayout("acme.tools.plain", { hidden: true }));
+    act(() => updateViewLayout("acme.tools.plain", { hidden: true }, layoutState, productLayout));
     expect(result.current.ids).toEqual(["acme.tools.gated"]);
     expect(hasRailTab(registry.get("acme.tools.plain")!)).toBe(true);
   });

@@ -13,7 +13,7 @@ import { useEffect, useRef } from "react";
 
 import { isMacPlatform } from "@/lib/hotkeys";
 import { matchesShortcut, shortcutKeys } from "@/lib/shortcuts/registry";
-import { isActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
+import { isActiveWorkbenchScopeForEvent, useWorkbenchScope } from "@/workbench/workbenchScope";
 
 /** Glyphs for the chord `isVoiceDictationHotkey` matches; shown in control tooltips. */
 export const VOICE_DICTATION_KEYS = shortcutKeys("dictation.toggle");
@@ -58,7 +58,7 @@ export function useVoiceDictationHotkey(
   useEffect(() => {
     if (!enabled) return;
     const handler = (e: globalThis.KeyboardEvent): void => {
-      if (!isActiveWorkbenchScope(scope)) return;
+      if (!isActiveWorkbenchScopeForEvent(scope, e)) return;
       // Ignore auto-repeat: holding the chord would flap dictation on/off.
       if (e.repeat) return;
       if (!isVoiceDictationHotkey(e, isMac)) return;

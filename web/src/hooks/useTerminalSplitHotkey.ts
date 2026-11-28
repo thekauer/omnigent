@@ -7,7 +7,7 @@ import { useEffect, useRef } from "react";
 import { isFocusInDialogOrMenu, isMacPlatform } from "@/lib/hotkeys";
 import { matchesShortcut } from "@/lib/shortcuts/registry";
 import type { TerminalSplitAxis } from "@/lib/terminalSplitLayout";
-import { isActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
+import { isActiveWorkbenchScopeForEvent, useWorkbenchScope } from "@/workbench/workbenchScope";
 
 /** The split a keydown asks for, or null when it isn't a split chord. */
 export function terminalSplitHotkeyAxis(
@@ -32,7 +32,7 @@ export function useTerminalSplitHotkey(
   const scope = useWorkbenchScope();
   useEffect(() => {
     const handler = (event: globalThis.KeyboardEvent): void => {
-      if (!isActiveWorkbenchScope(scope)) return;
+      if (!isActiveWorkbenchScopeForEvent(scope, event)) return;
       if (terminalSplitHotkeyAxis(event, isMac) !== axis || isFocusInDialogOrMenu()) return;
       event.preventDefault();
       event.stopPropagation();

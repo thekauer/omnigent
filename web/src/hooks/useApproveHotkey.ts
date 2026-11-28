@@ -37,7 +37,7 @@ import { composerTargetOf } from "@/components/composer/engine/composerInput";
 import type { AnyBlock, ElicitationBlock } from "@/lib/blocks";
 import { matchesShortcut, shortcutKeys } from "@/lib/shortcuts/registry";
 import { useChatStore } from "@/store/chatStore";
-import { isActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
+import { isActiveWorkbenchScopeForEvent, useWorkbenchScope } from "@/workbench/workbenchScope";
 
 /** Glyphs for the chord this hook matches; shown on the Approve button it would press. */
 export const APPROVE_KEYS = shortcutKeys("approval.accept");
@@ -152,7 +152,7 @@ export function useApproveHotkey(isMac = isMacPlatform()): void {
   const scope = useWorkbenchScope();
   useEffect(() => {
     const handler = (e: globalThis.KeyboardEvent): void => {
-      if (!isActiveWorkbenchScope(scope)) return;
+      if (!isActiveWorkbenchScopeForEvent(scope, e)) return;
       // Embedded, keys from the host page around the app aren't the app's.
       const embedRoot = scope.layout.getRoot();
       if (isEmbedded && (!embedRoot || !e.composedPath().includes(embedRoot))) return;

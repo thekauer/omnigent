@@ -53,12 +53,12 @@ beforeEach(() => localStorage.clear());
 
 describe("view locations", () => {
   it("moves a view to another container, kept in the layout state, and back", () => {
-    const { store, registry, options } = setup();
+    const { store, policy, registry, options } = setup();
     expect(moveView(tree, "omnigent.inbox", options)).toBe(true);
     expect(store.get(LAYOUT_SLOTS.viewLocations)).toEqual({ "acme.tools.list": "omnigent.inbox" });
-    const locations = readViewLocations(store);
-    expect(viewContainerFor(tree, locations, registry)).toBe("omnigent.inbox");
-    expect(isViewMoved(tree, locations, registry)).toBe(true);
+    const locations = readViewLocations(store, policy);
+    expect(viewContainerFor(tree, locations, policy, registry)).toBe("omnigent.inbox");
+    expect(isViewMoved(tree, locations, policy, registry)).toBe(true);
     // Its own container again drops the move.
     expect(moveView(tree, "acme.tools", options)).toBe(true);
     expect(store.get(LAYOUT_SLOTS.viewLocations)).toBeUndefined();
@@ -72,39 +72,39 @@ describe("view locations", () => {
   });
 
   it("never moves a rail tab's built-in view, nor to a container that isn't there", () => {
-    const { options } = setup();
-    expect(canMoveView(railTab)).toBe(false);
+    const { policy, options } = setup();
+    expect(canMoveView(railTab, policy)).toBe(false);
     expect(moveView(railTab, "acme.tools", options)).toBe(false);
     expect(moveView(tree, "acme.gone", options)).toBe(false);
   });
 
   it("falls back to the view's own container when the stored one went away or can't draw it", () => {
-    const { store, registry } = setup();
+    const { store, policy, registry } = setup();
     store.set(LAYOUT_SLOTS.viewLocations, {
       "acme.tools.list": "acme.gone",
       "omnigent.inbox.list": "acme.panel",
       "omnigent.files.view": "acme.tools",
     });
-    const locations = readViewLocations(store);
-    expect(viewContainerFor(tree, locations, registry)).toBe("acme.tools");
-    expect(viewContainerFor(builtIn, locations, registry)).toBe("omnigent.inbox");
-    expect(viewContainerFor(railTab, locations, registry)).toBe(RIGHT_PANEL_CONTAINER);
+    const locations = readViewLocations(store, policy);
+    expect(viewContainerFor(tree, locations, policy, registry)).toBe("acme.tools");
+    expect(viewContainerFor(builtIn, locations, policy, registry)).toBe("omnigent.inbox");
+    expect(viewContainerFor(railTab, locations, policy, registry)).toBe(RIGHT_PANEL_CONTAINER);
   });
 
   it("keeps only well-formed stored moves", () => {
-    const { store } = setup();
+    const { store, policy } = setup();
     store.set(LAYOUT_SLOTS.viewLocations, { a: "b", c: 3, d: "" });
-    expect(readViewLocations(store)).toEqual({ a: "b" });
+    expect(readViewLocations(store, policy)).toEqual({ a: "b" });
     store.set(LAYOUT_SLOTS.viewLocations, ["a"]);
-    expect(readViewLocations(store)).toEqual({});
+    expect(readViewLocations(store, policy)).toEqual({});
   });
 
   it("makes a side bar entry for a view moved to a new one, titled by it while it is there", () => {
-    const { registry, options, store } = setup();
+    const { registry, policy, options, store } = setup();
     expect(moveView(tree, generatedContainerId(tree.id), options)).toBe(true);
     expect(moveView(builtIn, generatedContainerId(tree.id), options)).toBe(true);
     const views = [builtIn, tree];
-    const entries = generatedContainers(views, readViewLocations(store), registry);
+    const entries = generatedContainers(views, readViewLocations(store, policy), policy, registry);
     expect(entries).toEqual([
       {
         id: generatedContainerId(tree.id),
@@ -118,9 +118,13 @@ describe("view locations", () => {
     ]);
     // Its first view gone back, the entry stays while another view is in it.
     moveView(tree, "acme.tools", options);
-    expect(generatedContainers(views, readViewLocations(store), registry)[0]?.title).toBe("Inbox");
+    expect(
+      generatedContainers(views, readViewLocations(store, policy), policy, registry)[0]?.title,
+    ).toBe("Inbox");
     moveView(builtIn, "omnigent.inbox", options);
-    expect(generatedContainers(views, readViewLocations(store), registry)).toEqual([]);
+    expect(generatedContainers(views, readViewLocations(store, policy), policy, registry)).toEqual(
+      [],
+    );
   });
 
   it("resets every view's location", () => {
@@ -138,13 +142,15 @@ describe("view locations", () => {
     expect(canMoveView(tree, policy)).toBe(false);
     expect(moveView(tree, "acme.tools", options)).toBe(false);
     // The user's moves and hidden views don't apply, and hiding is refused.
-    expect(viewContainerFor(tree, readViewLocations(store, policy), registry)).toBe("acme.tools");
+    expect(viewContainerFor(tree, readViewLocations(store, policy), policy, registry)).toBe(
+      "acme.tools",
+    );
     expect(readViewsLayout(store, policy)[builtIn.id]?.hidden).toBeUndefined();
     expect(updateViewLayout(tree.id, { hidden: true }, store, policy)).toBe(false);
     expect(updateViewLayout(tree.id, { collapsed: true }, store, policy)).toBe(true);
     // Lifted, they are back.
     policy.set(null);
-    expect(viewContainerFor(tree, readViewLocations(store, policy), registry)).toBe(
+    expect(viewContainerFor(tree, readViewLocations(store, policy), policy, registry)).toBe(
       "omnigent.inbox",
     );
     expect(readViewsLayout(store, policy)[builtIn.id]?.hidden).toBe(true);

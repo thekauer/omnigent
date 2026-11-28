@@ -30,8 +30,9 @@ export function RailTabStripMenu({
   children: ReactElement;
 }) {
   const layout = useViewsLayout();
+  const scope = useWorkbenchScope();
+  const { productLayout: policy } = scope;
   const drop = useViewDropTarget(useCallback(() => RIGHT_PANEL_CONTAINER, []));
-  const { productLayout: policy } = useWorkbenchScope();
   const listed = views.filter(
     (view) =>
       view.builtInTab === undefined &&
@@ -70,8 +71,8 @@ export function RailTabStripMenu({
         {listed.map((view) => (
           <ContextMenuCheckboxItem
             key={view.id}
-            checked={!isViewHidden(view, layout)}
-            onCheckedChange={(checked) => setViewHidden(view.id, !checked)}
+            checked={!isViewHidden(view, layout, policy)}
+            onCheckedChange={(checked) => setViewHidden(view.id, !checked, scope)}
           >
             {view.name}
           </ContextMenuCheckboxItem>

@@ -6,8 +6,10 @@ import {
   isContainerHiddenByProduct,
   isViewHiddenByProduct,
   isViewRemovedByProduct,
+  productLayout,
 } from "@/workbench/productLayout";
 import { containerLocation, readViewLocations, viewContainerFor } from "@/workbench/viewLocations";
+import { layoutState } from "@/workbench/layoutState";
 import { builtInExtensions } from "@/builtinExtensions";
 import { registerLayoutCommands } from "@/workbench/layoutCommands";
 import { registerNavigationCommands } from "@/workbench/navigationCommands";
@@ -141,15 +143,20 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
         extensionId,
         command,
         () => {
-          // A view the product removed doesn't show.
-          if (isViewHiddenByProduct(viewId)) return false;
+          // A view the product removed doesn't show. The window's proxies: the active mount's.
+          if (isViewHiddenByProduct(viewId, productLayout)) return false;
           // Where the view is now: the user may have moved it.
           const view = registry.get(viewId);
-          if (view && isViewRemovedByProduct(view)) return false;
+          if (view && isViewRemovedByProduct(view, productLayout)) return false;
           const containerId = view
-            ? viewContainerFor(view, readViewLocations(), containerRegistry)
+            ? viewContainerFor(
+                view,
+                readViewLocations(layoutState, productLayout),
+                productLayout,
+                containerRegistry,
+              )
             : undefined;
-          if (containerId && isContainerHiddenByProduct(containerId)) return false;
+          if (containerId && isContainerHiddenByProduct(containerId, productLayout)) return false;
           if (containerId && containerLocation(containerId, containerRegistry) === "sidebar") {
             (options.layout ?? layoutService).openViewContainer(containerId);
             return true;

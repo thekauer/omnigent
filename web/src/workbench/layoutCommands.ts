@@ -107,13 +107,18 @@ export function focusedViewId(): string | undefined {
   return viewIdOf(typeof document === "undefined" ? null : document.activeElement);
 }
 
-/** The focused element, when it is inside the active mount (any, without a root). */
+/**
+ * The focused element, when it is inside the layout's root, or without a root (the standalone
+ * app) outside every embed.
+ */
 function focusInActiveLayout(layout: LayoutService): Element | null {
   if (typeof document === "undefined") return null;
   const active = document.activeElement;
   if (!active) return null;
   const root = layout.getRoot();
-  return !root || root.contains(active) ? active : null;
+  if (root) return root.contains(active) ? active : null;
+  // The window's layout: the page's focus outside every embed (an embed's views are its own).
+  return active.closest(".omnigent-app") === null ? active : null;
 }
 
 /** Registers the layout commands and keeps the visibility context keys; returns the removal. */

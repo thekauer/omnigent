@@ -27,7 +27,6 @@ import {
   isContainerHiddenByProduct,
   isViewRemovedByProduct,
   type ProductLayoutPolicy,
-  productLayout,
   useProductLayout,
 } from "@/workbench/productLayout";
 import {
@@ -91,13 +90,13 @@ export function containerViews(
   containerId: string,
   owner: string | undefined,
   layout: ViewsLayout,
-  locations: ViewLocations = NO_LOCATIONS,
-  policy: ProductLayoutPolicy = productLayout,
+  locations: ViewLocations,
+  policy: ProductLayoutPolicy,
 ): readonly RailViewContribution[] {
   // A container the product removed draws nothing.
   if (isContainerHiddenByProduct(containerId, policy)) return [];
   const views = withManifestViews(registered).filter(
-    (view) => viewContainerOf(view, locations) === containerId,
+    (view) => viewContainerOf(view, locations, policy) === containerId,
   );
   const ordered = [
     ...views.filter((view) => view.extensionId === owner),
@@ -106,11 +105,9 @@ export function containerViews(
   return ordered.filter(
     (view) =>
       (isRegistered(view) ? view.active : whenHolds(view.when, workbenchContext.snapshot())) &&
-      !isViewHidden(view, layout),
+      !isViewHidden(view, layout, policy),
   );
 }
-
-const NO_LOCATIONS: ViewLocations = Object.freeze({});
 
 /** The views of `containerId` drawn now, in order. */
 export function useContainerViews(
@@ -157,7 +154,7 @@ function sideBarContainersOf(
   all: readonly ViewContainerDescriptor[],
   layout: ViewsLayout,
   locations: ViewLocations,
-  policy: ProductLayoutPolicy = productLayout,
+  policy: ProductLayoutPolicy,
 ): { container: ViewContainerDescriptor; views: readonly RailViewContribution[] }[] {
   // The side bar entries moving a view made follow the registered containers.
   const sideBar = [
@@ -165,7 +162,7 @@ function sideBarContainersOf(
       (container) =>
         container.location === "sidebar" && !isContainerHiddenByProduct(container.id, policy),
     ),
-    ...generatedContainers(withManifestViews(registered), locations),
+    ...generatedContainers(withManifestViews(registered), locations, policy),
   ];
   // Before the host registered the built-ins, the sessions container is there anyway.
   const listed = sideBar.some((container) => container.id === CONVERSATIONS_CONTAINER)
@@ -244,6 +241,7 @@ export function ViewContainerViews({
 }) {
   const views = useContainerViews(containerId, registry, containers);
   const layout = useViewsLayout();
+  const { state: store, productLayout: policy } = useWorkbenchScope();
   const { settled } = useRailViews(registry, null);
   return views.map((view) => {
     const BuiltInView = builtInViewComponent(view.builtInView);
@@ -269,7 +267,7 @@ export function ViewContainerViews({
             visible={!collapsed}
             collapse={{
               collapsed,
-              onToggle: () => updateViewLayout(view.id, { collapsed: !collapsed }),
+              onToggle: () => updateViewLayout(view.id, { collapsed: !collapsed }, store, policy),
               wrapTitle: (title) => (
                 <PaneHeaderMenu view={view} title={title} canHide={views.length > 1} />
               ),
@@ -340,7 +338,8 @@ export function ContainerViewsMenu({
     (container) => container.id === containerId,
   )?.extensionId;
   // A view the product removed isn't offered to show again.
-  const { productLayout: policy, moveViewPicker } = useWorkbenchScope();
+  const scope = useWorkbenchScope();
+  const { productLayout: policy, moveViewPicker } = scope;
   const listed = containerViews(
     registered,
     containerId,
@@ -361,15 +360,15 @@ export function ContainerViewsMenu({
       <ContextMenuContent data-testid="view-container-menu">
         <ContextMenuLabel>Views</ContextMenuLabel>
         {listed.map((view) => {
-          const hidden = isViewHidden(view, layout);
-          const shown = listed.filter((other) => !isViewHidden(other, layout)).length;
+          const hidden = isViewHidden(view, layout, policy);
+          const shown = listed.filter((other) => !isViewHidden(other, layout, policy)).length;
           return (
             <ContextMenuCheckboxItem
               key={view.id}
               checked={!hidden}
               // The last view shown stays: a container with none leaves the side bar.
               disabled={!hidden && shown === 1}
-              onCheckedChange={(checked) => setViewHidden(view.id, !checked)}
+              onCheckedChange={(checked) => setViewHidden(view.id, !checked, scope)}
             >
               {view.name}
             </ContextMenuCheckboxItem>

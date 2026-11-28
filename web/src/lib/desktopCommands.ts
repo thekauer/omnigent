@@ -60,18 +60,13 @@ function activeRegistrations(): Registration[] {
 function dispatch(event: DesktopCommandEvent): void {
   // A modal dialog or open menu owns the keyboard, like a sheet in a native app.
   if (isFocusInDialogOrMenu() && !COMMANDS_THROUGH_DIALOGS.has(event.command)) return;
-  // The active mount's handlers first; another mount's only when the active one registered none.
-  const forCommand = (candidate: Registration[]) =>
-    candidate.filter((registration) => registration.command === event.command);
-  const own = forCommand(activeRegistrations());
-  const candidates = own.length > 0 ? own : forCommand(sortedRegistrations());
+  // The active mount's handlers only: the menu's state reports only the active mount's commands.
+  const candidates = activeRegistrations().filter(
+    (registration) => registration.command === event.command,
+  );
   for (const registration of candidates) {
     if (registration.handle(event) !== false) return;
   }
-}
-
-function sortedRegistrations(): Registration[] {
-  return [...registrations].sort((a, b) => b.priority - a.priority);
 }
 
 function isActive(command: DesktopCommand): boolean {

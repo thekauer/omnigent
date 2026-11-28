@@ -15,7 +15,7 @@ import { useEffect, useRef } from "react";
 
 import { isMacPlatform } from "@/lib/hotkeys";
 import { matchesShortcut } from "@/lib/shortcuts/registry";
-import { isActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
+import { isActiveWorkbenchScopeForEvent, useWorkbenchScope } from "@/workbench/workbenchScope";
 
 /** Monaco: ⌘K and Ctrl+K are both chord prefixes, on every platform. */
 const CHORD_PREFIX_SURFACE = ".monaco-editor";
@@ -71,7 +71,7 @@ export function useCommandPaletteHotkey(
   useEffect(() => {
     if (!enabled) return;
     const handler = (e: globalThis.KeyboardEvent): void => {
-      if (!isActiveWorkbenchScope(scope)) return;
+      if (!isActiveWorkbenchScopeForEvent(scope, e)) return;
       // Ignore auto-repeat: holding the chord would flap the palette.
       if (e.repeat || e.defaultPrevented) return;
       const sessionSearch =

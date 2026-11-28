@@ -8,8 +8,8 @@ import { toast } from "sonner";
 import { allBuiltInContainerViews } from "@/builtinExtensions/builtInContainers";
 import { ContextMenuItem, ContextMenuSeparator } from "@/components/ui/context-menu";
 import { currentExtensionHost } from "@/vscodeExtensions/extensionHost";
-import { layoutService, Parts } from "@/workbench/layoutService";
-import { type ProductLayoutPolicy, productLayout } from "@/workbench/productLayout";
+import { Parts } from "@/workbench/layoutService";
+import type { ProductLayoutPolicy } from "@/workbench/productLayout";
 import {
   canMoveView,
   containerLocation,
@@ -22,7 +22,7 @@ import {
 } from "@/workbench/viewLocations";
 import { updateViewLayout } from "@/workbench/viewsLayout";
 import { type RailViewContribution, type RailViewRegistry, railViews } from "./railViews";
-import { useWorkbenchScope } from "@/workbench/workbenchScope";
+import { useWorkbenchScope, type WorkbenchScope } from "@/workbench/workbenchScope";
 
 /** Every view a move can name: the registered ones, then manifest views not registered yet. */
 export function allViews(registry: RailViewRegistry = railViews): readonly RailViewContribution[] {
@@ -38,41 +38,55 @@ export function findView(
   return allViews(registry).find((view) => view.id === viewId);
 }
 
-/** Shows `viewId` where it is now: its container in the side bar, or its tab in the rail. */
-export function revealView(viewId: string): void {
+/**
+ * Shows `viewId` where it is now: its container in the mount's side bar, or its tab in the rail.
+ * An extension host's own focus command reaches the window's active mount.
+ */
+export function revealView(viewId: string, scope: WorkbenchScope): void {
   const host = currentExtensionHost();
   if (host) {
     void host.commands.execute(`${viewId}.focus`, [], () => {}).catch(() => {});
     return;
   }
   const view = findView(viewId);
-  const containerId = view ? viewContainerFor(view, readViewLocations()) : undefined;
+  const containerId = view
+    ? viewContainerFor(
+        view,
+        readViewLocations(scope.state, scope.productLayout),
+        scope.productLayout,
+      )
+    : undefined;
   if (containerId && containerLocation(containerId) === "sidebar") {
-    layoutService.openViewContainer(containerId);
-  } else layoutService.setPartHidden(false, Parts.AUXILIARYBAR_PART);
+    scope.layout.openViewContainer(containerId);
+  } else scope.layout.setPartHidden(false, Parts.AUXILIARYBAR_PART);
 }
 
-/** Moves `viewId` to `containerId` and shows it there; says why when it can't. */
-export function moveViewTo(viewId: string, containerId: string): boolean {
+/**
+ * Moves `viewId` to `containerId` in the mount's layout and shows it there; says why when it
+ * can't. `scope` is the mount whose view it is (its layout state and product policy).
+ */
+export function moveViewTo(viewId: string, containerId: string, scope: WorkbenchScope): boolean {
   const view = findView(viewId);
   if (!view) return false;
+  const { state: store, productLayout: policy } = scope;
   // A view moved somewhere shows there, hidden before or not.
-  if (moveView(view, containerId)) updateViewLayout(viewId, { hidden: undefined });
-  else {
+  if (moveView(view, containerId, { store, policy })) {
+    updateViewLayout(viewId, { hidden: undefined }, store, policy);
+  } else {
     toast.warning(
-      productLayout.viewLocationsLocked()
+      policy.viewLocationsLocked()
         ? "Views can't be moved in this product"
         : `${view.name} can't be moved there`,
     );
     return false;
   }
-  revealView(viewId);
+  revealView(viewId, scope);
   return true;
 }
 
-/** Hides or shows a view (layout state), unless the product keeps views in place. */
-export function setViewHidden(viewId: string, hidden: boolean): void {
-  if (!updateViewLayout(viewId, { hidden })) {
+/** Hides or shows a view in the mount's layout state, unless the product keeps views in place. */
+export function setViewHidden(viewId: string, hidden: boolean, scope: WorkbenchScope): void {
+  if (!updateViewLayout(viewId, { hidden }, scope.state, scope.productLayout)) {
     toast.warning(
       hidden ? "Views can't be hidden in this product" : "Views can't be shown in this product",
     );
@@ -100,7 +114,7 @@ if (typeof document !== "undefined") {
  */
 export function viewDragProps(
   view: RailViewContribution,
-  policy: ProductLayoutPolicy = productLayout,
+  policy: ProductLayoutPolicy,
 ): {
   draggable?: true;
   onDragStart?: (event: DragEvent<HTMLElement>) => void;
@@ -140,7 +154,8 @@ export interface ViewDropTarget {
  */
 export function useViewDropTarget(target: (viewId: string) => string | undefined): ViewDropTarget {
   const [over, setOver] = useState(false);
-  const { productLayout: policy } = useWorkbenchScope();
+  const scope = useWorkbenchScope();
+  const { productLayout: policy } = scope;
   const accepts = useCallback(
     (event: DragEvent<HTMLElement>) => {
       if (!isViewDrag(event) || draggedView === null) return false;
@@ -172,7 +187,7 @@ export function useViewDropTarget(target: (viewId: string) => string | undefined
       const viewId = event.dataTransfer.getData(VIEW_DRAG_TYPE) || draggedView;
       draggedView = null;
       const containerId = viewId ? target(viewId) : undefined;
-      if (viewId && containerId) moveViewTo(viewId, containerId);
+      if (viewId && containerId) moveViewTo(viewId, containerId, scope);
     },
     ...(over ? { "data-view-drop-target": true as const } : {}),
   };
@@ -192,16 +207,17 @@ export function ViewMoveMenuItems({
   separatorBefore?: boolean;
 }) {
   const locations = useViewLocations();
-  const { productLayout: policy, moveViewPicker } = useWorkbenchScope();
+  const scope = useWorkbenchScope();
+  const { productLayout: policy, moveViewPicker } = scope;
   if (!canMoveView(view, policy)) return null;
-  const moved = isViewMoved(view, locations);
+  const moved = isViewMoved(view, locations, policy);
   return (
     <>
       {separatorBefore && <ContextMenuSeparator />}
       <ContextMenuItem
         data-view-action="hide"
         disabled={!canHide}
-        onSelect={() => setViewHidden(view.id, true)}
+        onSelect={() => setViewHidden(view.id, true, scope)}
       >
         Hide &lsquo;{view.name}&rsquo;
       </ContextMenuItem>
@@ -211,7 +227,7 @@ export function ViewMoveMenuItems({
       {moved && (
         <ContextMenuItem
           data-view-action="reset-location"
-          onSelect={() => moveViewTo(view.id, defaultContainerOf(view))}
+          onSelect={() => moveViewTo(view.id, defaultContainerOf(view), scope)}
         >
           Reset Location
         </ContextMenuItem>

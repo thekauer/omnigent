@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { getEmbedRoot } from "@/lib/host";
+import { useOverlayRoot } from "@/workbench/workbenchScope";
 
 // Clearance kept from the viewport edges, and between the pointer and the box.
 const EDGE_MARGIN = 8;
@@ -48,6 +48,7 @@ export function useCursorTooltip(text: string): {
   const [cursorPos, setCursorPos] = useState<Point | null>(null);
   const [size, setSize] = useState<Size>({ width: 0, height: 0 });
   const tooltipRef = useRef<HTMLDivElement>(null);
+  const overlayRoot = useOverlayRoot();
 
   // Measure before paint on every pointer move or text change while shown, so an
   // edge flip never shows at the unflipped spot and follows a re-wrap (resize,
@@ -76,7 +77,7 @@ export function useCursorTooltip(text: string): {
         >
           {text}
         </div>,
-        getEmbedRoot() ?? document.body,
+        overlayRoot ?? document.body,
       )
     : null;
 

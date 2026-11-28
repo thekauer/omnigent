@@ -16,7 +16,7 @@ import { MessageSquarePlusIcon } from "lucide-react";
 import type { Comment } from "@/hooks/useComments";
 import { useCanEdit } from "@/hooks/usePermissions";
 import { useIsEmbedded } from "@/lib/embedded";
-import { getEmbedRoot, getOmnigentHtmlPreviewFrame } from "@/lib/host";
+import { getOmnigentHtmlPreviewFrame } from "@/lib/host";
 import { randomUUID } from "@/lib/randomUUID";
 import { type ActiveSelection, HTML_PREVIEW_SANDBOX } from "./codeViewerHelpers";
 import {
@@ -34,6 +34,7 @@ import {
 } from "./htmlPreviewZoom";
 import { TruncatedBanner } from "./TruncatedBanner";
 import { getSavedScrollTop, saveScrollTop } from "./useScrollRestore";
+import { useOverlayRoot } from "@/workbench/workbenchScope";
 
 // Force a file asset: a data: URL would be blocked by the embed's script-src CSP.
 const HTML_COMMENT_BRIDGE_RUNTIME_URL = new URL(
@@ -332,6 +333,7 @@ export function HtmlCommentViewer({
     />
   );
 
+  const overlayRoot = useOverlayRoot();
   return (
     <div className="flex h-full flex-col">
       {truncated && <TruncatedBanner />}
@@ -377,7 +379,7 @@ export function HtmlCommentViewer({
             <MessageSquarePlusIcon className="size-3.5" />
             Add comment
           </button>,
-          getEmbedRoot() ?? document.body,
+          overlayRoot ?? document.body,
         )}
     </div>
   );

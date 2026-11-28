@@ -3,8 +3,9 @@
 // `visibility`. Plain data; React reads it through `useViewsLayout`.
 
 import { useCallback, useSyncExternalStore } from "react";
-import { LAYOUT_SLOTS, type LayoutStateStore, layoutState } from "./layoutState";
-import { isViewRemovedByProduct, type ProductLayoutPolicy, productLayout } from "./productLayout";
+import { LAYOUT_SLOTS, type LayoutStateStore } from "./layoutState";
+import { isViewRemovedByProduct, type ProductLayoutPolicy } from "./productLayout";
+import { createStableSnapshot } from "./stableSnapshot";
 import { useWorkbenchScope } from "./workbenchScope";
 
 export interface ViewLayout {
@@ -20,10 +21,7 @@ const EMPTY: ViewsLayout = Object.freeze({});
  * The stored view layout, keeping only well-formed entries; the user's hidden views come back
  * while the product locks view locations.
  */
-export function readViewsLayout(
-  store: LayoutStateStore = layoutState,
-  policy: ProductLayoutPolicy = productLayout,
-): ViewsLayout {
+export function readViewsLayout(store: LayoutStateStore, policy: ProductLayoutPolicy): ViewsLayout {
   const locked = policy.viewLocationsLocked();
   const stored = store.get(LAYOUT_SLOTS.views);
   if (typeof stored !== "object" || stored === null || Array.isArray(stored)) return EMPTY;
@@ -46,8 +44,8 @@ export function readViewsLayout(
 export function updateViewLayout(
   viewId: string,
   patch: ViewLayout,
-  store: LayoutStateStore = layoutState,
-  policy: ProductLayoutPolicy = productLayout,
+  store: LayoutStateStore,
+  policy: ProductLayoutPolicy,
 ): boolean {
   if (patch.hidden !== undefined && policy.viewLocationsLocked()) return false;
   // The stored entry as written, so a lock lifted later finds the user's hidden views again.
@@ -75,7 +73,8 @@ export function isViewCollapsed(
 
 /**
  * Whether a view is hidden: removed by the product (`hiddenViews`, or its own container in
- * `hiddenContainers`), else the user's choice, else its contribution's `visibility`.
+ * `hiddenContainers`), else the user's choice, else its contribution's `visibility`. `policy` is
+ * the product policy of the mount the view is drawn in.
  */
 export function isViewHidden(
   view: {
@@ -84,20 +83,13 @@ export function isViewHidden(
     readonly containerId?: string | undefined;
   },
   layout: ViewsLayout,
-  policy: ProductLayoutPolicy = productLayout,
+  policy: ProductLayoutPolicy,
 ): boolean {
   if (isViewRemovedByProduct(view, policy)) return true;
   return layout[view.id]?.hidden ?? view.visibility === "hidden";
 }
 
-let cache: { text: string; layout: ViewsLayout } | undefined;
-
-function snapshot(store: LayoutStateStore, policy: ProductLayoutPolicy): ViewsLayout {
-  const layout = readViewsLayout(store, policy);
-  const text = JSON.stringify(layout);
-  if (cache?.text !== text) cache = { text, layout };
-  return cache.layout;
-}
+const snapshot = createStableSnapshot<ViewsLayout>();
 
 export function useViewsLayout(
   given?: LayoutStateStore,
@@ -118,7 +110,7 @@ export function useViewsLayout(
   );
   return useSyncExternalStore(
     subscribe,
-    () => snapshot(store, productPolicy),
+    () => snapshot(store, productPolicy, () => readViewsLayout(store, productPolicy)),
     () => EMPTY,
   );
 }

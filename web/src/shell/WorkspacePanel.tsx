@@ -1306,7 +1306,9 @@ function WorkspacePanelImpl({
     // Extension views follow the built-ins, in the registry's order.
     ...extensionViews
       // A view whose `when` doesn't hold, or a hidden one, gets no tab.
-      .filter((view) => hasRailTab(view, (candidate) => isViewHidden(candidate, viewsLayout)))
+      .filter((view) =>
+        hasRailTab(view, (candidate) => isViewHidden(candidate, viewsLayout, productPolicy)),
+      )
       .map((view) => extensionRailTab(view.id)),
   ];
   const unpinnedTabs = availablePanels.filter((tab) => !pinnedTabs.includes(tab));

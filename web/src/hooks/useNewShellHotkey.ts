@@ -10,7 +10,7 @@
 import { useEffect, useRef } from "react";
 
 import { matchesShortcut } from "@/lib/shortcuts/registry";
-import { isActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
+import { isActiveWorkbenchScopeForEvent, useWorkbenchScope } from "@/workbench/workbenchScope";
 
 /** True for ⌃` — Control plus the key left of 1, with no other modifier. */
 export function isTerminalHotkey(e: globalThis.KeyboardEvent): boolean {
@@ -36,7 +36,7 @@ export function useNewShellHotkey(onLaunch: () => void, enabled = true): void {
   useEffect(() => {
     if (!enabled) return;
     const handler = (e: globalThis.KeyboardEvent): void => {
-      if (!isActiveWorkbenchScope(scope)) return;
+      if (!isActiveWorkbenchScopeForEvent(scope, e)) return;
       // Ignore auto-repeat: holding the chord would spawn a shell per tick.
       if (e.repeat || !isTerminalHotkey(e)) return;
       e.preventDefault();

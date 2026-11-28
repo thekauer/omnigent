@@ -24626,7 +24626,7 @@ describe("one chat store per window", () => {
     expect(entry?.disposed).toBe(false);
   });
 
-  it("rewires a different client without clearing live conversations, and warns", async () => {
+  it("wires a second client beside the first without clearing live conversations or warning", async () => {
     await useChatStore.getState().switchTo("conv_kept");
     const entry = conversationRegistry.peek("conv_kept");
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -24635,8 +24635,25 @@ describe("one chat store per window", () => {
 
     expect(entry?.disposed).toBe(false);
     expect(conversationRegistry.peek("conv_kept")).toBe(entry);
-    expect(warn).toHaveBeenCalledWith(expect.stringContaining("second QueryClient"));
+    expect(warn).not.toHaveBeenCalled();
     warn.mockRestore();
+  });
+
+  it("sends the store's invalidations to every wired client", () => {
+    // The standalone app's client and an embed's: both see a child's finished turn.
+    const embedClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    initChatStore(embedClient);
+    client.setQueryData(["session", "conv_child2"], { parentSessionId: "conv_parent2" });
+    const firstSpy = vi.spyOn(client, "invalidateQueries");
+    const embedSpy = vi.spyOn(embedClient, "invalidateQueries");
+    handleSessionEvent({
+      type: "session_status",
+      conversationId: "conv_child2",
+      status: "idle",
+    });
+    const parentList = { queryKey: childSessionsQueryKey("conv_parent2") };
+    expect(firstSpy).toHaveBeenCalledWith(parentList);
+    expect(embedSpy).toHaveBeenCalledWith(parentList);
   });
 
   it("keeps the entry of each mount's session live while the other mount's is active", async () => {

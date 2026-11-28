@@ -1,7 +1,7 @@
 import * as React from "react";
 import * as DialogPrimitive from "radix-ui/dialog";
 
-import { getEmbedRoot } from "@/lib/host";
+import { useOverlayRoot } from "@/workbench/workbenchScope";
 import { isIOSShell } from "@/lib/nativeBridge";
 import { SuppressBrowserView } from "@/hooks/useSuppressBrowserView";
 import { cn } from "@/lib/utils";
@@ -17,10 +17,11 @@ function DialogTrigger({ ...props }: React.ComponentProps<typeof DialogPrimitive
 }
 
 function DialogPortal({ ...props }: React.ComponentProps<typeof DialogPrimitive.Portal>) {
+  const overlayRoot = useOverlayRoot();
   return (
     <DialogPrimitive.Portal
       data-slot="dialog-portal"
-      container={getEmbedRoot() ?? undefined}
+      container={overlayRoot ?? undefined}
       {...props}
     />
   );

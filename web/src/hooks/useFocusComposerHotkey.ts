@@ -11,7 +11,7 @@
 import { useEffect, useRef } from "react";
 
 import { matchesShortcut } from "@/lib/shortcuts/registry";
-import { isActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
+import { isActiveWorkbenchScopeForEvent, useWorkbenchScope } from "@/workbench/workbenchScope";
 
 /** Selector for surfaces that own their keystrokes (terminals, code editor). */
 const HOTKEY_OWNING_SURFACES = ".xterm, .monaco-editor";
@@ -46,7 +46,7 @@ export function useFocusComposerHotkey(onFocus: () => void, enabled = true): voi
   useEffect(() => {
     if (!enabled) return;
     const handler = (e: globalThis.KeyboardEvent): void => {
-      if (!isActiveWorkbenchScope(scope)) return;
+      if (!isActiveWorkbenchScopeForEvent(scope, e)) return;
       // Ignore auto-repeat: holding the chord would re-fire focus pointlessly.
       if (e.repeat) return;
       if (!isFocusComposerHotkey(e)) return;

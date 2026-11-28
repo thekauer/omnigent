@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { CommandRegistry } from "@/vscodeExtensions/commands";
 import { ContextKeyService } from "@/vscodeExtensions/contextKeys";
+import { configurationService } from "@/configuration/configurationService";
 import {
   CLOSE_AUXILIARY_BAR_COMMAND,
   CLOSE_SIDEBAR_COMMAND,
@@ -130,6 +131,35 @@ describe("layout commands", () => {
     expect(auxiliary.controller.setHidden).toHaveBeenCalledTimes(2);
     disposable.dispose();
     expect(commands.has(TOGGLE_SIDEBAR_COMMAND)).toBe(false);
+  });
+});
+
+describe("LayoutService layout listeners", () => {
+  it("share one configuration listener, which tells each of them the side bar's side changed", () => {
+    const listen = vi.spyOn(configurationService, "onDidChangeConfiguration");
+    const release = vi.fn();
+    listen.mockReturnValueOnce(release);
+    try {
+      const layout = new LayoutService();
+      const first = vi.fn();
+      const second = vi.fn();
+      const offFirst = layout.onDidChangeLayout(first);
+      const offSecond = layout.onDidChangeLayout(second);
+      expect(listen).toHaveBeenCalledTimes(1);
+      const [onChange] = listen.mock.calls[0]!;
+      onChange({
+        affectedKeys: ["workbench.sideBar.location"],
+        affectsConfiguration: (key: string) => key === "workbench.sideBar.location",
+      });
+      expect(first).toHaveBeenCalledOnce();
+      expect(second).toHaveBeenCalledOnce();
+      offFirst();
+      expect(release).not.toHaveBeenCalled();
+      offSecond();
+      expect(release).toHaveBeenCalledOnce();
+    } finally {
+      listen.mockRestore();
+    }
   });
 });
 

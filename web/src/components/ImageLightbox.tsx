@@ -14,7 +14,7 @@ import * as DialogPrimitive from "radix-ui/dialog";
 import { DownloadIcon, XIcon, ZoomInIcon, ZoomOutIcon } from "lucide-react";
 import { toast } from "sonner";
 
-import { getEmbedRoot } from "@/lib/host";
+import { useOverlayRoot } from "@/workbench/workbenchScope";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { canDownloadImage, downloadImage } from "@/hooks/useFileContent";
@@ -448,6 +448,7 @@ export function ImageLightboxProvider({ children }: { children: React.ReactNode 
   const close = useCallback(() => setImage(null), []);
   const value = useMemo(() => ({ open }), [open]);
 
+  const overlayRoot = useOverlayRoot();
   return (
     <LightboxContext.Provider value={value}>
       {children}
@@ -457,7 +458,7 @@ export function ImageLightboxProvider({ children }: { children: React.ReactNode 
           if (!next) setImage(null);
         }}
       >
-        <DialogPrimitive.Portal container={getEmbedRoot() ?? undefined}>
+        <DialogPrimitive.Portal container={overlayRoot ?? undefined}>
           {/* Dark backdrop — dims the whole page to focus on the preview. */}
           <DialogPrimitive.Overlay
             className={cn(

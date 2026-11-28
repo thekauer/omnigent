@@ -166,7 +166,7 @@ describe("moving views", () => {
     document.body.append(source);
     const dataTransfer = fakeDataTransfer();
     // The drag starts on a view's header (its props), then lands on the target.
-    const props = viewDragProps(registry.get("acme.tools.list")!);
+    const props = viewDragProps(registry.get("acme.tools.list")!, productLayout);
     act(() => props.onDragStart?.({ dataTransfer, stopPropagation: () => {} } as never));
     const target = screen.getByTestId("target");
     fireEvent.dragOver(target, { dataTransfer });

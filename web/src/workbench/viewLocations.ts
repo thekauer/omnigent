@@ -6,13 +6,13 @@
 // extension put it. Plain data, plus the React read.
 
 import { useCallback, useSyncExternalStore } from "react";
-import { LAYOUT_SLOTS, type LayoutStateStore, layoutState } from "./layoutState";
+import { LAYOUT_SLOTS, type LayoutStateStore } from "./layoutState";
 import {
   isContainerHiddenByProduct,
   isViewRemovedByProduct,
   type ProductLayoutPolicy,
-  productLayout,
 } from "./productLayout";
+import { createStableSnapshot } from "./stableSnapshot";
 import { useWorkbenchScope } from "./workbenchScope";
 import {
   HOST_CONTAINER_OWNER,
@@ -58,8 +58,8 @@ export function defaultContainerOf(view: Pick<MovableView, "containerId">): stri
 
 /** The stored moves, well-formed ones only; none while the product locks view locations. */
 export function readViewLocations(
-  store: LayoutStateStore = layoutState,
-  policy: ProductLayoutPolicy = productLayout,
+  store: LayoutStateStore,
+  policy: ProductLayoutPolicy,
 ): ViewLocations {
   if (policy.viewLocationsLocked()) return EMPTY;
   const stored = store.get(LAYOUT_SLOTS.viewLocations);
@@ -94,6 +94,7 @@ export function allowedLocations(view: MovableView): readonly ViewContainerLocat
 export function viewContainerFor(
   view: MovableView,
   locations: ViewLocations,
+  policy: ProductLayoutPolicy,
   registry: ViewContainerRegistry = viewContainers,
 ): string {
   const moved = Object.hasOwn(locations, view.id) ? locations[view.id] : undefined;
@@ -102,7 +103,7 @@ export function viewContainerFor(
     if (
       location !== undefined &&
       allowedLocations(view).includes(location) &&
-      !isContainerHiddenByProduct(moved)
+      !isContainerHiddenByProduct(moved, policy)
     ) {
       return moved;
     }
@@ -114,10 +115,7 @@ export function viewContainerFor(
  * Whether the user may move or hide `view`: not a rail tab's built-in, not under a lock, and not
  * removed by the product.
  */
-export function canMoveView(
-  view: MovableView,
-  policy: ProductLayoutPolicy = productLayout,
-): boolean {
+export function canMoveView(view: MovableView, policy: ProductLayoutPolicy): boolean {
   return (
     view.builtInTab === undefined &&
     !policy.viewLocationsLocked() &&
@@ -129,9 +127,10 @@ export function canMoveView(
 export function isViewMoved(
   view: MovableView,
   locations: ViewLocations,
+  policy: ProductLayoutPolicy,
   registry: ViewContainerRegistry = viewContainers,
 ): boolean {
-  return viewContainerFor(view, locations, registry) !== defaultContainerOf(view);
+  return viewContainerFor(view, locations, policy, registry) !== defaultContainerOf(view);
 }
 
 /**
@@ -143,12 +142,12 @@ export function moveView(
   view: MovableView,
   containerId: string,
   options: {
-    readonly store?: LayoutStateStore;
-    readonly policy?: ProductLayoutPolicy;
+    readonly store: LayoutStateStore;
+    readonly policy: ProductLayoutPolicy;
     readonly registry?: ViewContainerRegistry;
-  } = {},
+  },
 ): boolean {
-  const { store = layoutState, policy = productLayout, registry = viewContainers } = options;
+  const { store, policy, registry = viewContainers } = options;
   if (!canMoveView(view, policy)) return false;
   const location = containerLocation(containerId, registry);
   if (location === undefined || !allowedLocations(view).includes(location)) return false;
@@ -162,7 +161,7 @@ export function moveView(
 }
 
 /** VS Code's Reset View Locations: every view goes back where its extension put it. */
-export function resetViewLocations(store: LayoutStateStore = layoutState): void {
+export function resetViewLocations(store: LayoutStateStore): void {
   store.set(LAYOUT_SLOTS.viewLocations, undefined);
 }
 
@@ -173,20 +172,21 @@ export function resetViewLocations(store: LayoutStateStore = layoutState): void 
 export function generatedContainers(
   views: readonly MovableView[],
   locations: ViewLocations,
+  policy: ProductLayoutPolicy,
   registry: ViewContainerRegistry = viewContainers,
 ): readonly ViewContainerDescriptor[] {
   const seen = new Map<string, ViewContainerDescriptor>();
   for (const view of views) {
     // A view the product removed makes no entry.
-    if (isViewRemovedByProduct(view)) continue;
-    const containerId = viewContainerFor(view, locations, registry);
+    if (isViewRemovedByProduct(view, policy)) continue;
+    const containerId = viewContainerFor(view, locations, policy, registry);
     if (!isGeneratedContainer(containerId) || seen.has(containerId)) continue;
     // The view the entry was made for names it while it is there; another view otherwise.
     const owner =
       views.find(
         (candidate) =>
           generatedContainerId(candidate.id) === containerId &&
-          viewContainerFor(candidate, locations, registry) === containerId,
+          viewContainerFor(candidate, locations, policy, registry) === containerId,
       ) ?? view;
     seen.set(
       containerId,
@@ -204,14 +204,7 @@ export function generatedContainers(
   return [...seen.values()];
 }
 
-let cache: { text: string; locations: ViewLocations } | undefined;
-
-function snapshot(store: LayoutStateStore, policy: ProductLayoutPolicy): ViewLocations {
-  const locations = readViewLocations(store, policy);
-  const text = JSON.stringify(locations);
-  if (cache?.text !== text) cache = { text, locations };
-  return cache.locations;
-}
+const snapshot = createStableSnapshot<ViewLocations>();
 
 /** The stored moves, kept current (the same object while they don't change). */
 export function useViewLocations(
@@ -233,7 +226,7 @@ export function useViewLocations(
   );
   return useSyncExternalStore(
     subscribe,
-    () => snapshot(store, productPolicy),
+    () => snapshot(store, productPolicy, () => readViewLocations(store, productPolicy)),
     () => EMPTY,
   );
 }

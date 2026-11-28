@@ -1,7 +1,7 @@
 import * as React from "react";
 import * as HoverCardPrimitive from "radix-ui/hover-card";
 
-import { getEmbedRoot } from "@/lib/host";
+import { useOverlayRoot } from "@/workbench/workbenchScope";
 import { cn } from "@/lib/utils";
 
 function HoverCard({ ...props }: React.ComponentProps<typeof HoverCardPrimitive.Root>) {
@@ -18,10 +18,11 @@ function HoverCardContent({
   sideOffset = 4,
   ...props
 }: React.ComponentProps<typeof HoverCardPrimitive.Content>) {
+  const overlayRoot = useOverlayRoot();
   return (
     <HoverCardPrimitive.Portal
       data-slot="hover-card-portal"
-      container={getEmbedRoot() ?? undefined}
+      container={overlayRoot ?? undefined}
     >
       <HoverCardPrimitive.Content
         data-slot="hover-card-content"

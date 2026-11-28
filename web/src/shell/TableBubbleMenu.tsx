@@ -27,11 +27,10 @@ import { TextSelection } from "@tiptap/pm/state";
 import { Fragment } from "@tiptap/pm/model";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import { MoreHorizontal, MoreVertical, Trash2 } from "lucide-react";
-import { getEmbedRoot } from "@/lib/host";
+import { useOverlayRoot } from "@/workbench/workbenchScope";
 import { cn } from "@/lib/utils";
 
 // Embedded builds scope styles under the embed root, so portals must land inside it.
-const portalTarget = (): HTMLElement => getEmbedRoot() ?? document.body;
 
 // ---------------------------------------------------------------------------
 // Public helper — re-derives a cell's document position by DOM index.
@@ -215,6 +214,7 @@ function HandleMenu({
   onMouseEnter: () => void;
   onMouseLeave: () => void;
 }) {
+  const overlayRoot = useOverlayRoot();
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (!(e.target instanceof Element)) return;
@@ -259,7 +259,7 @@ function HandleMenu({
         ),
       )}
     </div>,
-    portalTarget(),
+    overlayRoot ?? document.body,
   );
 }
 
@@ -304,6 +304,7 @@ export function TableHandles({
   editor: Editor;
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
 }) {
+  const overlayRoot = useOverlayRoot();
   const [rowHandle, setRowHandle] = useState<HandlePos | null>(null);
   const [colHandle, setColHandle] = useState<HandlePos | null>(null);
   const [rowMenu, setRowMenu] = useState<{
@@ -775,7 +776,7 @@ export function TableHandles({
               height: rowSelRect.height,
             }}
           />,
-          portalTarget(),
+          overlayRoot ?? document.body,
         )}
 
       {/* Column selection overlay — full-border rectangle spanning the entire hovered column */}
@@ -790,7 +791,7 @@ export function TableHandles({
               height: colSelRect.height,
             }}
           />,
-          portalTarget(),
+          overlayRoot ?? document.body,
         )}
 
       {/* Drag target overlay — shows where the dragged row/column will land */}
@@ -805,7 +806,7 @@ export function TableHandles({
               height: dragTargetRect.height,
             }}
           />,
-          portalTarget(),
+          overlayRoot ?? document.body,
         )}
 
       {/* Row handle — vertical pill with ⋮ to the left of the hovered row */}
@@ -873,7 +874,7 @@ export function TableHandles({
           >
             <MoreVertical className="size-3.5" />
           </div>,
-          portalTarget(),
+          overlayRoot ?? document.body,
         )}
 
       {rowMenu && (
@@ -952,7 +953,7 @@ export function TableHandles({
           >
             <MoreHorizontal className="size-3.5" />
           </div>,
-          portalTarget(),
+          overlayRoot ?? document.body,
         )}
 
       {colMenu && (
@@ -978,7 +979,7 @@ export function TableHandles({
               height: dragGhostRect.height,
             }}
           />,
-          portalTarget(),
+          overlayRoot ?? document.body,
         )}
 
       {/* Right-click context menu — shown when right-clicking inside a table cell */}
@@ -1016,7 +1017,7 @@ export function TableHandles({
               height: dropIndicator.height,
             }}
           />,
-          portalTarget(),
+          overlayRoot ?? document.body,
         )}
     </>
   );

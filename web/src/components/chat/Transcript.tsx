@@ -68,7 +68,11 @@ import {
 import { TranscriptPaletteCommands } from "@/components/chat/TranscriptPaletteCommands";
 import { usePeerSessionMessageDisplay } from "@/lib/peerSessionMessagePreferences";
 import { SCROLL_RESTORE_BUDGET_MS } from "@/shell/useScrollRestore";
-import { isActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
+import {
+  isActiveWorkbenchScope,
+  isActiveWorkbenchScopeForEvent,
+  useWorkbenchScope,
+} from "@/workbench/workbenchScope";
 
 export interface TranscriptProps {
   /** Ref callback for the conversation wrapper element (SelectionPopup scope +
@@ -300,7 +304,7 @@ function TranscriptImpl({
   useEffect(() => setNativeFindConversationId(null), [conversationId]);
   useEffect(() => {
     const handleFind = (event: globalThis.KeyboardEvent) => {
-      if (!isActiveWorkbenchScope(scope)) return;
+      if (!isActiveWorkbenchScopeForEvent(scope, event)) return;
       if (!display.conversationId || !isNativeFindShortcut(event)) return;
       // Native find runs after keydown dispatch. Commit every row before the
       // browser scans the DOM so off-screen messages participate.
@@ -398,7 +402,7 @@ function TranscriptImpl({
   // Cmd+Alt+↑/↓ (Ctrl+Alt on win/linux) user-turn navigation.
   useEffect(() => {
     const handler = (e: globalThis.KeyboardEvent) => {
-      if (!isActiveWorkbenchScope(scope)) return;
+      if (!isActiveWorkbenchScopeForEvent(scope, e)) return;
       if (!hasCommandModifier(e) || !e.altKey) return;
       if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
       if (e.defaultPrevented) return;

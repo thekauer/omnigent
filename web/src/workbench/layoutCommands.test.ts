@@ -169,6 +169,23 @@ describe("focusedView", () => {
   });
 });
 
+describe("focusedView in the standalone app", () => {
+  it("doesn't name a view of an embed that has the focus", () => {
+    const layout = mount();
+    const contextKeys = commandsWith(layout);
+    const embed = document.createElement("div");
+    embed.className = "omnigent-app";
+    const section = document.createElement("div");
+    section.dataset.view = "acme.embedded";
+    const control = document.createElement("button");
+    section.append(control);
+    embed.append(section);
+    document.body.append(embed);
+    control.focus();
+    expect(contextKeys.get("focusedView")).toBeUndefined();
+  });
+});
+
 describe("omnigent.layoutWidth", () => {
   it("names the width class of the layout on screen, and follows its changes", () => {
     const layout = mount();

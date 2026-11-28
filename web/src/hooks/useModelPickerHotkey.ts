@@ -11,7 +11,7 @@
 import { useEffect, useRef } from "react";
 
 import { matchesShortcut, shortcutKeys } from "@/lib/shortcuts/registry";
-import { isActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
+import { isActiveWorkbenchScopeForEvent, useWorkbenchScope } from "@/workbench/workbenchScope";
 
 /** Glyphs for the chord `isModelPickerHotkey` matches; shown in control tooltips. */
 export const MODEL_PICKER_KEYS = shortcutKeys("model.picker");
@@ -50,7 +50,7 @@ export function useModelPickerHotkey(onOpen: () => void, enabled = true): void {
   useEffect(() => {
     if (!enabled) return;
     const handler = (e: globalThis.KeyboardEvent): void => {
-      if (!isActiveWorkbenchScope(scope)) return;
+      if (!isActiveWorkbenchScopeForEvent(scope, e)) return;
       // Ignore auto-repeat: holding the chord would reopen the picker.
       if (e.repeat) return;
       if (!isModelPickerHotkey(e)) return;

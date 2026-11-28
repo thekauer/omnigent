@@ -2,6 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { builtInTabWhen } from "@/builtinExtensions/builtInTabWhen";
 import { LAYOUT_SLOTS, LayoutStateStore } from "./layoutState";
 import { isViewCollapsed, isViewHidden, readViewsLayout, updateViewLayout } from "./viewsLayout";
+import { ProductLayoutPolicy } from "./productLayout";
+
+const NO_POLICY = new ProductLayoutPolicy();
 import {
   serverFeatureKeys,
   WorkbenchContext,
@@ -57,22 +60,26 @@ describe("views layout", () => {
 
   it("keeps the user's collapse and hide over the contribution's visibility", () => {
     const view = { id: "acme.view", visibility: "collapsed" };
-    expect(isViewCollapsed(view, readViewsLayout(store))).toBe(true);
-    updateViewLayout("acme.view", { collapsed: false }, store);
-    expect(isViewCollapsed(view, readViewsLayout(store))).toBe(false);
-    expect(isViewHidden({ id: "acme.view", visibility: "hidden" }, readViewsLayout(store))).toBe(
-      true,
-    );
-    updateViewLayout("acme.view", { hidden: false }, store);
+    expect(isViewCollapsed(view, readViewsLayout(store, NO_POLICY))).toBe(true);
+    updateViewLayout("acme.view", { collapsed: false }, store, NO_POLICY);
+    expect(isViewCollapsed(view, readViewsLayout(store, NO_POLICY))).toBe(false);
+    expect(
+      isViewHidden(
+        { id: "acme.view", visibility: "hidden" },
+        readViewsLayout(store, NO_POLICY),
+        NO_POLICY,
+      ),
+    ).toBe(true);
+    updateViewLayout("acme.view", { hidden: false }, store, NO_POLICY);
     expect(store.get(LAYOUT_SLOTS.views)).toEqual({
       "acme.view": { collapsed: false, hidden: false },
     });
-    updateViewLayout("acme.view", { collapsed: undefined, hidden: undefined }, store);
+    updateViewLayout("acme.view", { collapsed: undefined, hidden: undefined }, store, NO_POLICY);
     expect(store.get(LAYOUT_SLOTS.views)).toBeUndefined();
   });
 
   it("drops malformed stored entries", () => {
     store.set(LAYOUT_SLOTS.views, { a: { collapsed: "yes" }, b: null, c: { hidden: true } });
-    expect(readViewsLayout(store)).toEqual({ c: { hidden: true } });
+    expect(readViewsLayout(store, NO_POLICY)).toEqual({ c: { hidden: true } });
   });
 });

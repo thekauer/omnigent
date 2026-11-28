@@ -22,7 +22,7 @@ import { fileContentToBlob, type FileContentResponse } from "@/hooks/useFileCont
 import type { Comment } from "@/hooks/useComments";
 import { useCanEdit } from "@/hooks/usePermissions";
 import { Button } from "@/components/ui/button";
-import { getEmbedRoot } from "@/lib/host";
+import { useOverlayRoot } from "@/workbench/workbenchScope";
 import { cn } from "@/lib/utils";
 import type { ActiveSelection } from "./codeViewerHelpers";
 import {
@@ -135,6 +135,7 @@ export function PdfViewer({
   activeSelection = null,
   onSetActiveSelection,
 }: PdfViewerProps) {
+  const overlayRoot = useOverlayRoot();
   const canEdit = useCanEdit(conversationId);
   const [numPages, setNumPages] = useState(0);
   const [errored, setErrored] = useState(false);
@@ -403,7 +404,7 @@ export function PdfViewer({
             <MessageSquarePlusIcon className="size-3.5" />
             Add comment
           </button>,
-          getEmbedRoot() ?? document.body,
+          overlayRoot ?? document.body,
         )}
     </div>
   );

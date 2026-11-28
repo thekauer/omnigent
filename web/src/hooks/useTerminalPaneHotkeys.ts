@@ -71,7 +71,7 @@ import {
   type PaletteCommand,
   usePaletteCommands,
 } from "@/store/paletteCommands";
-import { isActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
+import { isActiveWorkbenchScopeForEvent, useWorkbenchScope } from "@/workbench/workbenchScope";
 
 export const SPLIT_PENDING_REASON = "Wait for the new pane to open.";
 
@@ -250,7 +250,7 @@ export function useTerminalPaneHotkeys({
   const scope = useWorkbenchScope();
   useEffect(() => {
     const handler = (event: globalThis.KeyboardEvent): void => {
-      if (!isActiveWorkbenchScope(scope)) return;
+      if (!isActiveWorkbenchScopeForEvent(scope, event)) return;
       // An IME composition owns its keys, including the one that starts it.
       if (event.isComposing || !latest.current.enabled) return;
       const id = matchedPaneShortcut(event);

@@ -87,7 +87,7 @@ import { conversationDisplayLabel } from "./sidebarNav";
 import { MobileHeaderButton } from "./MobileHeaderButton";
 import { RenameSessionDialog } from "./RenameSessionDialog";
 import { SessionMenuHeader } from "./SessionMenuHeader";
-import { isActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
+import { isActiveWorkbenchScopeForEvent, useWorkbenchScope } from "@/workbench/workbenchScope";
 
 interface HeaderConversationMenuProps {
   conversation: Conversation;
@@ -190,7 +190,7 @@ export function HeaderConversationMenu({
   useEffect(() => {
     if (!canAddAgent) return;
     const handleAddAgent = (event: globalThis.KeyboardEvent) => {
-      if (!isActiveWorkbenchScope(scope)) return;
+      if (!isActiveWorkbenchScopeForEvent(scope, event)) return;
       if (
         event.defaultPrevented ||
         event.repeat ||

@@ -9,7 +9,11 @@ import { isMacPlatform } from "@/lib/hotkeys";
 import { isElectronShell } from "@/lib/nativeBridge";
 import { useLocation, useNavigate, useNavigationType } from "@/lib/routing";
 import { matchesShortcut } from "@/lib/shortcuts/registry";
-import { isActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
+import {
+  isActiveWorkbenchScope,
+  isActiveWorkbenchScopeForEvent,
+  useWorkbenchScope,
+} from "@/workbench/workbenchScope";
 
 /** Surfaces that keep bracket chords (Monaco outdent/indent, the PTY, the palette). */
 const BRACKET_OWNING_SURFACES = ".xterm, .monaco-editor, [cmdk-input]";
@@ -99,7 +103,7 @@ export function useHistoryNavigation(isMac = isMacPlatform()): void {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!isActiveWorkbenchScope(scope)) return;
+      if (!isActiveWorkbenchScopeForEvent(scope, event)) return;
       if (event.repeat || event.defaultPrevented) return;
       let delta: -1 | 1;
       if (matchesShortcut(event, "history.back", { mac: isMac })) delta = -1;

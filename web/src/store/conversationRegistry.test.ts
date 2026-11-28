@@ -164,10 +164,66 @@ describe("ConversationRegistry", () => {
     const releaseSecondMount = registry.view("workbench-2", "conv_two");
     expect(registry.evictLruEvictable()).toBe("conv_three");
     expect(registry.evictLruEvictable()).toBeNull();
+    // A view that lets go of a conversation nothing else holds disposes it.
     releaseFirstMount();
-    expect(registry.evictLruEvictable()).toBe("conv_one");
+    expect(registry.has("conv_one")).toBe(false);
     releaseSecondMount();
-    expect(registry.evictLruEvictable()).toBe("conv_two");
+    expect(registry.ids()).toEqual(["conv_active"]);
+  });
+
+  it("disposes a conversation when its last view is released and nothing else holds it", () => {
+    const entry = registry.acquire("conv_a");
+    const release = registry.view("workbench-1", "conv_a");
+    release();
+    expect(entry.disposed).toBe(true);
+    expect(registry.has("conv_a")).toBe(false);
+  });
+
+  it("keeps a released conversation that is still the active projection, a retain, or another view's", () => {
+    registry.acquire("active");
+    registry.setActive("active");
+    const releaseActive = registry.view("window", "active");
+    releaseActive();
+    expect(registry.has("active")).toBe(true);
+
+    registry.acquire("retained");
+    const releaseRetain = registry.retain("retained");
+    const releaseView = registry.view("workbench-1", "retained");
+    releaseView();
+    expect(registry.has("retained")).toBe(true);
+    releaseRetain();
+
+    registry.acquire("shared");
+    const releaseFirst = registry.view("workbench-1", "shared");
+    const releaseSecond = registry.view("workbench-2", "shared");
+    releaseFirst();
+    expect(registry.has("shared")).toBe(true);
+    releaseSecond();
+    expect(registry.has("shared")).toBe(false);
+  });
+
+  it("keeps a released conversation with unsent work until the composer restores it", () => {
+    registry.acquire("conv_unsent").setState({ pendingUserMessages: [unsentBubble("pend_x")] });
+    const release = registry.view("workbench-1", "conv_unsent");
+    release();
+    expect(registry.has("conv_unsent")).toBe(true);
+  });
+
+  it("releases an unmounted embed's conversation with it, its active projection included", () => {
+    const entry = registry.acquire("conv_embed");
+    registry.setActive("conv_embed");
+    registry.view("embed-1", "conv_embed");
+    registry.releaseMountView("embed-1");
+    expect(entry.disposed).toBe(true);
+    expect(registry.getActive()).toBeNull();
+  });
+
+  it("keeps an unmounted embed's conversation that another view or the standalone still shows", () => {
+    registry.acquire("conv_shared");
+    registry.view("embed-1", "conv_shared");
+    registry.view("window", "conv_shared");
+    registry.releaseMountView("embed-1");
+    expect(registry.has("conv_shared")).toBe(true);
   });
 
   it("moves a mount's view to its next conversation and ignores a stale release", () => {

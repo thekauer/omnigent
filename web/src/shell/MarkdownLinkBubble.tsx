@@ -7,7 +7,7 @@ import { getMarkRange } from "@tiptap/core";
 import type { Editor } from "@tiptap/react";
 import { ExternalLinkIcon } from "lucide-react";
 import { ALT_KEY } from "@/components/KeyboardShortcut";
-import { getEmbedRoot } from "@/lib/host";
+import { useOverlayRoot } from "@/workbench/workbenchScope";
 import { ExternalPreviewLink } from "./ExternalPreviewLink";
 import { useFileViewer } from "./FileViewerContext";
 import { isWorkspaceRelativeSrc, resolveWorkspacePath } from "./TipTapWorkspaceImage";
@@ -117,6 +117,7 @@ export function MarkdownLinkBubble({
   path: string;
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
 }) {
+  const overlayRoot = useOverlayRoot();
   const openFile = useFileViewer();
   const [bubble, setBubble] = useState<LinkBubble | null>(null);
   const popupRef = useRef<HTMLDivElement>(null);
@@ -240,6 +241,6 @@ export function MarkdownLinkBubble({
         </button>
       )}
     </div>,
-    getEmbedRoot() ?? document.body,
+    overlayRoot ?? document.body,
   );
 }

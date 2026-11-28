@@ -338,18 +338,20 @@ function upsertConvRow(row: Conversation, removeId?: string): void {
   if (queryClient === null) return;
   const rowMap = new Map([[row.id, row]]);
   const removeSet = removeId ? new Set([removeId]) : null;
-  for (const [key, data] of queryClient.getQueriesData<ConversationsInfiniteData>({
-    queryKey: ["conversations"],
-  })) {
-    if (!data) continue;
-    const base = removeSet ? (removeIdsFromPages(data, removeSet).data ?? data) : data;
-    const { data: next } = insertNewRowsIntoPages(
-      base,
-      rowMap,
-      filtersFromConversationQueryKey(key),
-    );
-    if (next !== data) queryClient.setQueryData(key, next);
-  }
+  eachQueryClient((client) => {
+    for (const [key, data] of client.getQueriesData<ConversationsInfiniteData>({
+      queryKey: ["conversations"],
+    })) {
+      if (!data) continue;
+      const base = removeSet ? (removeIdsFromPages(data, removeSet).data ?? data) : data;
+      const { data: next } = insertNewRowsIntoPages(
+        base,
+        rowMap,
+        filtersFromConversationQueryKey(key),
+      );
+      if (next !== data) client.setQueryData(key, next);
+    }
+  });
 }
 
 /**
@@ -374,12 +376,14 @@ function rekeyConvRow(
 function removeConvRow(tempId: string): void {
   if (queryClient === null) return;
   const tempIds = new Set([tempId]);
-  for (const [key, data] of queryClient.getQueriesData<ConversationsInfiniteData>({
-    queryKey: ["conversations"],
-  })) {
-    const { data: next } = removeIdsFromPages(data, tempIds);
-    if (next !== data) queryClient.setQueryData(key, next);
-  }
+  eachQueryClient((client) => {
+    for (const [key, data] of client.getQueriesData<ConversationsInfiniteData>({
+      queryKey: ["conversations"],
+    })) {
+      const { data: next } = removeIdsFromPages(data, tempIds);
+      if (next !== data) client.setQueryData(key, next);
+    }
+  });
 }
 
 /**
@@ -1581,8 +1585,20 @@ export interface ChatActions {
  */
 export interface ChatState extends ConversationState, AppChatState, ChatActions {}
 
+/**
+ * The first QueryClient wired to the store: the store's reads come from it.
+ */
 let queryClient: QueryClient | null = null;
-let unsubscribeSettingsMutations: (() => void) | undefined;
+/**
+ * Every QueryClient wired to the store, the standalone app's and each embed's own, each with its
+ * mutation listener. The store's cache writes and invalidations go to each of them
+ * (`eachQueryClient`), so every app on the page sees the store's updates.
+ */
+const wiredQueryClients = new Map<QueryClient, () => void>();
+
+function eachQueryClient(apply: (client: QueryClient) => void): void {
+  for (const client of wiredQueryClients.keys()) apply(client);
+}
 
 function sideChatSettingsPending(conversationId: string): boolean {
   return (
@@ -2167,19 +2183,12 @@ export function bindConversationForTest(
  * the store can't fetch items through the cache or invalidate the conversations
  * query when a new conversation is created.
  *
- * Idempotent per window: a call with the client already wired is a no-op, so a
- * second embed on the page leaves the first one's live conversations alone. A
- * call with a different client rewires the client and warns, since the other
- * client's caches stop receiving updates.
+ * Idempotent per client: a call with a client already wired is a no-op. Each
+ * client wired gets the store's cache writes and invalidations (the standalone
+ * app and each embed have their own), and live conversations are left alone.
  */
 export function initChatStore(client: QueryClient): void {
-  if (queryClient === client) return;
-  if (queryClient !== null) {
-    console.warn(
-      "initChatStore: a second QueryClient on this page. The chat store's cache updates now go " +
-        "to the latest client; live conversations keep their streams.",
-    );
-  }
+  if (wiredQueryClients.has(client)) return;
   wireQueryClient(client);
 }
 
@@ -2203,13 +2212,14 @@ export function resetChatStoreForTest(client: QueryClient): void {
   // The send's latch is per-conversation state, cleared with the registry above.
   sendChains.clear();
   startupReads.clear();
+  for (const unsubscribe of wiredQueryClients.values()) unsubscribe();
+  wiredQueryClients.clear();
+  queryClient = null;
   wireQueryClient(client);
 }
 
 function wireQueryClient(client: QueryClient): void {
-  unsubscribeSettingsMutations?.();
-  queryClient = client;
-  unsubscribeSettingsMutations = client.getMutationCache().subscribe((event) => {
+  const unsubscribe = client.getMutationCache().subscribe((event) => {
     if (event.type !== "updated" || !["success", "error"].includes(event.action.type)) return;
     const [kind, conversationId] = event.mutation.options.mutationKey ?? [];
     if (kind !== SIDE_CHAT_SETTINGS_MUTATION || typeof conversationId !== "string") return;
@@ -2217,35 +2227,47 @@ function wireQueryClient(client: QueryClient): void {
     useChatStore.getState().maybeFlushQueuedHead(conversationId);
     useChatStore.getState().flushBackgroundQueues();
   });
+  wiredQueryClients.set(client, unsubscribe);
+  queryClient ??= client;
 }
 
 function scheduleWorkspaceFilesystemInvalidation(sessionId: string): void {
   if (workspaceInvalidationTimers.has(sessionId)) return;
   const timer = setTimeout(() => {
     workspaceInvalidationTimers.delete(sessionId);
-    queryClient?.invalidateQueries({
-      queryKey: ["workspace-changed-files", sessionId],
-    });
-    queryClient?.invalidateQueries({
-      queryKey: ["workspace-all-files", sessionId],
-    });
-    queryClient?.invalidateQueries({
-      queryKey: ["workspace-dir", sessionId],
-      refetchType: "none",
-    });
-    queryClient?.invalidateQueries({
-      queryKey: ["workspace-dir-listing", sessionId],
-      refetchType: "none",
-    });
+    eachQueryClient((client) =>
+      client.invalidateQueries({
+        queryKey: ["workspace-changed-files", sessionId],
+      }),
+    );
+    eachQueryClient((client) =>
+      client.invalidateQueries({
+        queryKey: ["workspace-all-files", sessionId],
+      }),
+    );
+    eachQueryClient((client) =>
+      client.invalidateQueries({
+        queryKey: ["workspace-dir", sessionId],
+        refetchType: "none",
+      }),
+    );
+    eachQueryClient((client) =>
+      client.invalidateQueries({
+        queryKey: ["workspace-dir-listing", sessionId],
+        refetchType: "none",
+      }),
+    );
     // Environment availability (root/home → the Files tab gate) can
     // change too: the post-switch runner reset publishes this same event
     // after closing the old agent's cached OSEnv, so an os_env-boundary
     // agent switch must refetch availability or the tab stays stale for
     // the query's 60 s staleTime. Active in AppShell, so the default
     // refetch flips the tab promptly.
-    queryClient?.invalidateQueries({
-      queryKey: ["workspace-environment", sessionId],
-    });
+    eachQueryClient((client) =>
+      client.invalidateQueries({
+        queryKey: ["workspace-environment", sessionId],
+      }),
+    );
   }, WORKSPACE_INVALIDATION_DEBOUNCE_MS);
   workspaceInvalidationTimers.set(sessionId, timer);
 }
@@ -3095,7 +3117,7 @@ export const useChatStore = create<ChatState>((_rootSet, get) => ({
         // message acknowledgement. Keep the send latch without a pending bubble.
         posting = true;
         await postEvent(sessionId, { type: "compact", data: {} });
-        queryClient?.invalidateQueries({ queryKey: ["conversations"] });
+        eachQueryClient((client) => client.invalidateQueries({ queryKey: ["conversations"] }));
         return;
       }
 
@@ -3226,7 +3248,7 @@ export const useChatStore = create<ChatState>((_rootSet, get) => ({
       // Refresh the sidebar without waiting for the 4 s `useConversations`
       // poll — picks up server-side title auto-gen and any runner_id /
       // status transitions that happen during the turn.
-      queryClient?.invalidateQueries({ queryKey: ["conversations"] });
+      eachQueryClient((client) => client.invalidateQueries({ queryKey: ["conversations"] }));
     } catch (err) {
       if (initialDraft && !initialDispatched && !initialSendPending()) return;
       const { message, code } = describeSendFailure(err);
@@ -3544,7 +3566,7 @@ export const useChatStore = create<ChatState>((_rootSet, get) => ({
           ),
         }));
       }
-      queryClient?.invalidateQueries({ queryKey: ["conversations"] });
+      eachQueryClient((client) => client.invalidateQueries({ queryKey: ["conversations"] }));
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       // Settle the conversation this command targeted, wherever the user is
@@ -3640,9 +3662,12 @@ export const useChatStore = create<ChatState>((_rootSet, get) => ({
     // child-sessions list, not the sidebar, so refresh the rail in lockstep.
     const snapshot = queryClient?.getQueryData<Session>(["session", sessionId]);
     if (snapshot?.parentSessionId) {
-      queryClient?.invalidateQueries({
-        queryKey: childSessionsQueryKey(snapshot.parentSessionId),
-      });
+      const parentSessionId = snapshot.parentSessionId;
+      eachQueryClient((client) =>
+        client.invalidateQueries({
+          queryKey: childSessionsQueryKey(parentSessionId),
+        }),
+      );
     }
   },
 
@@ -4864,7 +4889,7 @@ useChatStore.subscribe((state, previous) => {
   ) {
     return;
   }
-  invalidateAgentCosts(queryClient);
+  eachQueryClient((client) => invalidateAgentCosts(client));
 });
 // Queue edits (release, delete, reorder, a failed send's return) land on the root, not the entry.
 useChatStore.subscribe((state, previous) => {
@@ -4997,7 +5022,7 @@ async function ensureBoundSession(
     conversationRegistry.setActive(sessionId);
     mirrorActiveEntry();
     opts?.onConversationCreated?.(sessionId);
-    queryClient?.invalidateQueries({ queryKey: ["conversations"] });
+    eachQueryClient((client) => client.invalidateQueries({ queryKey: ["conversations"] }));
     await bindStream(sessionId, entrySetter(entry), entryGetter(entry));
   } else {
     const streamCurrent = isConversationStreamCurrent(sessionId);
@@ -5326,7 +5351,7 @@ async function refreshSessionBinding(id: string): Promise<void> {
   } catch {
     return;
   }
-  void queryClient?.invalidateQueries({ queryKey: ["skills", id] });
+  void eachQueryClient((client) => client.invalidateQueries({ queryKey: ["skills", id] }));
   // Apply to the conversation this refresh was for, not whichever is on screen:
   // an agent switch in a backgrounded conversation must still re-derive its
   // binding (most importantly `isNativeTerminalSession`, which gates the
@@ -5365,7 +5390,7 @@ async function refreshFailedInputs(id: string): Promise<void> {
   startupReads.delete(id);
   if (session === null) return;
   const fresh = session;
-  queryClient?.setQueryData(["session", id], fresh);
+  eachQueryClient((client) => client.setQueryData(["session", id], fresh));
   setterFor(id)((s) => {
     const startup = startupInputsPatch(fresh);
     // Only the startup fields: live events stay newer than this read for the
@@ -5801,7 +5826,8 @@ async function bindStream(
         }[],
       };
     });
-    if (session.costHidden && queryClient !== null) invalidateAgentCosts(queryClient, true);
+    if (session.costHidden && queryClient !== null)
+      eachQueryClient((client) => invalidateAgentCosts(client, true));
     if (session.usageIncluded === false) void hydrateSessionUsage(id);
     racedNativeModelOptions.delete(id);
   } catch (err) {
@@ -5854,7 +5880,8 @@ async function hydrateSessionUsage(id: string): Promise<void> {
     ) {
       return;
     }
-    if (usage.costHidden && queryClient !== null) invalidateAgentCosts(queryClient, true);
+    if (usage.costHidden && queryClient !== null)
+      eachQueryClient((client) => invalidateAgentCosts(client, true));
     const revisions = sessionUsageRevisions.get(entry) ?? { cost: 0, models: 0 };
     // A live cost/model update during the read wins independently for each field.
     entrySetter(entry)((state) => ({
@@ -6069,7 +6096,7 @@ function reconnectStatusPatch(
   if (session.contextWindow != null) patch.contextWindow = session.contextWindow;
   if (session.lastTotalTokens != null) patch.tokensUsed = session.lastTotalTokens;
   if (session.costHidden) {
-    if (queryClient !== null) invalidateAgentCosts(queryClient, true);
+    if (queryClient !== null) eachQueryClient((client) => invalidateAgentCosts(client, true));
     patch.sessionCostUsd = null;
     patch.sessionCostHidden = true;
     patch.sessionUsageByModel = withoutModelCosts(session.usageByModel ?? s.sessionUsageByModel);
@@ -6743,14 +6770,13 @@ async function reconcileOnReconnect(
   const stale = (): boolean => isConversationDisposed(id) || get().historyGeneration !== generation;
   let session: Session;
   let page: SessionItemsPage;
-  const client = queryClient;
   try {
     [session, page] = await Promise.all([
       // Read fresh rather than join the shared ["session", id] request: one
       // started before an answered card's verdict POST returned can still list
       // that prompt as pending, and the reconcile would reopen the card.
       withReadTimeout((signal) => getSessionSlim(id, { signal })).then((fresh) => {
-        client.setQueryData(["session", id], fresh);
+        eachQueryClient((client) => client.setQueryData(["session", id], fresh));
         return fresh;
       }),
       withReadTimeout((signal) => fetchSessionItemsPage(id, { signal })),
@@ -8279,7 +8305,9 @@ export async function pumpStreamEvents(
         });
         const convId = get().conversationId;
         if (convId) {
-          queryClient?.invalidateQueries({ queryKey: sessionItemsQueryKey(convId) });
+          eachQueryClient((client) =>
+            client.invalidateQueries({ queryKey: sessionItemsQueryKey(convId) }),
+          );
           // No terminals invalidation: the list is SSE-sourced (see
           // useTerminals). Its query has only an empty seed queryFn, so
           // invalidating would refetch [] and wipe the live list. The
@@ -8826,7 +8854,7 @@ async function refetchRunnerBackedSessionState(
       // The event can race the bind snapshot's in-flight query. Once that
       // request settles, issue a second read instead of accepting its stale [].
       session = await getSessionSlim(conversationId);
-      queryClient?.setQueryData(["session", conversationId], session);
+      eachQueryClient((client) => client.setQueryData(["session", conversationId], session));
     }
   } catch {
     // The runner may have dropped again before the fetch landed. Keep
@@ -9065,25 +9093,33 @@ export function handleSessionEvent(event: StreamEvent, streamConversationId?: st
       // The sandbox host is bound before its runner starts; refetch the binding and a
       // host list cached before that host registered, so the composer can name it.
       if (event.stage === "connecting" || event.stage === "ready") {
-        void queryClient?.invalidateQueries({
-          queryKey: ["session", event.conversationId],
-          exact: true,
-        });
-        void queryClient?.invalidateQueries({ queryKey: ["hosts"] });
+        void eachQueryClient((client) =>
+          client.invalidateQueries({
+            queryKey: ["session", event.conversationId],
+            exact: true,
+          }),
+        );
+        void eachQueryClient((client) => client.invalidateQueries({ queryKey: ["hosts"] }));
         // Cancel pre-binding requests too: invalidation alone reuses an initial fetch.
-        void queryClient?.cancelQueries({
-          queryKey: ["session-agent", event.conversationId],
-          exact: true,
-        });
-        void queryClient?.invalidateQueries({
-          queryKey: ["session-agent", event.conversationId],
-          exact: true,
-        });
+        void eachQueryClient((client) =>
+          client.cancelQueries({
+            queryKey: ["session-agent", event.conversationId],
+            exact: true,
+          }),
+        );
+        void eachQueryClient((client) =>
+          client.invalidateQueries({
+            queryKey: ["session-agent", event.conversationId],
+            exact: true,
+          }),
+        );
         // The host binding is now durable. Learning it readdresses a stream
         // opened before provisioning, without depending on a browser send.
         void getSessionSlim(event.conversationId)
           .then((session) => {
-            queryClient?.setQueryData(["session", event.conversationId], session);
+            eachQueryClient((client) =>
+              client.setQueryData(["session", event.conversationId], session),
+            );
             applyToConversation({ sessionHostId: session.hostId ?? null });
           })
           .catch(() => {});
@@ -9145,7 +9181,7 @@ export function handleSessionEvent(event: StreamEvent, streamConversationId?: st
         }
       }
       if (event.costHidden) {
-        if (queryClient !== null) invalidateAgentCosts(queryClient, true);
+        if (queryClient !== null) eachQueryClient((client) => invalidateAgentCosts(client, true));
         applyToConversation((s) => ({
           ...patch,
           sessionCostHidden: true,
@@ -9193,7 +9229,9 @@ export function handleSessionEvent(event: StreamEvent, streamConversationId?: st
       // Sessions renamed while NOT open converge via the
       // `WS /v1/sessions/updates` diff instead.
       if (queryClient !== null) {
-        overlayTitleIntoCaches(queryClient, event.conversationId, event.title);
+        eachQueryClient((client) =>
+          overlayTitleIntoCaches(client, event.conversationId, event.title),
+        );
       }
       return;
     case "session_reasoning_effort":
@@ -9255,8 +9293,10 @@ export function handleSessionEvent(event: StreamEvent, streamConversationId?: st
       // Refresh the header's agent card and the sidebar row for every
       // connected client (the switching client's dialog already does
       // this for itself; observers only learn about it here).
-      queryClient?.invalidateQueries({ queryKey: ["session-agent", event.conversationId] });
-      queryClient?.invalidateQueries({ queryKey: ["conversations"] });
+      eachQueryClient((client) =>
+        client.invalidateQueries({ queryKey: ["session-agent", event.conversationId] }),
+      );
+      eachQueryClient((client) => client.invalidateQueries({ queryKey: ["conversations"] }));
       // The new agent may sit on the other side of an os_env boundary,
       // flipping Files-tab availability. Mark the environment stale WITHOUT
       // refetching: the server's post-switch runner reset hasn't run yet at
@@ -9264,10 +9304,12 @@ export function handleSessionEvent(event: StreamEvent, streamConversationId?: st
       // cached env. The reset publishes session.changed_files.invalidated
       // when done (the prompt refetch); this stale-mark is recovery for a
       // lost reset — the next focus/remount refetch corrects the tab.
-      queryClient?.invalidateQueries({
-        queryKey: ["workspace-environment", event.conversationId],
-        refetchType: "none",
-      });
+      eachQueryClient((client) =>
+        client.invalidateQueries({
+          queryKey: ["workspace-environment", event.conversationId],
+          refetchType: "none",
+        }),
+      );
       // The switch closes the old agent's terminals on the runner
       // (reset-state). The runner announces each close with a
       // `session.resource.deleted`, but the terminals cache is
@@ -9276,8 +9318,12 @@ export function handleSessionEvent(event: StreamEvent, streamConversationId?: st
       // refetch from the authoritative endpoint; the new agent's
       // terminal still lands via its own `created` event (the queryFn
       // union keeps any entry that races the fetch).
-      queryClient?.setQueryData<TerminalInfo[]>(terminalsQueryKey(event.conversationId), []);
-      queryClient?.invalidateQueries({ queryKey: terminalsQueryKey(event.conversationId) });
+      eachQueryClient((client) =>
+        client.setQueryData<TerminalInfo[]>(terminalsQueryKey(event.conversationId), []),
+      );
+      eachQueryClient((client) =>
+        client.invalidateQueries({ queryKey: terminalsQueryKey(event.conversationId) }),
+      );
       return;
     case "compaction_completed":
       settleLegacyPiCompact();
@@ -9549,10 +9595,12 @@ export function handleSessionEvent(event: StreamEvent, streamConversationId?: st
         event.responseId !== prevResponseId &&
         (event.status === "running" || event.status === "waiting")
       ) {
-        queryClient?.invalidateQueries({
-          queryKey: ["session", event.conversationId],
-          exact: true,
-        });
+        eachQueryClient((client) =>
+          client.invalidateQueries({
+            queryKey: ["session", event.conversationId],
+            exact: true,
+          }),
+        );
       }
       // Patch the active session's row in the sidebar list cache so its
       // status badge flips in lockstep with this live SSE event, instead
@@ -9573,15 +9621,20 @@ export function handleSessionEvent(event: StreamEvent, streamConversationId?: st
         if (snapshot?.parentSessionId) {
           // A child finished: refetch its parent's child list for the row's
           // fresh, server-computed preview.
-          queryClient?.invalidateQueries({
-            queryKey: childSessionsQueryKey(snapshot.parentSessionId),
-          });
+          const parentSessionId = snapshot.parentSessionId;
+          eachQueryClient((client) =>
+            client.invalidateQueries({
+              queryKey: childSessionsQueryKey(parentSessionId),
+            }),
+          );
         } else {
           // Root (or cold-cache) session: its own snapshot carries the
           // rail's "main" preview text.
-          queryClient?.invalidateQueries({
-            queryKey: ["session", event.conversationId],
-          });
+          eachQueryClient((client) =>
+            client.invalidateQueries({
+              queryKey: ["session", event.conversationId],
+            }),
+          );
         }
       }
       // Draining the queue is level-triggered (a React effect calls
@@ -9885,9 +9938,11 @@ export function handleSessionEvent(event: StreamEvent, streamConversationId?: st
       // query so the execution-log panel re-fetches and renders the
       // new child without waiting for the next poll or manual refresh.
       if (event.conversationId) {
-        queryClient?.invalidateQueries({
-          queryKey: childSessionsQueryKey(event.conversationId),
-        });
+        eachQueryClient((client) =>
+          client.invalidateQueries({
+            queryKey: childSessionsQueryKey(event.conversationId),
+          }),
+        );
       }
       return;
     case "session_superseded":
@@ -9948,9 +10003,11 @@ export function handleSessionEvent(event: StreamEvent, streamConversationId?: st
       // runner's in-process history). Refetch the parent's child list so the
       // server-computed preview lands instead of staying stale.
       if (event.child.busy === false && event.child.last_message_preview === undefined) {
-        queryClient?.invalidateQueries({
-          queryKey: childSessionsQueryKey(event.conversationId),
-        });
+        eachQueryClient((client) =>
+          client.invalidateQueries({
+            queryKey: childSessionsQueryKey(event.conversationId),
+          }),
+        );
       }
       return;
     case "session_journal_appended":
@@ -10062,21 +10119,23 @@ function patchConversationStatusInCache(
   const working = sessionStatus === "running" || sessionStatus === "waiting";
   const listStatus: NonNullable<Conversation["status"]> =
     sessionStatus === "failed" ? "failed" : working ? "running" : "idle";
-  queryClient.setQueriesData<InfiniteData<ConversationsPage>>(
-    { queryKey: ["conversations"] },
-    (data) => {
-      if (!data) return data;
-      let mutated = false;
-      const pages = data.pages.map((page) => {
-        const idx = page.data.findIndex((c) => c.id === conversationId);
-        if (idx === -1 || page.data[idx].status === listStatus) return page;
-        mutated = true;
-        const nextData = [...page.data];
-        nextData[idx] = { ...nextData[idx], status: listStatus };
-        return { ...page, data: nextData };
-      });
-      return mutated ? { ...data, pages } : data;
-    },
+  eachQueryClient((client) =>
+    client.setQueriesData<InfiniteData<ConversationsPage>>(
+      { queryKey: ["conversations"] },
+      (data) => {
+        if (!data) return data;
+        let mutated = false;
+        const pages = data.pages.map((page) => {
+          const idx = page.data.findIndex((c) => c.id === conversationId);
+          if (idx === -1 || page.data[idx].status === listStatus) return page;
+          mutated = true;
+          const nextData = [...page.data];
+          nextData[idx] = { ...nextData[idx], status: listStatus };
+          return { ...page, data: nextData };
+        });
+        return mutated ? { ...data, pages } : data;
+      },
+    ),
   );
   // The sidebar's fetched row for an open session outside the loaded pages.
   // Writing an unchanged row would still mark it fresh and notify subscribers.
@@ -10084,7 +10143,7 @@ function patchConversationStatusInCache(
   const backfillRow = queryClient.getQueryData<Conversation | null>(backfillKey);
   if (backfillRow && backfillRow.status !== listStatus) {
     const patchedRow: Conversation = { ...backfillRow, status: listStatus };
-    queryClient.setQueryData<Conversation | null>(backfillKey, patchedRow);
+    eachQueryClient((client) => client.setQueryData<Conversation | null>(backfillKey, patchedRow));
   }
 }
 
@@ -10110,7 +10169,7 @@ function applyTerminalCreated(resource: Record<string, unknown>): void {
   if (isClosedDuringLaunch(info.id)) return;
   const current = queryClient.getQueryData<TerminalInfo[]>(key) ?? [];
   if (current.some((t) => t.id === info.id)) return;
-  queryClient.setQueryData<TerminalInfo[]>(key, [...current, info]);
+  eachQueryClient((client) => client.setQueryData<TerminalInfo[]>(key, [...current, info]));
 }
 
 /**
@@ -10125,7 +10184,7 @@ function applyTerminalDeleted(sessionId: string, resourceId: string): void {
   if (current === undefined) return;
   const next = current.filter((t) => t.id !== resourceId);
   if (next.length === current.length) return;
-  queryClient.setQueryData<TerminalInfo[]>(key, next);
+  eachQueryClient((client) => client.setQueryData<TerminalInfo[]>(key, next));
 }
 
 /**
@@ -10205,12 +10264,14 @@ function applyChildSessionUpdated(
       last_message_preview: patch.last_message_preview ?? null,
       pending_elicitations_count: patch.pending_elicitations_count ?? 0,
     };
-    queryClient.setQueryData<ChildSessionInfo[]>(key, [inserted, ...current]);
+    eachQueryClient((client) =>
+      client.setQueryData<ChildSessionInfo[]>(key, [inserted, ...current]),
+    );
     return;
   }
   const next = [...current];
   next[idx] = { ...current[idx], ...patch };
-  queryClient.setQueryData<ChildSessionInfo[]>(key, next);
+  eachQueryClient((client) => client.setQueryData<ChildSessionInfo[]>(key, next));
 }
 
 /**

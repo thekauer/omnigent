@@ -3,7 +3,7 @@
 import * as React from "react";
 import * as SelectPrimitive from "radix-ui/select";
 
-import { getEmbedRoot } from "@/lib/host";
+import { useOverlayRoot } from "@/workbench/workbenchScope";
 import { cn } from "@/lib/utils";
 import { useOmnigentAnalytics } from "@/lib/analytics";
 import { ChevronDownIcon, CheckIcon, ChevronUpIcon } from "lucide-react";
@@ -87,8 +87,9 @@ function SelectContent({
   align = "center",
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Content>) {
+  const overlayRoot = useOverlayRoot();
   return (
-    <SelectPrimitive.Portal container={getEmbedRoot() ?? undefined}>
+    <SelectPrimitive.Portal container={overlayRoot ?? undefined}>
       <SelectPrimitive.Content
         data-slot="select-content"
         data-align-trigger={position === "item-aligned"}

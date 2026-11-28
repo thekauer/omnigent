@@ -175,6 +175,15 @@ describe("window.layout reads", () => {
 });
 
 describe("window.layout events", () => {
+  it("listens to the layout only once an extension subscribes to one of its events", () => {
+    const layout = mount();
+    const listen = vi.spyOn(layout, "onDidChangePartVisibility");
+    const { api } = setup(layout);
+    expect(listen).not.toHaveBeenCalled();
+    api.window.layout.onDidChangeLayout(vi.fn());
+    expect(listen).toHaveBeenCalledTimes(1);
+  });
+
   it("fires a part's visibility once per real change, with the part and its new visibility", () => {
     const layout = mount();
     const sidebar = part(true);

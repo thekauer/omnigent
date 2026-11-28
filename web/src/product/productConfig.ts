@@ -555,15 +555,26 @@ const BUILD_FILES = import.meta.glob<unknown>("../../product.json", {
 /**
  * The base of the key where the server's last product settings and layout are kept, for the next
  * load's start: `<base>@<server identity>`, so a server change (or another embed's server) never
- * reads them. The unkeyed entry of earlier builds is read only for the same-origin server, until
- * a server's answer removes it.
+ * reads them. A server with no identity (an embedder's `fetcher` and no `serverIdentity`) is kept
+ * under `<base>@unidentified:<origin>`: its servers aren't told apart, so a failed probe still
+ * keeps the last-known policy, and such embedders should set `serverIdentity`.
+ *
+ * The unkeyed entry of earlier builds has no known owner. It is read only for the same-origin
+ * server (a wrong owner's locks fail closed, which is acceptable), and removed only when that
+ * server answers.
  */
 export const LAST_SERVER_PRODUCT_CONFIG_STORAGE_KEY = "omnigent:ui-product-config-server";
 
-/** The key the server the app talks to keeps its last-known configuration under (null: unknown). */
-export function lastServerProductConfigKey(): string | null {
+/** The unkeyed entry's key for the same-origin server, which is the only one that reads it. */
+function sameOriginLegacyKey(): string {
+  return `${LAST_SERVER_PRODUCT_CONFIG_STORAGE_KEY}@${window.location.origin}`;
+}
+
+/** The key the server the app talks to keeps its last-known configuration under. */
+export function lastServerProductConfigKey(): string {
   const identity = getOmnigentServerIdentity();
-  return identity === null ? null : `${LAST_SERVER_PRODUCT_CONFIG_STORAGE_KEY}@${identity}`;
+  if (identity !== null) return `${LAST_SERVER_PRODUCT_CONFIG_STORAGE_KEY}@${identity}`;
+  return `${LAST_SERVER_PRODUCT_CONFIG_STORAGE_KEY}@unidentified:${window.location.origin}`;
 }
 
 /** The build's file and the server's last-known configuration, before the server answers. */
@@ -581,9 +592,9 @@ function applyLastServerProductConfig(options: { apply?: boolean } = {}): void {
   let last: unknown;
   const key = lastServerProductConfigKey();
   try {
-    let text = key === null ? null : window.localStorage.getItem(key);
-    // The unkeyed entry of earlier builds was the same-origin server's: it still applies there
-    // until that server answers, so an upgrade never starts without its locks.
+    let text = window.localStorage.getItem(key);
+    // The unkeyed entry of earlier builds still applies to the same-origin server until that
+    // server answers, so an upgrade never starts without its locks.
     if (
       text === null &&
       key === `${LAST_SERVER_PRODUCT_CONFIG_STORAGE_KEY}@${window.location.origin}`
@@ -600,8 +611,9 @@ function applyLastServerProductConfig(options: { apply?: boolean } = {}): void {
 
 /**
  * Takes the server's `/v1/info` product settings and layout as the lowest source, kept for the
- * next load. A failed probe (the fallback info) says nothing about them: the last-known policy
- * holds, so a network error never lifts the server's locks.
+ * next load. A failed probe (the fallback info) says nothing new: the policy this server last
+ * gave, kept under its key, holds, so a network error never lifts the locks it set (a server
+ * never seen before has none to keep).
  */
 export function applyServerProductConfig(info: ServerInfo): void {
   if (info === FALLBACK_SERVER_INFO || info === SERVER_INFO_OFFLINE_FALLBACK) {
@@ -611,12 +623,13 @@ export function applyServerProductConfig(info: ServerInfo): void {
   const config = parseServerProductConfig(info.product);
   const key = lastServerProductConfigKey();
   try {
-    if (key !== null) {
-      if (config.settings || config.layout) {
-        window.localStorage.setItem(key, JSON.stringify(config));
-      } else window.localStorage.removeItem(key);
+    if (config.settings || config.layout) {
+      window.localStorage.setItem(key, JSON.stringify(config));
+    } else window.localStorage.removeItem(key);
+    // The unkeyed entry is the same-origin server's only by assumption: its answer replaces it.
+    if (key === sameOriginLegacyKey()) {
+      window.localStorage.removeItem(LAST_SERVER_PRODUCT_CONFIG_STORAGE_KEY);
     }
-    window.localStorage.removeItem(LAST_SERVER_PRODUCT_CONFIG_STORAGE_KEY);
   } catch {
     // Storage errors only lose the next start's server policy.
   }

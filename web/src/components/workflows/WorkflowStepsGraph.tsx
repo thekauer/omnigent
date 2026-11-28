@@ -15,7 +15,7 @@ import { GraphZoomControls } from "@/components/GraphZoomControls";
 import { Button } from "@/components/ui/button";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import { StepDescription } from "@/components/workflows/StepDescription";
-import { getEmbedRoot } from "@/lib/host";
+import { useOverlayRoot } from "@/workbench/workbenchScope";
 import { markdownPreviewText } from "@/lib/markdownPreviewText";
 import { failedUpstream, type StepProgress, type StepState } from "@/lib/sessionJournal";
 import { cn } from "@/lib/utils";
@@ -295,6 +295,7 @@ export function WorkflowGraphOverlay({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
+  const overlayRoot = useOverlayRoot();
   return createPortal(
     <div
       className="fixed inset-0 z-50 flex flex-col bg-background/95 text-foreground backdrop-blur-sm"
@@ -339,7 +340,7 @@ export function WorkflowGraphOverlay({
         )}
       </div>
     </div>,
-    getEmbedRoot() ?? document.body,
+    overlayRoot ?? document.body,
   );
 }
 

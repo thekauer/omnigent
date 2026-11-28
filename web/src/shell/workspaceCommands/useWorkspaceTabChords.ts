@@ -15,7 +15,7 @@ import { type PaletteCommand, usePaletteCommands } from "@/store/paletteCommands
 
 import type { WorkspaceTabActionCommand, WorkspaceTabListFacts } from "./model";
 import { workspaceCommandIcon } from "./useWorkspacePaletteCommands";
-import { isActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
+import { isActiveWorkbenchScopeForEvent, useWorkbenchScope } from "@/workbench/workbenchScope";
 
 export interface WorkspaceTabChordOptions {
   /** The routed session, which scopes the ⌘K rows; null offers nothing. */
@@ -78,7 +78,7 @@ export function useWorkspaceTabChords(
   const scope = useWorkbenchScope();
   useEffect(() => {
     const handler = (event: globalThis.KeyboardEvent): void => {
-      if (!isActiveWorkbenchScope(scope)) return;
+      if (!isActiveWorkbenchScopeForEvent(scope, event)) return;
       const command = chordedRef.current.find(
         (candidate) =>
           candidate.shortcut !== undefined &&

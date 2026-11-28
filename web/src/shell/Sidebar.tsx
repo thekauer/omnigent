@@ -281,7 +281,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useOmnigentAnalytics } from "@/lib/analytics";
 import { isDesktopLayout, useIsMobileViewport } from "@/hooks/useIsMobileViewport";
-import { useWorkbenchScope } from "@/workbench/workbenchScope";
+import { useOverlayRoot, useWorkbenchScope } from "@/workbench/workbenchScope";
 import {
   isSideBySideSidebarViewport,
   useIsSideBySideSidebarViewport,
@@ -400,7 +400,6 @@ import {
 import { MAIN_CANVAS_ID } from "@/canvas/canvasLayout";
 import { CANVAS_QUERY_PARAM, canvasLocation, isCanvasPathname } from "@/canvas/canvasNavigation";
 import { projectHomePath, projectNameFromHomePath } from "@/projectHome/projectHomeNavigation";
-import { getEmbedRoot } from "../lib/host";
 import { canCreateProject, projectsMatching } from "./projectChoices";
 import {
   ARCHIVE_SESSION_KEYS,
@@ -3951,6 +3950,7 @@ function ConversationList({
     activeDrag?.canMoveProject &&
     activeDrag.project !== null &&
     sections.sessions.length === 0;
+  const overlayRoot = useOverlayRoot();
   return (
     <SidebarRowDataProvider
       projectNamesById={projectNamesById}
@@ -4403,7 +4403,7 @@ function ConversationList({
               </div>
             ) : null}
           </DragOverlay>,
-          getEmbedRoot() ?? document.body,
+          overlayRoot ?? document.body,
         )}
       </DndContext>
     </SidebarRowDataProvider>

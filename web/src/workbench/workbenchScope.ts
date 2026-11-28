@@ -10,7 +10,7 @@ import {
   type ReactNode,
   useContext,
   useEffect,
-  useRef,
+  useLayoutEffect,
   useSyncExternalStore,
 } from "react";
 import { createMoveViewPicker, type MoveViewPicker } from "@/store/moveViewPicker";
@@ -41,6 +41,33 @@ export interface WorkbenchScope {
   readonly moveViewPicker: MoveViewPicker;
   /** The id of the mount's own toaster: toasts about this mount only (a reset's undo). */
   readonly toasterId: string;
+  /** The element the mount's overlays portal into (null: the document body). */
+  readonly overlayRoot: OverlayRoot;
+}
+
+/**
+ * The element a mount's overlays (popovers, menus, dialogs, tooltips) portal into. An embed sets it
+ * to its own themed element, so the overlays inherit its tokens and stay in its subtree; the
+ * standalone app has none. Reactive: {@link useOverlayRoot} re-renders when it changes.
+ */
+export class OverlayRoot {
+  private element: HTMLElement | null = null;
+  private readonly listeners = new Set<() => void>();
+
+  get = (): HTMLElement | null => this.element;
+
+  set(element: HTMLElement | null): void {
+    if (element === this.element) return;
+    this.element = element;
+    for (const listener of [...this.listeners]) listener();
+  }
+
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  };
 }
 
 /**
@@ -54,6 +81,7 @@ const WINDOW_SCOPE: WorkbenchScope = Object.freeze({
   productLayout: standaloneProductLayout,
   moveViewPicker: createMoveViewPicker(standaloneProductLayout),
   toasterId: "workbench-window",
+  overlayRoot: new OverlayRoot(),
 });
 
 /** Each mount's scope by its layout state, so a command that resolved a store finds its mount. */
@@ -91,6 +119,11 @@ export function useWorkbenchScope(): WorkbenchScope {
  * A new mount's workbench: its layout state keyed by its basename and `workbenchId` (the mount's
  * stable id, for embeds that share a basename). A key a live mount already holds isn't shared:
  * the new mount keeps its layout in memory (see {@link holdWorkbenchLayoutKey}).
+ *
+ * The check reads the holders at creation. A key is held from a mount's commit, so two mounts
+ * created before either commits (say, two `useState` initializers in one render) both read the
+ * key's stored layout: the first commit holds it, and the second's writes then reach the same
+ * stored state. Give each embed its own `workbenchId` to keep their layouts apart.
  */
 export function createWorkbenchScope(
   basename: string | undefined,
@@ -110,6 +143,7 @@ export function createWorkbenchScope(
     productLayout,
     moveViewPicker: createMoveViewPicker(productLayout),
     toasterId: id,
+    overlayRoot: new OverlayRoot(),
   });
   scopesByState.set(state, scope);
   layoutKeys.set(scope, layoutKey);
@@ -188,6 +222,54 @@ export function isActiveWorkbenchScope(scope: WorkbenchScope): boolean {
   return activeWorkbenchScope() === scope;
 }
 
+/** The element a mount's own tree is in: an embed's root, the standalone app's `#root`. */
+function rootOfScope(scope: WorkbenchScope): Element | null {
+  if (scope !== WINDOW_SCOPE) return scope.layout.getRoot();
+  return typeof document === "undefined" ? null : document.getElementById("root");
+}
+
+/**
+ * Whether `target` is in `scope`'s own tree: inside its root and, for the standalone app, not in
+ * an embed placed inside `#root`.
+ */
+function isInScopeTree(scope: WorkbenchScope, target: EventTarget | null): boolean {
+  if (!(target instanceof Node)) return false;
+  const root = rootOfScope(scope);
+  if (!root || !root.contains(target)) return false;
+  if (scope !== WINDOW_SCOPE) return true;
+  const element = target instanceof Element ? target : target.parentElement;
+  return element?.closest(".omnigent-app") === null;
+}
+
+/**
+ * Whether the window's keys reach `scope` for a keyboard event the window's own capture handler
+ * is reading. The mount the event is in is activated first: the activation listener
+ * (`useActivateWorkbenchOnUse`) runs after window handlers in the capture phase, so a key
+ * typed in an inactive mount with no prior focus or pointer would otherwise be dropped.
+ */
+export function isActiveWorkbenchScopeForEvent(scope: WorkbenchScope, event: Event): boolean {
+  if (!isActiveWorkbenchScope(scope) && isInScopeTree(scope, event.target)) {
+    activateWorkbenchScope(scope);
+  }
+  return isActiveWorkbenchScope(scope);
+}
+
+/**
+ * The standalone app is the window's active mount from its first render; an embed mounted or
+ * used after it takes over.
+ */
+export function useStandaloneWorkbenchActivation(): void {
+  useLayoutEffect(() => {
+    activateWorkbenchScope(WINDOW_SCOPE);
+  }, []);
+}
+
+/** The element the workbench's overlays of the calling mount portal into (null: the document body). */
+export function useOverlayRoot(): HTMLElement | null {
+  const { overlayRoot } = useWorkbenchScope();
+  return useSyncExternalStore(overlayRoot.subscribe, overlayRoot.get, overlayRoot.get);
+}
+
 /** Calls `listener` each time the active mount changes. */
 export function subscribeActiveWorkbenchScope(listener: () => void): () => void {
   activationListeners.add(listener);
@@ -197,22 +279,14 @@ export function subscribeActiveWorkbenchScope(listener: () => void): () => void 
 }
 
 /**
- * Makes `scope` the active one when the user points, types or focuses inside `getRoot()`
- * (the mount's own tree), so a mount used after another took over gets the window's
- * commands back.
+ * Makes `scope` the active one when the user points, types or focuses inside its own tree (see
+ * {@link isActiveWorkbenchScopeForEvent}), so a mount used after another took over gets the
+ * window's commands back.
  */
-export function useActivateWorkbenchOnUse(
-  scope: WorkbenchScope,
-  getRoot: () => Element | null,
-): void {
-  const latestRoot = useRef(getRoot);
-  latestRoot.current = getRoot;
+export function useActivateWorkbenchOnUse(scope: WorkbenchScope): void {
   useEffect(() => {
     const onUse = (event: Event) => {
-      const element = latestRoot.current();
-      if (element && event.target instanceof Node && element.contains(event.target)) {
-        activateWorkbenchScope(scope);
-      }
+      if (isInScopeTree(scope, event.target)) activateWorkbenchScope(scope);
     };
     const events = ["pointerdown", "keydown", "focusin"] as const;
     for (const type of events) document.addEventListener(type, onUse, true);

@@ -45,7 +45,13 @@ import type { PullRequestsService } from "./pullRequestsService";
 import type { TasksService } from "./tasksService";
 import type { KeybindingService } from "./keybindings";
 import { ExtensionLayoutEvents, visibleViewContainer } from "./layoutEvents";
-import { isPart, type LayoutService, layoutService, Parts } from "@/workbench/layoutService";
+import {
+  isPart,
+  type LayoutService,
+  layoutService,
+  type PartVisibilityChange,
+  Parts,
+} from "@/workbench/layoutService";
 import { layoutWidthOf } from "@/workbench/layoutViewport";
 import type { ViewsService } from "./viewsService";
 import { textSearchQueryProblem, type WorkspaceService } from "./workspaceService";
@@ -446,17 +452,27 @@ export function createExtensionApi(
   const reportEmitterError = (error: unknown) => logError("EventEmitter listener threw", error);
 
   // The layout's read side: plain data, and events that report only changes (layout plan L10).
+  // Their listeners are made on an extension's first subscription, so an extension that never
+  // listens to the layout costs nothing.
   const layout = services.layout ?? layoutService;
-  const layoutEvents = new ExtensionLayoutEvents(layout, reportEmitterError);
-  const onDidChangePartVisibility = guard(
-    layoutEvents.visibility.event,
+  let layoutEvents: ExtensionLayoutEvents | undefined;
+  const layoutEventsOf = (): ExtensionLayoutEvents =>
+    (layoutEvents ??= new ExtensionLayoutEvents(layout, reportEmitterError));
+  const onDidChangePartVisibility = guard<PartVisibilityChange>(
+    (listener, thisArgs, disposables) =>
+      layoutEventsOf().visibility.event(listener, thisArgs, disposables),
     "onDidChangePartVisibility",
   );
-  const onDidChangeActiveViewContainer = guard(
-    layoutEvents.activeViewContainer.event,
+  const onDidChangeActiveViewContainer = guard<string | undefined>(
+    (listener, thisArgs, disposables) =>
+      layoutEventsOf().activeViewContainer.event(listener, thisArgs, disposables),
     "onDidChangeActiveViewContainer",
   );
-  const onDidChangeLayout = guard(layoutEvents.layout.event, "onDidChangeLayout");
+  const onDidChangeLayout = guard<void>(
+    (listener, thisArgs, disposables) =>
+      layoutEventsOf().layout.event(listener, thisArgs, disposables),
+    "onDidChangeLayout",
+  );
 
   // Progress this extension shows; a Node command's progress joins the latest one.
   const openProgress: ProgressReporter[] = [];
@@ -816,7 +832,7 @@ export function createExtensionApi(
     api: Object.freeze(api),
     dispose: () => {
       disposed = true;
-      layoutEvents.dispose();
+      layoutEvents?.dispose();
       const owned = [...resources];
       resources.clear();
       disposeAll(owned, (error) => logError("dispose failed", error));

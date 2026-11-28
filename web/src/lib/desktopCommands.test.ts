@@ -257,7 +257,7 @@ describe("useAvailableDesktopCommands", () => {
 });
 
 describe("native menu commands across mounts", () => {
-  it("runs the active mount's handler, and another mount's only when the active one has none", () => {
+  it("runs only the active mount's handler, never another mount's", () => {
     const first = createWorkbenchScope("/one");
     const second = createWorkbenchScope("/two");
     const firstClose = vi.fn();
@@ -284,9 +284,10 @@ describe("native menu commands across mounts", () => {
       expect(firstClose).toHaveBeenCalledTimes(1);
       expect(secondClose).toHaveBeenCalledTimes(1);
 
-      // The first mount registered no new terminal, so the second mount's handles it.
+      // The first mount registered no new terminal: the menu has none to run, so nothing runs
+      // on the second mount's behalf.
       send("new-terminal");
-      expect(secondTerminal).toHaveBeenCalledTimes(1);
+      expect(secondTerminal).not.toHaveBeenCalled();
     } finally {
       releaseWorkbenchScope(second);
       releaseWorkbenchScope(first);

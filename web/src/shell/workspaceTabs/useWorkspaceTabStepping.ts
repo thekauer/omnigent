@@ -6,7 +6,7 @@ import { useEffect, useRef } from "react";
 import { useDesktopCommand } from "@/lib/desktopCommands";
 import { TAB_KEY_OWNING_DIALOG_OR_MENU } from "@/lib/hotkeys";
 import { matchesShortcut } from "@/shell/workspaceTabs/workspaceSidebarShortcuts";
-import { isActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
+import { isActiveWorkbenchScopeForEvent, useWorkbenchScope } from "@/workbench/workbenchScope";
 
 /** Monaco and the CodeMirror file editor both bind the fold keys. */
 const FOLDING_EDITORS = ".monaco-editor, .cm-editor";
@@ -40,7 +40,7 @@ export function useWorkspaceTabStepChords(onStep: ((direction: -1 | 1) => void) 
   useEffect(() => {
     if (!enabled) return;
     const handler = (event: KeyboardEvent) => {
-      if (!isActiveWorkbenchScope(scope)) return;
+      if (!isActiveWorkbenchScopeForEvent(scope, event)) return;
       const direction = matchesShortcut(event, "workspace.previousTab")
         ? -1
         : matchesShortcut(event, "workspace.nextTab")

@@ -368,19 +368,43 @@ describe("the server's last-known policy, per server", () => {
     expect(service.isLocked("acme.layout.location")).toBe(false);
   });
 
-  it("keeps nothing for a server whose identity is unknown (an embedder's fetcher alone)", () => {
+  it("removes the unkeyed entry only when the same-origin server answers", () => {
     const service = configuration();
     restore = setProductConfigSinks({
       configuration: service,
       standaloneLayout: new ProductLayoutPolicy(),
     });
+    localStorage.setItem(
+      LAST_SERVER_PRODUCT_CONFIG_STORAGE_KEY,
+      JSON.stringify({ settings: { locked: { "acme.layout.location": "b" } } }),
+    );
+    // Another server's answer leaves the unkeyed entry (its owner is unknown) alone.
+    setOmnigentHostConfig({ serverIdentity: "server-one" });
+    applyServerProductConfig(serverInfoLocking("acme.layout.visible", "x"));
+    expect(localStorage.getItem(LAST_SERVER_PRODUCT_CONFIG_STORAGE_KEY)).not.toBeNull();
+    // The same-origin server's answer replaces it.
+    setOmnigentHostConfig({});
+    applyServerProductConfig(serverInfoLocking("acme.layout.visible", "x"));
+    expect(localStorage.getItem(LAST_SERVER_PRODUCT_CONFIG_STORAGE_KEY)).toBeNull();
+  });
+  // The host config keeps a fetcher once set (its guard), so this runs last in the file.
+  it("keeps an unidentified server's last-known policy, so a failed probe on reload keeps its locks", () => {
+    const service = configuration();
+    restore = setProductConfigSinks({
+      configuration: service,
+      standaloneLayout: new ProductLayoutPolicy(),
+    });
+    // An embedder's fetcher alone: its servers aren't told apart, so the page's origin keys them.
     setOmnigentHostConfig({ fetcher: vi.fn() } as unknown as Parameters<
       typeof setOmnigentHostConfig
     >[0]);
-    expect(lastServerProductConfigKey()).toBeNull();
+    const key = `${LAST_SERVER_PRODUCT_CONFIG_STORAGE_KEY}@unidentified:${window.location.origin}`;
+    expect(lastServerProductConfigKey()).toBe(key);
     applyServerProductConfig(serverInfoLocking("acme.layout.location", "b"));
-    expect(localStorage.length).toBe(0);
-    // The probe's policy still applies for this load.
+    expect(localStorage.getItem(key)).toContain("acme.layout.location");
+    // The next load's probe fails: the server's locks hold.
+    resetProductConfigsForTests();
+    applyServerProductConfig(FALLBACK_SERVER_INFO);
     expect(service.isLocked("acme.layout.location")).toBe(true);
   });
 });

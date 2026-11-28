@@ -2,7 +2,7 @@ import { useEffect, useRef } from "react";
 
 import { isMacPlatform } from "@/lib/hotkeys";
 import { matchesShortcut } from "@/lib/shortcuts/registry";
-import { isActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
+import { isActiveWorkbenchScopeForEvent, useWorkbenchScope } from "@/workbench/workbenchScope";
 
 type ViewMode = "chat" | "terminal";
 
@@ -32,7 +32,7 @@ export function useViewModeToggleHotkey(
     if (!options.enabled) return;
 
     const handler = (event: globalThis.KeyboardEvent): void => {
-      if (!isActiveWorkbenchScope(scope)) return;
+      if (!isActiveWorkbenchScopeForEvent(scope, event)) return;
       if (event.repeat || !isViewModeToggleHotkey(event, isMac)) return;
       event.preventDefault();
       event.stopPropagation();

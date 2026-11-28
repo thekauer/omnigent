@@ -5,7 +5,7 @@ import { useEffect, useRef } from "react";
 
 import { isFocusInDialogOrMenu, isMacPlatform } from "@/lib/hotkeys";
 import { matchesShortcut } from "@/lib/shortcuts/registry";
-import { isActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
+import { isActiveWorkbenchScopeForEvent, useWorkbenchScope } from "@/workbench/workbenchScope";
 
 /** -1 for Cmd/Ctrl+Alt+Shift+[, 1 for Cmd/Ctrl+Alt+Shift+], 0 for anything else. */
 export function paneCycleHotkeyStep(
@@ -36,7 +36,7 @@ export function usePaneCycleHotkey(options: PaneCycleHotkeyOptions, isMac = isMa
     if (!options.enabled) return;
 
     const handler = (event: globalThis.KeyboardEvent): void => {
-      if (!isActiveWorkbenchScope(scope)) return;
+      if (!isActiveWorkbenchScopeForEvent(scope, event)) return;
       const step = paneCycleHotkeyStep(event, isMac);
       if (step === 0 || isFocusInDialogOrMenu()) return;
       event.preventDefault();

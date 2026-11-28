@@ -4,7 +4,7 @@ import type { ComposerConfigChoice } from "@/components/composer/ComposerConfigS
 import { useIsEmbedded } from "@/lib/embedded";
 import { isImeCompositionKeyEvent } from "@/lib/ime";
 import { matchesShortcut } from "@/lib/shortcuts/registry";
-import { isActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
+import { isActiveWorkbenchScopeForEvent, useWorkbenchScope } from "@/workbench/workbenchScope";
 
 /** Ctrl+Alt+M/E cycles the same model/effort choices offered by the composer menu. */
 export function useComposerConfigCycleHotkeys(
@@ -66,7 +66,7 @@ export function useComposerConfigCycleHotkeys(
   useEffect(() => {
     if (!enabled) return;
     const handler = (event: globalThis.KeyboardEvent): void => {
-      if (!isActiveWorkbenchScope(scope)) return;
+      if (!isActiveWorkbenchScopeForEvent(scope, event)) return;
       if (
         event.defaultPrevented ||
         event.repeat ||

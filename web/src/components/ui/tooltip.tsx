@@ -3,7 +3,7 @@
 import * as React from "react";
 import * as TooltipPrimitive from "radix-ui/tooltip";
 
-import { getEmbedRoot } from "@/lib/host";
+import { useOverlayRoot } from "@/workbench/workbenchScope";
 import { cn } from "@/lib/utils";
 import { CompactKbd } from "@/components/ui/kbd";
 
@@ -63,8 +63,9 @@ const TooltipContent = React.forwardRef<
     shortcut?: TooltipShortcut;
   }
 >(function TooltipContent({ className, sideOffset = 8, children, shortcut, ...props }, ref) {
+  const overlayRoot = useOverlayRoot();
   return (
-    <TooltipPrimitive.Portal container={getEmbedRoot() ?? undefined}>
+    <TooltipPrimitive.Portal container={overlayRoot ?? undefined}>
       <TooltipPrimitive.Content
         ref={ref}
         data-slot="tooltip-content"

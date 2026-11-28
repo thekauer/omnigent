@@ -16,7 +16,7 @@ import { useEffect, useRef } from "react";
 import { isMacPlatform } from "@/lib/hotkeys";
 import { isNativeShell } from "@/lib/nativeBridge";
 import { matchesShortcut } from "@/lib/shortcuts/registry";
-import { isActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
+import { isActiveWorkbenchScopeForEvent, useWorkbenchScope } from "@/workbench/workbenchScope";
 
 export interface SidebarToggleHandlers {
   /** Flip the left (Conversations) sidebar. */
@@ -70,7 +70,7 @@ export function useSidebarToggleHotkeys(
   const scope = useWorkbenchScope();
   useEffect(() => {
     const handler = (e: globalThis.KeyboardEvent): void => {
-      if (!isActiveWorkbenchScope(scope)) return;
+      if (!isActiveWorkbenchScopeForEvent(scope, e)) return;
       const side = sidebarToggleSide(e, isMac);
       const toggle =
         side === "left"

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { CornerUpLeftIcon, MessagesSquareIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { getEmbedRoot } from "@/lib/host";
+import { useOverlayRoot } from "@/workbench/workbenchScope";
 
 export function SelectionPopup({
   containerRef,
@@ -15,6 +15,7 @@ export function SelectionPopup({
   // "Ask in side chat" action beside Reply.
   onAskInSideChat?: (text: string) => void;
 }) {
+  const overlayRoot = useOverlayRoot();
   const [popupPos, setPopupPos] = useState<{ x: number; y: number } | null>(null);
   const selectedTextRef = useRef<string>("");
 
@@ -128,6 +129,6 @@ export function SelectionPopup({
         </Button>
       ) : null}
     </div>,
-    getEmbedRoot() ?? document.body,
+    overlayRoot ?? document.body,
   );
 }

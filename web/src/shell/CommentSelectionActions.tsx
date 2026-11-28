@@ -5,7 +5,7 @@
 import { AtSignIcon, MessageSquarePlusIcon } from "lucide-react";
 import { useId, useMemo, type FocusEvent, type KeyboardEvent } from "react";
 import { createPortal } from "react-dom";
-import { getEmbedRoot } from "@/lib/host";
+import { useOverlayRoot } from "@/workbench/workbenchScope";
 import { nativeCodingAgentForHarness } from "@/lib/nativeCodingAgents";
 import { useChatStore } from "@/store/chatStore";
 import { type PaletteCommand, usePaletteCommands } from "@/store/paletteCommands";
@@ -119,6 +119,7 @@ export function CommentSelectionActions({
       : []),
   ];
   // Rendered into document.body so ancestor CSS transforms don't break fixed positioning.
+  const overlayRoot = useOverlayRoot();
   return createPortal(
     <div
       role="toolbar"
@@ -152,6 +153,6 @@ export function CommentSelectionActions({
         </button>
       ))}
     </div>,
-    getEmbedRoot() ?? document.body,
+    overlayRoot ?? document.body,
   );
 }

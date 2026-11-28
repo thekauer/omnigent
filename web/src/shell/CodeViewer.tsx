@@ -87,7 +87,7 @@ import { HtmlCommentViewer } from "./HtmlCommentViewer";
 import { PreviewCommentBanner } from "./PreviewCommentBanner";
 import { TruncatedBanner } from "./TruncatedBanner";
 import { useLightbox } from "@/components/ImageLightbox";
-import { getEmbedRoot } from "@/lib/host";
+import { useOverlayRoot } from "@/workbench/workbenchScope";
 import { hasCommandModifier } from "@/lib/hotkeys";
 import { isImeCompositionKeyEvent } from "@/lib/ime";
 import { MarkdownTableOfContents } from "./MarkdownTableOfContents";
@@ -631,6 +631,7 @@ export function CodeViewer({
   onRequestEditMode,
   attachToAgent = false,
 }: CodeViewerProps) {
+  const overlayRoot = useOverlayRoot();
   const canEdit = useCanEdit(conversationId);
   const activeCommentId = activeSelection?.comment_id;
   const previewComments = useMemo(
@@ -1464,7 +1465,7 @@ export function CodeViewer({
               </button>
             )}
           </div>,
-          getEmbedRoot() ?? document.body,
+          overlayRoot ?? document.body,
         )}
     </>
   );
