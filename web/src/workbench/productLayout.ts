@@ -1,10 +1,11 @@
 // The product's layout policy (layout plan L6 and L8): parts, containers and views a product
 // hides, the activity bar's default order, and whether views keep their places
-// (`lockViewLocations`). The workbench reads it here; the product's sources (its embed prop, its
-// build's `product.json`, the server's `/v1/info`) fill it in layout plan L8. Plain data, plus
-// the React read.
+// (`lockViewLocations`). Each mounted app has its own (`workbench/workbenchScope.ts`), built from
+// its own `product` prop over the build's `product.json` over the server's block; the window's
+// commands and the extension host read the active mount's through `productLayout`. Plain data,
+// plus the React read.
 
-import { useSyncExternalStore } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 import { RIGHT_PANEL_CONTAINER } from "./viewContainers";
 
 /** `product.layout`, as merged from the product's sources. Every field is optional. */
@@ -27,13 +28,37 @@ export class ProductLayoutPolicy {
   private config: ProductLayoutConfig = EMPTY;
   private readonly listeners = new Set<() => void>();
 
-  get = (): ProductLayoutConfig => this.config;
+  /** The policy this one stands for: itself (the window's proxy stands for the active mount's). */
+  resolve(): ProductLayoutPolicy {
+    return this;
+  }
+
+  get(): ProductLayoutConfig {
+    const target = this.resolve();
+    return target === this ? this.config : target.get();
+  }
 
   /** Replaces the policy (null: none). */
   set(config: ProductLayoutConfig | null): void {
+    const target = this.resolve();
+    if (target !== this) {
+      target.set(config);
+      return;
+    }
     const next = config ? Object.freeze({ ...config }) : EMPTY;
     if (JSON.stringify(next) === JSON.stringify(this.config)) return;
     this.config = next;
+    this.notify();
+  }
+
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  }
+
+  protected notify(): void {
     for (const listener of [...this.listeners]) {
       try {
         listener();
@@ -43,24 +68,58 @@ export class ProductLayoutPolicy {
     }
   }
 
-  subscribe = (listener: () => void): (() => void) => {
-    this.listeners.add(listener);
-    return () => {
-      this.listeners.delete(listener);
-    };
-  };
-
   /** Whether the product keeps views where their extensions put them. */
   viewLocationsLocked(): boolean {
-    return this.config.lockViewLocations === true;
+    return this.get().lockViewLocations === true;
   }
 }
 
-/** The window's product layout policy. */
-export const productLayout = new ProductLayoutPolicy();
+/** The standalone app's product layout policy (built from the build's file and the server's block). */
+export const standaloneProductLayout = new ProductLayoutPolicy();
+
+/**
+ * The window's policy: the active mount's (`setActiveProductLayout`, as the window's layout
+ * state follows the active mount), the standalone app's otherwise. Its listeners hear every change
+ * of the policy they read, including a switch between mounts.
+ */
+class ActiveProductLayoutPolicy extends ProductLayoutPolicy {
+  private active: ProductLayoutPolicy = standaloneProductLayout;
+  private stopFollowing: (() => void) | null = null;
+
+  constructor() {
+    super();
+    this.follow();
+  }
+
+  override resolve(): ProductLayoutPolicy {
+    return this.active;
+  }
+
+  setActive(next: ProductLayoutPolicy): void {
+    if (next === this.active) return;
+    this.active = next;
+    this.follow();
+    this.notify();
+  }
+
+  private follow(): void {
+    this.stopFollowing?.();
+    this.stopFollowing = this.active.subscribe(() => this.notify());
+  }
+}
+
+/** The window's product layout policy: the active mount's (see {@link ActiveProductLayoutPolicy}). */
+export const productLayout: ProductLayoutPolicy = new ActiveProductLayoutPolicy();
+
+/** Makes `policy` the one the window reads (null: the standalone app's). */
+export function setActiveProductLayout(policy: ProductLayoutPolicy | null): void {
+  (productLayout as ActiveProductLayoutPolicy).setActive(policy ?? standaloneProductLayout);
+}
 
 export function useProductLayout(policy: ProductLayoutPolicy = productLayout): ProductLayoutConfig {
-  return useSyncExternalStore(policy.subscribe, policy.get, policy.get);
+  const subscribe = useCallback((listener: () => void) => policy.subscribe(listener), [policy]);
+  const read = useCallback(() => policy.get(), [policy]);
+  return useSyncExternalStore(subscribe, read, read);
 }
 
 /** Whether `id` matches one of `patterns` (ids, or `*` for any run of characters). */

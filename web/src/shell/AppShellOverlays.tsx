@@ -9,7 +9,7 @@ import { updateOverlayToastOffset } from "@/lib/updateOverlayInset";
 import { useSettingsJsonEditorStore } from "@/store/settingsJsonEditor";
 import { CommandPalette } from "./CommandPalette";
 import { RecentSessionsSwitcher } from "./RecentSessionsSwitcher";
-import { useMoveViewPickerStore } from "@/store/moveViewPicker";
+import { useStore } from "zustand";
 import { useWorkbenchScope } from "@/workbench/workbenchScope";
 
 // The QuickPick palette and its theme picker load only with quick_pick_palette, so the
@@ -77,8 +77,8 @@ export function AppShellOverlays({
   const quickPick = isFeatureEnabled(serverInfo, "quick_pick_palette");
   const Palette = quickPick ? QuickPickCommandPalette : CommandPalette;
   const settingsJsonOpen = useSettingsJsonEditorStore((state) => state.open);
-  const moveViewOpen = useMoveViewPickerStore((state) => state.open);
-  const { toasterId } = useWorkbenchScope();
+  const { toasterId, moveViewPicker } = useWorkbenchScope();
+  const moveViewOpen = useStore(moveViewPicker.store, (state) => state.open);
   return (
     <>
       {/* Keyboard-shortcuts reference. Self-contained (owns its open state +

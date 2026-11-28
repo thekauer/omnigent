@@ -39,7 +39,8 @@ export function useActivityBarLocation(
     useConfigurationValue(ACTIVITY_BAR_LOCATION_SETTING, service),
   );
   // A product that hides the part removes it wherever the setting puts it.
-  return useProductHidesPart("workbench.parts.activitybar") ? "hidden" : location;
+  const { productLayout: policy } = useWorkbenchScope();
+  return useProductHidesPart("workbench.parts.activitybar", policy) ? "hidden" : location;
 }
 
 /** VS Code's toggle: a hidden bar comes back at `default`, any other location hides it. */

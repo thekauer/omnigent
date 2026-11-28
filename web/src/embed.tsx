@@ -1,6 +1,7 @@
 import {
   activateWorkbenchScope,
   createWorkbenchScope,
+  holdWorkbenchLayoutKey,
   releaseWorkbenchScope,
   type WorkbenchScope,
   WorkbenchScopeProvider,
@@ -62,6 +63,7 @@ import {
 import { prefetchSessionHostChain } from "./hooks/useSession";
 import { resolveIdentity, setSessionHostResolver } from "./lib/identity";
 import { keepsDesktopLayout } from "./lib/desktopAppLayout";
+import type { ProductLayoutPolicy } from "./workbench/productLayout";
 import { isMacElectronShell, isNativeShell } from "./lib/nativeBridge";
 import {
   applyStoredUiFontSize,
@@ -141,6 +143,14 @@ export interface OmnigentAppProps extends OmnigentHostConfig {
    */
   basename?: string;
   /**
+   * A stable id for this mount, set when the page mounts more than one app on the same
+   * `basename` (or one with none). It keeps this mount's layout state apart from other mounts on
+   * the origin: its layout is kept under the basename and the id. Use the same id on every load,
+   * so the layout survives a reload; two mounts with no distinct id keep their layout for the
+   * page view only, with a console warning.
+   */
+  workbenchId?: string;
+  /**
    * Optional routing inversion-of-control override. Merged over the default
    * react-router-dom implementation. In the same-root path react-router-dom is
    * already the host's instance (externalized), so this is rarely needed.
@@ -156,9 +166,11 @@ export interface OmnigentAppProps extends OmnigentHostConfig {
    * the themes offered (`allowed`, ids or `*` patterns), a locked mode, locked tokens,
    * options and variants (applied over the user's settings), and hides the picker or the
    * customizations. Each field wins over the build's `web/product.json` and the server's
-   * `product.theme`. `settings` (setting `defaults` and `locked` values, by key) and `layout`
+   * `product.theme`. `settings` (setting `defaults` and `locked` values, by key) merge the same
+   * way across the mounts on the page, per key (`product/productConfig.ts`). `layout`
    * (`hiddenParts`, `hiddenContainers`, `hiddenViews`, `containerOrder`, `lockViewLocations`)
-   * merge the same way, per key and per field (`product/productConfig.ts`).
+   * is this mount's own: it applies to this app's workbench only, over the build's and the
+   * server's.
    */
   product?: ProductConfig;
 }
@@ -319,9 +331,12 @@ function OmnigentProviders({
 /**
  * Keeps `workbench` the active one while mounted, and again whenever the user points, types
  * or focuses inside the app, so the window's commands and keybindings reach the app in use.
+ * Holds its layout key while mounted (a mount on a key another mount holds keeps its layout
+ * in memory, `workbench/workbenchScope.ts`).
  */
 function useMountedWorkbench(workbench: WorkbenchScope): void {
   useLayoutEffect(() => {
+    const releaseLayoutKey = holdWorkbenchLayoutKey(workbench);
     activateWorkbenchScope(workbench);
     const root = () => workbench.layout.getRoot();
     const onUse = (event: Event) => {
@@ -335,6 +350,7 @@ function useMountedWorkbench(workbench: WorkbenchScope): void {
     return () => {
       for (const type of events) document.removeEventListener(type, onUse, true);
       releaseWorkbenchScope(workbench);
+      releaseLayoutKey();
     };
   }, [workbench]);
 }
@@ -374,11 +390,12 @@ function useEmbedProductTheme(product: ProductConfig | undefined) {
 }
 
 /**
- * The product's settings and layout from the props, over the build's and the server's: this
- * mount's own source, kept in step with the props (by value), cleared on unmount. Applied
- * before the first paint, so it already has the product's defaults and hidden parts.
+ * The product's settings and layout from the props: this mount's own source, kept in step with
+ * the props (by value), cleared on unmount. Its layout is built into `layout`, the mount's own
+ * policy, over the build's and the server's. Applied before the first paint, so it already has
+ * the product's defaults and hidden parts.
  */
-function useEmbedProductConfig(product: ProductConfig | undefined) {
+function useEmbedProductConfig(product: ProductConfig | undefined, layout: ProductLayoutPolicy) {
   const key = plainDataKey([product?.settings, product?.layout]);
   const latest = useRef(product);
   latest.current = product;
@@ -386,7 +403,7 @@ function useEmbedProductConfig(product: ProductConfig | undefined) {
     applyBootProductConfigs({ apply: false });
     // Set in the layout effect below (before the first paint): an initializer React discards
     // must leave nothing behind.
-    return createEmbedProductConfigSource();
+    return createEmbedProductConfigSource(layout);
   });
   const applied = useRef(key);
   useLayoutEffect(() => {
@@ -416,6 +433,7 @@ function useEmbedProductConfig(product: ProductConfig | undefined) {
 export function OmnigentApp({
   sidebarConfig,
   basename,
+  workbenchId,
   routing,
   isDarkMode,
   product,
@@ -430,16 +448,16 @@ export function OmnigentApp({
     setOmnigentHostConfig(hostConfig);
     return null;
   });
-  // This mount's own workbench: its layout state (kept by its mount path) and layout service,
-  // shared with no other app on the page.
-  const [workbench] = useState(() => createWorkbenchScope(basename));
+  // This mount's own workbench: its layout state (kept by its basename and id), layout service
+  // and product layout, shared with no other app on the page.
+  const [workbench] = useState(() => createWorkbenchScope(basename, workbenchId));
   useMountedWorkbench(workbench);
   // The built-in extensions (the Changes, Files, Pull Requests, Tasks, Agents and
   // Content search tabs) run in the window's extension host, as standalone. It is
   // shared by every OmnigentApp on the page. Dev-path extensions stay standalone only.
   useWindowExtensionHost();
   useEmbedProductTheme(product);
-  useEmbedProductConfig(product);
+  useEmbedProductConfig(product, workbench.productLayout);
 
   const routingApi = useMemo<RoutingApi>(() => {
     // Host overrides compose UNDER the basename wrapper: merge the host's

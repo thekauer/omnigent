@@ -2,7 +2,6 @@
 // extensions at startup, and the dev loader adds dev-path extensions to the same
 // host. Built-ins load from the bundle, so their views register before the first
 // render and core tabs never show a blank panel.
-import { openMoveViewPicker } from "@/store/moveViewPicker";
 import {
   isContainerHiddenByProduct,
   isViewHiddenByProduct,
@@ -13,6 +12,7 @@ import { builtInExtensions } from "@/builtinExtensions";
 import { registerLayoutCommands } from "@/workbench/layoutCommands";
 import { registerNavigationCommands } from "@/workbench/navigationCommands";
 import { type LayoutService, layoutService } from "@/workbench/layoutService";
+import { activeWorkbenchScope } from "@/workbench/workbenchScope";
 import { type WorkbenchContext, workbenchContext } from "@/workbench/workbenchContext";
 import { type ViewContainerRegistry, viewContainers } from "@/workbench/viewContainers";
 import {
@@ -89,7 +89,8 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
   const layoutCommands = registerLayoutCommands(commands, options.layout ?? layoutService, {
     contextKeys,
     configuration: options.configuration ?? configurationService,
-    openMoveView: openMoveViewPicker,
+    // The active mount's picker (the window's command reaches the app last used).
+    openMoveView: (viewId) => activeWorkbenchScope().moveViewPicker.open(viewId),
     ...(options.containers ? { containers: options.containers } : {}),
   });
   const navigationCommands = registerNavigationCommands(commands);

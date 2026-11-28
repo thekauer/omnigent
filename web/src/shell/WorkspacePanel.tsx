@@ -102,6 +102,7 @@ import { RailTabStripMenu } from "./RailTabStripMenu";
 import { isViewRemovedByProduct } from "@/workbench/productLayout";
 import { viewDragProps } from "./viewMoves";
 import { isViewHidden, useViewsLayout } from "@/workbench/viewsLayout";
+import { useWorkbenchScope } from "@/workbench/workbenchScope";
 import { ViewContainerTitleActions } from "./ViewContainerTitleActions";
 import { RIGHT_PANEL_CONTAINER } from "@/workbench/viewContainers";
 import { ExtensionRailView, MissingBuiltInView } from "./extensionViews/ExtensionRailView";
@@ -1281,12 +1282,13 @@ function WorkspacePanelImpl({
     },
     [terminals],
   );
+  const { productLayout: productPolicy } = useWorkbenchScope();
   const defaultTab = readDefaultWorkspaceTab();
   const tabOrder = [defaultTab, ...defaultWorkspaceTabs.filter((tab) => tab !== defaultTab)];
   // A built-in tab whose view the product removed (`layout.hiddenViews`) gets no tab.
   const productRemovesTab = (tab: RailPanelTab) => {
     const view = builtInTabView(extensionViews, tab);
-    return view !== undefined && isViewRemovedByProduct(view);
+    return view !== undefined && isViewRemovedByProduct(view, productPolicy);
   };
   const availablePanels = tabOrder.filter((tab) => {
     if (productRemovesTab(tab)) return false;
@@ -1500,7 +1502,7 @@ function WorkspacePanelImpl({
     return (
       <WorkspaceTabTooltip key={tab} label={label} shortcut={presentation.tooltipShortcut}>
         <TabsTrigger
-          {...(tabView ? viewDragProps(tabView) : {})}
+          {...(tabView ? viewDragProps(tabView, productPolicy) : {})}
           value={tab}
           aria-label={presentation.ariaLabel}
           aria-keyshortcuts={presentation.ariaKeyShortcuts}

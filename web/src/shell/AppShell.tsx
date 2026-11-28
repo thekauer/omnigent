@@ -510,8 +510,11 @@ function AppShellImpl() {
     initialSidebarOpen(workbenchState, workbenchScope.layout),
   );
   // Parts the product removed (`layout.hiddenParts`): not drawn, and nothing opens them.
-  const sidebarRemoved = useProductHidesPart(Parts.SIDEBAR_PART);
-  const auxiliaryBarRemoved = useProductHidesPart(Parts.AUXILIARYBAR_PART);
+  const sidebarRemoved = useProductHidesPart(Parts.SIDEBAR_PART, workbenchScope.productLayout);
+  const auxiliaryBarRemoved = useProductHidesPart(
+    Parts.AUXILIARYBAR_PART,
+    workbenchScope.productLayout,
+  );
   const sidebarRemovedRef = useRef(sidebarRemoved);
   sidebarRemovedRef.current = sidebarRemoved;
   useEffect(() => {
@@ -581,7 +584,7 @@ function AppShellImpl() {
   // chat header's phone menu. In the macOS desktop app it is the window's title strip: the
   // traffic lights sit in its left region (index.css).
   const titleBarSetting = useTitleBarSetting();
-  const titleBarRemoved = useProductHidesPart(Parts.TITLEBAR_PART);
+  const titleBarRemoved = useProductHidesPart(Parts.TITLEBAR_PART, workbenchScope.productLayout);
   const titleBarShown = titleBarSetting && !mobileViewport && !titleBarRemoved;
   // The tabs host sits in the Workspace drawer once a narrow window has mounted it.
   const tabsInDrawer = mobileViewport && tabsDrawerTarget !== null;

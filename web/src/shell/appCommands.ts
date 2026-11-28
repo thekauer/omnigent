@@ -33,8 +33,8 @@ import {
   TOGGLE_ACTIVITY_BAR_COMMAND,
 } from "@/workbench/layoutCommands";
 import { layoutService } from "@/workbench/layoutService";
+import { activeWorkbenchScope } from "@/workbench/workbenchScope";
 import { resetViewLocations } from "@/workbench/viewLocations";
-import { openMoveViewPicker } from "@/store/moveViewPicker";
 
 export interface ActionCommand {
   id: string;
@@ -139,7 +139,7 @@ export function useAppCommands({
         label: "View: Move View…",
         icon: MoveIcon,
         keywords: ["move", "view", "side bar", "secondary side bar", MOVE_VIEW_COMMAND],
-        run: () => openMoveViewPicker(),
+        run: () => activeWorkbenchScope().moveViewPicker.open(),
       },
       {
         id: RESET_VIEW_LOCATIONS_COMMAND,

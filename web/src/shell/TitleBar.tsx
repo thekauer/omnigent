@@ -293,7 +293,7 @@ function TextItem({ item }: { item: TitleBarItemSnapshot }) {
  */
 export function useFoldedTitleBarItems(): readonly FoldedTitleBarItem[] {
   const on = useTitleBarSetting();
-  const removed = useProductHidesPart(Parts.TITLEBAR_PART);
+  const removed = useProductHidesPart(Parts.TITLEBAR_PART, useWorkbenchScope().productLayout);
   const contributed = useContributedTitleBarEntries();
   const items = useTitleBarItems();
   if (!on || removed) return [];

@@ -3,11 +3,14 @@ import { ConfigurationRegistry } from "@/configuration/configurationRegistry";
 import { ConfigurationService } from "@/configuration/configurationService";
 import { SettingsStore } from "@/configuration/settingsStore";
 import { FALLBACK_SERVER_INFO, type ServerInfo } from "@/lib/capabilities";
+import { setOmnigentHostConfig } from "@/lib/host";
 import { ProductLayoutPolicy } from "@/workbench/productLayout";
 import {
+  applyBootProductConfigs,
   applyServerProductConfig,
   createEmbedProductConfigSource,
   LAST_SERVER_PRODUCT_CONFIG_STORAGE_KEY,
+  lastServerProductConfigKey,
   mergeProductConfigs,
   parseProductLayout,
   parseProductSettings,
@@ -53,8 +56,13 @@ beforeEach(() => {
 });
 afterEach(() => {
   restore();
+  setOmnigentHostConfig({});
   vi.restoreAllMocks();
 });
+
+function serverInfoLocking(key: string, value: string): ServerInfo {
+  return { product: { settings: { locked: { [key]: value } } } } as unknown as ServerInfo;
+}
 
 describe("product settings", () => {
   it("keep the well-formed keys, a lock with an unreadable value still locking its key", () => {
@@ -208,7 +216,7 @@ describe("the product's sources", () => {
   it("give the configuration service the product's defaults and locks, invalid ones locked too", () => {
     const service = configuration();
     const layout = new ProductLayoutPolicy();
-    restore = setProductConfigSinks({ configuration: service, layout });
+    restore = setProductConfigSinks({ configuration: service, standaloneLayout: layout });
     setProductConfig("build", {
       settings: {
         defaults: { "acme.layout.location": "b" },
@@ -223,7 +231,7 @@ describe("the product's sources", () => {
     expect(() => service.update("acme.layout.visible", true)).toThrow();
     expect(layout.viewLocationsLocked()).toBe(true);
     // A mounted embed's fields win over the build's.
-    const embed = createEmbedProductConfigSource();
+    const embed = createEmbedProductConfigSource(new ProductLayoutPolicy());
     embed.set({ settings: { defaults: { "acme.layout.location": "a" } } });
     expect(service.getValue("acme.layout.location")).toBe("a");
     embed.set(undefined);
@@ -232,16 +240,147 @@ describe("the product's sources", () => {
 
   it("keep the server's last-known policy when the probe fails", () => {
     const service = configuration();
-    restore = setProductConfigSinks({ configuration: service, layout: new ProductLayoutPolicy() });
+    restore = setProductConfigSinks({
+      configuration: service,
+      standaloneLayout: new ProductLayoutPolicy(),
+    });
     applyServerProductConfig({
       product: { settings: { locked: { "acme.layout.location": "b" } } },
     } as unknown as ServerInfo);
-    expect(localStorage.getItem(LAST_SERVER_PRODUCT_CONFIG_STORAGE_KEY)).toContain(
-      "acme.layout.location",
-    );
+    expect(localStorage.getItem(lastServerProductConfigKey()!)).toContain("acme.layout.location");
     resetProductConfigsForTests();
     applyServerProductConfig(FALLBACK_SERVER_INFO);
     expect(service.getValue("acme.layout.location")).toBe("b");
+    expect(service.isLocked("acme.layout.location")).toBe(true);
+  });
+});
+
+describe("each mount's product layout", () => {
+  it("is built from the mount's own product over the build's and the server's", () => {
+    const service = configuration();
+    const standalone = new ProductLayoutPolicy();
+    restore = setProductConfigSinks({ configuration: service, standaloneLayout: standalone });
+    setProductConfig("build", { layout: { hiddenViews: ["acme.build"] } });
+    const first = new ProductLayoutPolicy();
+    const second = new ProductLayoutPolicy();
+    const firstSource = createEmbedProductConfigSource(first);
+    const secondSource = createEmbedProductConfigSource(second);
+    firstSource.set({ layout: { hiddenViews: ["acme.one"], containerOrder: ["omnigent.inbox"] } });
+    secondSource.set({ layout: { lockViewLocations: true } });
+    expect(first.get()).toEqual({
+      hiddenViews: ["acme.one", "acme.build"],
+      containerOrder: ["omnigent.inbox"],
+    });
+    expect(second.get()).toEqual({ hiddenViews: ["acme.build"], lockViewLocations: true });
+    // The standalone app never sees a mount's product.
+    expect(standalone.get()).toEqual({ hiddenViews: ["acme.build"] });
+    expect([first.viewLocationsLocked(), second.viewLocationsLocked()]).toEqual([false, true]);
+    // A build change reaches every mount.
+    setProductConfig("build", { layout: { hiddenParts: ["workbench.parts.titlebar"] } });
+    expect(first.get().hiddenParts).toEqual(["workbench.parts.titlebar"]);
+    expect(second.get().hiddenParts).toEqual(["workbench.parts.titlebar"]);
+    firstSource.release();
+    secondSource.release();
+  });
+
+  it("keeps the settings one policy per window: the mounts' merge, the later mount winning a key", () => {
+    const service = configuration();
+    restore = setProductConfigSinks({
+      configuration: service,
+      standaloneLayout: new ProductLayoutPolicy(),
+    });
+    const first = createEmbedProductConfigSource(new ProductLayoutPolicy());
+    const second = createEmbedProductConfigSource(new ProductLayoutPolicy());
+    first.set({ settings: { defaults: { "acme.layout.location": "a" } } });
+    expect(service.getValue("acme.layout.location")).toBe("a");
+    second.set({ settings: { defaults: { "acme.layout.location": "b" } } });
+    expect(service.getValue("acme.layout.location")).toBe("b");
+    second.set(undefined);
+    expect(service.getValue("acme.layout.location")).toBe("a");
+  });
+
+  it("drops a mount's layout once it has released (its settings too)", async () => {
+    const service = configuration();
+    const standalone = new ProductLayoutPolicy();
+    restore = setProductConfigSinks({ configuration: service, standaloneLayout: standalone });
+    const mount = new ProductLayoutPolicy();
+    const source = createEmbedProductConfigSource(mount);
+    source.set({
+      settings: { defaults: { "acme.layout.location": "a" } },
+      layout: { hiddenViews: ["acme.one"] },
+    });
+    expect(mount.get().hiddenViews).toEqual(["acme.one"]);
+    source.release();
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(service.getValue("acme.layout.location")).toBe("a");
+    expect(standalone.get()).toEqual({});
+  });
+});
+
+describe("the server's last-known policy, per server", () => {
+  it("is kept under the server it came from, and another server never reads it", () => {
+    const service = configuration();
+    restore = setProductConfigSinks({
+      configuration: service,
+      standaloneLayout: new ProductLayoutPolicy(),
+    });
+    setOmnigentHostConfig({ serverIdentity: "server-one" });
+    const firstKey = lastServerProductConfigKey();
+    applyServerProductConfig(serverInfoLocking("acme.layout.location", "b"));
+    expect(localStorage.getItem(firstKey!)).toContain("acme.layout.location");
+
+    setOmnigentHostConfig({ serverIdentity: "server-two" });
+    expect(lastServerProductConfigKey()).not.toBe(firstKey);
+    resetProductConfigsForTests();
+    applyBootProductConfigs();
+    expect(service.isLocked("acme.layout.location")).toBe(false);
+
+    setOmnigentHostConfig({ serverIdentity: "server-one" });
+    resetProductConfigsForTests();
+    applyBootProductConfigs();
+    expect(service.isLocked("acme.layout.location")).toBe(true);
+  });
+
+  it("reads the unkeyed entry of earlier builds for the same-origin server only, until it answers", () => {
+    const service = configuration();
+    restore = setProductConfigSinks({
+      configuration: service,
+      standaloneLayout: new ProductLayoutPolicy(),
+    });
+    localStorage.setItem(
+      LAST_SERVER_PRODUCT_CONFIG_STORAGE_KEY,
+      JSON.stringify({ settings: { locked: { "acme.layout.location": "b" } } }),
+    );
+    // Another server (an embed's) never reads it.
+    setOmnigentHostConfig({ serverIdentity: "server-one" });
+    applyBootProductConfigs();
+    expect(service.isLocked("acme.layout.location")).toBe(false);
+    // The standalone app's own server keeps its locks across the upgrade.
+    setOmnigentHostConfig({});
+    resetProductConfigsForTests();
+    applyBootProductConfigs();
+    expect(service.isLocked("acme.layout.location")).toBe(true);
+    applyServerProductConfig(FALLBACK_SERVER_INFO);
+    expect(service.isLocked("acme.layout.location")).toBe(true);
+    applyServerProductConfig(serverInfoLocking("acme.layout.visible", "x"));
+    expect(localStorage.getItem(LAST_SERVER_PRODUCT_CONFIG_STORAGE_KEY)).toBeNull();
+    expect(service.isLocked("acme.layout.location")).toBe(false);
+  });
+
+  it("keeps nothing for a server whose identity is unknown (an embedder's fetcher alone)", () => {
+    const service = configuration();
+    restore = setProductConfigSinks({
+      configuration: service,
+      standaloneLayout: new ProductLayoutPolicy(),
+    });
+    setOmnigentHostConfig({ fetcher: vi.fn() } as unknown as Parameters<
+      typeof setOmnigentHostConfig
+    >[0]);
+    expect(lastServerProductConfigKey()).toBeNull();
+    applyServerProductConfig(serverInfoLocking("acme.layout.location", "b"));
+    expect(localStorage.length).toBe(0);
+    // The probe's policy still applies for this load.
     expect(service.isLocked("acme.layout.location")).toBe(true);
   });
 });

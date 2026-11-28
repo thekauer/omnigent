@@ -109,9 +109,13 @@ export interface LayoutStateChange {
   readonly slots?: readonly string[];
 }
 
-/** The layout state scope of an embed mounted at `basename`: its own document. */
-export function embedLayoutScope(basename: string | undefined): string {
-  return `embed:${basename && basename !== "" ? basename : "/"}`;
+/**
+ * The layout state scope of an embed mounted at `basename`: its own document, and with a
+ * `workbenchId` (the mount's stable id) its own among the embeds on that basename.
+ */
+export function embedLayoutScope(basename: string | undefined, workbenchId?: string): string {
+  const path = `embed:${basename && basename !== "" ? basename : "/"}`;
+  return workbenchId ? `${path}#${workbenchId}` : path;
 }
 
 export class LayoutStateStore {
@@ -123,6 +127,8 @@ export class LayoutStateStore {
   private cache: { stored: readonly (string | null)[]; values: LayoutStateValues } | null = null;
   /** The values while storage refuses writes (quota, privacy mode), so the window keeps them. */
   private unsaved: LayoutStateValues | null = null;
+  /** Kept in memory only: no storage key is read or written (see {@link keepInMemory}). */
+  private memoryOnly = false;
 
   constructor(
     storageKey: string = LAYOUT_STATE_STORAGE_KEY,
@@ -155,11 +161,28 @@ export class LayoutStateStore {
    * the standalone app on one origin don't share their layout); listeners hear every slot.
    */
   setScope(scope: string): void {
-    if (scope === this.scope) return;
+    if (scope === this.scope && !this.memoryOnly) return;
     this.scope = scope;
+    this.memoryOnly = false;
     this.cache = null;
     this.unsaved = null;
     this.fire({});
+  }
+
+  /**
+   * Keeps the values in memory for this window's life, under no storage key: a mount whose
+   * own key another live mount holds must not read or overwrite that mount's document.
+   */
+  keepInMemory(scope: string): void {
+    this.scope = scope;
+    this.memoryOnly = true;
+    this.cache = null;
+    this.unsaved = null;
+    this.fire({});
+  }
+
+  isMemoryOnly(): boolean {
+    return this.memoryOnly;
   }
 
   private storedTexts(): (string | null)[] {
@@ -169,6 +192,7 @@ export class LayoutStateStore {
   /** Every slot, after carrying the legacy keys in (a slot the document has keeps its value). */
   private values(): LayoutStateValues {
     if (typeof window === "undefined") return Object.freeze({});
+    if (this.memoryOnly) return this.unsaved ?? Object.freeze({});
     if (this.unsaved) return this.unsaved;
     const stored = this.storedTexts();
     if (this.cache && this.cache.stored.every((text, index) => text === stored[index])) {
@@ -278,11 +302,11 @@ export class LayoutStateStore {
 
   private write(next: Record<string, unknown>, slots: readonly string[]): void {
     const values = Object.freeze(next);
-    if (this.persist(values)) {
+    if (!this.memoryOnly && this.persist(values)) {
       this.unsaved = null;
       this.cache = { stored: this.storedTexts(), values };
     } else {
-      if (this.unsaved === null) this.warnUnsaved();
+      if (!this.memoryOnly && this.unsaved === null) this.warnUnsaved();
       this.unsaved = values;
     }
     this.fire({ slots: [...slots] });
@@ -293,6 +317,10 @@ export class LayoutStateStore {
     if (typeof window === "undefined") return;
     this.unsaved = null;
     this.cache = null;
+    if (this.memoryOnly) {
+      this.fire({});
+      return;
+    }
     try {
       window.localStorage.removeItem(this.storageKey);
       for (const legacyKey of Object.keys(this.legacy)) window.localStorage.removeItem(legacyKey);

@@ -153,3 +153,56 @@ describe("LayoutStateStore", () => {
     expect(readLayoutStateText('{"version":1,"state":{"a":1,"__proto__":2}}')).toEqual({ a: 1 });
   });
 });
+
+describe("an embed's workbench id", () => {
+  it("keys its scope by the basename and the id, and the id alone keeps the old key", () => {
+    expect(embedLayoutScope("/ml/embed", "first")).toBe("embed:/ml/embed#first");
+    expect(embedLayoutScope("/ml/embed")).toBe("embed:/ml/embed");
+    expect(embedLayoutScope(undefined, "solo")).toBe("embed:/#solo");
+    expect(embedLayoutScope(undefined)).toBe("embed:/");
+  });
+});
+
+describe("LayoutStateStore in memory", () => {
+  it("keeps its values for the window and never reads or writes the key another holds", () => {
+    const shared = new LayoutStateStore();
+    shared.setScope("embed:/shared");
+    shared.set("slot", "held by the first mount");
+    const store = new LayoutStateStore();
+    store.keepInMemory("memory:embed:/shared");
+    expect(store.isMemoryOnly()).toBe(true);
+    // Its reads don't see the other mount's document.
+    expect(store.get("slot")).toBeUndefined();
+    store.set("slot", "second");
+    expect(store.get("slot")).toBe("second");
+    store.set("other", 1);
+    store.resetSlots(["other"]);
+    expect(store.get("other")).toBeUndefined();
+    expect(
+      JSON.parse(localStorage.getItem(`${LAYOUT_STATE_STORAGE_KEY}@embed:/shared`) ?? "null"),
+    ).toEqual({ version: 1, state: { slot: "held by the first mount" } });
+    // Nothing was written under the memory scope's name either.
+    expect(localStorage.getItem(`${LAYOUT_STATE_STORAGE_KEY}@memory:embed:/shared`)).toBeNull();
+  });
+
+  it("doesn't warn that storage refused it: the window keeps the values by design", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const store = new LayoutStateStore();
+    store.keepInMemory("memory:embed:/x");
+    store.set("slot", 1);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("returns to storage on setScope, and reset clears the memory only", () => {
+    const store = new LayoutStateStore();
+    store.setScope("embed:/held");
+    store.set("slot", "stored");
+    store.keepInMemory("memory:embed:/held");
+    store.reset();
+    // The held key's document is left alone.
+    expect(localStorage.getItem(`${LAYOUT_STATE_STORAGE_KEY}@embed:/held`)).not.toBeNull();
+    store.setScope("embed:/held");
+    expect(store.isMemoryOnly()).toBe(false);
+    expect(store.get("slot")).toBe("stored");
+  });
+});

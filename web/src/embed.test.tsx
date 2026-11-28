@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { act, cleanup, fireEvent, render } from "@testing-library/react";
+import type { ComponentProps } from "react";
 import { createPortal } from "react-dom";
 import { useTheme } from "next-themes";
 import { useResolvedThemeMode } from "./components/theme/useResolvedThemeMode";
@@ -12,6 +13,8 @@ import { OmnigentApp, type ProductConfig } from "./embed";
 import { themeService } from "./theme/themeService";
 import { colorThemes } from "./theme/colorThemes";
 import { getEmbedRoot, getEmbedScopeRoot } from "./lib/host";
+import { productLayout, standaloneProductLayout } from "./workbench/productLayout";
+import { activeWorkbenchScope } from "./workbench/workbenchScope";
 
 // Exercise the embed's real providers and native detection without loading
 // routed pages, editors, or terminals unrelated to the window chrome.
@@ -346,6 +349,70 @@ describe("embed product theme", () => {
     expect(touched).not.toContain("data-omni-density");
     expect(document.documentElement).not.toHaveAttribute("data-theme");
     unmount();
+  });
+});
+
+describe("embed workbenches", () => {
+  const embedApp = (props: Partial<ComponentProps<typeof OmnigentApp>>) => (
+    <MemoryRouter>
+      <OmnigentApp fetcher={fetcher} {...props} />
+    </MemoryRouter>
+  );
+
+  it("give each mount its own product layout, and the standalone app none of them", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const first = render(
+      embedApp({
+        basename: "/layout-a",
+        workbenchId: "a",
+        product: { layout: { hiddenViews: ["acme.one"] } },
+      }),
+    );
+    const firstScope = activeWorkbenchScope();
+    const second = render(
+      embedApp({
+        basename: "/layout-a",
+        workbenchId: "b",
+        product: { layout: { lockViewLocations: true } },
+      }),
+    );
+    const secondScope = activeWorkbenchScope();
+    expect(firstScope.productLayout.get()).toEqual({ hiddenViews: ["acme.one"] });
+    expect(secondScope.productLayout.get()).toEqual({ lockViewLocations: true });
+    // The window reads the mount last mounted.
+    expect(productLayout.get()).toEqual({ lockViewLocations: true });
+    expect(standaloneProductLayout.get().hiddenViews).toBeUndefined();
+    // Distinct ids: each keeps its own document.
+    expect([firstScope.state.isMemoryOnly(), secondScope.state.isMemoryOnly()]).toEqual([
+      false,
+      false,
+    ]);
+    second.unmount();
+    first.unmount();
+    await act(async () => {});
+  });
+
+  it("keep two embeds on one basename with no id apart: the second keeps its layout in memory", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const first = render(embedApp({ basename: "/layout-shared" }));
+    const firstScope = activeWorkbenchScope();
+    firstScope.state.set("workbench.parts.sidebar", { visible: false });
+    const second = render(embedApp({ basename: "/layout-shared" }));
+    const secondScope = activeWorkbenchScope();
+    expect(secondScope.state.isMemoryOnly()).toBe(true);
+    expect(secondScope.state.get("workbench.parts.sidebar")).toBeUndefined();
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("workbenchId"));
+    second.unmount();
+    first.unmount();
+    await act(async () => {});
+    // Released: the next mount on the basename keeps its document again.
+    const again = render(embedApp({ basename: "/layout-shared" }));
+    expect(activeWorkbenchScope().state.isMemoryOnly()).toBe(false);
+    expect(activeWorkbenchScope().state.get("workbench.parts.sidebar")).toEqual({
+      visible: false,
+    });
+    again.unmount();
+    await act(async () => {});
   });
 });
 

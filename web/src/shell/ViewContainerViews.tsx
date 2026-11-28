@@ -26,6 +26,7 @@ import {
 import {
   isContainerHiddenByProduct,
   isViewRemovedByProduct,
+  type ProductLayoutPolicy,
   productLayout,
   useProductLayout,
 } from "@/workbench/productLayout";
@@ -56,7 +57,6 @@ import {
 import { builtInViewComponent } from "./builtInViews";
 import { ExtensionRailView } from "./extensionViews/ExtensionRailView";
 import { setViewHidden, viewDragProps, ViewMoveMenuItems } from "./viewMoves";
-import { openMoveViewPicker } from "@/store/moveViewPicker";
 import {
   type RailView,
   type RailViewContribution,
@@ -92,9 +92,10 @@ export function containerViews(
   owner: string | undefined,
   layout: ViewsLayout,
   locations: ViewLocations = NO_LOCATIONS,
+  policy: ProductLayoutPolicy = productLayout,
 ): readonly RailViewContribution[] {
   // A container the product removed draws nothing.
-  if (isContainerHiddenByProduct(containerId)) return [];
+  if (isContainerHiddenByProduct(containerId, policy)) return [];
   const views = withManifestViews(registered).filter(
     (view) => viewContainerOf(view, locations) === containerId,
   );
@@ -123,10 +124,11 @@ export function useContainerViews(
   const owner = useViewContainers(containers).containers.find(
     (container) => container.id === containerId,
   )?.extensionId;
-  // The product's hidden views and containers are part of what is drawn.
-  const product = useProductLayout();
+  // The product's hidden views and containers (this mount's) are part of what is drawn.
+  const { productLayout: policy } = useWorkbenchScope();
+  const product = useProductLayout(policy);
   return useMemo(
-    () => containerViews(registered, containerId, owner, layout, locations),
+    () => containerViews(registered, containerId, owner, layout, locations, policy),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [registered, containerId, owner, layout, locations, product],
   );
@@ -141,9 +143,10 @@ export function useSideBarContainers(
   const layout = useViewsLayout();
   const locations = useViewLocations();
   const snapshot = useViewContainers(containers);
-  const product = useProductLayout();
+  const { productLayout: policy } = useWorkbenchScope();
+  const product = useProductLayout(policy);
   return useMemo(
-    () => sideBarContainersOf(registered, snapshot.containers, layout, locations),
+    () => sideBarContainersOf(registered, snapshot.containers, layout, locations, policy),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [registered, layout, snapshot, locations, product],
   );
@@ -154,11 +157,13 @@ function sideBarContainersOf(
   all: readonly ViewContainerDescriptor[],
   layout: ViewsLayout,
   locations: ViewLocations,
+  policy: ProductLayoutPolicy = productLayout,
 ): { container: ViewContainerDescriptor; views: readonly RailViewContribution[] }[] {
   // The side bar entries moving a view made follow the registered containers.
   const sideBar = [
     ...all.filter(
-      (container) => container.location === "sidebar" && !isContainerHiddenByProduct(container.id),
+      (container) =>
+        container.location === "sidebar" && !isContainerHiddenByProduct(container.id, policy),
     ),
     ...generatedContainers(withManifestViews(registered), locations),
   ];
@@ -169,7 +174,14 @@ function sideBarContainersOf(
   return listed
     .map((container) => ({
       container,
-      views: containerViews(registered, container.id, container.extensionId, layout, locations),
+      views: containerViews(
+        registered,
+        container.id,
+        container.extensionId,
+        layout,
+        locations,
+        policy,
+      ),
     }))
     .filter((entry) => entry.views.length > 0);
 }
@@ -182,14 +194,15 @@ export function useSideBarContainerList(
   registry: RailViewRegistry = railViews,
   containers: ViewContainerRegistry = viewContainers,
 ): readonly ViewContainerDescriptor[] {
-  const store = useWorkbenchScope().state;
+  const { state: store, productLayout: policy } = useWorkbenchScope();
   const read = () =>
     JSON.stringify(
       sideBarContainersOf(
         registry.getSnapshot().views,
         containers.getSnapshot().containers,
-        readViewsLayout(store),
-        readViewLocations(store),
+        readViewsLayout(store, policy),
+        readViewLocations(store, policy),
+        policy,
       ).map(({ container }) => container),
     );
   const subscribe = useCallback(
@@ -198,13 +211,13 @@ export function useSideBarContainerList(
         registry.subscribe(listener),
         containers.subscribe(listener),
         store.subscribe(listener),
-        productLayout.subscribe(listener),
+        policy.subscribe(listener),
       ];
       return () => {
         for (const unsubscribe of unsubscribers) unsubscribe();
       };
     },
-    [registry, containers, store],
+    [registry, containers, store, policy],
   );
   const key = useSyncExternalStore(subscribe, read, read);
   return useMemo(() => JSON.parse(key) as ViewContainerDescriptor[], [key]);
@@ -278,13 +291,14 @@ function PaneHeaderMenu({
   title: ReactElement;
   canHide: boolean;
 }) {
+  const { productLayout: policy } = useWorkbenchScope();
   return (
     <ContextMenu>
       <ContextMenuTrigger
         asChild
-        disabled={!canMoveView(view)}
+        disabled={!canMoveView(view, policy)}
         onContextMenuCapture={keepLinkMenus}
-        {...viewDragProps(view)}
+        {...viewDragProps(view, policy)}
       >
         {title}
       </ContextMenuTrigger>
@@ -326,9 +340,15 @@ export function ContainerViewsMenu({
     (container) => container.id === containerId,
   )?.extensionId;
   // A view the product removed isn't offered to show again.
-  const listed = containerViews(registered, containerId, owner, NO_VIEWS_LAYOUT, locations).filter(
-    (view) => canMoveView(view) && !isViewRemovedByProduct(view),
-  );
+  const { productLayout: policy, moveViewPicker } = useWorkbenchScope();
+  const listed = containerViews(
+    registered,
+    containerId,
+    owner,
+    NO_VIEWS_LAYOUT,
+    locations,
+    policy,
+  ).filter((view) => canMoveView(view, policy) && !isViewRemovedByProduct(view, policy));
   return (
     <ContextMenu>
       <ContextMenuTrigger
@@ -356,7 +376,7 @@ export function ContainerViewsMenu({
           );
         })}
         <ContextMenuSeparator />
-        <ContextMenuItem onSelect={() => openMoveViewPicker()}>Move View…</ContextMenuItem>
+        <ContextMenuItem onSelect={() => moveViewPicker.open()}>Move View…</ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
   );

@@ -53,9 +53,12 @@ export function useActivityBarEntries(): {
 } {
   const containers = useSideBarContainers();
   const state = useActivityBarItems();
+  // This mount's product order.
+  const { productLayout: policy } = useWorkbenchScope();
   const all = orderActivityBarItems(
     containers.map((entry) => ({ ...entry, id: entry.container.id })),
     state,
+    policy.get().containerOrder ?? [],
   );
   const shown = all.filter((entry) => !state.hidden.includes(entry.container.id));
   // Hiding every item would leave nothing to switch with: the first stays.

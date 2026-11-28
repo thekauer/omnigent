@@ -17,9 +17,11 @@ import { isViewHidden, useViewsLayout } from "@/workbench/viewsLayout";
 import {
   isContainerHiddenByProduct,
   isViewRemovedByProduct,
+  type ProductLayoutPolicy,
   productLayout,
   useProductLayout,
 } from "@/workbench/productLayout";
+import { useWorkbenchScope } from "@/workbench/workbenchScope";
 
 /** A view's count badge on its tab, like VS Code's `ViewBadge`. */
 export interface RailViewBadge {
@@ -469,6 +471,7 @@ export function viewsOfContainer(
   snapshot: RailViewsSnapshot,
   container: string | null,
   locations: ViewLocations = NO_LOCATIONS,
+  policy: ProductLayoutPolicy = productLayout,
 ): RailViewsSnapshot {
   if (container === null) return snapshot;
   let byLocations = containerSnapshots.get(snapshot);
@@ -482,21 +485,21 @@ export function viewsOfContainer(
     byLocations.set(locations, byContainer);
   }
   // What the product removes (views and containers) is part of what is drawn.
-  const policy = productLayout.get();
+  const product = policy.get();
   const cacheKey = [
     container,
-    (policy.hiddenContainers ?? []).join("\n"),
-    (policy.hiddenViews ?? []).join("\n"),
+    (product.hiddenContainers ?? []).join("\n"),
+    (product.hiddenViews ?? []).join("\n"),
   ].join("\0");
   let filtered = byContainer.get(cacheKey);
   if (!filtered) {
     // The classic rail draws every secondary side bar container's views as its tabs.
     const drawnHere = (view: RailViewContribution) => {
       // A view the product removed isn't drawn anywhere, moved or not.
-      if (isViewRemovedByProduct(view)) return false;
+      if (isViewRemovedByProduct(view, policy)) return false;
       const containerId = viewContainerOf(view, locations);
       // A container the product removed draws nothing.
-      if (isContainerHiddenByProduct(containerId)) return false;
+      if (isContainerHiddenByProduct(containerId, policy)) return false;
       return (
         containerId === container ||
         (container === RIGHT_PANEL_CONTAINER &&
@@ -522,9 +525,11 @@ export function useRailViews(
     registry.getSnapshot,
     registry.getSnapshot,
   );
+  // This mount's product policy.
+  const { productLayout: policy } = useWorkbenchScope();
   const locations = useViewLocations();
-  useProductLayout();
-  return viewsOfContainer(snapshot, container, locations);
+  useProductLayout(policy);
+  return viewsOfContainer(snapshot, container, locations, policy);
 }
 
 /**
@@ -538,8 +543,14 @@ export function useRailViewIds(registry: RailViewRegistry = railViews): {
 } {
   const layout = useViewsLayout();
   const locations = useViewLocations();
+  const { productLayout: policy } = useWorkbenchScope();
   const key = useSyncExternalStore(registry.subscribe, () => {
-    const snapshot = viewsOfContainer(registry.getSnapshot(), RIGHT_PANEL_CONTAINER, locations);
+    const snapshot = viewsOfContainer(
+      registry.getSnapshot(),
+      RIGHT_PANEL_CONTAINER,
+      locations,
+      policy,
+    );
     // Built-in tabs' views always count; an extension tab only while it has a tab.
     const ids = snapshot.views
       .filter(

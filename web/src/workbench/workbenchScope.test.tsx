@@ -13,11 +13,18 @@ import { LAYOUT_SLOTS, layoutState, standaloneLayoutState } from "./layoutState"
 import { layoutService, Parts, standaloneLayoutService } from "./layoutService";
 import { rootRelativeLength } from "./layoutTokens";
 import { LAYOUT_WIDTH_ATTRIBUTE, viewportOfSize } from "./layoutViewport";
-import { matchesIdPattern, productLayout } from "./productLayout";
+import {
+  matchesIdPattern,
+  productLayout,
+  useProductLayout,
+  isViewHiddenByProduct,
+} from "./productLayout";
 import { isViewHidden } from "./viewsLayout";
 import {
   activateWorkbenchScope,
+  activeWorkbenchScope,
   createWorkbenchScope,
+  holdWorkbenchLayoutKey,
   isActiveWorkbenchScope,
   releaseWorkbenchScope,
   useIsActiveWorkbenchScope,
@@ -407,5 +414,167 @@ describe("the side bar's width in an embed", () => {
       vi.restoreAllMocks();
       vi.stubGlobal("ResizeObserver", originalResizeObserver);
     }
+  });
+});
+
+describe("embeds that share a basename or an id", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("keep a second mount on the same key in memory, not in the first mount's document", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const first = createWorkbenchScope("/same");
+    const releaseFirst = holdWorkbenchLayoutKey(first);
+    first.state.set(LAYOUT_SLOTS.sidebar, { visible: false });
+    const second = createWorkbenchScope("/same");
+    const releaseSecond = holdWorkbenchLayoutKey(second);
+    expect(second.state.isMemoryOnly()).toBe(true);
+    expect(second.state.get(LAYOUT_SLOTS.sidebar)).toBeUndefined();
+    second.state.set(LAYOUT_SLOTS.sidebar, { visible: true });
+    expect(
+      JSON.parse(localStorage.getItem("omnigent:layout-state@embed:/same") ?? "null").state,
+    ).toEqual({ [LAYOUT_SLOTS.sidebar]: { visible: false } });
+    // Warned once, and it names the id to give.
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0])).toContain("workbenchId");
+    const third = createWorkbenchScope("/same");
+    holdWorkbenchLayoutKey(third);
+    expect(third.state.isMemoryOnly()).toBe(true);
+    expect(warn).toHaveBeenCalledTimes(1);
+    releaseSecond();
+    releaseFirst();
+    releaseWorkbenchScope(third);
+  });
+
+  it("warns when a mount is held on a key another live mount took after it was created", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const early = createWorkbenchScope("/late");
+    const late = createWorkbenchScope("/late");
+    expect(late.state.isMemoryOnly()).toBe(false);
+    const releaseEarly = holdWorkbenchLayoutKey(early);
+    const releaseLate = holdWorkbenchLayoutKey(late);
+    expect(late.state.isMemoryOnly()).toBe(true);
+    expect(warn).toHaveBeenCalledTimes(1);
+    releaseLate();
+    releaseEarly();
+  });
+
+  it("give each mount with its own id its own document", () => {
+    const first = createWorkbenchScope("/ids", "left");
+    const second = createWorkbenchScope("/ids", "right");
+    const releaseFirst = holdWorkbenchLayoutKey(first);
+    const releaseSecond = holdWorkbenchLayoutKey(second);
+    expect([first.state.isMemoryOnly(), second.state.isMemoryOnly()]).toEqual([false, false]);
+    first.state.set(LAYOUT_SLOTS.sidebar, { visible: false });
+    expect(second.state.get(LAYOUT_SLOTS.sidebar)).toBeUndefined();
+    expect(localStorage.getItem("omnigent:layout-state@embed:/ids#left")).toContain("visible");
+    expect(localStorage.getItem("omnigent:layout-state@embed:/ids#right")).toBeNull();
+    releaseFirst();
+    releaseSecond();
+  });
+
+  it("let a mount created after the holder left keep the key's document", () => {
+    const first = createWorkbenchScope("/reused");
+    first.state.set(LAYOUT_SLOTS.sidebar, { visible: false });
+    holdWorkbenchLayoutKey(first)();
+    const again = createWorkbenchScope("/reused");
+    expect(again.state.isMemoryOnly()).toBe(false);
+    expect(again.state.get(LAYOUT_SLOTS.sidebar)).toEqual({ visible: false });
+  });
+
+  it("keep the standalone app's own key and document", () => {
+    const embed = createWorkbenchScope("/standalone-check");
+    expect(embed.state.getScope()).toBe("embed:/standalone-check");
+    expect(standaloneLayoutState.getScope()).toBe("");
+  });
+});
+
+describe("each mount's product layout", () => {
+  afterEach(() => {
+    productLayout.set(null);
+  });
+
+  it("is its own, and the window's reads the active mount's", () => {
+    const first = createWorkbenchScope("/policy-one");
+    const second = createWorkbenchScope("/policy-two");
+    first.productLayout.set({ hiddenViews: ["acme.one"] });
+    second.productLayout.set({ hiddenViews: ["acme.two"] });
+    expect(isViewHiddenByProduct("acme.one", first.productLayout)).toBe(true);
+    expect(isViewHiddenByProduct("acme.one", second.productLayout)).toBe(false);
+    expect(productLayout.get()).toEqual({});
+    activateWorkbenchScope(first);
+    expect(productLayout.get()).toEqual({ hiddenViews: ["acme.one"] });
+    activateWorkbenchScope(second);
+    expect(isViewHiddenByProduct("acme.two")).toBe(true);
+    expect(isViewHiddenByProduct("acme.one")).toBe(false);
+    releaseWorkbenchScope(second);
+    expect(productLayout.get()).toEqual({ hiddenViews: ["acme.one"] });
+    releaseWorkbenchScope(first);
+    expect(productLayout.get()).toEqual({});
+  });
+
+  it("tells the window's listeners when the active mount's policy changes or switches", () => {
+    const first = createWorkbenchScope("/listen-one");
+    const second = createWorkbenchScope("/listen-two");
+    const listener = vi.fn();
+    const unsubscribe = productLayout.subscribe(listener);
+    activateWorkbenchScope(first);
+    const switched = listener.mock.calls.length;
+    expect(switched).toBeGreaterThan(0);
+    first.productLayout.set({ hiddenParts: ["workbench.parts.titlebar"] });
+    expect(listener.mock.calls.length).toBe(switched + 1);
+    // A change of the mount that isn't active doesn't reach the window.
+    second.productLayout.set({ hiddenParts: ["workbench.parts.sidebar"] });
+    expect(listener.mock.calls.length).toBe(switched + 1);
+    unsubscribe();
+    releaseWorkbenchScope(first);
+  });
+
+  it("gives a React tree its own mount's policy while another mount is active", () => {
+    const shown = createWorkbenchScope("/tree-shown");
+    const hidden = createWorkbenchScope("/tree-hidden");
+    hidden.productLayout.set({ hiddenParts: [Parts.SIDEBAR_PART] });
+    activateWorkbenchScope(shown);
+    try {
+      const { result } = renderHook(() => useProductLayout(hidden.productLayout));
+      expect(result.current.hiddenParts).toEqual([Parts.SIDEBAR_PART]);
+      expect(productLayout.get().hiddenParts).toBeUndefined();
+    } finally {
+      releaseWorkbenchScope(shown);
+    }
+  });
+});
+
+describe("each mount's Move View picker", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("opens in the active mount only", () => {
+    const first = createWorkbenchScope("/move-one");
+    const second = createWorkbenchScope("/move-two");
+    activateWorkbenchScope(first);
+    try {
+      activeWorkbenchScope().moveViewPicker.open("acme.view");
+      expect(first.moveViewPicker.store.getState()).toMatchObject({
+        open: true,
+        viewId: "acme.view",
+      });
+      expect(second.moveViewPicker.store.getState().open).toBe(false);
+      first.moveViewPicker.close();
+      expect(first.moveViewPicker.store.getState().open).toBe(false);
+    } finally {
+      releaseWorkbenchScope(first);
+    }
+  });
+
+  it("refuses in a mount whose product locks its views in place", () => {
+    const locked = createWorkbenchScope("/move-locked");
+    locked.productLayout.set({ lockViewLocations: true });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    locked.moveViewPicker.open();
+    expect(locked.moveViewPicker.store.getState().open).toBe(false);
+    expect(warn).not.toHaveBeenCalled();
   });
 });

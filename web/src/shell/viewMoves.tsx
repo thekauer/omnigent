@@ -9,7 +9,7 @@ import { allBuiltInContainerViews } from "@/builtinExtensions/builtInContainers"
 import { ContextMenuItem, ContextMenuSeparator } from "@/components/ui/context-menu";
 import { currentExtensionHost } from "@/vscodeExtensions/extensionHost";
 import { layoutService, Parts } from "@/workbench/layoutService";
-import { productLayout } from "@/workbench/productLayout";
+import { type ProductLayoutPolicy, productLayout } from "@/workbench/productLayout";
 import {
   canMoveView,
   containerLocation,
@@ -21,8 +21,8 @@ import {
   viewContainerFor,
 } from "@/workbench/viewLocations";
 import { updateViewLayout } from "@/workbench/viewsLayout";
-import { openMoveViewPicker } from "@/store/moveViewPicker";
 import { type RailViewContribution, type RailViewRegistry, railViews } from "./railViews";
+import { useWorkbenchScope } from "@/workbench/workbenchScope";
 
 /** Every view a move can name: the registered ones, then manifest views not registered yet. */
 export function allViews(registry: RailViewRegistry = railViews): readonly RailViewContribution[] {
@@ -94,13 +94,19 @@ if (typeof document !== "undefined") {
   });
 }
 
-/** What makes a view's header or tab draggable; nothing for a view that can't move. */
-export function viewDragProps(view: RailViewContribution): {
+/**
+ * What makes a view's header or tab draggable; nothing for a view that can't move (`policy`: the
+ * rendering mount's product layout).
+ */
+export function viewDragProps(
+  view: RailViewContribution,
+  policy: ProductLayoutPolicy = productLayout,
+): {
   draggable?: true;
   onDragStart?: (event: DragEvent<HTMLElement>) => void;
   onDragEnd?: () => void;
 } {
-  if (!canMoveView(view)) return {};
+  if (!canMoveView(view, policy)) return {};
   return {
     draggable: true,
     onDragStart: (event) => {
@@ -134,16 +140,17 @@ export interface ViewDropTarget {
  */
 export function useViewDropTarget(target: (viewId: string) => string | undefined): ViewDropTarget {
   const [over, setOver] = useState(false);
+  const { productLayout: policy } = useWorkbenchScope();
   const accepts = useCallback(
     (event: DragEvent<HTMLElement>) => {
       if (!isViewDrag(event) || draggedView === null) return false;
       const containerId = target(draggedView);
       const view = findView(draggedView);
-      if (!containerId || !view || !canMoveView(view)) return false;
+      if (!containerId || !view || !canMoveView(view, policy)) return false;
       const location = containerLocation(containerId);
       return location !== undefined && (view.builtInView === undefined || location === "sidebar");
     },
-    [target],
+    [target, policy],
   );
   return {
     onDragOver: (event) => {
@@ -185,7 +192,8 @@ export function ViewMoveMenuItems({
   separatorBefore?: boolean;
 }) {
   const locations = useViewLocations();
-  if (!canMoveView(view)) return null;
+  const { productLayout: policy, moveViewPicker } = useWorkbenchScope();
+  if (!canMoveView(view, policy)) return null;
   const moved = isViewMoved(view, locations);
   return (
     <>
@@ -197,7 +205,7 @@ export function ViewMoveMenuItems({
       >
         Hide &lsquo;{view.name}&rsquo;
       </ContextMenuItem>
-      <ContextMenuItem data-view-action="move" onSelect={() => openMoveViewPicker(view.id)}>
+      <ContextMenuItem data-view-action="move" onSelect={() => moveViewPicker.open(view.id)}>
         Move View…
       </ContextMenuItem>
       {moved && (

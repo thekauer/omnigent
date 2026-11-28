@@ -101,23 +101,24 @@ function snapshot(store: LayoutStateStore, policy: ProductLayoutPolicy): ViewsLa
 
 export function useViewsLayout(
   given?: LayoutStateStore,
-  policy: ProductLayoutPolicy = productLayout,
+  policy?: ProductLayoutPolicy,
 ): ViewsLayout {
-  // The mount's own layout state unless one is given.
-  const scoped = useWorkbenchScope().state;
-  const store = given ?? scoped;
+  // The mount's own layout state and product policy unless given.
+  const scope = useWorkbenchScope();
+  const store = given ?? scope.state;
+  const productPolicy = policy ?? scope.productLayout;
   const subscribe = useCallback(
     (listener: () => void) => {
-      const unsubscribers = [store.subscribe(listener), policy.subscribe(listener)];
+      const unsubscribers = [store.subscribe(listener), productPolicy.subscribe(listener)];
       return () => {
         for (const unsubscribe of unsubscribers) unsubscribe();
       };
     },
-    [store, policy],
+    [store, productPolicy],
   );
   return useSyncExternalStore(
     subscribe,
-    () => snapshot(store, policy),
+    () => snapshot(store, productPolicy),
     () => EMPTY,
   );
 }

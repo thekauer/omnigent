@@ -6,9 +6,14 @@
 // The setting maps merge per key, the highest source that sets a key winning it; each layout
 // field comes from the highest source that sets it. Each key fails open: a malformed one is
 // left out with a warning. A lock always holds, even with a value the web can't read.
+// The settings are one policy per window (the configuration service keeps one settings document
+// per origin, so the mounts' settings merge). The layout is per mount: each mounted app's policy
+// is its own `product` prop over the build's and the server's, and the standalone app's is the
+// build's and the server's (`workbench/productLayout.ts`).
 
 import { SERVER_INFO_OFFLINE_FALLBACK } from "@/lib/bootCapabilities";
 import { FALLBACK_SERVER_INFO, type ServerInfo } from "@/lib/capabilities";
+import { getOmnigentServerIdentity } from "@/lib/host";
 import {
   type ConfigurationService,
   configurationService,
@@ -18,7 +23,7 @@ import { snapshotPlainData } from "@/theme/validate";
 import {
   type ProductLayoutConfig,
   type ProductLayoutPolicy,
-  productLayout,
+  standaloneProductLayout,
 } from "@/workbench/productLayout";
 
 /** `product.settings`: setting keys to values. Every field is optional. */
@@ -409,24 +414,33 @@ export function mergeProductConfigs(configs: readonly (ProductSettingsAndLayout 
 
 // --- the sources -----------------------------------------------------------------------
 
-export const PRODUCT_CONFIG_SOURCES = ["embed", "build", "server"] as const;
+/** The sources the window shares: every mount's layout policy is built over them. */
+export const PRODUCT_CONFIG_SOURCES = ["build", "server"] as const;
 export type ProductConfigSource = (typeof PRODUCT_CONFIG_SOURCES)[number];
 
 /** The configuration service's source name for the product's settings. */
 export const PRODUCT_SETTINGS_POLICY_SOURCE = "product";
 
 const configured = new Map<ProductConfigSource, ProductSettingsAndLayout>();
-/** Each mounted `OmnigentApp`'s configuration, by mount order. */
-const mounted = new Map<number, ProductSettingsAndLayout>();
+/** Each mounted `OmnigentApp`: its own configuration and the layout policy it is built into. */
+interface MountedProduct {
+  readonly config: ProductSettingsAndLayout | undefined;
+  readonly layout: ProductLayoutPolicy;
+}
+const mounted = new Map<number, MountedProduct>();
 let mounts = 0;
 let appliedKey = "";
 
 interface Sinks {
   configuration: ConfigurationService;
-  layout: ProductLayoutPolicy;
+  /** The standalone app's layout policy: the build's and the server's. */
+  standaloneLayout: ProductLayoutPolicy;
 }
 
-let sinks: Sinks = { configuration: configurationService, layout: productLayout };
+let sinks: Sinks = {
+  configuration: configurationService,
+  standaloneLayout: standaloneProductLayout,
+};
 
 /** Where the merged configuration goes (tests); returns the previous sinks' restore. */
 export function setProductConfigSinks(next: Partial<Sinks>): () => void {
@@ -440,15 +454,17 @@ export function setProductConfigSinks(next: Partial<Sinks>): () => void {
 }
 
 function applyMerged(): void {
-  const embeds = [...mounted.entries()].sort(([a], [b]) => b - a).map(([, config]) => config);
-  const merged = mergeProductConfigs([
-    ...embeds,
-    ...PRODUCT_CONFIG_SOURCES.map((source) => configured.get(source)),
-  ]);
-  const key = JSON.stringify(merged);
+  const embeds = [...mounted.entries()].sort(([a], [b]) => b - a).map(([, mount]) => mount.config);
+  const shared = PRODUCT_CONFIG_SOURCES.map((source) => configured.get(source));
+  // Each layout is its own policy: the standalone app's, then each mount's over the shared sources.
+  sinks.standaloneLayout.set(mergeProductConfigs(shared).layout);
+  for (const mount of mounted.values()) {
+    mount.layout.set(mergeProductConfigs([mount.config, ...shared]).layout);
+  }
+  const settings = mergeProductConfigs([...embeds, ...shared]).settings;
+  const key = JSON.stringify(settings);
   if (key === appliedKey) return;
   appliedKey = key;
-  const { settings, layout } = merged;
   const locked =
     settings?.locked || settings?.lockedInvalid
       ? {
@@ -467,7 +483,6 @@ function applyMerged(): void {
         }
       : null,
   );
-  sinks.layout.set(layout);
 }
 
 /** Sets one source's configuration (undefined clears it) and applies the merged one. */
@@ -494,7 +509,10 @@ export function parseProductConfig(raw: unknown, origin: string): ProductSetting
   return { ...(settings ? { settings } : {}), ...(layout ? { layout } : {}) };
 }
 
-/** One mounted `OmnigentApp`'s source (as the product theme's: a later mount's fields win). */
+/**
+ * One mounted `OmnigentApp`'s source: its settings merge with the other mounts' (a later mount's
+ * fields win), and its layout is built into `layout`, the mount's own policy.
+ */
 export interface EmbedProductConfigSource {
   readonly set: (
     config: ProductSettingsAndLayout | undefined,
@@ -504,14 +522,16 @@ export interface EmbedProductConfigSource {
   readonly release: () => void;
 }
 
-export function createEmbedProductConfigSource(): EmbedProductConfigSource {
+export function createEmbedProductConfigSource(
+  layout: ProductLayoutPolicy,
+): EmbedProductConfigSource {
   const order = mounts++;
   let releasing = false;
   return {
     set(config, options = {}) {
       releasing = false;
-      if (config && (config.settings || config.layout)) mounted.set(order, config);
-      else mounted.delete(order);
+      const own = config && (config.settings || config.layout) ? config : undefined;
+      mounted.set(order, { config: own, layout });
       if (options.apply !== false) applyMerged();
     },
     release() {
@@ -532,8 +552,19 @@ const BUILD_FILES = import.meta.glob<unknown>("../../product.json", {
   import: "default",
 });
 
-/** Where the server's last product settings and layout are kept, for the next load's start. */
+/**
+ * The base of the key where the server's last product settings and layout are kept, for the next
+ * load's start: `<base>@<server identity>`, so a server change (or another embed's server) never
+ * reads them. The unkeyed entry of earlier builds is read only for the same-origin server, until
+ * a server's answer removes it.
+ */
 export const LAST_SERVER_PRODUCT_CONFIG_STORAGE_KEY = "omnigent:ui-product-config-server";
+
+/** The key the server the app talks to keeps its last-known configuration under (null: unknown). */
+export function lastServerProductConfigKey(): string | null {
+  const identity = getOmnigentServerIdentity();
+  return identity === null ? null : `${LAST_SERVER_PRODUCT_CONFIG_STORAGE_KEY}@${identity}`;
+}
 
 /** The build's file and the server's last-known configuration, before the server answers. */
 export function applyBootProductConfigs(options: { apply?: boolean } = {}): void {
@@ -548,8 +579,17 @@ export function applyBootProductConfigs(options: { apply?: boolean } = {}): void
 function applyLastServerProductConfig(options: { apply?: boolean } = {}): void {
   if (configured.has("server")) return;
   let last: unknown;
+  const key = lastServerProductConfigKey();
   try {
-    const text = window.localStorage.getItem(LAST_SERVER_PRODUCT_CONFIG_STORAGE_KEY);
+    let text = key === null ? null : window.localStorage.getItem(key);
+    // The unkeyed entry of earlier builds was the same-origin server's: it still applies there
+    // until that server answers, so an upgrade never starts without its locks.
+    if (
+      text === null &&
+      key === `${LAST_SERVER_PRODUCT_CONFIG_STORAGE_KEY}@${window.location.origin}`
+    ) {
+      text = window.localStorage.getItem(LAST_SERVER_PRODUCT_CONFIG_STORAGE_KEY);
+    }
     last =
       text !== null && text.length <= 4 * PRODUCT_SETTINGS_MAX_CHARS ? JSON.parse(text) : undefined;
   } catch {
@@ -569,10 +609,14 @@ export function applyServerProductConfig(info: ServerInfo): void {
     return;
   }
   const config = parseServerProductConfig(info.product);
+  const key = lastServerProductConfigKey();
   try {
-    if (config.settings || config.layout) {
-      window.localStorage.setItem(LAST_SERVER_PRODUCT_CONFIG_STORAGE_KEY, JSON.stringify(config));
-    } else window.localStorage.removeItem(LAST_SERVER_PRODUCT_CONFIG_STORAGE_KEY);
+    if (key !== null) {
+      if (config.settings || config.layout) {
+        window.localStorage.setItem(key, JSON.stringify(config));
+      } else window.localStorage.removeItem(key);
+    }
+    window.localStorage.removeItem(LAST_SERVER_PRODUCT_CONFIG_STORAGE_KEY);
   } catch {
     // Storage errors only lose the next start's server policy.
   }

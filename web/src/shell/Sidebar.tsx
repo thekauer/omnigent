@@ -22,7 +22,11 @@ import {
 } from "./ViewContainerViews";
 import { useViewDropTarget } from "./viewMoves";
 import { setNavigationHandler } from "@/workbench/navigationCommands";
-import { isViewHiddenByProduct, useProductLayout } from "@/workbench/productLayout";
+import {
+  isViewHiddenByProduct,
+  type ProductLayoutPolicy,
+  useProductLayout,
+} from "@/workbench/productLayout";
 import { ActivityBar } from "./ActivityBar";
 import { useInboxCount } from "./sideBarListViews";
 import { useActiveViewContainer } from "./useWorkbenchParts";
@@ -1939,26 +1943,31 @@ function SidebarNavigationView({ view }: BuiltInViewProps) {
 function useNavigationEntries(keys: Readonly<Record<string, boolean>>): readonly NavigationEntry[] {
   const contributed = useContributedNavigation();
   const hidden = useHiddenNavigationEntries();
-  useProductLayout();
-  return allNavigationEntries(keys, contributed).filter((entry) => !hidden.includes(entry.id));
+  const { productLayout: policy } = useWorkbenchScope();
+  useProductLayout(policy);
+  return allNavigationEntries(keys, contributed, policy).filter(
+    (entry) => !hidden.includes(entry.id),
+  );
 }
 
 function allNavigationEntries(
   keys: Readonly<Record<string, boolean>>,
   contributed: readonly (NavigationEntry & { active: boolean })[],
+  policy: ProductLayoutPolicy,
 ): readonly NavigationEntry[] {
   // An entry the product removed (`layout.hiddenViews`) is neither drawn nor offered.
   return [
     ...builtInNavigationEntries().filter((entry) => whenHolds(entry.when, keys)),
     ...contributed.filter((entry) => entry.active),
-  ].filter((entry) => !isViewHiddenByProduct(entry.id));
+  ].filter((entry) => !isViewHiddenByProduct(entry.id, policy));
 }
 
 /** Right-click on the navigation: show or hide each entry (layout state). */
 function SidebarNavigationMenu({ children }: { children: ReactNode }) {
   const { automationsEnabled, workflowsPageEnabled, canvasEnabled, usagePageEnabled } =
     useSidebarViewProps().navigation;
-  useProductLayout();
+  const { productLayout: policy } = useWorkbenchScope();
+  useProductLayout(policy);
   const contributed = useContributedNavigation();
   const all = allNavigationEntries(
     {
@@ -1968,6 +1977,7 @@ function SidebarNavigationMenu({ children }: { children: ReactNode }) {
       [`${WorkbenchContextKeys.serverFeaturePrefix}usage_page`]: usagePageEnabled,
     },
     contributed,
+    policy,
   );
   const hidden = useHiddenNavigationEntries();
   // The extension pages' entry is listed only while there are pages to show.

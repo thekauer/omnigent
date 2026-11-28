@@ -18,7 +18,8 @@ import {
 } from "@/workbench/viewLocations";
 import { useRailViews, type RailViewContribution } from "./railViews";
 import { useSideBarContainers } from "./ViewContainerViews";
-import { closeMoveViewPicker, useMoveViewPickerStore } from "@/store/moveViewPicker";
+import { useStore } from "zustand";
+import { useWorkbenchScope } from "@/workbench/workbenchScope";
 import { allViews, moveViewTo } from "./viewMoves";
 import { isViewRemovedByProduct } from "@/workbench/productLayout";
 
@@ -70,16 +71,21 @@ export function moveViewDestinations(
 
 /** Mounted while open (the overlays mount it), so each opening starts on its first page. */
 export function MoveViewPicker() {
-  const open = useMoveViewPickerStore((state) => state.open);
-  const givenViewId = useMoveViewPickerStore((state) => state.viewId);
-  const chosenViewId = useMoveViewPickerStore((state) => state.chosenViewId);
+  // This mount's picker and product policy.
+  const { moveViewPicker, productLayout: policy } = useWorkbenchScope();
+  const { store } = moveViewPicker;
+  const open = useStore(store, (state) => state.open);
+  const givenViewId = useStore(store, (state) => state.viewId);
+  const chosenViewId = useStore(store, (state) => state.chosenViewId);
   const pages = useQuickPickPages<PageId>(givenViewId === undefined ? "views" : "destinations");
   // Read so the lists follow registrations and moves.
   useRailViews(undefined, null);
   useViewContainers();
   const locations = useViewLocations();
   const sideBar = useSideBarContainers().map((entry) => entry.container);
-  const views = allViews().filter((view) => canMoveView(view) && !isViewRemovedByProduct(view));
+  const views = allViews().filter(
+    (view) => canMoveView(view, policy) && !isViewRemovedByProduct(view, policy),
+  );
   const titleOf = (containerId: string) =>
     sideBar.find((container) => container.id === containerId)?.title ??
     (containerLocation(containerId) === "auxiliarybar" ? SECONDARY_SIDE_BAR_GROUP : containerId);
@@ -100,7 +106,7 @@ export function MoveViewPicker() {
     <QuickPickDialog<Value>
       open={open}
       onOpenChange={(nextOpen) => {
-        if (!nextOpen) closeMoveViewPicker();
+        if (!nextOpen) moveViewPicker.close();
       }}
       title="Move View"
       description="Choose a view, then where it goes."
@@ -113,13 +119,13 @@ export function MoveViewPicker() {
       acceptLabel={onDestinations ? "Move" : "Select"}
       onAccept={(item) => {
         if (item.value.kind === "view") {
-          useMoveViewPickerStore.setState({ chosenViewId: item.value.viewId });
+          store.setState({ chosenViewId: item.value.viewId });
           pages.push("destinations");
           return "keepOpen" as const;
         }
         const viewId = givenViewId ?? chosenViewId;
         if (viewId !== undefined) moveViewTo(viewId, item.value.containerId);
-        closeMoveViewPicker();
+        moveViewPicker.close();
         return undefined;
       }}
     />
