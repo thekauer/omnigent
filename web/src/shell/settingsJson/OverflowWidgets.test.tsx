@@ -2,6 +2,7 @@
 // the dialogs portal to (the embed's inner root when embedded), handed to Monaco as
 // `overflowWidgetsDomNode` with `fixedOverflowWidgets`.
 import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { createPortal } from "react-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { setEmbedRoot } from "@/lib/host";
@@ -41,7 +42,21 @@ describe("OverflowWidgets", () => {
     expect(node).toHaveClass("monaco-editor");
     expect(node.style.pointerEvents).toBe("auto");
     expect(node.style.zIndex).toBe("50");
-    expect(onNode).toHaveBeenCalledWith(node);
+    expect(onNode).toHaveBeenCalledWith(node.firstElementChild);
+  });
+
+  it("comes after a dialog it mounts with in one commit, so it draws above it", () => {
+    // The dialog's portal and the editor inside it mount together (a loaded editor chunk).
+    render(
+      createPortal(
+        <div data-testid="dialog">
+          <OverflowWidgets onNode={() => {}} />
+        </div>,
+        document.body,
+      ),
+    );
+    const dialog = screen.getByTestId("dialog");
+    expect(dialog.compareDocumentPosition(overflowNode()!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("renders on the embed's inner root, inside the theme scope", () => {
@@ -65,7 +80,7 @@ describe("OverflowWidgets", () => {
     await screen.findByTestId("monaco");
     await waitFor(() => expect(editorOptions.current).not.toBeNull());
     expect(editorOptions.current).toMatchObject({ fixedOverflowWidgets: true });
-    expect(editorOptions.current!.overflowWidgetsDomNode).toBe(overflowNode());
+    expect(editorOptions.current!.overflowWidgetsDomNode).toBe(overflowNode()!.firstElementChild);
     act(() => unmount());
     expect(overflowNode()).toBeNull();
   });
