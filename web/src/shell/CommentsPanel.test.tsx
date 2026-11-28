@@ -432,13 +432,15 @@ describe("CommentsPanel show more / less", () => {
 describe("CommentsPanel resize affordance", () => {
   function withInnerWidth(width: number, run: () => void) {
     const orig = window.innerWidth;
+    const originalMatchMedia = window.matchMedia;
     Object.defineProperty(window, "innerWidth", { configurable: true, value: width });
     stubWindowMediaQueries();
     try {
       run();
     } finally {
       Object.defineProperty(window, "innerWidth", { configurable: true, value: orig });
-      vi.unstubAllGlobals();
+      // Only the media query stub this helper made; other test stubs stay.
+      vi.stubGlobal("matchMedia", originalMatchMedia);
     }
   }
 

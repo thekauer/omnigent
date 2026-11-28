@@ -277,6 +277,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useOmnigentAnalytics } from "@/lib/analytics";
 import { isDesktopLayout, useIsMobileViewport } from "@/hooks/useIsMobileViewport";
+import { useWorkbenchScope } from "@/workbench/workbenchScope";
 import {
   isSideBySideSidebarViewport,
   useIsSideBySideSidebarViewport,
@@ -975,15 +976,17 @@ function SidebarImpl({
   // Row-Link click handler. The Link navigates natively (so modifier/middle
   // clicks open tabs); we only close the drawer on a plain primary click on
   // mobile. Stable identity (useStableCallback) so it doesn't defeat the row memo.
+  // The mount's own layout: an embed's width, not the window's or another mount's.
+  const { layout: mountLayout } = useWorkbenchScope();
   const onNavClick = useStableCallback((e: MouseEvent<HTMLAnchorElement>) => {
     if (e.defaultPrevented) return;
     if (e.button !== 0) return;
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
-    if (isMobileViewport() && !isSideBySideSidebarViewport()) onClose();
+    if (!isDesktopLayout(mountLayout) && !isSideBySideSidebarViewport(mountLayout)) onClose();
   });
   // A search result that opens its row closes the phone's menu, as a section link does.
   const onSearchNavigate = useStableCallback(() => {
-    if (isMobileViewport() && !isSideBySideSidebarViewport()) onClose();
+    if (!isDesktopLayout(mountLayout) && !isSideBySideSidebarViewport(mountLayout)) onClose();
   });
 
   // Which top-level nav button to highlight for the current route.
@@ -1002,7 +1005,7 @@ function SidebarImpl({
   const projectKanban = useProjectKanbanEnabled();
   const openProjectHome = useStableCallback((projectName: string) => {
     if (projectName !== projectHomeName) navigate(projectHomePath(projectName));
-    if (isMobileViewport() && !isSideBySideSidebarViewport()) onClose();
+    if (!isDesktopLayout(mountLayout) && !isSideBySideSidebarViewport(mountLayout)) onClose();
   });
   const automationsEnabled = useAutomationsEnabled();
 

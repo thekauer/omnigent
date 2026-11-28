@@ -132,3 +132,23 @@ describe("layout commands", () => {
     expect(commands.has(TOGGLE_SIDEBAR_COMMAND)).toBe(false);
   });
 });
+
+describe("LayoutService root removal", () => {
+  it("drops the root's layout when the root is removed, and tells the viewport listeners", () => {
+    const layout = new LayoutService();
+    // A phone-width embed root, as a DOM element the service can measure and mark.
+    const root = {
+      getBoundingClientRect: () => ({ width: 390, height: 800 }),
+      setAttribute: vi.fn(),
+      removeAttribute: vi.fn(),
+    } as unknown as HTMLElement;
+    layout.setRoot(root);
+    expect(layout.getRootViewport()?.mobile).toBe(true);
+    const onViewport = vi.fn();
+    layout.onDidChangeViewport(onViewport);
+    layout.setRoot(null);
+    expect(layout.getRootViewport()).toBeNull();
+    expect(layout.getRootSize()).toEqual({ width: 0, height: 0 });
+    expect(onViewport).toHaveBeenCalledTimes(1);
+  });
+});

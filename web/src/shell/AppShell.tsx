@@ -607,6 +607,8 @@ function AppShellImpl() {
       return;
     }
     if (!mobileViewport) {
+      // A phone's view drawer doesn't reopen when the layout comes back to phone width.
+      setViewDrawer(null);
       const reopen = sidebarOpenBeforeNarrowRef.current;
       sidebarOpenBeforeNarrowRef.current = false;
       if (inSettings && reopen) sidebarOpenBeforeSettingsRef.current = true;
@@ -1303,7 +1305,9 @@ function AppShellImpl() {
     inlinePanelMinWidth,
     (sidebarOpen ? sidebarWidth : 0) +
       (canvasMode ? canvasReservedWidth : 0) +
-      (activityBarLocation === "default" && !mobileViewport ? activityBarWidthPx() : 0),
+      (activityBarLocation === "default" && !mobileViewport
+        ? activityBarWidthPx(workbenchScope.layout)
+        : 0),
     rootSessionResolved,
     canvasMode ? CANVAS_CONVERSATION_MIN_WIDTH : undefined,
     auxiliaryBarSide,
@@ -3580,7 +3584,9 @@ function AppShellImpl() {
                 // The activity bar beside the side bar is part of the shell's left edge.
                 "--app-sidebar-width": `${
                   (sidebarOpen ? sidebarWidth : 0) +
-                  (activityBarLocation === "default" && !mobileViewport ? activityBarWidthPx() : 0)
+                  (activityBarLocation === "default" && !mobileViewport
+                    ? activityBarWidthPx(workbenchScope.layout)
+                    : 0)
                 }px`,
               } as CSSProperties
             }

@@ -8,6 +8,7 @@ import { SidebarDataProvider } from "@/hooks/useSidebarData";
 import { CapabilitiesProvider } from "@/lib/CapabilitiesContext";
 import { FALLBACK_SERVER_INFO, type ServerInfo } from "@/lib/capabilities";
 import { Sidebar } from "@/shell/Sidebar";
+import { type WorkbenchScope, WorkbenchScopeProvider } from "@/workbench/workbenchScope";
 
 /**
  * `info` is the server info served; else `features` serves the fallback info with
@@ -21,6 +22,8 @@ export function renderSidebar(
     dragProgress?: number | null;
     features?: Record<string, boolean>;
     info?: ServerInfo;
+    /** The mount the sidebar belongs to (its layout); the window's when omitted. */
+    workbenchScope?: WorkbenchScope;
   } = {},
 ) {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -28,14 +31,23 @@ export function renderSidebar(
     props.info ??
     (props.features ? { ...FALLBACK_SERVER_INFO, features: props.features } : "loading");
   const onClose = props.onClose ?? vi.fn();
+  const sidebar = (open: boolean) => (
+    <MemoryRouter initialEntries={[props.route ?? "/"]}>
+      <Sidebar open={open} onClose={onClose} dragProgress={props.dragProgress} />
+    </MemoryRouter>
+  );
   const tree = (open: boolean) => (
     <QueryClientProvider client={qc}>
       <CapabilitiesProvider info={info}>
         <SidebarDataProvider>
           <TooltipProvider>
-            <MemoryRouter initialEntries={[props.route ?? "/"]}>
-              <Sidebar open={open} onClose={onClose} dragProgress={props.dragProgress} />
-            </MemoryRouter>
+            {props.workbenchScope ? (
+              <WorkbenchScopeProvider scope={props.workbenchScope}>
+                {sidebar(open)}
+              </WorkbenchScopeProvider>
+            ) : (
+              sidebar(open)
+            )}
           </TooltipProvider>
         </SidebarDataProvider>
       </CapabilitiesProvider>

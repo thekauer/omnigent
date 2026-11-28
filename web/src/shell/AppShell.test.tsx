@@ -2247,8 +2247,12 @@ describe("Workspace rail maximize", () => {
     configurationService.update("workbench.sideBar.location", "right", "memory");
     try {
       renderShell("/c/conv_abc");
-      // The side bar on the right leaves the corner to the chat (or the rail on the left).
-      expect(shell().getAttribute("data-window-corner")).toMatch(/^(main|auxiliarybar)$/);
+      // The side bar on the right leaves the corner to the rail on the left while it shows,
+      // and to the chat once the rail is hidden.
+      act(() => layoutService.setPartHidden(true, Parts.AUXILIARYBAR_PART));
+      expect(shell()).toHaveAttribute("data-window-corner", "main");
+      act(() => layoutService.setPartHidden(false, Parts.AUXILIARYBAR_PART));
+      expect(shell()).toHaveAttribute("data-window-corner", "auxiliarybar");
     } finally {
       configurationService.update("workbench.sideBar.location", undefined, "memory");
       vi.unstubAllGlobals();

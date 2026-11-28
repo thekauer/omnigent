@@ -429,6 +429,59 @@ describe("index.css app-shell viewport lock", () => {
   });
 });
 
+describe("index.css overscroll in the standalone phone layout", () => {
+  const overscrollRules = cssBlocks
+    .map(([block]) => block)
+    .filter((block) => /overscroll-behavior-x\s*:/.test(block));
+
+  it("has the one overscroll rule this test exists to protect", () => {
+    expect(overscrollRules).toHaveLength(1);
+  });
+
+  it("applies only below md, to the standalone document's html and body", () => {
+    expect(cssSource).toMatch(
+      /@media \(width < 73\.8125rem\) \{\s*html:has\(\.app-shell\):not\(:has\(\.omnigent-app\)\),\s*body:has\(\.app-shell\):not\(:has\(\.omnigent-app\)\) \{\s*overscroll-behavior-x: none;/,
+    );
+  });
+
+  it("leaves a host page that embeds the app (and the desktop layout) without it", () => {
+    expect(overscrollRules[0]).toContain(":not(:has(.omnigent-app))");
+    expect(overscrollRules[0]).not.toMatch(/^\s*html:has\(\.app-shell\),/);
+  });
+});
+
+describe("index.css embed mobile containment", () => {
+  it("contains an embed's mobile layout to its own box", () => {
+    expect(cssSource).toMatch(/\.omnigent-app\[data-layout-width="mobile"\] \{\s*contain: layout;/);
+  });
+});
+
+describe("index.css macOS title bar", () => {
+  const ruleFor = (selector: string) =>
+    cssBlocks.map(([block]) => block).find((block) => selectorOf(block) === selector);
+
+  it("has the title bar rules this test exists to protect", () => {
+    expect(ruleFor("html[data-electron-mac] .app-shell[data-titlebar] > .titlebar")).toBeDefined();
+    expect(ruleFor("html[data-electron-mac] .app-shell[data-titlebar]")).toBeDefined();
+  });
+
+  it("is as tall as the native title strip, clears the lights, and drags the window", () => {
+    const bar = ruleFor("html[data-electron-mac] .app-shell[data-titlebar] > .titlebar");
+    expect(bar).toContain(
+      "height: max(var(--ui-titlebar-height, 48px), var(--mac-titlebar-height));",
+    );
+    expect(bar).toContain("padding-left: var(--mac-header-actions-clearance);");
+    expect(bar).toContain("-webkit-app-region: drag;");
+  });
+
+  it("pads the shell by the same height the bar takes", () => {
+    const shell = ruleFor("html[data-electron-mac] .app-shell[data-titlebar]");
+    expect(shell).toContain(
+      "padding-top: max(var(--ui-titlebar-height, 48px), var(--mac-titlebar-height));",
+    );
+  });
+});
+
 const allWidthNativeLayoutRules = [
   ["iOS keyboard viewport", "[data-ios-native].app-shell", "--omnigent-viewport-height"],
   ["native chat header", ".chat-header", "--omnigent-safe-top"],

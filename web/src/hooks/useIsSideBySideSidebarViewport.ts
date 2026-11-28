@@ -7,13 +7,13 @@
 // window, or an embed's root (workbench/layoutViewport.ts).
 
 import { useCallback, useSyncExternalStore } from "react";
-import { layoutService } from "@/workbench/layoutService";
+import { layoutService, type LayoutService } from "@/workbench/layoutService";
 import { useWorkbenchScope } from "@/workbench/workbenchScope";
 
-/** Non-reactive read of {@link useIsSideBySideSidebarViewport} for the active mount, for event handlers. */
-export function isSideBySideSidebarViewport(): boolean {
+/** Non-reactive read of {@link useIsSideBySideSidebarViewport} for a mount (the active one's by default). */
+export function isSideBySideSidebarViewport(layout: LayoutService = layoutService): boolean {
   if (typeof window === "undefined") return false;
-  return layoutService.isSideBySideLayout();
+  return layout.isSideBySideLayout();
 }
 
 /**
@@ -23,8 +23,13 @@ export function isSideBySideSidebarViewport(): boolean {
  */
 export function useIsSideBySideSidebarViewport(): boolean {
   const { layout } = useWorkbenchScope();
-  const subscribe = useCallback((listener: () => void) => layout.onDidChangeViewport(listener), [
-    layout,
-  ]);
-  return useSyncExternalStore(subscribe, () => layout.isSideBySideLayout(), () => false);
+  const subscribe = useCallback(
+    (listener: () => void) => layout.onDidChangeViewport(listener),
+    [layout],
+  );
+  return useSyncExternalStore(
+    subscribe,
+    () => layout.isSideBySideLayout(),
+    () => false,
+  );
 }

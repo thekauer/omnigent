@@ -5,7 +5,7 @@
 // computed width; without layout (a test's DOM) the registered default's fallback applies.
 
 import { getThemeRoots } from "@/lib/host";
-import { activeLayoutService } from "./layoutService";
+import type { LayoutService } from "./layoutService";
 
 export const LayoutTokens = Object.freeze({
   sidebarWidth: "ui-sidebar-width",
@@ -35,13 +35,15 @@ function currentKey(root: Element, size: { width: number; height: number } | nul
 }
 
 /**
- * The root the tokens are measured on: the active mount's (an embed's own root, layout plan
+ * The root the tokens are measured on: the caller's mount's (an embed's own root, layout plan
  * L8), else the first theme root, else the document.
  */
-function themeRoot(): { root: Element; size: { width: number; height: number } | null } | null {
+function themeRoot(
+  layout: LayoutService,
+): { root: Element; size: { width: number; height: number } | null } | null {
   if (typeof document === "undefined") return null;
-  const mount = activeLayoutService().getRoot();
-  if (mount) return { root: mount, size: activeLayoutService().getRootSize() };
+  const mount = layout.getRoot();
+  if (mount) return { root: mount, size: layout.getRootSize() };
   return { root: getThemeRoots()[0] ?? document.documentElement, size: null };
 }
 
@@ -61,11 +63,12 @@ export function rootRelativeLength(
 }
 
 /**
- * The token `id`'s width in px on the theme root, or `fallback` when it can't be measured
- * (no DOM, no layout, an invalid value). `fallback` is what the token's default computes to.
+ * The token `id`'s width in px on the root of `layout` (the mount reading it), or `fallback` when
+ * it can't be measured (no DOM, no layout, an invalid value). `fallback` is what the token's
+ * default computes to.
  */
-export function readLengthToken(id: string, fallback: () => number): number {
-  const found = themeRoot();
+export function readLengthToken(id: string, fallback: () => number, layout: LayoutService): number {
+  const found = themeRoot(layout);
   if (!found || typeof window === "undefined") return fallback();
   const { root, size } = found;
   let entry = measures.get(root);

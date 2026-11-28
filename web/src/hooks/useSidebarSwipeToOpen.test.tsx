@@ -42,13 +42,24 @@ function Harness(props: {
   );
 }
 
-function setup(enabled = true, side?: "left" | "right") {
+function setup(
+  enabled = true,
+  side?: "left" | "right",
+  surfaceBox = { left: 0, right: window.innerWidth },
+) {
   const onDragProgress = vi.fn();
   const onSettle = vi.fn();
   const view = render(
     <Harness enabled={enabled} side={side} onDragProgress={onDragProgress} onSettle={onSettle} />,
   );
   view.getByTestId("drawer").getBoundingClientRect = () => ({ width: DRAWER_WIDTH }) as DOMRect;
+  // The swipe surface's box: its own edges are the ones the OS gesture zone sits at.
+  view.container.querySelector<HTMLElement>(".surface")!.getBoundingClientRect = () =>
+    ({
+      left: surfaceBox.left,
+      right: surfaceBox.right,
+      width: surfaceBox.right - surfaceBox.left,
+    }) as DOMRect;
   const scroller = view.getByTestId("scroller");
   Object.defineProperty(scroller, "scrollWidth", { value: 600 });
   Object.defineProperty(scroller, "clientWidth", { value: 200 });
@@ -190,6 +201,17 @@ describe("useSidebarSwipeToOpen", () => {
     touch(chat, "touchend", 0, 0, 300);
 
     expect(onSettle).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the edge zone at the surface's edges, not the window's (an embed's own box)", () => {
+    // The surface is an embed's box at x 100..500: 10px inside its edge is the zone, though 110px
+    // from the window's.
+    const { getByTestId, onDragProgress } = setup(true, "left", { left: 100, right: 500 });
+    const chat = getByTestId("chat");
+    swipe(chat, { x: 110, dx: 150, steps: 5, stepMs: 40 });
+    expect(onDragProgress).not.toHaveBeenCalled();
+    swipe(chat, { x: 160, dx: 150, steps: 5, stepMs: 40 });
+    expect(onDragProgress).toHaveBeenCalled();
   });
 
   it("mirrors with the drawer on the right: a leftward swipe opens, away from the right edge", () => {

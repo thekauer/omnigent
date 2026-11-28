@@ -1,8 +1,8 @@
 // Resize hook for the always-visible right inline panel (the aside in
 // AppShell that holds FilesPanel + SessionRail). Uses a separate
-// module-level width store so the inline panel's preferred width doesn't
-// bleed into the push-panel store shared by FileViewer / TerminalsPanel /
-// ExecutionLogsPanel / FilesPanelDrawer — those open at ~50 % by default
+// width store per mount (keyed by the mount's layout state) so the inline panel's preferred width
+// doesn't bleed into the push-panel store shared by FileViewer / TerminalsPanel /
+// ExecutionLogsPanel / FilesPanelDrawer - those open at ~50 % by default
 // while the inline panel starts at a compact sidebar width.
 
 import {
@@ -15,6 +15,9 @@ import {
   useSyncExternalStore,
 } from "react";
 import { readSessionWorkspaceState, writeSessionWorkspaceState } from "@/lib/sessionWorkspaceState";
+import type { LayoutStateStore } from "@/workbench/layoutState";
+import { standaloneLayoutState } from "@/workbench/layoutState";
+import type { LayoutService } from "@/workbench/layoutService";
 import { useWorkbenchScope } from "@/workbench/workbenchScope";
 import {
   LayoutTokens,
@@ -30,7 +33,7 @@ const CHAT_MIN_WIDTH_PX = 480;
 /** Visual gap between the chat column and the rail. */
 const GAP_PX = 8;
 
-// ~36 % of viewport, clamped [420, 600] — ~30 % wider than the prior default so
+// ~36 % of viewport, clamped [420, 600] - ~30 % wider than the prior default so
 // the first manual open lands at a comfortable working width.
 const DEFAULT_RATIO = 0.36;
 const DEFAULT_MIN_PX = 420;
@@ -38,39 +41,40 @@ const DEFAULT_MAX_PX = 600;
 const DEFAULT_SSR_PX = 500;
 
 /** What `ui-auxiliarybar-width`'s default, `clamp(420px, 36vw, 600px)`, computes to. */
-function registeredDefaultWidthPx(rootWidth = windowWidth()): number {
+function registeredDefaultWidthPx(rootWidth: number): number {
   if (typeof window === "undefined") return DEFAULT_SSR_PX;
   const candidate = Math.round(rootWidth * DEFAULT_RATIO);
   return Math.max(DEFAULT_MIN_PX, Math.min(DEFAULT_MAX_PX, candidate));
 }
 
-/** The default width: the `ui-auxiliarybar-width` token (a theme's or a product's). */
-function defaultWidthPx(rootWidth = windowWidth()): number {
+/** The default width: the `ui-auxiliarybar-width` token (a theme's or a product's) on the mount. */
+function defaultWidthPx(layout: LayoutService): number {
   if (typeof window === "undefined") return DEFAULT_SSR_PX;
+  const rootWidth = layout.getRootSize().width;
   return Math.round(
-    readLengthToken(LayoutTokens.auxiliaryBarWidth, () => registeredDefaultWidthPx(rootWidth)),
+    readLengthToken(
+      LayoutTokens.auxiliaryBarWidth,
+      () => registeredDefaultWidthPx(rootWidth),
+      layout,
+    ),
   );
 }
 
-/** The window's width (0 off the DOM); a mount passes its root's instead (decision 14). */
-function windowWidth(): number {
-  return typeof window === "undefined" ? 0 : window.innerWidth;
-}
-
-/** The default width once the window grows by it, which keeps the chat's width unchanged. */
-function defaultWidthInWiderWindowPx(rootWidth = windowWidth()): number {
+/** The default width once the mount's box grows by it, which keeps the chat's width unchanged. */
+function defaultWidthInWiderWindowPx(layout: LayoutService): number {
   if (typeof window === "undefined") return DEFAULT_SSR_PX;
   // A width a theme set is the width wherever the window goes; the registered default's
   // share of the window grows with it.
-  const width = defaultWidthPx(rootWidth);
+  const rootWidth = layout.getRootSize().width;
+  const width = defaultWidthPx(layout);
   if (width !== registeredDefaultWidthPx(rootWidth)) return width;
   const candidate = Math.round((rootWidth * DEFAULT_RATIO) / (1 - DEFAULT_RATIO));
   return Math.max(DEFAULT_MIN_PX, Math.min(DEFAULT_MAX_PX, candidate));
 }
 
 /** The smallest width: the `ui-auxiliarybar-min-width` token. */
-function minimumWidthPx(): number {
-  return readLengthToken(LayoutTokens.auxiliaryBarMinWidth, () => MIN_WIDTH_PX);
+function minimumWidthPx(layout: LayoutService): number {
+  return readLengthToken(LayoutTokens.auxiliaryBarMinWidth, () => MIN_WIDTH_PX, layout);
 }
 
 // Width the panel may not eat into: the sidebar when it's open. Passed down
@@ -78,20 +82,22 @@ function minimumWidthPx(): number {
 // squeezing the chat.
 function clamp(
   w: number,
-  minPx = minimumWidthPx(),
+  layout: LayoutService,
+  minPx: number = minimumWidthPx(layout),
   reservedPx = 0,
   chatMinPx = CHAT_MIN_WIDTH_PX,
-  rootWidth = windowWidth(),
 ): number {
-  // No viewport ceiling available off the DOM (SSR / node test env) — this runs
+  // No viewport ceiling available off the DOM (SSR / node test env) - this runs
   // during render, so guard before reading `window` to avoid a hard throw.
   if (typeof window === "undefined") return Math.max(minPx, w);
+  // The mount's box: the window, or an embed's root (decision 14).
+  const rootWidth = layout.getRootSize().width;
   // 99vw is the nominal ceiling, but the chat column's minimum (plus the gap
   // between the two) is the one that actually binds on a normal desktop.
   const ceiling = Math.max(
     0,
     Math.min(
-      readLengthToken(LayoutTokens.auxiliaryBarMaxWidth, () => rootWidth * MAX_WIDTH_RATIO),
+      readLengthToken(LayoutTokens.auxiliaryBarMaxWidth, () => rootWidth * MAX_WIDTH_RATIO, layout),
       rootWidth - reservedPx - chatMinPx - GAP_PX,
     ),
   );
@@ -104,71 +110,97 @@ function clamp(
 }
 
 // ---------------------------------------------------------------------------
-// Module-level width store (independent of the push-panel store)
+// Width store, one per mount's layout state (independent of the push-panel store)
 // ---------------------------------------------------------------------------
 
-// `preferredWidth` mirrors the persisted user choice; `storedWidth` is the
-// effective (viewport-clamped) width. Keeping the preference in
-// memory lets the resize handler re-derive the effective width from it —
-// restoring the larger choice when space returns — without touching disk.
-// Both start null: the active session's saved width is loaded once the hook
-// learns its storage key (see loadSession), since width is scoped by the caller.
-let currentSessionId: string | null = null;
-let preferredWidth: number | null = null;
-let storedWidth: number | null = null;
-const listeners = new Set<() => void>();
+/**
+ * `preferred` mirrors the persisted user choice; `stored` is the effective
+ * (viewport-clamped) width. Keeping the preference in memory lets the resize
+ * handler re-derive the effective width from it - restoring the larger choice
+ * when space returns - without touching disk. Both start null: the active
+ * session's saved width is loaded once the hook learns its storage key (see
+ * loadSession), since width is scoped by the caller. Each mount has its own, so
+ * a drag in one embed never writes another mount's session.
+ */
+class InlinePanelWidthStore {
+  /** The session whose saved width the store holds; null while none is loaded. */
+  sessionId: string | null = null;
+  preferred: number | null = null;
+  stored: number | null = null;
+  private readonly listeners = new Set<() => void>();
 
-function persistWidth(value: number | null) {
-  preferredWidth = value;
-  if (currentSessionId !== null && value !== null) {
-    writeSessionWorkspaceState(currentSessionId, { widthPx: value });
+  persist(value: number | null): void {
+    this.preferred = value;
+    if (this.sessionId !== null && value !== null) {
+      writeSessionWorkspaceState(this.sessionId, { widthPx: value });
+    }
   }
+
+  setRaw(value: number | null, persist = false): void {
+    if (value === this.stored) return;
+    this.stored = value;
+    if (persist) this.persist(value);
+    for (const listener of [...this.listeners]) listener();
+  }
+
+  set(next: number | ((prev: number | null) => number), persist = false): void {
+    this.setRaw(typeof next === "function" ? next(this.stored) : next, persist);
+  }
+
+  /** Snapshot the current width to storage (called once at drag end). */
+  persistStored(): void {
+    this.persist(this.stored);
+  }
+
+  /** Re-seeds the store from a storage key's saved width; a key with none has no preference. */
+  loadSession(sessionId: string | null): void {
+    if (sessionId === this.sessionId) return;
+    this.sessionId = sessionId;
+    this.preferred =
+      sessionId !== null ? (readSessionWorkspaceState(sessionId).widthPx ?? null) : null;
+    this.setRaw(this.preferred);
+  }
+
+  /** Double-click: back to the theme's width for this session. */
+  clearSaved(): void {
+    if (this.sessionId !== null) writeSessionWorkspaceState(this.sessionId, { widthPx: undefined });
+    this.preferred = null;
+    this.setRaw(null);
+  }
+
+  subscribe = (listener: () => void): (() => void) => {
+    this.listeners.add(listener);
+    return () => {
+      this.listeners.delete(listener);
+    };
+  };
+
+  getSnapshot = (): number | null => this.stored;
 }
 
-function setStoredWidthRaw(value: number | null, persist = false) {
-  if (value === storedWidth) return;
-  storedWidth = value;
-  if (persist) persistWidth(value);
-  for (const l of listeners) l();
-}
+// Weak: an embed's store goes with its unmounted workbench.
+const widthStores = new WeakMap<LayoutStateStore, InlinePanelWidthStore>();
 
-function setStoredWidth(next: number | ((prev: number | null) => number), persist = false) {
-  setStoredWidthRaw(typeof next === "function" ? next(storedWidth) : next, persist);
-}
-
-/** Snapshot the current width to storage (called once at drag end). */
-function persistStoredWidth() {
-  persistWidth(storedWidth);
-}
-
-function subscribe(cb: () => void): () => void {
-  listeners.add(cb);
-  return () => listeners.delete(cb);
-}
-
-// Re-seed the module store from a storage key's saved width. A key with no
-// saved width falls back to the viewport-derived default.
-function loadSession(sessionId: string | null): void {
-  if (sessionId === currentSessionId) return;
-  currentSessionId = sessionId;
-  preferredWidth =
-    sessionId !== null ? (readSessionWorkspaceState(sessionId).widthPx ?? null) : null;
-  setStoredWidthRaw(preferredWidth);
-}
-
-/** Reset all module-level state. Only for use in tests. */
-export function resetWidthStoreForTesting(): void {
-  currentSessionId = null;
-  preferredWidth = null;
-  setStoredWidthRaw(null);
-}
-
-function getSnapshot(): number | null {
-  return storedWidth;
+function widthStoreOf(state: LayoutStateStore): InlinePanelWidthStore {
+  let store = widthStores.get(state);
+  if (!store) {
+    store = new InlinePanelWidthStore();
+    widthStores.set(state, store);
+  }
+  return store;
 }
 
 function getServerSnapshot(): number | null {
   return null;
+}
+
+/** Reset the standalone app's width store. Only for use in tests. */
+export function resetWidthStoreForTesting(): void {
+  const store = widthStores.get(standaloneLayoutState);
+  if (!store) return;
+  store.sessionId = null;
+  store.preferred = null;
+  store.setRaw(null);
 }
 
 // ---------------------------------------------------------------------------
@@ -181,7 +213,7 @@ function getServerSnapshot(): number | null {
  * inline panel doesn't disturb the push-panel widths (TerminalsPanel etc.).
  *
  * Returns the current pixel width and handle props to spread onto the resize
- * handle element. Intended for desktop-only use — callers should not render
+ * handle element. Intended for desktop-only use - callers should not render
  * the handle on mobile.
  *
  * `sessionId` scopes the persisted width. AppShell passes the root session so
@@ -189,7 +221,7 @@ function getServerSnapshot(): number | null {
  * conversation (the panel then uses the default width and resizes are not
  * persisted).
  *
- * `reservedPx` is layout width the panel may not claim — the open sidebar. It
+ * `reservedPx` is layout width the panel may not claim - the open sidebar. It
  * tightens the ceiling without touching the persisted preference, so opening
  * the sidebar temporarily shrinks the panel and collapsing it restores the
  * user's width.
@@ -199,58 +231,61 @@ function getServerSnapshot(): number | null {
  */
 export function useResizableInlinePanel(
   sessionId: string | null,
-  minWidthPx = minimumWidthPx(),
+  minWidthPx: number | undefined = undefined,
   reservedPx = 0,
   persistEnabled = true,
   chatMinWidthPx = CHAT_MIN_WIDTH_PX,
   side: "left" | "right" = "right",
 ) {
-  const raw = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
+  // The mount's box: the window, or an embed's root (decision 14). Its layout state holds the
+  // store, so each mount keeps its own width.
+  const { layout, state } = useWorkbenchScope();
+  const store = widthStoreOf(state);
+  const raw = useSyncExternalStore(store.subscribe, store.getSnapshot, getServerSnapshot);
   // A theme setting the width tokens re-renders with their new values.
   useSyncExternalStore(subscribeLayoutTokens, layoutTokensVersion, layoutTokensVersion);
+  // The root's width is read at render, so a re-render follows its changes, its first measure
+  // included (the ref callback measures during commit, before this effect could subscribe).
+  useSyncExternalStore(
+    useCallback((listener: () => void) => layout.onDidChangeRootSize(listener), [layout]),
+    () => layout.getRootSize().width,
+    () => 0,
+  );
+  const floorPx = minWidthPx ?? minimumWidthPx(layout);
   const sideRef = useRef(side);
   sideRef.current = side;
-  // The mount's box: the window, or an embed's root (decision 14).
-  const { layout } = useWorkbenchScope();
-  const rootWidth = () => (typeof window === "undefined" ? 0 : layout.getRootSize().width);
-  const rootWidthRef = useRef(rootWidth);
-  rootWidthRef.current = rootWidth;
+  const layoutRef = useRef(layout);
+  layoutRef.current = layout;
   // The panel's outer edge when a drag began: the width is the cursor's distance from it.
   const dragAnchor = useRef(0);
-  // On a session switch the module store still holds the previous session's
+  // On a session switch the store still holds the previous session's
   // width until the effect below re-seeds it after commit. Derive this render's
   // width straight from the incoming session's saved value so the panel doesn't
-  // flash the old width for a frame. Once the effect runs `currentSessionId`
+  // flash the old width for a frame. Once the effect runs `store.sessionId`
   // catches up and we fall back to the live store value (which the drag and
   // keyboard handlers mutate in place).
   let effectiveRaw = raw;
-  if (sessionId !== currentSessionId) {
+  if (sessionId !== store.sessionId) {
     effectiveRaw =
       sessionId !== null ? (readSessionWorkspaceState(sessionId).widthPx ?? null) : null;
   }
-  // Clamped at render time only — the store keeps the user's preferred width, so
+  // Clamped at render time only - the store keeps the user's preferred width, so
   // a temporary squeeze (sidebar opening) is undone when the space returns.
-  const preferredPanelWidth = Math.max(minWidthPx, effectiveRaw ?? defaultWidthPx(rootWidth()));
-  const resolvedWidth = clamp(
-    preferredPanelWidth,
-    minWidthPx,
-    reservedPx,
-    chatMinWidthPx,
-    rootWidth(),
-  );
+  const preferredPanelWidth = Math.max(floorPx, effectiveRaw ?? defaultWidthPx(layout));
+  const resolvedWidth = clamp(preferredPanelWidth, layout, floorPx, reservedPx, chatMinWidthPx);
   // Drives the drag listeners' lifecycle: they mount only while a drag is
   // live, so there's no idle window-level mousemove handler firing during
   // ordinary page use.
   const [isDragging, setIsDragging] = useState(false);
   // `resolvedWidth` reads the root's width at render, but a viewport resize
   // that leaves the stored (no-reserve) width unchanged wouldn't otherwise
-  // re-render — so the render-time reserve clamp would go stale and the chat
+  // re-render - so the render-time reserve clamp would go stale and the chat
   // could dip below its minimum on a shrink. This tick forces a recompute on
   // every resize regardless of whether the stored width moved.
   const [, bumpViewport] = useReducer((n: number) => n + 1, 0);
   const overlayRef = useRef<HTMLDivElement | null>(null);
-  const minWidthRef = useRef(minWidthPx);
-  minWidthRef.current = minWidthPx;
+  const minWidthRef = useRef(floorPx);
+  minWidthRef.current = floorPx;
   const reservedRef = useRef(reservedPx);
   reservedRef.current = reservedPx;
   const chatMinRef = useRef(chatMinWidthPx);
@@ -276,38 +311,32 @@ export function useResizableInlinePanel(
     overlayRef.current = null;
   }, []);
 
-  // Load the active session's saved width into the module store (and re-load
+  // Load the active session's saved width into the store (and re-load
   // when it changes) so the live store and the drag handlers operate on the
   // right session.
   useEffect(() => {
-    loadSession(sessionId);
-  }, [sessionId]);
+    store.loadSession(sessionId);
+  }, [sessionId, store]);
 
   // Re-clamp the saved choice to the new viewport (without one, the default tracks it).
   // No `reservedPx` here: the sidebar's squeeze is applied at render time only.
   useEffect(
     () =>
       layout.onDidChangeRootSize(() => {
-        setStoredWidthRaw(
-          preferredWidth !== null
-            ? clamp(
-                preferredWidth,
-                minWidthRef.current,
-                0,
-                chatMinRef.current,
-                rootWidthRef.current(),
-              )
+        store.setRaw(
+          store.preferred !== null
+            ? clamp(store.preferred, layout, minWidthRef.current, 0, chatMinRef.current)
             : null,
         );
         // Force a re-render even when the stored width is unchanged, so the
         // render-time reserve clamp re-runs against the new viewport.
         bumpViewport();
       }),
-    [layout],
+    [layout, store],
   );
 
   // The resolvedWidth formula already enforces the visual minimum. No effect
-  // needed — this lets the panel shrink back when minWidthPx drops.
+  // needed - this lets the panel shrink back when minWidthPx drops.
 
   const onMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -317,14 +346,16 @@ export function useResizableInlinePanel(
         '[data-slot="workspace-panel"], aside',
       );
       const box = panel?.getBoundingClientRect();
+      // Without a panel element, the mount's own edge: an embed's root needn't start at x 0.
+      const bounds = layoutRef.current.getRoot()?.getBoundingClientRect();
       const right = sideRef.current === "right";
       dragAnchor.current = box
         ? right
           ? box.right
           : box.left
         : right
-          ? rootWidthRef.current()
-          : 0;
+          ? (bounds?.right ?? window.innerWidth)
+          : (bounds?.left ?? 0);
       setIsDragging(true);
       addDragOverlay();
       document.body.style.cursor = "col-resize";
@@ -342,39 +373,39 @@ export function useResizableInlinePanel(
       const narrow = side === "right" ? "ArrowRight" : "ArrowLeft";
       if (e.key === widen) {
         e.preventDefault();
-        setStoredWidth(
+        store.set(
           (prev) =>
             clamp(
               (prev ?? resolvedWidth) + step,
+              layoutRef.current,
               minWidthRef.current,
               reservedRef.current,
               chatMinRef.current,
-              rootWidthRef.current(),
             ),
           true,
         );
       } else if (e.key === narrow) {
         e.preventDefault();
-        setStoredWidth(
+        store.set(
           (prev) =>
             clamp(
               (prev ?? resolvedWidth) - step,
+              layoutRef.current,
               minWidthRef.current,
               reservedRef.current,
               chatMinRef.current,
-              rootWidthRef.current(),
             ),
           true,
         );
       }
     },
-    [persistEnabled, resolvedWidth, side],
+    [persistEnabled, resolvedWidth, side, store],
   );
 
-  // Drag listeners live only while a drag is active — no idle window-level
-  // mousemove handler during ordinary use. Moves are coalesced through a
+  // Drag listeners live only while a drag is active - no idle window-level
+  // mousemove handler firing during ordinary use. Moves are coalesced through a
   // single rAF so a burst of mousemove events yields at most one width update
-  // per frame (setStoredWidth already dedupes equal values).
+  // per frame (store.set already dedupes equal values).
   useEffect(() => {
     if (!isDragging) return;
     let frame = 0;
@@ -383,13 +414,13 @@ export function useResizableInlinePanel(
     function flush() {
       frame = 0;
       if (pending === null || !persistEnabledRef.current) return;
-      setStoredWidth(
+      store.set(
         clamp(
           pending,
+          layoutRef.current,
           minWidthRef.current,
           reservedRef.current,
           chatMinRef.current,
-          rootWidthRef.current(),
         ),
       );
       pending = null;
@@ -408,7 +439,7 @@ export function useResizableInlinePanel(
       flush();
       setIsDragging(false);
       removeDragOverlay();
-      if (persistEnabledRef.current) persistStoredWidth();
+      if (persistEnabledRef.current) store.persistStored();
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
     }
@@ -425,18 +456,15 @@ export function useResizableInlinePanel(
       document.body.style.userSelect = "";
       removeDragOverlay();
     };
-  }, [isDragging, removeDragOverlay]);
+  }, [isDragging, removeDragOverlay, store]);
 
   // Stable identity so consumers memoized on this prop (WorkspacePanel) don't
-  // re-render on every parent render — the object only changes when its inputs do.
+  // re-render on every parent render - the object only changes when its inputs do.
   // Double-click: back to the theme's width (`ui-auxiliarybar-width`) for this session.
   const onDoubleClick = useCallback(() => {
     if (!persistEnabledRef.current) return;
-    if (currentSessionId !== null)
-      writeSessionWorkspaceState(currentSessionId, { widthPx: undefined });
-    preferredWidth = null;
-    setStoredWidthRaw(null);
-  }, []);
+    store.clearSaved();
+  }, [store]);
 
   const handleProps = useMemo(
     () => ({
@@ -455,9 +483,9 @@ export function useResizableInlinePanel(
   // Read when the panel opens, so a window resized since the last render is measured.
   // The store holds the choice clamped to this viewport; a wider window can fit all of it.
   const widthInWiderWindow = useCallback(() => {
-    const chosen = sessionId === currentSessionId ? preferredWidth : effectiveRaw;
-    return Math.max(minWidthPx, chosen ?? defaultWidthInWiderWindowPx(rootWidthRef.current()));
-  }, [sessionId, effectiveRaw, minWidthPx]);
+    const chosen = sessionId === store.sessionId ? store.preferred : effectiveRaw;
+    return Math.max(floorPx, chosen ?? defaultWidthInWiderWindowPx(layoutRef.current));
+  }, [sessionId, effectiveRaw, floorPx, store]);
 
   return {
     panelWidth: resolvedWidth,

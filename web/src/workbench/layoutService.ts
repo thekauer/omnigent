@@ -133,24 +133,32 @@ export class LayoutService {
     this.rootObserver = null;
     this.root?.removeAttribute(LAYOUT_WIDTH_ATTRIBUTE);
     this.root = root;
-    this.rootSize = undefined;
     if (root && typeof ResizeObserver !== "undefined") {
       this.rootObserver = new ResizeObserver(() => this.measureRoot());
       this.rootObserver.observe(root);
     }
-    this.measureRoot();
+    // Another root's layout is never kept, even at the size this one measures.
+    this.measureRoot(true);
   }
 
   getRoot(): HTMLElement | null {
     return this.root;
   }
 
-  private measureRoot(): void {
+  /**
+   * Takes the root's box. A zero-width box (the root is hidden) is no box, but a root that has
+   * been measured keeps its last layout while hidden: its mount doesn't flip to the window's.
+   */
+  private measureRoot(forced = false): void {
     const box = this.root?.getBoundingClientRect();
-    const next = box ? Object.freeze({ width: box.width, height: box.height }) : undefined;
-    if (next?.width === this.rootSize?.width && next?.height === this.rootSize?.height) return;
+    const next =
+      box && box.width > 0 ? Object.freeze({ width: box.width, height: box.height }) : undefined;
+    if (!forced && !next && this.rootViewport) return;
+    if (!forced && next?.width === this.rootSize?.width && next?.height === this.rootSize?.height) {
+      return;
+    }
     this.rootSize = next;
-    const viewport = next && next.width > 0 ? viewportOfSize(next.width, next.height) : null;
+    const viewport = next ? viewportOfSize(next.width, next.height) : null;
     if (viewport) {
       this.root?.setAttribute(LAYOUT_WIDTH_ATTRIBUTE, layoutWidthAttributeValue(viewport));
     } else {

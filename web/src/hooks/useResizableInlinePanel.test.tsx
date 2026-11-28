@@ -363,6 +363,26 @@ describe("useResizableInlinePanel in an embed (decision 14)", () => {
     embed.remove();
   });
 
+  it("measures a drag from the root's own right edge when no panel element is found", () => {
+    const embed = embedScope();
+    const { result, unmount } = renderHook(() => useResizableInlinePanel(SESSION), {
+      wrapper: embed.wrapper,
+    });
+    // The handle sits outside any panel element: the embed's root edge (1300), not the window's
+    // width (2000) or the root's width (1200), is the drag's anchor.
+    act(() =>
+      result.current.handleProps.onMouseDown({
+        preventDefault: () => {},
+        currentTarget: document.createElement("div"),
+      } as unknown as React.MouseEvent),
+    );
+    act(() => window.dispatchEvent(new MouseEvent("mousemove", { clientX: 800 })));
+    act(() => window.dispatchEvent(new MouseEvent("mouseup")));
+    expect(result.current.panelWidth).toBe(500);
+    unmount();
+    embed.remove();
+  });
+
   it("measures a drag from the panel's own outer edge", () => {
     const embed = embedScope();
     const { result, unmount } = renderHook(() => useResizableInlinePanel(SESSION), {
@@ -385,5 +405,32 @@ describe("useResizableInlinePanel in an embed (decision 14)", () => {
     expect(result.current.panelWidth).toBe(500);
     unmount();
     embed.remove();
+  });
+});
+
+describe("useResizableInlinePanel per mount", () => {
+  it("keeps a narrow embed beside the app from changing the app's width or saved session", () => {
+    const app = renderHook(() => useResizableInlinePanel(SESSION));
+    expect(app.result.current.panelWidth).toBe(600);
+    // A 390px embed clamps its own width to nothing; the app's store must not see it.
+    const scope = createWorkbenchScope("/narrow");
+    const root = document.createElement("div");
+    root.getBoundingClientRect = () =>
+      ({ width: 390, height: 800, left: 0, right: 390 }) as DOMRect;
+    document.body.append(root);
+    act(() => scope.layout.setRoot(root));
+    const embed = renderHook(() => useResizableInlinePanel("conv_embed"), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <WorkbenchScopeProvider scope={scope}>{children}</WorkbenchScopeProvider>
+      ),
+    });
+    nudgeWiderOnce(embed.result);
+    expect(app.result.current.panelWidth).toBe(600);
+    expect(nudgeWiderOnce(app.result)).toBe(620);
+    expect(readSessionWorkspaceState(SESSION).widthPx).toBe(620);
+    embed.unmount();
+    app.unmount();
+    scope.layout.setRoot(null);
+    root.remove();
   });
 });

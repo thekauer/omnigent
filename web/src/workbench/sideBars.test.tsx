@@ -12,7 +12,9 @@ import {
 } from "@/hooks/useResizableSidebar";
 import { LAYOUT_SLOTS, layoutState } from "./layoutState";
 import { measureTokenValue, TOKEN_CONSTRAINTS, validateTokenValue } from "@/theme/validate";
+import { standaloneLayoutService } from "./layoutService";
 import { invalidateLayoutTokens, LayoutTokens, readLengthToken } from "./layoutTokens";
+import { createWorkbenchScope } from "./workbenchScope";
 import {
   builtInNavigationEntries,
   NavigationEntries,
@@ -87,16 +89,45 @@ describe("the side bars' settings", () => {
 describe("the layout tokens", () => {
   it("measure a token on the theme root, falling back where nothing is laid out", () => {
     invalidateLayoutTokens();
-    expect(readLengthToken(LayoutTokens.sidebarWidth, () => 320)).toBe(320);
+    expect(readLengthToken(LayoutTokens.sidebarWidth, () => 320, standaloneLayoutService)).toBe(
+      320,
+    );
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
       width: 264,
     } as DOMRect);
     vi.spyOn(window, "getComputedStyle").mockReturnValue({ width: "264px" } as CSSStyleDeclaration);
     invalidateLayoutTokens();
-    expect(readLengthToken(LayoutTokens.sidebarWidth, () => 320)).toBe(264);
+    expect(readLengthToken(LayoutTokens.sidebarWidth, () => 320, standaloneLayoutService)).toBe(
+      264,
+    );
     const probe = document.querySelector<HTMLElement>("[data-layout-token-probe]");
     expect(probe?.style.width).toBe("var(--ui-sidebar-width)");
     expect(probe?.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("measure on the caller's mount's root, not the active mount's", () => {
+    // The embed is not the active mount: its token must still be measured on its own root.
+    const scope = createWorkbenchScope("/tokens");
+    const embedRoot = document.createElement("div");
+    document.body.append(embedRoot);
+    act(() => scope.layout.setRoot(embedRoot));
+    vi.spyOn(window, "getComputedStyle").mockReturnValue({
+      width: "264px",
+      getPropertyValue: () => "",
+    } as unknown as CSSStyleDeclaration);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      width: 264,
+      height: 600,
+    } as DOMRect);
+    try {
+      invalidateLayoutTokens();
+      expect(readLengthToken(LayoutTokens.sidebarWidth, () => 320, scope.layout)).toBe(264);
+      expect(embedRoot.querySelector("[data-layout-token-probe]")).not.toBeNull();
+    } finally {
+      act(() => scope.layout.setRoot(null));
+      embedRoot.remove();
+      vi.restoreAllMocks();
+    }
   });
 
   it("size the side bar from its tokens, mirrored on the right, and reset on double-click", () => {

@@ -108,7 +108,10 @@ export function useSidebarSwipeToOpen({
       const target = event.target instanceof Element ? event.target : null;
       if (!drawer || !surface || !target) return;
       const touch = event.touches[0];
-      const fromEdge = side === "left" ? touch.clientX : window.innerWidth - touch.clientX;
+      // Measured on the swipe surface, so an embed's edges are its own, not the window's.
+      const surfaceBox = surface.getBoundingClientRect();
+      const fromEdge =
+        side === "left" ? touch.clientX - surfaceBox.left : surfaceBox.right - touch.clientX;
       if (fromEdge < EDGE_EXCLUSION_PX || ignoresTouch(target, surface)) return;
       tracking = true;
       startX = touch.clientX;

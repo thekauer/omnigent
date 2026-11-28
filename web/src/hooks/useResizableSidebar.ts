@@ -37,8 +37,8 @@ const DEFAULT_WIDTH_PX = 320;
 const MIN_WIDTH_PX = 220;
 const MAX_WIDTH_RATIO = 0.5;
 
-function defaultWidth(): number {
-  return readLengthToken(LayoutTokens.sidebarWidth, () => DEFAULT_WIDTH_PX);
+function defaultWidth(layout: LayoutService): number {
+  return readLengthToken(LayoutTokens.sidebarWidth, () => DEFAULT_WIDTH_PX, layout);
 }
 
 /** The narrowest the chat stays beside the side bar, whatever the width tokens say. */
@@ -65,11 +65,15 @@ export function clampSidebarWidth(
 function clamp(w: number, layout: LayoutService): number {
   // No viewport available off the DOM (SSR / node test env) — this runs during
   // render, so guard before reading ``window`` to avoid a hard throw.
-  const floor = readLengthToken(LayoutTokens.sidebarMinWidth, () => MIN_WIDTH_PX);
+  const floor = readLengthToken(LayoutTokens.sidebarMinWidth, () => MIN_WIDTH_PX, layout);
   if (typeof window === "undefined") return Math.max(floor, w);
   // The mount's box: the window, or an embed's root (decision 14).
   const rootWidth = layout.getRootSize().width;
-  const ceiling = readLengthToken(LayoutTokens.sidebarMaxWidth, () => rootWidth * MAX_WIDTH_RATIO);
+  const ceiling = readLengthToken(
+    LayoutTokens.sidebarMaxWidth,
+    () => rootWidth * MAX_WIDTH_RATIO,
+    layout,
+  );
   // A phone's drawer goes over the chat: only beside it does the chat need its room.
   if (!isDesktopLayout(layout)) return Math.max(floor, Math.min(w, ceiling));
   return clampSidebarWidth(w, floor, ceiling, rootWidth, activityBarBeside(layout));
@@ -188,9 +192,16 @@ export function useResizableSidebar(side: "left" | "right" = "left") {
   const raw = useSyncExternalStore(store.subscribe, store.getSnapshot, getServerSnapshot);
   // A theme setting the width tokens re-renders with their new values.
   useSyncExternalStore(subscribeLayoutTokens, layoutTokensVersion, layoutTokensVersion);
+  // The root's width is read at render, so a re-render follows its changes, its first measure
+  // included (the ref callback measures during commit, before this effect could subscribe).
+  useSyncExternalStore(
+    useCallback((listener: () => void) => layout.onDidChangeRootSize(listener), [layout]),
+    () => layout.getRootSize().width,
+    () => 0,
+  );
   const sideRef = useRef(side);
   sideRef.current = side;
-  const width = clamp(raw ?? defaultWidth(), layout);
+  const width = clamp(raw ?? defaultWidth(layout), layout);
   const dragging = useRef(false);
   // The side bar's outer edge when the drag began (its left edge on the left, its right edge
   // on the right): the width is the cursor's distance from it, whatever sits beside it.
@@ -205,7 +216,7 @@ export function useResizableSidebar(side: "left" | "right" = "left") {
   useEffect(
     () =>
       layout.onDidChangeRootSize(() => {
-        store.set((prev) => clamp(store.preferred ?? prev ?? defaultWidth(), layout));
+        store.set((prev) => clamp(store.preferred ?? prev ?? defaultWidth(layout), layout));
       }),
     [layout, store],
   );

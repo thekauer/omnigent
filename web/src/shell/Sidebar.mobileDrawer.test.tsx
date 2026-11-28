@@ -1,5 +1,7 @@
 import { configurationService } from "@/configuration/configurationService";
 import { renderSidebar } from "@/test/sidebarTestHelpers";
+import { stubWindowMediaQueries } from "@/test/windowMediaQueries";
+import { createWorkbenchScope } from "@/workbench/workbenchScope";
 import { conversation as conv, conversationPage } from "@/test/sidebarMockHelpers";
 // Mobile drawer: a strip of chat stays visible and dismisses it on tap, Search
 // floats at the top, and Settings sits in the profile footer.
@@ -462,5 +464,31 @@ describe("mobile sidebar drawer keyboard dismissal", () => {
     setOpen(true);
 
     expect(composer).toHaveFocus();
+  });
+});
+
+describe("mobile sidebar drawer in an embed", () => {
+  it("closes on a row tap by the embed's own width, not the window's", () => {
+    // The window is desktop-wide; the embed's box is a phone.
+    vi.spyOn(window, "innerWidth", "get").mockReturnValue(1400);
+    const originalMatchMedia = window.matchMedia;
+    stubWindowMediaQueries();
+    const scope = createWorkbenchScope("/phone-embed");
+    const root = document.createElement("div");
+    root.getBoundingClientRect = () => ({ width: 390, height: 800 }) as DOMRect;
+    document.body.append(root);
+    act(() => scope.layout.setRoot(root));
+    const onClose = vi.fn();
+    try {
+      renderSidebar({ onClose, workbenchScope: scope });
+      fireEvent.click(screen.getByRole("link", { name: "conv_a" }));
+      expect(onClose).toHaveBeenCalledTimes(1);
+    } finally {
+      cleanup();
+      scope.layout.setRoot(null);
+      root.remove();
+      vi.restoreAllMocks();
+      vi.stubGlobal("matchMedia", originalMatchMedia);
+    }
   });
 });

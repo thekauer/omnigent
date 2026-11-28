@@ -1915,9 +1915,15 @@ html[data-electron-mac] .breadcrumb-folder {
   html:has(.app-shell),
   body:has(.app-shell) {
     overflow: hidden;
-    /* Horizontal swipes belong to the shell's drawers: a browser's overscroll back navigation
-     * (Chrome's, from a swipe at the edge the drawers leave to the OS) must not leave the app. */
-    overscroll-behavior-x: none;
+  }
+  /* The standalone app's phone layout: horizontal swipes belong to the drawers, so a browser's
+   * overscroll back navigation (from a swipe at the edge the drawers leave to the OS) must not
+   * leave the app. An embed's host page keeps its own overscroll. */
+  @media (width < 73.8125rem) {
+    html:has(.app-shell):not(:has(.omnigent-app)),
+    body:has(.app-shell):not(:has(.omnigent-app)) {
+      overscroll-behavior-x: none;
+    }
   }
   /* An embed in the mobile layout is the app's viewport: its drawers, sheets and dialogs
    * (fixed, portaled into it) stay inside its box rather than the host's window. */

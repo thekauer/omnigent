@@ -11,15 +11,16 @@ import { useConfigurationValue } from "@/configuration/useConfiguration";
 import { LAYOUT_SLOTS, type LayoutStateStore, layoutState } from "./layoutState";
 import { LayoutTokens, readLengthToken } from "./layoutTokens";
 import { matchesIdPattern, productLayout, useProductHidesPart } from "./productLayout";
+import type { LayoutService } from "./layoutService";
 import { useWorkbenchScope } from "./workbenchScope";
 
 export const ACTIVITY_BAR_LOCATION_SETTING = "workbench.activityBar.location";
 
 export type ActivityBarLocation = "default" | "top" | "bottom" | "hidden";
 
-/** The bar's width beside the side bar, as the shell reserves it (`ui-activitybar-width`). */
-export function activityBarWidthPx(): number {
-  return readLengthToken(LayoutTokens.activityBarWidth, () => 48);
+/** The bar's width beside the side bar, as the mount reserves it (`ui-activitybar-width`). */
+export function activityBarWidthPx(layout: LayoutService): number {
+  return readLengthToken(LayoutTokens.activityBarWidth, () => 48, layout);
 }
 
 const LOCATIONS: readonly ActivityBarLocation[] = ["default", "top", "bottom", "hidden"];

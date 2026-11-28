@@ -4,8 +4,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { isDesktopLayout, useIsMobileViewport } from "@/hooks/useIsMobileViewport";
 import { useIsSideBySideSidebarViewport } from "@/hooks/useIsSideBySideSidebarViewport";
 import { useResizableSidebar } from "@/hooks/useResizableSidebar";
-import { readPanelSizePreference } from "@/lib/panelSizePreferences";
+import { readPanelSizePreference, writePanelSizePreference } from "@/lib/panelSizePreferences";
 import { usePartVisible, useWorkbenchPart } from "@/shell/useWorkbenchParts";
+import { installResizableWidth } from "@/test/resizableWidth";
 import { activityBarWidthPx, orderActivityBarItems } from "./activityBar";
 import { LAYOUT_SLOTS, layoutState, standaloneLayoutState } from "./layoutState";
 import { layoutService, Parts, standaloneLayoutService } from "./layoutService";
@@ -98,7 +99,7 @@ describe("workbench scopes", () => {
     expect(rootRelativeLength("320px", { width: 1000, height: 800 })).toBeUndefined();
     expect(rootRelativeLength("50vw", null)).toBeUndefined();
     // No layout in the test DOM: the default stands in.
-    expect(activityBarWidthPx()).toBe(48);
+    expect(activityBarWidthPx(standaloneLayoutService)).toBe(48);
   });
 });
 
@@ -245,20 +246,23 @@ describe("the side bar's dragged width", () => {
         <WorkbenchScopeProvider scope={scope}>{children}</WorkbenchScopeProvider>
       );
     vi.spyOn(window, "innerWidth", "get").mockReturnValue(2000);
-    const one = renderHook(() => useResizableSidebar(), { wrapper: wrapper(first) });
-    const two = renderHook(() => useResizableSidebar(), { wrapper: wrapper(second) });
-    act(() =>
-      one.result.current.handleProps.onKeyDown({
-        key: "ArrowRight",
-        preventDefault: () => {},
-      } as React.KeyboardEvent),
-    );
-    expect(one.result.current.width).toBe(340);
-    expect(two.result.current.width).toBe(320);
-    expect(readPanelSizePreference("sidebarWidthPx", first.state)).toBe(340);
-    expect(readPanelSizePreference("sidebarWidthPx", second.state)).toBeNull();
-    expect(readPanelSizePreference("sidebarWidthPx", standaloneLayoutState)).toBeNull();
-    vi.restoreAllMocks();
+    try {
+      const one = renderHook(() => useResizableSidebar(), { wrapper: wrapper(first) });
+      const two = renderHook(() => useResizableSidebar(), { wrapper: wrapper(second) });
+      act(() =>
+        one.result.current.handleProps.onKeyDown({
+          key: "ArrowRight",
+          preventDefault: () => {},
+        } as React.KeyboardEvent),
+      );
+      expect(one.result.current.width).toBe(340);
+      expect(two.result.current.width).toBe(320);
+      expect(readPanelSizePreference("sidebarWidthPx", first.state)).toBe(340);
+      expect(readPanelSizePreference("sidebarWidthPx", second.state)).toBeNull();
+      expect(readPanelSizePreference("sidebarWidthPx", standaloneLayoutState)).toBeNull();
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 });
 
@@ -288,5 +292,63 @@ describe("the side bar's width in an embed", () => {
     scope.layout.setRoot(null);
     root.remove();
     vi.restoreAllMocks();
+  });
+
+  it("re-renders when its root is measured after the first render", () => {
+    // The ref callback measures the root during commit, before the hook's effects subscribe:
+    // the width read at render (the window's 3000) must still follow the root's 1000.
+    vi.spyOn(window, "innerWidth", "get").mockReturnValue(3000);
+    const scope = createWorkbenchScope("/first-measure");
+    writePanelSizePreference("sidebarWidthPx", 900, scope.state);
+    function Probe() {
+      return <span data-testid="width">{useResizableSidebar().width}</span>;
+    }
+    const { getByTestId, unmount } = render(
+      <WorkbenchScopeProvider scope={scope}>
+        <div
+          ref={(element) => {
+            if (!element) return;
+            element.getBoundingClientRect = () => ({ width: 1000, height: 800 }) as DOMRect;
+            scope.layout.setRoot(element);
+          }}
+        >
+          <Probe />
+        </div>
+      </WorkbenchScopeProvider>,
+    );
+    // 50% of the 1000px root, not the window's 1500.
+    expect(getByTestId("width").textContent).toBe("500");
+    unmount();
+    scope.layout.setRoot(null);
+    vi.restoreAllMocks();
+  });
+
+  it("keeps a hidden root's layout and the side bar's width until it shows again", () => {
+    const originalResizeObserver = globalThis.ResizeObserver;
+    const setRootWidth = installResizableWidth(1400);
+    const scope = createWorkbenchScope("/hidden");
+    const root = document.createElement("div");
+    document.body.append(root);
+    try {
+      act(() => scope.layout.setRoot(root));
+      const { result } = renderHook(() => useResizableSidebar(), {
+        wrapper: ({ children }: { children: ReactNode }) => (
+          <WorkbenchScopeProvider scope={scope}>{children}</WorkbenchScopeProvider>
+        ),
+      });
+      expect(result.current.width).toBe(320);
+      // display: none: the root reports no box, and the mount keeps its desktop layout.
+      setRootWidth(0);
+      expect(scope.layout.getViewport()).toEqual(viewportOfSize(1400, 0));
+      expect(result.current.width).toBe(320);
+      // Shown again: the never-dragged side bar is still its default, not the floor.
+      setRootWidth(1400);
+      expect(result.current.width).toBe(320);
+    } finally {
+      scope.layout.setRoot(null);
+      root.remove();
+      vi.restoreAllMocks();
+      vi.stubGlobal("ResizeObserver", originalResizeObserver);
+    }
   });
 });
