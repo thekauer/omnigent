@@ -1499,8 +1499,8 @@ Deviations and why:
   `onDidChangeLayout` fire where their values differ; a drag reports at most once per 100 ms.
   There are no setters: an extension changes the layout through the layout commands. The
   reads and events follow the app the window's commands reach, as its context keys do, so an
-  activation switch reports the values that differ. `sideBarLocation` is `left` until the side
-  bar location setting (layout plan L5) lands.
+  activation switch reports the values that differ. `sideBarLocation` is
+  `workbench.sideBar.location` (a change of it is a layout change).
 - `builtInView` has no VS Code equivalent: the sessions container's views are host
   React components (VS Code's own views are workbench code). The side bar's header
   row keeps its host-drawn search and collapse buttons; `viewContainer/title` entries

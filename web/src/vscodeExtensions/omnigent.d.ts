@@ -268,7 +268,7 @@ declare module "omnigent" {
     readonly isPartVisible: (part: WorkbenchPart) => boolean;
     /** The part's box while it is on screen; undefined when it is hidden or not drawn. */
     readonly getPartSize: (part: WorkbenchPart) => PartSize | undefined;
-    /** The side the primary side bar sits on. */
+    /** The side the primary side bar sits on (`workbench.sideBar.location`). */
     readonly sideBarLocation: "left" | "right";
     /**
      * The view container the primary side bar shows (`omnigent.conversations` or a contributed

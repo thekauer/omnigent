@@ -5,6 +5,7 @@
 // primary side bar's own state lives here (L4): whether it is open and which view container
 // it shows. Plain data; no React.
 
+import { configurationService } from "@/configuration/configurationService";
 import { CONVERSATIONS_CONTAINER } from "./viewContainers";
 import { LAYOUT_SLOTS, type LayoutStateStore, standaloneLayoutState } from "./layoutState";
 import {
@@ -42,6 +43,13 @@ export function isPart(value: unknown): value is Part {
 
 /** Where a part sits. The side bars swap with `workbench.sideBar.location` (a later stage). */
 export type PartLocation = "top" | "left" | "right" | "bottom" | "center";
+
+/** `workbench.sideBar.location` (workbench/sideBars.ts reads it for the shell). */
+const SIDE_BAR_LOCATION_KEY = "workbench.sideBar.location";
+
+function sideBarSide(): "left" | "right" {
+  return configurationService.getValue(SIDE_BAR_LOCATION_KEY) === "right" ? "right" : "left";
+}
 
 const DEFAULT_LOCATIONS: Readonly<Record<Part, PartLocation>> = Object.freeze({
   [Parts.TITLEBAR_PART]: "top",
@@ -309,7 +317,13 @@ export class LayoutService {
     this.controllers.get(part)?.setSize?.(size);
   }
 
+  /**
+   * Where `part` sits. The side bar (with the activity bar) follows `workbench.sideBar.location`,
+   * the secondary side bar takes the other side; the window's settings, so every mount's.
+   */
   getLocation(part: Part): PartLocation {
+    if (part === Parts.SIDEBAR_PART || part === Parts.ACTIVITYBAR_PART) return sideBarSide();
+    if (part === Parts.AUXILIARYBAR_PART) return sideBarSide() === "right" ? "left" : "right";
     return DEFAULT_LOCATIONS[part];
   }
 
@@ -428,8 +442,13 @@ export class LayoutService {
 
   onDidChangeLayout(listener: Listener<void>): () => void {
     this.layoutListeners.add(listener);
+    // The side bar's side is a setting: its change moves parts in every mount.
+    const offLocation = configurationService.onDidChangeConfiguration((event) => {
+      if (event.affectsConfiguration(SIDE_BAR_LOCATION_KEY)) listener(undefined);
+    });
     return () => {
       this.layoutListeners.delete(listener);
+      offLocation();
     };
   }
 }

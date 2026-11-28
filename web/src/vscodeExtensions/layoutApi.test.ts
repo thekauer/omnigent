@@ -1,6 +1,7 @@
 // The layout's read side for extensions (`window.layout`, layout plan L10): plain-data reads, change
 // events that report only changes, coalesced layout events, the active mount's values, errors and
 // disposal, and the typings that declare them.
+import { configurationService } from "@/configuration/configurationService";
 import type * as omnigent from "omnigent";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -135,16 +136,41 @@ describe("window.layout reads", () => {
     expect(api.window.layout.width).toBe("desktop");
   });
 
-  it("names the side bar's location from the layout, `right` when it sits on the right", () => {
-    const layout = mount();
-    const { api } = setup(layout);
-    expect(api.window.layout.sideBarLocation).toBe("left");
-    // The location is the layout's (today's default); a right location reads as right.
-    const withRight = new LayoutService(new LayoutStateStore("omnigent:layout-api-test-right"));
-    Object.defineProperty(withRight, "getLocation", {
-      value: (id: string) => (id === Parts.SIDEBAR_PART ? "right" : "center"),
+  it("names the side bar's location from `workbench.sideBar.location`, and its change is a layout change", () => {
+    vi.useFakeTimers();
+    const configListeners: ((event: {
+      affectedKeys: readonly string[];
+      affectsConfiguration: (key: string) => boolean;
+    }) => void)[] = [];
+    let side = "left";
+    vi.spyOn(configurationService, "getValue").mockImplementation((key: string) =>
+      key === "workbench.sideBar.location" ? side : undefined,
+    );
+    vi.spyOn(configurationService, "onDidChangeConfiguration").mockImplementation((listener) => {
+      configListeners.push(listener as (typeof configListeners)[number]);
+      return () => {};
     });
-    expect(setup(withRight).api.window.layout.sideBarLocation).toBe("right");
+    try {
+      const layout = mount();
+      const { api } = setup(layout);
+      expect(api.window.layout.sideBarLocation).toBe("left");
+      const changed = vi.fn();
+      api.window.layout.onDidChangeLayout(changed);
+      side = "right";
+      for (const listener of configListeners) {
+        listener({
+          affectedKeys: ["workbench.sideBar.location"],
+          affectsConfiguration: (key) => key === "workbench.sideBar.location",
+        });
+      }
+      vi.advanceTimersByTime(LAYOUT_EVENT_DELAY_MS + 1);
+      expect(api.window.layout.sideBarLocation).toBe("right");
+      expect(layout.getLocation(Parts.AUXILIARYBAR_PART)).toBe("left");
+      expect(changed).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+      vi.restoreAllMocks();
+    }
   });
 });
 
