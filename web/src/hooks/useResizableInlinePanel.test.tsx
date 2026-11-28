@@ -1,6 +1,8 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { readSessionWorkspaceState } from "@/lib/sessionWorkspaceState";
+import type { ReactNode } from "react";
+import { createWorkbenchScope, WorkbenchScopeProvider } from "@/workbench/workbenchScope";
 import { resetWidthStoreForTesting, useResizableInlinePanel } from "./useResizableInlinePanel";
 
 // useResizableInlinePanel keeps its width in a module-level store shared across
@@ -319,5 +321,69 @@ describe("useResizableInlinePanel drag overlay", () => {
     // leave the transparent overlay swallowing every click on the page.
     unmount();
     expect(overlaySelector()).toBeNull();
+  });
+});
+
+describe("useResizableInlinePanel in an embed (decision 14)", () => {
+  // A 1200px embed root at x 100 in the 2000px window.
+  function embedScope() {
+    const scope = createWorkbenchScope("/embed");
+    const root = document.createElement("div");
+    root.getBoundingClientRect = () =>
+      ({ width: 1200, height: 900, left: 100, right: 1300 }) as DOMRect;
+    document.body.append(root);
+    act(() => scope.layout.setRoot(root));
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <WorkbenchScopeProvider scope={scope}>{children}</WorkbenchScopeProvider>
+    );
+    return {
+      wrapper,
+      remove() {
+        scope.layout.setRoot(null);
+        root.remove();
+      },
+    };
+  }
+
+  it("sizes the default and the ceiling against the embed's root, not the window", () => {
+    const embed = embedScope();
+    const { result, unmount } = renderHook(() => useResizableInlinePanel(SESSION), {
+      wrapper: embed.wrapper,
+    });
+    // 36% of 1200 = 432 (the window's 2000 would give 600).
+    expect(result.current.panelWidth).toBe(432);
+    // Dragged far: the ceiling is 1200 - 480 - 8 = 712, not 1512.
+    act(() =>
+      result.current.handleProps.onMouseDown({ preventDefault: () => {} } as React.MouseEvent),
+    );
+    act(() => window.dispatchEvent(new MouseEvent("mousemove", { clientX: -5000 })));
+    act(() => window.dispatchEvent(new MouseEvent("mouseup")));
+    expect(result.current.panelWidth).toBe(712);
+    unmount();
+    embed.remove();
+  });
+
+  it("measures a drag from the panel's own outer edge", () => {
+    const embed = embedScope();
+    const { result, unmount } = renderHook(() => useResizableInlinePanel(SESSION), {
+      wrapper: embed.wrapper,
+    });
+    const panel = document.createElement("aside");
+    panel.dataset.slot = "workspace-panel";
+    panel.getBoundingClientRect = () => ({ left: 868, right: 1300, width: 432 }) as DOMRect;
+    const handle = document.createElement("div");
+    panel.append(handle);
+    act(() =>
+      result.current.handleProps.onMouseDown({
+        preventDefault: () => {},
+        currentTarget: handle,
+      } as unknown as React.MouseEvent),
+    );
+    // 1300 - 800 = 500 (in window coordinates it would be 2000 - 800 = 1200, past the ceiling).
+    act(() => window.dispatchEvent(new MouseEvent("mousemove", { clientX: 800 })));
+    act(() => window.dispatchEvent(new MouseEvent("mouseup")));
+    expect(result.current.panelWidth).toBe(500);
+    unmount();
+    embed.remove();
   });
 });

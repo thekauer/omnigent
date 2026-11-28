@@ -1,12 +1,13 @@
 // WIP(session_overview): session total, per-model costs and direct sub-agents.
 
-import { type ReactNode, useState, useSyncExternalStore } from "react";
+import { type ReactNode, useCallback, useState, useSyncExternalStore } from "react";
 import { XIcon } from "lucide-react";
 import { Card, CardAction, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Spinner } from "@/components/ui/spinner";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatSessionCostUsd, formatTokenCount } from "@/lib/formatCost";
+import { useWorkbenchScope } from "@/workbench/workbenchScope";
 import { createStoredChoicePreference } from "@/lib/storedChoicePreference";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/store/chatStore";
@@ -16,17 +17,32 @@ import { SessionOverviewSubagents } from "./SessionOverviewSubagents";
 // Tailwind's `xl` breakpoint: wide enough to dock the overview beside chat.
 const WIDE_QUERY = "(min-width: 1280px)";
 
-function subscribeWide(callback: () => void): () => void {
-  const mql = window.matchMedia(WIDE_QUERY);
-  mql.addEventListener("change", callback);
-  return () => mql.removeEventListener("change", callback);
-}
+const WIDE_PX = 1280;
 
-/** True when the viewport is at least Tailwind's `xl` breakpoint. */
+/**
+ * True when the mount is at least Tailwind's `xl` breakpoint wide: the window, or an embed's
+ * root once it has a box (decision 14).
+ */
 export function useIsWideViewport(): boolean {
+  const { layout } = useWorkbenchScope();
+  const subscribe = useCallback(
+    (callback: () => void) => {
+      const mql = window.matchMedia(WIDE_QUERY);
+      mql.addEventListener("change", callback);
+      const offRoot = layout.onDidChangeRootSize(callback);
+      return () => {
+        mql.removeEventListener("change", callback);
+        offRoot();
+      };
+    },
+    [layout],
+  );
   return useSyncExternalStore(
-    subscribeWide,
-    () => window.matchMedia(WIDE_QUERY).matches,
+    subscribe,
+    () =>
+      layout.getRootViewport()
+        ? layout.getRootSize().width >= WIDE_PX
+        : window.matchMedia(WIDE_QUERY).matches,
     () => false,
   );
 }

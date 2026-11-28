@@ -51,7 +51,7 @@ parts are reserved: nothing draws them yet.
 | `sidebar` | The primary side bar (`aside.conversations-sidebar`), open or closed. |
 | `main` | The main area (`[data-slot="main-area"]`): the chat header, the route's page and, on a session, the workspace rail beside it; the grid's own main area on a grid route. |
 | `auxiliarybar` | The secondary side bar: the workspace rail (`[data-slot="workspace-panel"]`), classic or tabs. |
-| `titlebar` | The title bar, when `window.titleBar.visible` is on (layout plan L7; not on phones), class `.titlebar`, over the shell's top strip (`.app-shell[data-titlebar]` makes room for it); its regions are `[data-slot="titlebar-left"]`, `-center` and `-right`, its built-in items `[data-titlebar-item="brand" \| "commandCenter" \| "layoutControls"]` (the account is the profile and Settings buttons), an extension's `titleBar/*` entries `[data-titlebar-command="<command>"]`, its text items `[data-titlebar-text-item="<id>"]`. Not on the default pages. |
+| `titlebar` | The title bar, when `window.titleBar.visible` is on (layout plan L7; not on phones, where its items fold into the chat header's menu; in the macOS desktop app it is the window's title strip, the traffic lights in its left region), class `.titlebar`, over the shell's top strip (`.app-shell[data-titlebar]` makes room for it); its regions are `[data-slot="titlebar-left"]`, `-center` and `-right`, its built-in items `[data-titlebar-item="brand" \| "commandCenter" \| "layoutControls"]` (the account is the profile and Settings buttons), an extension's `titleBar/*` entries `[data-titlebar-command="<command>"]`, its text items `[data-titlebar-text-item="<id>"]`. Not on the default pages. |
 | `activitybar` | The activity bar, when `workbench.activityBar.location` shows it (layout plan L4): beside the side bar (`data-location="default"`, class `.activitybar`) or a row in its header or bottom (`top`, `bottom`). Not on the default pages. |
 
 ## View hooks
@@ -67,6 +67,9 @@ Drawn only when an extension contributes them (layout plan L3), so not on the de
 | `[data-slot="view-container-title"]` | The side bar's header title for a container other than the sessions. |
 | `[data-navigation-entry="<command>"]` | Another extension's `sidebar/navigation` row. |
 | `.app-shell[data-sidebar-location="right"]` | The shell with `workbench.sideBar.location: right`; the rail then carries `[data-side="left"]`. |
+| `.omnigent-app[data-layout-width="mobile" \| "desktop"]` | An embed's root, marked with the layout its own box picks (layout plan L9: below 1181px the mobile layout, whatever the window's width); the `md:` / `max-md:` variants follow it inside the embed. Unmarked until the root has a box, and in the standalone app (the window's width decides). |
+| `.app-shell[data-window-corner="sidebar" \| "auxiliarybar" \| "main"]` | The part at the window's top-left corner, where the macOS desktop app's traffic lights float (the side bar open on the left, the right panel on the left with the side bar on the right, else the chat): what clears them. |
+| `[data-phone-menu-view="<view id>"]`, `[data-titlebar-folded-item]` | A phone's chat header menu rows: another right panel view (opening `[data-testid="view-panel-drawer"]`), a title bar item folded into it. |
 | `[data-view-drop-target]` | A place a dragged view can land on (the side bar, an activity bar item, the activity bar, the right panel's tab strip), while it is over it (layout plan L6). |
 
 ## Classes

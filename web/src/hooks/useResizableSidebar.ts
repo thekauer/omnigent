@@ -17,7 +17,11 @@ import {
   readLengthToken,
   subscribeLayoutTokens,
 } from "@/workbench/layoutTokens";
-import { LAYOUT_SLOTS, type LayoutStateStore } from "@/workbench/layoutState";
+import {
+  LAYOUT_SLOTS,
+  type LayoutStateStore,
+  standaloneLayoutState,
+} from "@/workbench/layoutState";
 import type { LayoutService } from "@/workbench/layoutService";
 import { useWorkbenchScope } from "@/workbench/workbenchScope";
 import { isDesktopLayout } from "@/hooks/useIsMobileViewport";
@@ -144,7 +148,8 @@ class SidebarWidthStore {
   getSnapshot = (): number | null => this.stored;
 }
 
-const widthStores = new Map<LayoutStateStore, SidebarWidthStore>();
+// Weak: an embed's store goes with its unmounted workbench.
+const widthStores = new WeakMap<LayoutStateStore, SidebarWidthStore>();
 
 function widthStoreOf(state: LayoutStateStore): SidebarWidthStore {
   let store = widthStores.get(state);
@@ -161,7 +166,7 @@ function getServerSnapshot(): number | null {
 
 /** Reset module-level state. Only for use in tests. */
 export function resetSidebarWidthStoreForTesting(): void {
-  for (const store of widthStores.values()) store.reload();
+  widthStores.get(standaloneLayoutState)?.reload();
 }
 
 // ---------------------------------------------------------------------------

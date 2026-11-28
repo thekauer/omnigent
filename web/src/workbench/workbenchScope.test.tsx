@@ -261,3 +261,32 @@ describe("the side bar's dragged width", () => {
     vi.restoreAllMocks();
   });
 });
+
+describe("the side bar's width in an embed", () => {
+  it("clamps against the embed's root, not the window", () => {
+    vi.spyOn(window, "innerWidth", "get").mockReturnValue(3000);
+    const scope = createWorkbenchScope("/sized");
+    const root = document.createElement("div");
+    root.getBoundingClientRect = () => ({ width: 1400, height: 900 }) as DOMRect;
+    document.body.append(root);
+    act(() => scope.layout.setRoot(root));
+    const { result } = renderHook(() => useResizableSidebar(), {
+      wrapper: ({ children }: { children: ReactNode }) => (
+        <WorkbenchScopeProvider scope={scope}>{children}</WorkbenchScopeProvider>
+      ),
+    });
+    for (let step = 0; step < 40; step++) {
+      act(() =>
+        result.current.handleProps.onKeyDown({
+          key: "ArrowRight",
+          preventDefault: () => {},
+        } as React.KeyboardEvent),
+      );
+    }
+    // 50% of the 1400px root (the window's 3000 would allow 1500).
+    expect(result.current.width).toBe(700);
+    scope.layout.setRoot(null);
+    root.remove();
+    vi.restoreAllMocks();
+  });
+});
