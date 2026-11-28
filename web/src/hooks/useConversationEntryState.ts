@@ -1,4 +1,4 @@
-import { useCallback, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useSyncExternalStore } from "react";
 import type { ConversationState } from "@/store/chatStore";
 import { conversationRegistry } from "@/store/conversationRegistry";
 import { createInitialConversationState } from "@/store/conversationState";
@@ -68,4 +68,19 @@ export function useConversationEntryValue<T>(
     return select(entry === undefined ? EMPTY_STATE : entry.getState());
   };
   return useSyncExternalStore(subscribe, getSnapshot);
+}
+
+/**
+ * Keeps `conversationId` live while the mount `viewKey` shows it, so an app that is not
+ * the window's active one keeps its stream. See `ConversationRegistry.view`.
+ *
+ * @param viewKey The mount's id, e.g. its workbench scope's `id`.
+ * @param conversationId Conversation the mount shows, or null for none.
+ */
+export function useConversationView(viewKey: string, conversationId: string | null): void {
+  useEffect(
+    () =>
+      conversationId === null ? undefined : conversationRegistry.view(viewKey, conversationId),
+    [viewKey, conversationId],
+  );
 }

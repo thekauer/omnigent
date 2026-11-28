@@ -20,6 +20,7 @@ import {
   createWorkbenchScope,
   isActiveWorkbenchScope,
   releaseWorkbenchScope,
+  useIsActiveWorkbenchScope,
   WorkbenchScopeProvider,
 } from "./workbenchScope";
 
@@ -30,6 +31,22 @@ afterEach(() => {
 });
 
 describe("workbench scopes", () => {
+  it("tells a mount's React tree when it becomes the active one, and when it stops", () => {
+    const first = createWorkbenchScope("/one");
+    const second = createWorkbenchScope("/two");
+    activateWorkbenchScope(first);
+    const { result } = renderHook(() => useIsActiveWorkbenchScope(first));
+    expect(result.current).toBe(true);
+
+    act(() => activateWorkbenchScope(second));
+    expect(result.current).toBe(false);
+
+    act(() => activateWorkbenchScope(first));
+    expect(result.current).toBe(true);
+    releaseWorkbenchScope(first);
+    releaseWorkbenchScope(second);
+  });
+
   it("keep each mount's layout state and parts apart", () => {
     const first = createWorkbenchScope("/one");
     const second = createWorkbenchScope("/two");

@@ -128,6 +128,23 @@ export class ConversationRegistry {
   /** Conversation currently on screen; exempt from eviction. */
   private activeId: string | null = null;
   private readonly retainedIds = new Map<string, number>();
+  /** Each mount's on-screen conversation, by the mount's view key. */
+  private readonly viewedIds = new Map<string, string>();
+
+  /**
+   * Keep the conversation a mount shows live until the view moves or is released.
+   *
+   * Each mount has one view. Viewing another conversation moves it. A view keeps its
+   * conversation out of eviction whichever view is active, so a mount that is not the one
+   * last used keeps its stream. Returns the release for this view; a release after the view
+   * has moved to another conversation changes nothing.
+   */
+  view(viewKey: string, conversationId: string): () => void {
+    this.viewedIds.set(viewKey, conversationId);
+    return () => {
+      if (this.viewedIds.get(viewKey) === conversationId) this.viewedIds.delete(viewKey);
+    };
+  }
 
   /** Keep a visible secondary pane live until its owner unmounts. */
   retain(id: string): () => void {
@@ -235,6 +252,7 @@ export class ConversationRegistry {
     this.entries.clear();
     this.activeId = null;
     this.retainedIds.clear();
+    this.viewedIds.clear();
   }
 
   /**
@@ -292,15 +310,18 @@ export class ConversationRegistry {
    * tab reclaims one of ITS OWN background streams before it either gives up
    * (leaving the new conversation cold) or opens over budget.
    *
-   * Never evicts: the conversation on screen, `exemptId` (the one being bound —
-   * disposing it would hand back a dead entry), or an entry holding work the
-   * server has no record of yet (`hasUnsentWork` — evicting that loses the
-   * user's message). When nothing is evictable, returns `null` and the caller
-   * decides what to do with a saturated origin.
+   * Never evicts: the conversation on screen, any conversation a mount views or a
+   * pane retains, `exemptId` (the one being bound; disposing it would hand back a
+   * dead entry), or an entry holding work the server has no record of yet
+   * (`hasUnsentWork`: evicting that loses the user's message). When nothing is
+   * evictable, returns `null` and the caller decides what to do with a saturated
+   * origin.
    */
   evictLruEvictable(exemptId?: string): string | null {
+    const viewed = new Set(this.viewedIds.values());
     for (const [id, entry] of this.entries) {
-      if (id === this.activeId || id === exemptId || this.retainedIds.has(id)) continue;
+      if (id === this.activeId || id === exemptId || this.retainedIds.has(id) || viewed.has(id))
+        continue;
       if (hasUnsentWork(entry.getState())) continue;
       this.entries.delete(id);
       entry.dispose();

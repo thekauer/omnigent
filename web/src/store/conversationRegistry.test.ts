@@ -152,6 +152,43 @@ describe("ConversationRegistry", () => {
     expect(registry.evictLruEvictable()).toBe("b");
   });
 
+  it("keeps each mount's viewed conversation out of eviction, whichever one is active", () => {
+    // Two embeds on the page each show their own session; the root's active entry is
+    // a third one. Eviction must take the unviewed entry and nothing else.
+    registry.acquire("conv_one");
+    registry.acquire("conv_two");
+    registry.acquire("conv_three");
+    registry.acquire("conv_active");
+    registry.setActive("conv_active");
+    const releaseFirstMount = registry.view("workbench-1", "conv_one");
+    const releaseSecondMount = registry.view("workbench-2", "conv_two");
+    expect(registry.evictLruEvictable()).toBe("conv_three");
+    expect(registry.evictLruEvictable()).toBeNull();
+    releaseFirstMount();
+    expect(registry.evictLruEvictable()).toBe("conv_one");
+    releaseSecondMount();
+    expect(registry.evictLruEvictable()).toBe("conv_two");
+  });
+
+  it("moves a mount's view to its next conversation and ignores a stale release", () => {
+    registry.acquire("conv_a");
+    registry.acquire("conv_b");
+    const releaseFirst = registry.view("workbench-1", "conv_a");
+    registry.view("workbench-1", "conv_b");
+    // The view has moved on: the first view's release must not unprotect conv_b.
+    releaseFirst();
+    expect(registry.evictLruEvictable()).toBe("conv_a");
+    expect(registry.evictLruEvictable()).toBeNull();
+  });
+
+  it("drops every view on clear, so a reset starts unprotected", () => {
+    registry.acquire("conv_a");
+    registry.view("workbench-1", "conv_a");
+    registry.clear();
+    registry.acquire("conv_a");
+    expect(registry.evictLruEvictable()).toBe("conv_a");
+  });
+
   it("treats acquire as a recency touch, so a revisited entry is not the victim", () => {
     registry.acquire("conv_a");
     registry.acquire("conv_b");

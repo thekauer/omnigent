@@ -2162,31 +2162,52 @@ export function bindConversationForTest(
 }
 
 /**
- * Initialize the store with the app's QueryClient. Called once at app
- * boot from `main.tsx`. Without this the store can't fetch items
- * through the cache or invalidate the conversations query when a new
- * conversation is created.
+ * Initialize the store with the app's QueryClient. Called at app boot from
+ * `main.tsx`, and once per mounted `OmnigentApp` from `embed.tsx`. Without this
+ * the store can't fetch items through the cache or invalidate the conversations
+ * query when a new conversation is created.
+ *
+ * Idempotent per window: a call with the client already wired is a no-op, so a
+ * second embed on the page leaves the first one's live conversations alone. A
+ * call with a different client rewires the client and warns, since the other
+ * client's caches stop receiving updates.
  */
 export function initChatStore(client: QueryClient): void {
-  unsubscribeSettingsMutations?.();
+  if (queryClient === client) return;
+  if (queryClient !== null) {
+    console.warn(
+      "initChatStore: a second QueryClient on this page. The chat store's cache updates now go " +
+        "to the latest client; live conversations keep their streams.",
+    );
+  }
+  wireQueryClient(client);
+}
+
+/**
+ * Test-only: wires `client` after dropping every live conversation and transient
+ * send, flush and slot state, so each test case starts from a clean store. The
+ * production path is `initChatStore`, which never clears live conversations.
+ */
+export function resetChatStoreForTest(client: QueryClient): void {
   for (const timer of workspaceInvalidationTimers.values()) {
     clearTimeout(timer);
   }
   workspaceInvalidationTimers.clear();
   backgroundFlushInFlight.clear();
   backgroundFlushCooldownUntil.clear();
-  // Drop every live conversation: their streams must not outlive the app (or,
-  // in tests, leak into the next case).
   conversationRegistry.clear();
   // Drop this tab's held stream slots; disposed pumps release their own locks,
-  // and a boot/reset starts from an empty set.
+  // and a reset starts from an empty set.
   heldStreamSlots.clear();
   streamSlotOwners.clear();
-  // Reset the POST-ordering chains so a prior run's unresolved send can't block
-  // the next one (production calls this once at boot; tests call it per case).
-  // The send latch is per-conversation state now, cleared with the registry above.
+  // The send's latch is per-conversation state, cleared with the registry above.
   sendChains.clear();
   startupReads.clear();
+  wireQueryClient(client);
+}
+
+function wireQueryClient(client: QueryClient): void {
+  unsubscribeSettingsMutations?.();
   queryClient = client;
   unsubscribeSettingsMutations = client.getMutationCache().subscribe((event) => {
     if (event.type !== "updated" || !["success", "error"].includes(event.action.type)) return;

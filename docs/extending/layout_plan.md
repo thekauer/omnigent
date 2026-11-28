@@ -271,6 +271,69 @@ nothing but keys. Hiding is removal (like `allowed` for themes): a hidden view's
   behaviour change for embeds narrower than the window; tested separately.
 - Layout state is keyed by the embed's `basename` so two embeds on one origin don't share it.
 
+#### Known limitation: one chat projection per window
+
+The chat store is one module-level store per window. Its root holds one projected
+conversation, the one the window's active mount shows, and every reader of `useChatStore`
+sees that projection. Two embeds on two sessions therefore can't both show their own
+transcript and composer.
+
+What the window does today:
+
+- `initChatStore` is idempotent: the first call wires the query client, a later call with the
+  same client does nothing, so a second embed no longer drops the first one's live streams. A
+  different client rewires the chat store's cache updates to it and warns when conversations
+  are live. Tests reset per case with `resetChatStoreForTest`.
+- Each mount holds a view on its conversation (`conversationRegistry.view`, one per mount).
+  A viewed conversation is never evicted, so both mounts' streams stay live while the other
+  mount is active.
+- The projection follows the active mount (`useIsActiveWorkbenchScope`). When a mount becomes
+  active (it mounts, or the user points, types or focuses in it), the chat store projects its
+  route's conversation from the live entry, with no cold bind or hydrate.
+- The inactive mount's chat page shows `InactiveSessionPlaceholder` ("This session is shown
+  when you use this app...") in place of the transcript, composer and workbench panels of the
+  session. Its stream keeps running. Using it again paints its transcript at once.
+- Chrome outside the chat page reads the projection too, so the sidebar's selected row and the
+  other shell readers follow the active mount's session.
+
+What the user sees with two embeds on sessions A and B: the app used last shows its session
+with a working composer, and the other shows the placeholder. Both streams keep running, so
+switching back shows the current transcript. Sending from the placeholder is not possible. The
+standalone app, with one mount, is unchanged.
+
+The fix for the rest is a per-mount chat store:
+
+- **Factory.** `createChatStore({ queryClient })` in `web/src/store/chatStore.ts` returns a zustand
+  store with its own `ConversationRegistry`. The module-level state moves into it: 28 maps, sets
+  and weak collections and 6 counters or timers (`sendChains`, `heldStreamSlots`,
+  `streamSlotOwners`, `streamEventRevisions`, `sessionUsageRevisions`, `pendingInitialPrompts`,
+  `pendingSeq`, ...). The module-level `useChatStore` becomes `createChatStore()`, the window's
+  default store, so unmigrated callers keep working during the move.
+- **Provider per mount.** `OmnigentApp` creates its store with its mount (next to the
+  workbench scope), and `ChatStoreProvider` supplies it. `useChatStore(selector)` reads the
+  nearest store, so its 172 hook call sites keep their shape. Standalone `main.tsx` supplies
+  the default store.
+- **Imperative callers.** 33 non-test files, besides the store, call `useChatStore.getState()`, `setState` or
+  `subscribe` outside React. They take the store from context, or from the window's active mount
+  for window-level commands and keybindings (the window's active mount, as `isActiveWorkbenchScope`
+  picks it, is the store the palette and keybindings reach).
+- **Migration order.** (1) The factory and the default store, with no consumer change. (2) The
+  per-store registry and the module functions that take a store (`switchTo`, `bindStream`,
+  `mirrorActiveEntry`). (3) The provider in `OmnigentApp` and `main.tsx`. (4) Readers, leaf first:
+  the 15 `hooks/` and 15 `shell/` files, then `components/`, `grid/` and `vscodeExtensions/`, and
+  `pages/ChatPage.tsx` last (5,300 lines, and it reads the store in about 85 places). (5) The
+  window-level commands and keybindings move to the active mount's store. (6) Remove the default
+  store, `mirrorActiveEntry`, the root projection, the placeholder gate and
+  `resetChatStoreForTest` (a new store is a fresh state).
+- **Tests.** Store level: two stores with two registries each bind a different session and keep
+  their own `conversationId`, `blocks` and stream; a second store's init or reset does not touch
+  the first; a view keeps its entry live per store. Provider level: one component rendered under
+  two providers reads two states. Page level: two `OmnigentApp` mounts on two sessions each show
+  their own transcript and send to their own session; activating a mount switches only the
+  window's commands. The 73 existing test files that touch `useChatStore` keep the default store
+  or wrap in a provider. Browser checks stay with the harness (two embeds on sessions, standalone
+  pixels unchanged) and are not part of the unit suite.
+
 ### Narrow and mobile
 
 | Width | Activity bar | Side bar | Secondary side bar | Title bar |

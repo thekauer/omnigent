@@ -212,7 +212,9 @@ import {
   computeIsTurnActive,
   computeIsWorking,
 } from "@/components/chat/chatBubbleParts";
+import { useConversationView } from "@/hooks/useConversationEntryState";
 import { useSession } from "@/hooks/useSession";
+import { useIsActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
 import { useOpenGithubTab } from "@/shell/FileViewerContext";
 import { useTabsSidebar } from "@/shell/useTabsSidebar";
 import { useSessionHostOnline, useSessionRunnerOnline } from "@/hooks/RunnerHealthProvider";
@@ -452,6 +454,12 @@ export function ChatPage() {
   // a client-only temp id, so none of them hit `/v1/sessions/<temp>/*` before
   // the session exists. `switchTo` still gets the raw `urlConvId`.
   const sessionConvId = isTempConvId(urlConvId) ? undefined : urlConvId;
+  // The chat store projects one conversation per window: the one the window's active
+  // mount shows. This mount's view keeps its own conversation live while another mount is
+  // active, and it shows a placeholder until it becomes the active one again.
+  const workbench = useWorkbenchScope();
+  const mountIsActive = useIsActiveWorkbenchScope(workbench);
+  useConversationView(workbench.id, sessionConvId ?? null);
   const navigate = useNavigate();
   const { pathname, search } = useLocation();
   const rebasePath = useRebasePath();
@@ -519,7 +527,10 @@ export function ChatPage() {
   // switchTo is async (it fetches items on conv-id transitions); we
   // intentionally don't await it here. The store's `loadingConversation` flag
   // drives the loading UI below; `conversationLoadError` drives the error UI.
+  // An app that is not the window's active one doesn't project its route: it
+  // projects again when it becomes active (a live entry paints at once).
   useEffect(() => {
+    if (!mountIsActive) return;
     // A temporary route has no client session after a reload. Return to its
     // board or the landing page so it cannot strand a read-only phantom chat.
     if (isStaleTempConvId(urlConvId)) {
@@ -533,7 +544,7 @@ export function ChatPage() {
       return;
     }
     void useChatStore.getState().switchTo(urlConvId ?? null);
-  }, [urlConvId, navigate, pathname, search, rebasePath]);
+  }, [urlConvId, navigate, pathname, search, rebasePath, mountIsActive]);
 
   useConversationRedirect(urlConvId);
 
@@ -1228,12 +1239,14 @@ export function ChatPage() {
   // Loading + error gates for `/c/:id` hydration. Placed after all hooks so the
   // early return can't change the hook order between renders.
   if (urlConvId) {
-    const promotingTempConversation =
-      isTempConvId(urlConvId) &&
-      activeConversationId !== null &&
-      !isTempConvId(activeConversationId);
-    if (loadingConversation || (activeConversationId !== urlConvId && !promotingTempConversation))
-      return <HydratingPlaceholder />;
+    const gate = routeProjectionGate({
+      urlConvId,
+      activeConversationId,
+      loadingConversation,
+      mountIsActive,
+    });
+    if (gate === "inactive") return <InactiveSessionPlaceholder />;
+    if (gate === "hydrating") return <HydratingPlaceholder />;
     if (conversationLoadError) {
       return <ConversationLoadError conversationId={urlConvId} error={conversationLoadError} />;
     }
@@ -1990,6 +2003,44 @@ function HydratingPlaceholder() {
     <div className="flex flex-1 items-center justify-center gap-2 text-muted-foreground text-ui">
       <Loader2Icon className="size-4 animate-spin" />
       Loading conversation…
+    </div>
+  );
+}
+
+/**
+ * Whether a `/c/:id` route can show its chat yet, given the chat store's projection:
+ * `"inactive"` when another app in the window owns the projection, `"hydrating"` while
+ * this route's conversation loads, `null` when the chat can render.
+ */
+export function routeProjectionGate({
+  urlConvId,
+  activeConversationId,
+  loadingConversation,
+  mountIsActive,
+}: {
+  urlConvId: string;
+  activeConversationId: string | null;
+  loadingConversation: boolean;
+  mountIsActive: boolean;
+}): "inactive" | "hydrating" | null {
+  const promotingTempConversation =
+    isTempConvId(urlConvId) && activeConversationId !== null && !isTempConvId(activeConversationId);
+  const projectedElsewhere = activeConversationId !== urlConvId && !promotingTempConversation;
+  if (!mountIsActive && projectedElsewhere) return "inactive";
+  if (loadingConversation || projectedElsewhere) return "hydrating";
+  return null;
+}
+
+/**
+ * Shown by an app in a window whose chat projection is another app's conversation. Using
+ * this app shows its conversation here (its stream stays live meanwhile).
+ */
+export function InactiveSessionPlaceholder() {
+  return (
+    <div className="flex flex-1 items-center justify-center px-6">
+      <p className="max-w-md text-center text-muted-foreground text-ui">
+        This session is shown when you use this app. Its stream keeps running in the background.
+      </p>
     </div>
   );
 }

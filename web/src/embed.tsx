@@ -219,8 +219,8 @@ function OmnigentProviders({
   const isDarkMode = useResolvedThemeMode() === "dark";
   // Reuse the host's QueryClient (read from the ambient provider) and run the
   // one-time side effects (wire the chat store to that client + resolve
-  // identity). `initChatStore` only stashes the client for later cache
-  // invalidation, so doing this in a mount-once initializer is fine.
+  // identity). `initChatStore` is idempotent per window: a second embed on the
+  // page finds the client already wired and leaves live conversations alone.
   const hostQueryClient = useQueryClient();
   useState(() => {
     initChatStore(hostQueryClient);

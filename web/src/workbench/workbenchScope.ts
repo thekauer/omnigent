@@ -3,7 +3,13 @@
 // or widths. A mount provides its scope to its React tree; the window's code outside the trees
 // (commands, keybindings) reaches the active one: the mount last mounted or used.
 
-import { createContext, createElement, type ReactNode, useContext } from "react";
+import {
+  createContext,
+  createElement,
+  type ReactNode,
+  useContext,
+  useSyncExternalStore,
+} from "react";
 import {
   embedLayoutScope,
   LayoutStateStore,
@@ -13,6 +19,8 @@ import {
 import { LayoutService, setActiveLayoutService, standaloneLayoutService } from "./layoutService";
 
 export interface WorkbenchScope {
+  /** The mount's id, unique in the window: the key of its conversation view. */
+  readonly id: string;
   readonly layout: LayoutService;
   readonly state: LayoutStateStore;
   /** The id of the mount's own toaster: toasts about this mount only (a reset's undo). */
@@ -24,6 +32,7 @@ export interface WorkbenchScope {
  * even while one is active (the window's commands follow the active one through the proxies).
  */
 const WINDOW_SCOPE: WorkbenchScope = Object.freeze({
+  id: "workbench-window",
   layout: standaloneLayoutService,
   state: standaloneLayoutState,
   toasterId: "workbench-window",
@@ -57,10 +66,12 @@ export function createWorkbenchScope(basename: string | undefined): WorkbenchSco
   const state = new LayoutStateStore();
   state.setScope(embedLayoutScope(basename));
   createdScopes += 1;
+  const id = `workbench-${createdScopes}`;
   const scope = Object.freeze({
+    id,
     state,
     layout: new LayoutService(state),
-    toasterId: `workbench-${createdScopes}`,
+    toasterId: id,
   });
   scopesByState.set(state, scope);
   return scope;
@@ -73,12 +84,27 @@ export function workbenchScopeOfState(store: LayoutStateStore): WorkbenchScope |
 
 /** The mounts, last activated last. */
 const active: WorkbenchScope[] = [];
+const activationListeners = new Set<() => void>();
 
 function publish(): void {
   const top = active[active.length - 1];
   // The service first: the state's listeners then read the new mount's service.
   setActiveLayoutService(top?.layout ?? null);
   setActiveLayoutState(top?.state ?? null);
+  for (const listener of activationListeners) listener();
+}
+
+/** Notified whenever the active scope changes. Returns an unsubscribe function. */
+export function subscribeWorkbenchActivation(listener: () => void): () => void {
+  activationListeners.add(listener);
+  return () => {
+    activationListeners.delete(listener);
+  };
+}
+
+/** Re-renders when `scope` becomes or stops being the active one. */
+export function useIsActiveWorkbenchScope(scope: WorkbenchScope): boolean {
+  return useSyncExternalStore(subscribeWorkbenchActivation, () => isActiveWorkbenchScope(scope));
 }
 
 /** Makes `scope` the one the window's commands reach (a mount, or the user's use of it). */

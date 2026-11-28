@@ -120,9 +120,10 @@ import {
   hydrateLocalConversation,
   isStaleCompletedResponse,
   isStaleTempConvId,
-  isTempConvId,
   initChatStore,
+  isTempConvId,
   pumpStreamEvents,
+  resetChatStoreForTest,
   retryConversationLoad,
   SEND_STILL_SENDING_AFTER_MS,
   SESSION_READ_TIMEOUT_MS,
@@ -589,7 +590,7 @@ beforeEach(() => {
   sessionLabels = new Map();
   sessionMcpStartup = new Map();
   sessionTerminalPending = new Map();
-  initChatStore(client);
+  resetChatStoreForTest(client);
   // Generous, deterministic slots for tests that aren't about the cap; the
   // dedicated stream-slot tests install their own small-capacity manager.
   setStreamSlotManagerForTest(makeFakeSlotManager());
@@ -7253,7 +7254,7 @@ describe("chatStore — send (file attachments)", () => {
         if (path === "foreground") {
           await useChatStore.getState().send("read these", "agent_xyz", batch);
         } else {
-          initChatStore(client);
+          resetChatStoreForTest(client);
           useChatStore.setState({
             queuedMessages: [
               {
@@ -22902,7 +22903,7 @@ describe("chatStore — background cross-session flush", () => {
     // the post-failure cooldown (same query client → seeded cache persists)
     // without touching the queue or the File→upload cache.
     failPost = false;
-    initChatStore(client);
+    resetChatStoreForTest(client);
     useChatStore.getState().flushBackgroundQueues();
     await tick();
     await tick();
@@ -24609,5 +24610,62 @@ describe("chatStore — sidebar holds for submitted verdicts", () => {
     expect(getLocalElicitationResolutions().answeredElicitationIds.has("elic_retry")).toBe(true);
     finishes[1]?.(mockResponse({ queued: false }, { ok: true, status: 202 }));
     await retry;
+  });
+});
+
+describe("one chat store per window", () => {
+  it("keeps live conversations when initChatStore runs again with the same client", async () => {
+    await useChatStore.getState().switchTo("conv_kept");
+    const entry = conversationRegistry.peek("conv_kept");
+    expect(entry).toBeDefined();
+
+    // A second embed on the page calls init with the same client it was given.
+    initChatStore(client);
+
+    expect(conversationRegistry.peek("conv_kept")).toBe(entry);
+    expect(entry?.disposed).toBe(false);
+  });
+
+  it("rewires a different client without clearing live conversations, and warns", async () => {
+    await useChatStore.getState().switchTo("conv_kept");
+    const entry = conversationRegistry.peek("conv_kept");
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    initChatStore(new QueryClient({ defaultOptions: { queries: { retry: false } } }));
+
+    expect(entry?.disposed).toBe(false);
+    expect(conversationRegistry.peek("conv_kept")).toBe(entry);
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining("second QueryClient"));
+    warn.mockRestore();
+  });
+
+  it("keeps the entry of each mount's session live while the other mount's is active", async () => {
+    // Two mounts, each with its own view; the root projection is on a third session.
+    const releaseFirstMount = conversationRegistry.view("workbench-1", "conv_first_mount");
+    const releaseSecondMount = conversationRegistry.view("workbench-2", "conv_second_mount");
+    await useChatStore.getState().switchTo("conv_first_mount");
+    await useChatStore.getState().switchTo("conv_second_mount");
+    await useChatStore.getState().switchTo("conv_elsewhere");
+
+    expect(conversationRegistry.evictLruEvictable()).toBeNull();
+    expect(conversationRegistry.has("conv_first_mount")).toBe(true);
+    expect(conversationRegistry.has("conv_second_mount")).toBe(true);
+    releaseFirstMount();
+    releaseSecondMount();
+  });
+
+  it("projects an inactive mount's session from its live entry when the mount is activated", async () => {
+    await useChatStore.getState().switchTo("conv_first_mount");
+    const firstEntry = conversationRegistry.peek("conv_first_mount");
+    firstEntry?.setState({ blocks: [], loadingConversation: false });
+    await useChatStore.getState().switchTo("conv_second_mount");
+    expect(useChatStore.getState().conversationId).toBe("conv_second_mount");
+
+    // Activating the first mount projects its live entry: no cold bind, nothing loading.
+    await useChatStore.getState().switchTo("conv_first_mount");
+
+    expect(useChatStore.getState().conversationId).toBe("conv_first_mount");
+    expect(useChatStore.getState().loadingConversation).toBe(false);
+    expect(conversationRegistry.peek("conv_first_mount")).toBe(firstEntry);
   });
 });

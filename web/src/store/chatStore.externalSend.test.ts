@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { conversationRegistry } from "./conversationRegistry";
 import {
   handleSessionEvent,
-  initChatStore,
+  resetChatStoreForTest,
   onSendDelivered,
   SESSION_READ_TIMEOUT_MS,
   useChatStore,
@@ -61,7 +61,7 @@ function sendExternal(stableId: string, opts: Record<string, unknown> = {}) {
 }
 
 beforeEach(() => {
-  initChatStore(new QueryClient({ defaultOptions: { queries: { retry: false } } }));
+  resetChatStoreForTest(new QueryClient({ defaultOptions: { queries: { retry: false } } }));
   useChatStore.setState({
     conversationId: SESSION,
     abortController: new AbortController(),
