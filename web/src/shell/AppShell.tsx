@@ -604,6 +604,8 @@ function AppShellImpl() {
       return;
     }
     lastMobileViewportRef.current = mobileViewport;
+    // A phone's view drawer doesn't reopen when the layout comes back to phone width.
+    if (!mobileViewport) setViewDrawer(null);
     // An embed's first render reads the window: when its root's first box picks the desktop
     // layout, the side bar starts as it would have there (open, unless stored closed).
     if (firstRootMeasure && !mobileViewport && !inSettings) {
@@ -611,8 +613,6 @@ function AppShellImpl() {
       return;
     }
     if (!mobileViewport) {
-      // A phone's view drawer doesn't reopen when the layout comes back to phone width.
-      setViewDrawer(null);
       const reopen = sidebarOpenBeforeNarrowRef.current;
       sidebarOpenBeforeNarrowRef.current = false;
       if (inSettings && reopen) sidebarOpenBeforeSettingsRef.current = true;

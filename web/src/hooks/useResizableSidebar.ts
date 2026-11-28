@@ -177,6 +177,13 @@ export function resetSidebarWidthStoreForTesting(): void {
 // Hook
 // ---------------------------------------------------------------------------
 
+/** Where a side bar drag measures from when its element isn't found: the mount's own edge. */
+function sideBarFallbackEdge(side: "left" | "right", layout: LayoutService): number {
+  const bounds = layout.getRoot()?.getBoundingClientRect();
+  if (side === "left") return bounds?.left ?? 0;
+  return bounds?.right ?? (typeof window === "undefined" ? 0 : window.innerWidth);
+}
+
 /**
  * Makes the desktop left sidebar resizable via a drag handle on its right
  * edge. Persists the chosen width across reloads and re-clamps on viewport
@@ -221,22 +228,24 @@ export function useResizableSidebar(side: "left" | "right" = "left") {
     [layout, store],
   );
 
-  const onMouseDown = useCallback((e: React.MouseEvent) => {
-    e.preventDefault();
-    const aside = (e.currentTarget as HTMLElement | null)?.closest?.("aside");
-    const box = aside?.getBoundingClientRect();
-    anchor.current = box
-      ? sideRef.current === "left"
-        ? box.left
-        : box.right
-      : sideRef.current === "left"
-        ? 0
-        : window.innerWidth;
-    dragging.current = true;
-    setResizing(true);
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-  }, []);
+  const onMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      e.preventDefault();
+      const aside = (e.currentTarget as HTMLElement | null)?.closest?.("aside");
+      const box = aside?.getBoundingClientRect();
+      anchor.current = box
+        ? sideRef.current === "left"
+          ? box.left
+          : box.right
+        : // Without the side bar's element, the mount's own edge: an embed's root needn't start at x 0.
+          sideBarFallbackEdge(sideRef.current, layout);
+      dragging.current = true;
+      setResizing(true);
+      document.body.style.cursor = "col-resize";
+      document.body.style.userSelect = "none";
+    },
+    [layout],
+  );
 
   const onKeyDown = useCallback(
     (e: React.KeyboardEvent) => {

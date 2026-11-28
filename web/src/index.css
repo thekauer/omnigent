@@ -1918,10 +1918,11 @@ html[data-electron-mac] .breadcrumb-folder {
   }
   /* The standalone app's phone layout: horizontal swipes belong to the drawers, so a browser's
    * overscroll back navigation (from a swipe at the edge the drawers leave to the OS) must not
-   * leave the app. An embed's host page keeps its own overscroll. */
-  @media (width < 73.8125rem) {
-    html:has(.app-shell):not(:has(.omnigent-app)),
-    body:has(.app-shell):not(:has(.omnigent-app)) {
+   * leave the app. Only the standalone entry marks the document: an embed's host page keeps its
+   * own overscroll. The width is the phone layout's (`MOBILE_QUERY`). */
+  @media (max-width: 1180.98px) {
+    html[data-omnigent-standalone]:has(.app-shell),
+    html[data-omnigent-standalone]:has(.app-shell) body {
       overscroll-behavior-x: none;
     }
   }

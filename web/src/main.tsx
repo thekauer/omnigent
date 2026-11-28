@@ -228,6 +228,9 @@ function RootApp({ initialInfo }: { initialInfo: ServerInfo | "loading" }) {
 // Mount immediately so the shell renders before the server probes settle.
 // The CapabilitiesProvider starts with "loading"; bootServerInfo.settled
 // updates it once /v1/info returns (see RootApp's useEffect above).
+// Marks the document as the standalone app's own (an embed's host page has no mark): the
+// phone layout's overscroll lock in index.css keys on it.
+document.documentElement.setAttribute("data-omnigent-standalone", "");
 const root = createRoot(document.getElementById("root")!);
 root.render(
   <StrictMode>

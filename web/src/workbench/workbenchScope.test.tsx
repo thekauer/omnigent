@@ -7,6 +7,7 @@ import { useResizableSidebar } from "@/hooks/useResizableSidebar";
 import { readPanelSizePreference, writePanelSizePreference } from "@/lib/panelSizePreferences";
 import { usePartVisible, useWorkbenchPart } from "@/shell/useWorkbenchParts";
 import { installResizableWidth } from "@/test/resizableWidth";
+import { stubWindowMediaQueries } from "@/test/windowMediaQueries";
 import { activityBarWidthPx, orderActivityBarItems } from "./activityBar";
 import { LAYOUT_SLOTS, layoutState, standaloneLayoutState } from "./layoutState";
 import { layoutService, Parts, standaloneLayoutService } from "./layoutService";
@@ -323,6 +324,34 @@ describe("the side bar's width in an embed", () => {
     vi.restoreAllMocks();
   });
 
+  it("keeps a hidden phone-width root in the mobile layout while the window is wide", () => {
+    const originalResizeObserver = globalThis.ResizeObserver;
+    const originalMatchMedia = window.matchMedia;
+    vi.spyOn(window, "innerWidth", "get").mockReturnValue(1400);
+    stubWindowMediaQueries();
+    const setRootWidth = installResizableWidth(390);
+    const scope = createWorkbenchScope("/hidden-phone");
+    const root = document.createElement("div");
+    document.body.append(root);
+    try {
+      act(() => scope.layout.setRoot(root));
+      const { result } = renderHook(() => useIsMobileViewport(), {
+        wrapper: ({ children }: { children: ReactNode }) => (
+          <WorkbenchScopeProvider scope={scope}>{children}</WorkbenchScopeProvider>
+        ),
+      });
+      expect(result.current).toBe(true);
+      setRootWidth(0);
+      expect(scope.layout.getRootViewport()?.mobile).toBe(true);
+      expect(result.current).toBe(true);
+    } finally {
+      scope.layout.setRoot(null);
+      root.remove();
+      vi.restoreAllMocks();
+      vi.stubGlobal("ResizeObserver", originalResizeObserver);
+      vi.stubGlobal("matchMedia", originalMatchMedia);
+    }
+  });
   it("keeps a hidden root's layout and the side bar's width until it shows again", () => {
     const originalResizeObserver = globalThis.ResizeObserver;
     const setRootWidth = installResizableWidth(1400);
@@ -344,6 +373,17 @@ describe("the side bar's width in an embed", () => {
       // Shown again: the never-dragged side bar is still its default, not the floor.
       setRootWidth(1400);
       expect(result.current.width).toBe(320);
+      // A width the user set survives hiding too.
+      act(() =>
+        result.current.handleProps.onKeyDown({
+          key: "ArrowRight",
+          preventDefault: () => {},
+        } as React.KeyboardEvent),
+      );
+      expect(result.current.width).toBe(340);
+      setRootWidth(0);
+      setRootWidth(1400);
+      expect(result.current.width).toBe(340);
     } finally {
       scope.layout.setRoot(null);
       root.remove();

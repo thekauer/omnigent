@@ -1,5 +1,7 @@
 import { act, renderHook } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createWorkbenchScope, WorkbenchScopeProvider } from "@/workbench/workbenchScope";
 import { readPanelSizePreference } from "@/lib/panelSizePreferences";
 import { resetSidebarWidthStoreForTesting, useResizableSidebar } from "./useResizableSidebar";
 
@@ -118,5 +120,29 @@ describe("useResizableSidebar", () => {
     setInnerWidth(2000);
     act(() => window.dispatchEvent(new Event("resize")));
     expect(result.current.width).toBe(900);
+  });
+
+  it("measures a drag from the embed root's own edge when the side bar's element isn't found", () => {
+    const scope = createWorkbenchScope("/offset-embed");
+    const root = document.createElement("div");
+    // An embed placed 300px in from the window's left edge, 1200px wide.
+    root.getBoundingClientRect = () =>
+      ({ left: 300, right: 1500, width: 1200, height: 800, top: 0, bottom: 800 }) as DOMRect;
+    act(() => scope.layout.setRoot(root));
+    try {
+      const wrapper = ({ children }: { children: ReactNode }) => (
+        <WorkbenchScopeProvider scope={scope}>{children}</WorkbenchScopeProvider>
+      );
+      const { result, unmount } = renderHook(() => useResizableSidebar(), { wrapper });
+      dragTo(result, 650);
+      expect(result.current.width).toBe(350);
+      unmount();
+      const right = renderHook(() => useResizableSidebar("right"), { wrapper });
+      dragTo(right.result, 1100);
+      expect(right.result.current.width).toBe(400);
+      right.unmount();
+    } finally {
+      scope.layout.setRoot(null);
+    }
   });
 });

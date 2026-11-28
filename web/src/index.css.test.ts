@@ -13,6 +13,7 @@ import { cleanup, render } from "@testing-library/react";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "./components/ui/tooltip";
+import { MOBILE_QUERY } from "./workbench/layoutViewport";
 import { MOBILE_BREAKPOINT_PX } from "./hooks/useIsMobileViewport";
 import type * as UseTerminalsModule from "./hooks/useTerminals";
 import {
@@ -438,15 +439,39 @@ describe("index.css overscroll in the standalone phone layout", () => {
     expect(overscrollRules).toHaveLength(1);
   });
 
-  it("applies only below md, to the standalone document's html and body", () => {
+  it("applies only in the phone layout, to the document the standalone entry marks", () => {
     expect(cssSource).toMatch(
-      /@media \(width < 73\.8125rem\) \{\s*html:has\(\.app-shell\):not\(:has\(\.omnigent-app\)\),\s*body:has\(\.app-shell\):not\(:has\(\.omnigent-app\)\) \{\s*overscroll-behavior-x: none;/,
+      /@media \(max-width: 1180\.98px\) \{\s*html\[data-omnigent-standalone\]:has\(\.app-shell\),\s*html\[data-omnigent-standalone\]:has\(\.app-shell\) body \{\s*overscroll-behavior-x: none;/,
     );
+    // The same width as the phone layout's query.
+    expect(MOBILE_QUERY).toBe("(max-width: 1180.98px)");
   });
 
-  it("leaves a host page that embeds the app (and the desktop layout) without it", () => {
-    expect(overscrollRules[0]).toContain(":not(:has(.omnigent-app))");
-    expect(overscrollRules[0]).not.toMatch(/^\s*html:has\(\.app-shell\),/);
+  it("keys on the standalone entry's mark, so an embed on the page doesn't change it", () => {
+    const selectors = overscrollRules[0]!
+      .split("{")[0]!
+      .split(",")
+      .map((part) => part.trim());
+    document.documentElement.setAttribute("data-omnigent-standalone", "");
+    const shell = document.createElement("div");
+    shell.className = "app-shell";
+    const embed = document.createElement("div");
+    embed.className = "omnigent-app";
+    document.body.append(shell, embed);
+    try {
+      const matched = () => [
+        document.documentElement.matches(selectors[0]!),
+        document.body.matches(selectors[1]!),
+      ];
+      expect(matched()).toEqual([true, true]);
+      // A host page that embeds the app has no mark.
+      document.documentElement.removeAttribute("data-omnigent-standalone");
+      expect(matched()).toEqual([false, false]);
+    } finally {
+      document.documentElement.removeAttribute("data-omnigent-standalone");
+      shell.remove();
+      embed.remove();
+    }
   });
 });
 
