@@ -11,6 +11,7 @@ import {
   setOmnigentHostConfig,
   type OmnigentHostConfig,
 } from "@/lib/host";
+import { embedMount } from "@/test/workbenchScopeWrapper";
 import { basenamedRouting, RoutingProvider } from "@/lib/routing";
 
 vi.mock("@/hooks/useViewerId", () => ({ useViewerId: vi.fn() }));
@@ -238,6 +239,8 @@ describe("Automations first-visit introduction", () => {
         },
         "/embedded",
       ),
+      // The dialog portals into its own mount's overlay root.
+      { wrapper: embedMount(root) },
     );
     expect(within(root).getByRole("dialog")).toBeVisible();
     expect(within(root).getByText("Put recurring work on autopilot with Isaac.")).toBeVisible();
