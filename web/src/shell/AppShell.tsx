@@ -381,6 +381,8 @@ function GridSessionMain(props: ComponentProps<"main">) {
 }
 
 function AppShellImpl() {
+  // This mount's own workbench: its layout answers the narrow-window checks below.
+  const workbenchScope = useWorkbenchScope();
   const shellDrafts = useContext(ShellCommandDraftContext);
   // Cmd/Ctrl+Enter accepts the pending harness approval prompt. Bound once
   // here so it works on every chat route, regardless of where focus sits.
@@ -458,7 +460,10 @@ function AppShellImpl() {
   const [tabsDrawerOpen, setTabsDrawerOpen] = useState(false);
   const [tabsDrawerTarget, setTabsDrawerTarget] = useState<HTMLDivElement | null>(null);
   // The classic drawers answer only in a narrow window without the tabs.
-  const classicDrawers = () => isMobileViewport() && !tabsModeRef.current;
+  const classicDrawers = useCallback(
+    () => isMobileViewport(workbenchScope.layout) && !tabsModeRef.current,
+    [workbenchScope.layout],
+  );
   const [fileViewerCommentsOpen, setFileViewerCommentsOpen] = useState(false);
   const [mobileFileTarget, setMobileFileTarget] = useState<HTMLDivElement | null>(null);
   const [rightRailTab, setRightRailTab] = useState<RightRailTab | null>(() =>
@@ -498,7 +503,6 @@ function AppShellImpl() {
   const [searchParams, setSearchParams] = useSearchParams();
   const agentsPanelRequested = searchParams.get("panel") === "agents";
   // This mount's own layout state (an embed's, read before it becomes the active one).
-  const workbenchScope = useWorkbenchScope();
   const workbenchState = workbenchScope.state;
   // With two apps on a page, the window's keybindings reach the one last mounted or used.
   const isActiveMount = useCallback(() => isActiveWorkbenchScope(workbenchScope), [workbenchScope]);
@@ -537,7 +541,7 @@ function AppShellImpl() {
           sidebarOpenBeforeSettingsRef.current = wasOpen;
         }
         return (
-          !isMobileViewport() ||
+          !isMobileViewport(workbenchScope.layout) ||
           location.pathname.replace(/\/$/, "") === rebasePath("/settings") ||
           wasOpen
         );
@@ -551,7 +555,7 @@ function AppShellImpl() {
       setSidebarOpen(sidebarOpenBeforeSettingsRef.current);
       sidebarOpenBeforeSettingsRef.current = null;
     }
-  }, [inSettings, location.pathname, rebasePath, setSidebarOpen]);
+  }, [inSettings, location.pathname, rebasePath, setSidebarOpen, workbenchScope.layout]);
 
   // ⌘K's "Search settings…" opens the sidebar so its field can be seen. From outside Settings the
   // sidebar's state is recorded first, so Back restores a collapsed sidebar, as after any other trip.
@@ -665,10 +669,10 @@ function AppShellImpl() {
           setSidebarOpen(phase === "open");
           return;
         }
-        if (!isMobileViewport()) return;
+        if (!isMobileViewport(workbenchScope.layout)) return;
         setSidebarDragProgress(progress);
       }),
-    [setSidebarOpen],
+    [setSidebarOpen, workbenchScope.layout],
   );
   const [selectedFilePath, setSelectedFilePath] = useState<string | null>(() =>
     conversationId ? (readSessionWorkspaceState(conversationId).selectedFilePath ?? null) : null,
@@ -826,9 +830,9 @@ function AppShellImpl() {
   }, []);
   /** Show the tabs sidebar: its drawer in a narrow window, else the rail. */
   const revealTabsSidebar = useCallback(() => {
-    if (isMobileViewport()) setTabsDrawerOpen(true);
+    if (isMobileViewport(workbenchScope.layout)) setTabsDrawerOpen(true);
     else setRightPanelOpenAnimated(true);
-  }, [setRightPanelOpenAnimated]);
+  }, [setRightPanelOpenAnimated, workbenchScope.layout]);
   // Another session's tabs start with their drawer put away.
   useEffect(() => setTabsDrawerOpen(false), [conversationId]);
   useEffect(
@@ -2111,7 +2115,7 @@ function AppShellImpl() {
     void routeToWorkspaceTabs((tabs) =>
       tabs.openWorkspaceFileLink(tabsSession, citationPath, options, "link"),
     );
-    if (isMobileViewport()) setTabsDrawerOpen(true);
+    if (isMobileViewport(workbenchScope.layout)) setTabsDrawerOpen(true);
     else {
       setRightPanelOpenImmediately(true);
       // ?fullscreen=1 fills the window with the sidebar, as its Full screen button does. Arriving
@@ -2157,7 +2161,7 @@ function AppShellImpl() {
   // unsafe here), and strip file/diff/comment on collapse so the URL never
   // advertises a panel that isn't shown.
   const toggleRightPanel = useCallback(() => {
-    if (tabsModeRef.current && isMobileViewport()) {
+    if (tabsModeRef.current && isMobileViewport(workbenchScope.layout)) {
       setTabsDrawerOpen((open) => !open);
       return;
     }
@@ -2185,6 +2189,7 @@ function AppShellImpl() {
     }
     setRightPanelOpenAnimated(next);
   }, [
+    workbenchScope.layout,
     rightPanelOpen,
     conversationId,
     clearFileViewerUrl,
@@ -2202,7 +2207,7 @@ function AppShellImpl() {
   }, []);
   const revealRightPanel = useCallback(() => {
     if (!conversationId) return;
-    if (tabsModeRef.current && isMobileViewport()) {
+    if (tabsModeRef.current && isMobileViewport(workbenchScope.layout)) {
       setTabsDrawerOpen(true);
       return;
     }
@@ -2219,6 +2224,7 @@ function AppShellImpl() {
     setPanelInitialKey,
     setRightPanelOpenAnimated,
     terminalFirst,
+    workbenchScope.layout,
   ]);
   // One press toggles: a rail on screen closes, a closed or covered one opens
   // with focus on its tabs.
@@ -2654,13 +2660,14 @@ function AppShellImpl() {
     }
     setRightPanelOpenAnimated(true);
     // Phones hide the rail, so the side chat opens in its drawer instead.
-    if (isMobileViewport()) openSideChatsPanel();
+    if (isMobileViewport(workbenchScope.layout)) openSideChatsPanel();
   }, [
     sideChatToOpen,
     conversationId,
     openSideChatsPanel,
     setRightPanelOpenAnimated,
     revealTabsSidebar,
+    workbenchScope.layout,
   ]);
   // The chat's task preview, a task's marker, or the agent's first plan asks
   // for this session's Tasks tab: open the rail on it, or its drawer on a phone
@@ -2671,7 +2678,7 @@ function AppShellImpl() {
     const automatic = useSessionTasksActions.getState().tasksTabAutoOpen;
     useSessionTasksActions.setState({ tasksTabToOpen: null, tasksTabAutoOpen: false });
     if (!railTabsAvailable.tasks) return;
-    if (isMobileViewport()) {
+    if (isMobileViewport(workbenchScope.layout)) {
       // A drawer the agent opened would cover the chat it's working in.
       if (automatic) return;
       if (!tabsModeRef.current) {
@@ -2854,6 +2861,7 @@ function AppShellImpl() {
     createTerminal,
     shellDrafts,
     guardFileNavigation,
+    classicDrawers,
     openTerminalsPanel,
     openTerminalTab,
   ]);
@@ -3100,6 +3108,7 @@ function AppShellImpl() {
     [
       revealTabsSidebar,
       conversationId,
+      classicDrawers,
       terminalFirst,
       setPanelInitialKey,
       openGithubPanel,
@@ -3140,6 +3149,7 @@ function AppShellImpl() {
       revealTabsSidebar,
       guardFileNavigation,
       conversationId,
+      classicDrawers,
       openFilesDrawer,
       showScopeView,
       terminalFirst,

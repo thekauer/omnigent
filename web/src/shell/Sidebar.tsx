@@ -322,7 +322,7 @@ import { useSessionImportStore } from "@/store/sessionImport";
 import { useSettingsRoute, useTrackSettingsReturn } from "./settingsNav";
 import { SettingsSidebar } from "./settingsSearch/SettingsSidebar";
 import { LAYOUT_SLOTS, layoutState } from "@/workbench/layoutState";
-import { partHook, Parts } from "@/workbench/layoutService";
+import { type LayoutService, partHook, Parts } from "@/workbench/layoutService";
 import {
   type ActiveChatOverride,
   clearLegacyPinnedConversationIds,
@@ -8827,9 +8827,10 @@ function BulkActionBar({
  *
  * SSR-safe (returns false when window is undefined).
  */
-export function isMobileViewport(): boolean {
+/** Whether `layout` (the active mount's by default) has the mobile layout. */
+export function isMobileViewport(layout?: LayoutService): boolean {
   if (typeof window === "undefined") return false;
-  return !isDesktopLayout();
+  return !isDesktopLayout(layout);
 }
 
 // Default collapse state: every section (Pinned / Projects / Chats / Shared)

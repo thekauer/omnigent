@@ -1,5 +1,6 @@
 import { configurationService } from "@/configuration/configurationService";
 import { renderSidebar } from "@/test/sidebarTestHelpers";
+import { isMobileViewport } from "./Sidebar";
 import { stubWindowMediaQueries } from "@/test/windowMediaQueries";
 import { createWorkbenchScope } from "@/workbench/workbenchScope";
 import { conversation as conv, conversationPage } from "@/test/sidebarMockHelpers";
@@ -487,6 +488,27 @@ describe("mobile sidebar drawer in an embed", () => {
       cleanup();
       scope.layout.setRoot(null);
       root.remove();
+      vi.restoreAllMocks();
+      vi.stubGlobal("matchMedia", originalMatchMedia);
+    }
+  });
+});
+
+describe("isMobileViewport", () => {
+  it("answers for the mount it is given, not the active one", () => {
+    vi.spyOn(window, "innerWidth", "get").mockReturnValue(1400);
+    const originalMatchMedia = window.matchMedia;
+    stubWindowMediaQueries();
+    const scope = createWorkbenchScope("/phone-embed");
+    const root = document.createElement("div");
+    root.getBoundingClientRect = () => ({ width: 390, height: 800 }) as DOMRect;
+    try {
+      act(() => scope.layout.setRoot(root));
+      expect(isMobileViewport(scope.layout)).toBe(true);
+      // The standalone app, active here, follows the desktop-wide window.
+      expect(isMobileViewport()).toBe(false);
+    } finally {
+      scope.layout.setRoot(null);
       vi.restoreAllMocks();
       vi.stubGlobal("matchMedia", originalMatchMedia);
     }
