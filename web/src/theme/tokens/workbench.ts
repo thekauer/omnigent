@@ -261,8 +261,8 @@ export const WORKBENCH_TOKENS = defineTokens("workbench", [
     id: "ui-account-avatar-radius",
     kind: "length",
     description:
-      "The account avatar's corner radius, round (9999px) today; a square theme sets 0. Rounds the avatar's fallback and its root.",
-    default: { light: "9999px", dark: "9999px" },
+      "The account avatar's corner radius: by default the pill radius (`rounded-full`), so it is round unless the theme's radius base is 0, as today; a square theme sets 0. Rounds the avatar's fallback and its root.",
+    default: { light: "var(--ui-radius-pill)", dark: "var(--ui-radius-pill)" },
   },
   {
     id: "ui-activitybar-foreground",

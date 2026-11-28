@@ -472,6 +472,8 @@ const CSS_WIDE_KEYWORDS = new Set(["initial", "inherit", "unset", "revert", "rev
 export const TOKEN_CONSTRAINTS: Readonly<Record<string, TokenConstraint>> = {
   "ui-elevation": { range: [0, 1] },
   "ui-radius-pill": { allowInfinity: true },
+  // Defaults to the pill radius (rounded-full), so it may resolve infinite like it.
+  "ui-account-avatar-radius": { allowInfinity: true },
   "omnigent-elevation": { internal: true },
   "ui-weight-normal": { range: WEIGHT_RANGE },
   "ui-weight-medium": { range: WEIGHT_RANGE },
@@ -1532,7 +1534,10 @@ export function measureTokenValue(
       Math.max(range[0], -MATH_LITERAL_LIMIT),
       Math.min(range[1], MATH_LITERAL_LIMIT),
     ];
-    checkRange(interval, limit, `--${id}`);
+    // A token that may be infinite may also read one (the pill) through a var(): only its
+    // lower end is bounded then.
+    const unbounded = constraint.allowInfinity && interval.hi === Number.POSITIVE_INFINITY;
+    checkRange(unbounded ? { ...interval, hi: limit[1] } : interval, limit, `--${id}`);
     // Read through a var(), an infinite value (the pill) is unbounded.
     return {
       ok: true,

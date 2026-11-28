@@ -66,7 +66,11 @@ const ITEM_TOKENS: Record<string, { kind: string; light?: string; dark?: string 
     light: "var(--secondary-foreground)",
     dark: "var(--secondary-foreground)",
   },
-  "ui-account-avatar-radius": { kind: "length", light: "9999px", dark: "9999px" },
+  "ui-account-avatar-radius": {
+    kind: "length",
+    light: "var(--ui-radius-pill)",
+    dark: "var(--ui-radius-pill)",
+  },
   "ui-font-timestamp": { kind: "font" },
   "ui-activitybar-item-size": { kind: "length", light: "2.5rem", dark: "2.5rem" },
   "ui-activitybar-foreground": {
@@ -141,7 +145,7 @@ describe("item tokens", () => {
       "color: var(--ui-account-avatar-foreground, var(--secondary-foreground));",
     );
     // The radius: the fallback, and the root that clips it (and its ring).
-    expect(INDEX_CSS).toContain("border-radius: var(--ui-account-avatar-radius, 9999px);");
+    expect(INDEX_CSS).toContain("border-radius: var(--ui-account-avatar-radius, var(--ui-radius-pill));");
     expect(INDEX_CSS).toContain(
       '[data-slot="avatar"]:has(> [data-slot="account-avatar"])::after {',
     );
