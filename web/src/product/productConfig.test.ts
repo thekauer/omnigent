@@ -180,19 +180,19 @@ describe("product layout", () => {
 });
 
 describe("the product's sources", () => {
-  it("merge per key, highest first; each layout field from the first source that sets it", () => {
+  it("merge per key, highest first; the hidden lists add up, any source locks view locations", () => {
     expect(
       mergeProductConfigs([
         {
           settings: { locked: { "acme.a": 1 }, lockedInvalid: ["acme.b"] },
-          layout: { hiddenViews: ["one"] },
+          layout: { hiddenViews: ["one"], containerOrder: ["x"], lockViewLocations: false },
         },
         {
           settings: {
             defaults: { "acme.c": 3 },
             locked: { "acme.a": 2, "acme.b": 2, "acme.d": 4 },
           },
-          layout: { hiddenViews: ["two"], lockViewLocations: true },
+          layout: { hiddenViews: ["two", "one"], containerOrder: ["y"], lockViewLocations: true },
         },
       ]),
     ).toEqual({
@@ -201,7 +201,7 @@ describe("the product's sources", () => {
         locked: { "acme.a": 1, "acme.d": 4 },
         lockedInvalid: ["acme.b"],
       },
-      layout: { hiddenViews: ["one"], lockViewLocations: true },
+      layout: { hiddenViews: ["one", "two"], containerOrder: ["x"], lockViewLocations: true },
     });
   });
 

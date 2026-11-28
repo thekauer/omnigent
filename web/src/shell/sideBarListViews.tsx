@@ -24,6 +24,7 @@ import { Link, useLocation, useParams } from "@/lib/routing";
 import { cn } from "@/lib/utils";
 import {
   type BuiltInViewBadge,
+  type BuiltInViewProps,
   registerBuiltInView,
   registerBuiltInViewBadge,
 } from "./builtInViews";
@@ -64,6 +65,7 @@ function useInboxBadge(): BuiltInViewBadge | undefined {
 }
 
 function CompactList({
+  viewId,
   label,
   testId,
   loading,
@@ -71,6 +73,8 @@ function CompactList({
   children,
   footer,
 }: {
+  /** The view drawn, so the focused view is found by its element. */
+  viewId: string;
   label: string;
   testId: string;
   loading: boolean;
@@ -79,7 +83,7 @@ function CompactList({
   footer: ReactNode;
 }) {
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col">
+    <div className="relative flex min-h-0 flex-1 flex-col" data-view={viewId}>
       <nav
         aria-label={label}
         data-testid={testId}
@@ -124,7 +128,7 @@ function PageLink({
 }
 
 /** `omnigent.inbox.list`: the sessions waiting for the viewer, then the unread ones. */
-function InboxListView() {
+function InboxListView({ view }: BuiltInViewProps) {
   const { serverInboxRows, inboxRows, identityReady } = useSidebarData();
   const { pathname } = useLocation();
   const { conversationId } = useParams<{ conversationId: string }>();
@@ -145,6 +149,7 @@ function InboxListView() {
   ];
   return (
     <CompactList
+      viewId={view.id}
       label="Inbox"
       testId="inbox-list-view"
       loading={!identityReady}
@@ -172,7 +177,7 @@ function InboxListView() {
 }
 
 /** `omnigent.automations.list`: the viewer's automations. */
-function AutomationsListView() {
+function AutomationsListView({ view }: BuiltInViewProps) {
   // The page's query (and its cache) without its poll: the side bar may show this all day.
   const sideBarVisible = usePartVisible(Parts.SIDEBAR_PART);
   const tasks = useQuery({
@@ -185,6 +190,7 @@ function AutomationsListView() {
   const { taskId } = useParams<{ taskId: string }>();
   return (
     <CompactList
+      viewId={view.id}
       label="Automations"
       testId="automations-list-view"
       loading={tasks.isPending}
@@ -211,7 +217,7 @@ function AutomationsListView() {
 }
 
 /** `omnigent.canvas.list`: the main canvas and one per project. */
-function CanvasListView() {
+function CanvasListView({ view }: BuiltInViewProps) {
   const projects = useProjects();
   const { pathname, search } = useLocation();
   const current = new URLSearchParams(search).get("canvas") ?? MAIN_CANVAS_ID;
@@ -225,6 +231,7 @@ function CanvasListView() {
   ];
   return (
     <CompactList
+      viewId={view.id}
       label="Canvases"
       testId="canvas-list-view"
       loading={projects.isPending}

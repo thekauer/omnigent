@@ -142,6 +142,11 @@ export class LayoutService {
     fire(this.layoutListeners, undefined);
   }
 
+  /** The service this one acts on: itself (the active mount's for the window's proxy). */
+  resolve(): LayoutService {
+    return this;
+  }
+
   /** The root's size, or the window's when the parts are laid out in the window. */
   getRootSize(): PartSize {
     if (this.rootSize) return this.rootSize;
@@ -368,6 +373,9 @@ function followActiveService(
  * otherwise. Inside a mount, use the mount's own (`useWorkbenchScope`).
  */
 class ActiveLayoutService extends LayoutService {
+  override resolve(): LayoutService {
+    return activeService;
+  }
   override registerPart(part: Part, controller: PartController): () => void {
     return activeService.registerPart(part, controller);
   }

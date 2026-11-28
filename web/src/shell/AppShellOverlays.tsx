@@ -10,6 +10,7 @@ import { useSettingsJsonEditorStore } from "@/store/settingsJsonEditor";
 import { CommandPalette } from "./CommandPalette";
 import { RecentSessionsSwitcher } from "./RecentSessionsSwitcher";
 import { useMoveViewPickerStore } from "@/store/moveViewPicker";
+import { useWorkbenchScope } from "@/workbench/workbenchScope";
 
 // The QuickPick palette and its theme picker load only with quick_pick_palette, so the
 // default bundle keeps the flagged code, and what it imports, out of the first load. The
@@ -77,6 +78,7 @@ export function AppShellOverlays({
   const Palette = quickPick ? QuickPickCommandPalette : CommandPalette;
   const settingsJsonOpen = useSettingsJsonEditorStore((state) => state.open);
   const moveViewOpen = useMoveViewPickerStore((state) => state.open);
+  const { toasterId } = useWorkbenchScope();
   return (
     <>
       {/* Keyboard-shortcuts reference. Self-contained (owns its open state +
@@ -134,6 +136,24 @@ export function AppShellOverlays({
       {/* Match the previous toast system's effectively unbounded stack so
           security prompts cannot be hidden behind ordinary notifications. */}
       <Toaster
+        position="top-center"
+        visibleToasts={100}
+        offset={{
+          top: "calc(1rem + var(--omnigent-safe-top))",
+          right: "1rem",
+          bottom: updateOverlayToastOffset(updateOverlayHeight),
+        }}
+        mobileOffset={{
+          top: "calc(1rem + var(--omnigent-safe-top))",
+          right: "1rem",
+          bottom: updateOverlayToastOffset(updateOverlayHeight),
+        }}
+      />
+      {/* This mount's own toasts (a reset layout's undo): never drawn in another mount. */}
+      <Toaster
+        id={toasterId}
+        hotkey={[]}
+        containerAriaLabel="Workbench notifications"
         position="top-center"
         visibleToasts={100}
         offset={{

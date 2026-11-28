@@ -67,6 +67,16 @@ export class SessionHeaderItemRegistry {
   private visibleItems: readonly SessionHeaderItemSnapshot[] = EMPTY;
   private generatedIds = 0;
 
+  /**
+   * `keySeparator` joins the extension id and the item's own id into its key (`:`, which no
+   * extension id holds, keeps `a` + `b.x` apart from `a.b` + `x`).
+   */
+  private readonly keySeparator: string;
+
+  constructor(keySeparator = ".") {
+    this.keySeparator = keySeparator;
+  }
+
   /** For `useSyncExternalStore`. */
   readonly subscribe = (listener: () => void): (() => void) => {
     this.listeners.add(listener);
@@ -83,7 +93,7 @@ export class SessionHeaderItemRegistry {
     priority: number | undefined,
     colorOf?: HeaderItemColorResolver,
   ): omnigent.SessionHeaderItem {
-    let key = `${extensionId}.${id ?? `item${++this.generatedIds}`}`;
+    let key = `${extensionId}${this.keySeparator}${id ?? `item${++this.generatedIds}`}`;
     if (this.items.has(key)) {
       console.warn(`[omnigent-extensions] ${extensionId}: duplicate session header item ${key}`);
       let suffix = 2;

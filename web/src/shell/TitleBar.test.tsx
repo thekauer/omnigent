@@ -59,6 +59,39 @@ describe("TitleBar", () => {
     expect(region("right").querySelector('[data-titlebar-item="layoutControls"]')).not.toBeNull();
   });
 
+  it("is a labeled region with labeled regions, not a second banner", () => {
+    draw();
+    expect(screen.queryByRole("banner")).toBeNull();
+    const bar = screen.getByRole("region", { name: "Title bar" });
+    expect(
+      within(bar)
+        .getAllByRole("group")
+        .map((group) => group.getAttribute("aria-label")),
+    ).toEqual(["Title bar start", "Title bar center", "Title bar end"]);
+  });
+
+  it("truncates long titles and text inside regions that clip", () => {
+    act(() =>
+      contributedTitleBarEntries.set([
+        {
+          region: "left",
+          command: "acme.tools.long",
+          builtInItem: undefined,
+          title: "A very long title ".repeat(10),
+          icon: undefined,
+          tooltip: undefined,
+          when: undefined,
+          extensionId: "acme.tools",
+          active: true,
+        },
+      ]),
+    );
+    draw();
+    expect(region("left").className).toContain("overflow-x-clip");
+    const title = within(region("left")).getByText(/A very long title/);
+    expect(title.className).toContain("truncate");
+  });
+
   it("leaves out the command center and the layout controls when their settings are off", () => {
     configurationService.update(COMMAND_CENTER_SETTING, false, "memory");
     configurationService.update(LAYOUT_CONTROL_SETTING, false, "memory");
@@ -119,6 +152,9 @@ describe("TitleBar", () => {
     expect(within(region("left")).getByRole("button", { name: "Run tools" })).toBeInTheDocument();
     expect(within(region("left")).queryByRole("button", { name: "Off" })).toBeNull();
     expect(within(region("right")).getByText("$1.20")).toBeInTheDocument();
+    expect(
+      region("right").querySelector('[data-titlebar-text-item="acme.tools:cost"]'),
+    ).not.toBeNull();
     act(() => item.dispose());
   });
 });

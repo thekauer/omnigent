@@ -14,7 +14,7 @@ import {
 } from "@/lib/sessionFamilies";
 import { filterSessionScope } from "@/lib/sessionVisibility";
 import { CONVERSATIONS_CONTAINER } from "@/workbench/viewContainers";
-import { registerBuiltInView } from "./builtInViews";
+import { type BuiltInViewProps, registerBuiltInView } from "./builtInViews";
 import {
   ContainerViewsMenu,
   useSideBarContainerList,
@@ -1699,7 +1699,7 @@ function useSidebarViewProps() {
 }
 
 /** `omnigent.conversations.navigation`: the primary navigation rows. */
-function SidebarNavigationView() {
+function SidebarNavigationView({ view }: BuiltInViewProps) {
   const {
     onNavClick,
     switchTab,
@@ -1905,6 +1905,7 @@ function SidebarNavigationView() {
       <div
         className={cn("flex flex-col gap-px px-2 pt-2 pb-0 max-md:pt-0", SIDEBAR_ROW_MOBILE_INSET)}
         data-testid="sidebar-primary-nav"
+        data-view={view.id}
       >
         {entries.map((entry, index) => (
           <Fragment key={entry.id}>
@@ -2025,7 +2026,7 @@ function CommandNavigationRow({ entry }: { entry: NavigationEntry }) {
 }
 
 /** `omnigent.conversations.list`: the sessions and projects. */
-function SidebarConversationListView() {
+function SidebarConversationListView({ view }: BuiltInViewProps) {
   const {
     hasScrolled,
     setHasScrolled,
@@ -2039,7 +2040,7 @@ function SidebarConversationListView() {
     conversationList,
   } = useSidebarViewProps().conversationList;
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col">
+    <div className="relative flex min-h-0 flex-1 flex-col" data-view={view.id}>
       <div
         aria-hidden="true"
         data-testid="sidebar-scroll-divider"

@@ -65,16 +65,23 @@ export function TitleBar({ onOpenCommandCenter }: { onOpenCommandCenter: () => v
     <TooltipProvider>
       <div
         data-part={partHook(Parts.TITLEBAR_PART)}
-        role="banner"
+        role="region"
+        aria-label="Title bar"
         className="titlebar absolute inset-x-0 top-0 z-30 grid h-(--ui-titlebar-height,48px) grid-cols-[1fr_auto_1fr] items-center gap-2 border-b border-border bg-sidebar px-3"
       >
         {TITLE_BAR_REGIONS.map((region) => (
           <div
             key={region}
             data-slot={`titlebar-${region}`}
+            role="group"
+            aria-label={REGION_LABELS[region]}
             className={cn(
+              // Each region clips what overflows it; the center, as wide as its items, clips
+              // past a margin that keeps their edges' antialiasing.
               "flex min-w-0 items-center gap-1",
-              region === "center" && "justify-center",
+              region === "center"
+                ? "justify-center overflow-clip [overflow-clip-margin:4px]"
+                : "overflow-x-clip",
               region === "right" && "justify-end",
             )}
           >
@@ -101,6 +108,12 @@ export function TitleBar({ onOpenCommandCenter }: { onOpenCommandCenter: () => v
     </TooltipProvider>
   );
 }
+
+const REGION_LABELS = {
+  left: "Title bar start",
+  center: "Title bar center",
+  right: "Title bar end",
+} as const;
 
 function WithTooltip({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -235,7 +248,11 @@ function CommandButton({ entry }: { entry: TitleBarMenuEntry }) {
         onClick={() => runCommand(entry.command)}
         className={cn(ITEM_BUTTON, Icon && "w-8 px-0")}
       >
-        {Icon ? <Icon className="ui-icon size-4" aria-hidden /> : entry.title}
+        {Icon ? (
+          <Icon className="ui-icon size-4" aria-hidden />
+        ) : (
+          <span className="max-w-48 truncate">{entry.title}</span>
+        )}
       </button>
     </WithTooltip>
   );
@@ -251,13 +268,13 @@ function TextItem({ item }: { item: TitleBarItemSnapshot }) {
       onClick={() => runCommand(item.command!.command, item.command!.arguments)}
       className={ITEM_BUTTON}
     >
-      {item.text}
+      <span className="max-w-48 truncate">{item.text}</span>
     </button>
   ) : (
     <span
       data-titlebar-text-item={item.key}
       style={style}
-      className="px-2 text-ui text-muted-foreground"
+      className="max-w-48 truncate px-2 text-ui text-muted-foreground"
     >
       {item.text}
     </span>

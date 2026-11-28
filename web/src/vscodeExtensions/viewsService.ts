@@ -5,8 +5,10 @@ import {
   compareTitleBarEntries,
   type ContributedTitleBarEntry,
   contributedTitleBarEntries,
+  MAX_TITLE_BAR_ITEMS_PER_EXTENSION,
 } from "@/workbench/titleBar";
 import { commandIdProblem } from "./commands";
+import type { WhenClause } from "./when";
 import type * as omnigent from "omnigent";
 import type {
   RailViewLocation,
@@ -309,6 +311,47 @@ function actionsKeyOf(actions: readonly RailViewTitleAction[]): string {
   );
 }
 
+/** The first `max` entries of each extension. */
+function capPerExtension<Entry extends { readonly extensionId: string }>(
+  entries: readonly Entry[],
+  max: number,
+): Entry[] {
+  const counts = new Map<string, number>();
+  return entries.filter((entry) => {
+    const count = (counts.get(entry.extensionId) ?? 0) + 1;
+    counts.set(entry.extensionId, count);
+    return count <= max;
+  });
+}
+
+/** Whether `extensionId` owns `command` (its id starts with the extension's). */
+function ownsCommand(extensionId: string, command: string): boolean {
+  return commandIdProblem(extensionId, command) === undefined;
+}
+
+/**
+ * One menu entry per key (a command, or a region and command): an entry whose `when` holds over
+ * one that doesn't, then the command's own extension's, then the first registered. So another
+ * extension's entry, shown or not, can't keep the owner's from drawing.
+ */
+function oneEntryPerCommand<Item extends { readonly command: string }>(
+  entries: readonly { readonly extensionId: string; readonly item: Item }[],
+  keyOf: (item: Item) => string,
+  holds: (item: Item) => boolean,
+): { readonly extensionId: string; readonly item: Item }[] {
+  const rank = (entry: { readonly extensionId: string; readonly item: Item }) =>
+    (holds(entry.item) ? 0 : 2) + (ownsCommand(entry.extensionId, entry.item.command) ? 0 : 1);
+  const chosen = new Map<string, { readonly extensionId: string; readonly item: Item }>();
+  for (const entry of entries) {
+    const key = keyOf(entry.item);
+    const current = chosen.get(key);
+    if (!current || rank(entry) < rank(current)) chosen.set(key, entry);
+  }
+  // In registration order.
+  const kept = new Set(chosen.values());
+  return entries.filter((entry) => kept.has(entry));
+}
+
 export class ViewsService {
   private readonly options: ViewsServiceOptions;
   private readonly views = new Map<string, ViewEntry>();
@@ -538,14 +581,19 @@ export class ViewsService {
           );
           continue;
         }
-        // One row per command.
-        if (this.navigation.some((entry) => entry.item.command === item.command)) continue;
-        this.navigation.push({ extensionId, item });
+        // One entry per command and extension; which one draws is chosen as they publish.
+        const listed = this.navigation.some(
+          (entry) => entry.extensionId === extensionId && entry.item.command === item.command,
+        );
+        if (!listed) this.navigation.push({ extensionId, item });
       }
       for (const item of contributions.titleBarMenu) {
-        // One button per command and region.
+        // One entry per command, region and extension; which one draws is chosen as they publish.
         const listed = this.titleBar.some(
-          (entry) => entry.item.command === item.command && entry.item.region === item.region,
+          (entry) =>
+            entry.extensionId === extensionId &&
+            entry.item.command === item.command &&
+            entry.item.region === item.region,
         );
         if (item.command !== "" && !listed) this.titleBar.push({ extensionId, item });
       }
@@ -807,22 +855,29 @@ export class ViewsService {
       }
       entry.handle.update({ active });
     }
+    const holds = (item: { readonly when?: WhenClause | undefined }) =>
+      !item.when || item.when.evaluate(lookup);
     (this.options.navigation ?? contributedNavigation).set(
-      this.navigation.map(({ extensionId, item }) => {
-        const info = this.commandInfo.get(item.command);
-        return {
-          id: item.command,
-          title: info?.title ?? item.command,
-          icon: info?.icon,
-          when: item.when,
-          extensionId,
-          builtIn: false,
-          active: !item.when || item.when.evaluate(lookup),
-        };
-      }),
+      oneEntryPerCommand(this.navigation, (item) => item.command, holds).map(
+        ({ extensionId, item }) => {
+          const info = this.commandInfo.get(item.command);
+          return {
+            id: item.command,
+            title: info?.title ?? item.command,
+            icon: info?.icon,
+            when: item.when,
+            extensionId,
+            builtIn: false,
+            active: !item.when || item.when.evaluate(lookup),
+          };
+        },
+      ),
     );
     (this.options.titleBar ?? contributedTitleBarEntries).set(
-      [...this.titleBar]
+      capPerExtension(
+        oneEntryPerCommand(this.titleBar, (item) => `${item.region}\n${item.command}`, holds),
+        MAX_TITLE_BAR_ITEMS_PER_EXTENSION,
+      )
         .sort((left, right) => compareTitleBarEntries(left.item, right.item))
         .map(({ extensionId, item }) => {
           const info = this.commandInfo.get(item.command);
@@ -832,7 +887,8 @@ export class ViewsService {
             builtInItem: undefined,
             title: info?.title ?? item.command,
             icon: info?.icon,
-            tooltip: item.tooltip,
+            // Another extension's command keeps its owner's words: no tooltip of the entry's.
+            tooltip: ownsCommand(extensionId, item.command) ? item.tooltip : undefined,
             when: item.when,
             extensionId,
             group: item.group,

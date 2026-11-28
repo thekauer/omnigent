@@ -4,7 +4,7 @@
 
 import { useCallback, useSyncExternalStore } from "react";
 import { LAYOUT_SLOTS, type LayoutStateStore, layoutState } from "./layoutState";
-import { isViewHiddenByProduct, type ProductLayoutPolicy, productLayout } from "./productLayout";
+import { isViewRemovedByProduct, type ProductLayoutPolicy, productLayout } from "./productLayout";
 import { useWorkbenchScope } from "./workbenchScope";
 
 export interface ViewLayout {
@@ -74,15 +74,19 @@ export function isViewCollapsed(
 }
 
 /**
- * Whether a view is hidden: removed by the product (`hiddenViews`), else the user's choice, else
- * its contribution's `visibility`.
+ * Whether a view is hidden: removed by the product (`hiddenViews`, or its own container in
+ * `hiddenContainers`), else the user's choice, else its contribution's `visibility`.
  */
 export function isViewHidden(
-  view: { readonly id: string; readonly visibility?: string },
+  view: {
+    readonly id: string;
+    readonly visibility?: string;
+    readonly containerId?: string | undefined;
+  },
   layout: ViewsLayout,
   policy: ProductLayoutPolicy = productLayout,
 ): boolean {
-  if (isViewHiddenByProduct(view.id, policy)) return true;
+  if (isViewRemovedByProduct(view, policy)) return true;
   return layout[view.id]?.hidden ?? view.visibility === "hidden";
 }
 

@@ -2,6 +2,8 @@
 // (layout plan L1) into checked plain data, as VS Code's contribution points shape them.
 // Problems are warnings: the rest still loads.
 
+import remarkParse from "remark-parse";
+import { unified } from "unified";
 import { nullMap, snapshotPlainData } from "@/theme/validate";
 import type {
   ConfigurationNode,
@@ -71,16 +73,79 @@ export function escapeMarkdown(text: string): string {
     .replace(/^(\s*)([#>+-]|\d+\.)/gm, "$1\\$2");
 }
 
+/** The markdown parser the sanitizer reads code spans and reference definitions with. */
+const markdownParser = unified().use(remarkParse);
+
+interface MarkdownNode {
+  readonly type: string;
+  readonly children?: readonly MarkdownNode[];
+  readonly position?: { readonly start: { offset?: number }; readonly end: { offset?: number } };
+}
+
+/** The node types a sanitized text must not hold: they load URLs or draw HTML. */
+const UNSAFE_MARKDOWN_NODES = new Set(["image", "imageReference", "html", "definition"]);
+
+function markdownRanges(tree: MarkdownNode, types: ReadonlySet<string>): [number, number][] {
+  const ranges: [number, number][] = [];
+  const walk = (node: MarkdownNode) => {
+    const start = node.position?.start.offset;
+    const end = node.position?.end.offset;
+    if (types.has(node.type) && start !== undefined && end !== undefined) {
+      ranges.push([start, end]);
+      return;
+    }
+    for (const child of node.children ?? []) walk(child);
+  };
+  walk(tree);
+  return ranges.sort((left, right) => left[0] - right[0]);
+}
+
+function hasUnsafeMarkdown(markdown: string): boolean {
+  return (
+    markdownRanges(markdownParser.parse(markdown) as MarkdownNode, UNSAFE_MARKDOWN_NODES).length > 0
+  );
+}
+
+const ASCII_PUNCTUATION = /[!-/:-@[-`{-~]/;
+
 /**
- * Markdown with no images (which would load remote URLs) and no raw HTML: the bracket of every
- * `![` is escaped, so no image of any form (inline, nested brackets, reference) starts; reference
- * definitions, which only images and links read, are dropped; tags are left out.
+ * Markdown with no images (which would load remote URLs) and no raw HTML. Outside code, every
+ * `!`, `<` and entity `&` is backslash-escaped (they draw as themselves, but no image, tag or
+ * entity can start), existing escapes are kept as pairs, and reference definitions are dropped.
+ * Code spans and blocks are kept as written. Anything the parser still reads as unsafe is escaped
+ * whole.
  */
 export function sanitizeMarkdown(markdown: string): string {
-  return markdown
-    .replace(/^ {0,3}\[(?:[^\]\\]|\\.)+\]:.*(?:\n|$)/gm, "")
-    .replace(/!\[/g, "!\\[")
-    .replace(/<\/?[A-Za-z][^>]*>/g, "");
+  const tree = markdownParser.parse(markdown) as MarkdownNode;
+  const kept = markdownRanges(tree, new Set(["inlineCode", "code"]));
+  const dropped = markdownRanges(tree, new Set(["definition"]));
+  let out = "";
+  let index = 0;
+  while (index < markdown.length) {
+    const drop = dropped.find(([start, end]) => start <= index && index < end);
+    if (drop) {
+      index = markdown[drop[1]] === "\n" ? drop[1] + 1 : drop[1];
+      continue;
+    }
+    const code = kept.find(([start, end]) => start <= index && index < end);
+    if (code) {
+      out += markdown.slice(index, code[1]);
+      index = code[1];
+      continue;
+    }
+    const char = markdown[index]!;
+    const next = markdown[index + 1];
+    if (char === "\\" && next !== undefined && ASCII_PUNCTUATION.test(next)) {
+      out += char + next;
+      index += 2;
+      continue;
+    }
+    if (char === "!" || char === "<") out += `\\${char}`;
+    else if (char === "&" && /^&(?:#|[A-Za-z0-9]+;)/.test(markdown.slice(index))) out += "\\&";
+    else out += char;
+    index += 1;
+  }
+  return hasUnsafeMarkdown(out) ? escapeMarkdown(markdown) : out;
 }
 
 function textOf(value: unknown, max: number): string | undefined {

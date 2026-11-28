@@ -15,6 +15,8 @@ import { LayoutService, setActiveLayoutService, standaloneLayoutService } from "
 export interface WorkbenchScope {
   readonly layout: LayoutService;
   readonly state: LayoutStateStore;
+  /** The id of the mount's own toaster: toasts about this mount only (a reset's undo). */
+  readonly toasterId: string;
 }
 
 /**
@@ -24,7 +26,14 @@ export interface WorkbenchScope {
 const WINDOW_SCOPE: WorkbenchScope = Object.freeze({
   layout: standaloneLayoutService,
   state: standaloneLayoutState,
+  toasterId: "workbench-window",
 });
+
+/** Each mount's scope by its layout state, so a command that resolved a store finds its mount. */
+const scopesByState = new WeakMap<LayoutStateStore, WorkbenchScope>([
+  [standaloneLayoutState, WINDOW_SCOPE],
+]);
+let createdScopes = 0;
 
 const WorkbenchScopeContext = createContext<WorkbenchScope>(WINDOW_SCOPE);
 
@@ -47,7 +56,19 @@ export function useWorkbenchScope(): WorkbenchScope {
 export function createWorkbenchScope(basename: string | undefined): WorkbenchScope {
   const state = new LayoutStateStore();
   state.setScope(embedLayoutScope(basename));
-  return Object.freeze({ state, layout: new LayoutService(state) });
+  createdScopes += 1;
+  const scope = Object.freeze({
+    state,
+    layout: new LayoutService(state),
+    toasterId: `workbench-${createdScopes}`,
+  });
+  scopesByState.set(state, scope);
+  return scope;
+}
+
+/** The mount whose layout state `store` is (the window's proxy: the active mount's). */
+export function workbenchScopeOfState(store: LayoutStateStore): WorkbenchScope | undefined {
+  return scopesByState.get(store.resolve());
 }
 
 /** The mounts, last activated last. */

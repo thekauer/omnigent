@@ -5,6 +5,7 @@
 // the React read.
 
 import { useSyncExternalStore } from "react";
+import { RIGHT_PANEL_CONTAINER } from "./viewContainers";
 
 /** `product.layout`, as merged from the product's sources. Every field is optional. */
 export interface ProductLayoutConfig {
@@ -115,6 +116,20 @@ export function isViewHiddenByProduct(
   policy: ProductLayoutPolicy = productLayout,
 ): boolean {
   return matchesIdPattern(id, policy.get().hiddenViews);
+}
+
+/**
+ * Whether the product removes `view`: by its id (`hiddenViews`), or by removing the container its
+ * extension put it in (`hiddenContainers`). Moving it elsewhere doesn't bring it back.
+ */
+export function isViewRemovedByProduct(
+  view: { readonly id: string; readonly containerId?: string | undefined },
+  policy: ProductLayoutPolicy = productLayout,
+): boolean {
+  return (
+    isViewHiddenByProduct(view.id, policy) ||
+    isContainerHiddenByProduct(view.containerId ?? RIGHT_PANEL_CONTAINER, policy)
+  );
 }
 
 /** Whether the product hides `part`, kept current. */

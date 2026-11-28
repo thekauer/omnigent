@@ -67,6 +67,13 @@ const VALUE_LIMITS = {
 
 const LAYOUT_LISTS = ["hiddenParts", "hiddenContainers", "hiddenViews", "containerOrder"] as const;
 
+/** The lists every source adds to, as removal only adds up. */
+const UNION_LAYOUT_LISTS: ReadonlySet<string> = new Set([
+  "hiddenParts",
+  "hiddenContainers",
+  "hiddenViews",
+]);
+
 /** The server's snake_case spellings, which the web's own configs don't take. */
 const SNAKE_KEYS: Readonly<Record<string, string>> = Object.freeze({
   hidden_parts: "hiddenParts",
@@ -226,13 +233,12 @@ export function parseProductSettings(
   } = {};
   const invalid: string[] = [];
   const given = plainValue(block.lockedInvalid)?.value;
-  for (const key of Array.isArray(given) ? given : []) {
+  for (const key of Array.isArray(given) ? given.slice(0, MAP_LIMIT) : []) {
     if (typeof key === "string" && SETTING_KEY.test(key)) invalid.push(key);
   }
+  // Invalid locks never spend the budget: a lock past it still locks its key (the server agrees).
   const spendInvalid = (lockedKeys: Readonly<Record<string, unknown>>) => {
-    const kept = [...new Set(invalid)].filter(
-      (key) => !Object.hasOwn(lockedKeys, key) && budget.spend((stringCost(key) ?? 0) + 1, key),
-    );
+    const kept = [...new Set(invalid)].filter((key) => !Object.hasOwn(lockedKeys, key));
     if (kept.length > 0) out.lockedInvalid = kept;
   };
   for (const kind of ["locked", "defaults"] as const) {
@@ -333,8 +339,10 @@ export function parseServerProductConfig(product: unknown): ProductSettingsAndLa
 
 /**
  * The sources merged, highest first: the setting maps per key (a higher source's invalid lock
- * beats a lower one's value, and the other way round); each layout field from the first source
- * that sets it.
+ * beats a lower one's value, and the other way round). What a product removes adds up: the
+ * `hidden*` lists are the union of every source's, and any source's `lockViewLocations: true`
+ * locks (a higher source can't unlock). The `containerOrder` comes from the first source that
+ * sets it.
  */
 export function mergeProductConfigs(configs: readonly (ProductSettingsAndLayout | undefined)[]): {
   settings: ProductSettingsConfig | null;
@@ -362,7 +370,12 @@ export function mergeProductConfigs(configs: readonly (ProductSettingsAndLayout 
     }
     for (const [key, value] of Object.entries(config.layout ?? {})) {
       if (value === undefined || (Array.isArray(value) && value.length === 0)) continue;
-      if (!(key in layout)) layout[key] = value;
+      if (UNION_LAYOUT_LISTS.has(key) && Array.isArray(value)) {
+        const listed = (layout[key] as readonly string[] | undefined) ?? [];
+        layout[key] = [...new Set([...listed, ...(value as readonly string[])])];
+      } else if (key === "lockViewLocations") {
+        layout[key] = layout[key] === true || value === true;
+      } else if (!(key in layout)) layout[key] = value;
     }
   }
   const settings: { -readonly [Key in keyof ProductSettingsConfig]: ProductSettingsConfig[Key] } =

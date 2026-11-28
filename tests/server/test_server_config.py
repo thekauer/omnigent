@@ -1119,6 +1119,17 @@ def test_product_settings_keep_an_over_budget_lock_locked() -> None:
     ) == {"locked": {"acme.b": big}, "locked_invalid": ["acme.c"]}
 
 
+def test_product_settings_keep_an_invalid_lock_past_the_budget_locked() -> None:
+    """Invalid locks spend no budget: one after the budget is spent still locks its key."""
+    big = "x" * (PRODUCT_SETTINGS_MAX_CHARS - 20)
+    deep: object = 1
+    for _ in range(40):
+        deep = [deep]
+    assert load_product_settings(
+        {"product": {"settings": {"locked": {"acme.big": big, "acme.deep": deep}}}}
+    ) == {"locked": {"acme.big": big}, "locked_invalid": ["acme.deep"]}
+
+
 def test_product_layout_strips_ascii_whitespace_only() -> None:
     """As the web trims: a control character other than ASCII whitespace stays (and fails)."""
     assert load_product_layout({"product": {"layout": {"hidden_views": [" a ", "\x1cb"]}}}) == {

@@ -172,7 +172,10 @@ declare module "omnigent" {
    * once the title bar is on (`window.titleBar.visible`). Clicking it runs its command.
    */
   export interface TitleBarItem {
-    /** `<extension id>.<id>`; the id given at creation or a generated one. */
+    /**
+     * `<extension id>:<id>`; the id given at creation or a generated one. An extension has at
+     * most 20 title bar items; past that, new ones never draw.
+     */
     readonly id: string;
     readonly region: TitleBarRegion;
     /** Higher priority sits further left within its region. */

@@ -130,7 +130,7 @@ describe("title bar items", () => {
     const services = hostServices({ titleBarItems });
     const handle = createExtensionApi("acme.tools", services, vi.fn());
     const item = handle.api.window.createTitleBarItem("cost", "left", 2);
-    expect(item.id).toBe("acme.tools.cost");
+    expect(item.id).toBe("acme.tools:cost");
     item.text = "$1.20";
     item.show();
     expect(titleBarItems.getSnapshot().get("left")?.[0]?.text).toBe("$1.20");

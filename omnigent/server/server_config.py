@@ -569,7 +569,8 @@ def load_product_settings(config: Mapping[str, Any]) -> dict[str, Any] | None:
     A locked value that can't be served (a lone surrogate, too deep) still locks its key: it is
     served in ``locked_invalid``, and the web applies the setting's default and refuses writes.
     Entries over :data:`PRODUCT_SETTINGS_MAX_CHARS` (counted as the web counts) are dropped,
-    locks first spent, then the invalid locks, then the defaults.
+    locks first spent, then the defaults; a lock that doesn't fit, or can't be served, is kept in
+    ``locked_invalid`` (which spends nothing), so no lock fails open.
 
     :param config: Loaded server config carrying the optional ``product`` mapping.
     :returns: The block as ``GET /v1/info`` serves it, or ``None`` when nothing is configured.
@@ -645,16 +646,8 @@ def load_product_settings(config: Mapping[str, Any]) -> dict[str, Any] | None:
         if entries:
             out[kind] = entries
         if kind == "locked" and invalid:
-            kept_invalid: list[str] = []
-            for key in invalid:
-                cost = product_theme_cost(key) + 1
-                if cost > left:
-                    over.append(key)
-                    continue
-                left -= cost
-                kept_invalid.append(key)
-            if kept_invalid:
-                out["locked_invalid"] = kept_invalid
+            # Invalid locks never spend the budget: a lock past it still locks its key.
+            out["locked_invalid"] = list(dict.fromkeys(invalid))
     if over:
         shown = ", ".join(name[:64] for name in over[:10])
         more = f" and {len(over) - 10} more" if len(over) > 10 else ""

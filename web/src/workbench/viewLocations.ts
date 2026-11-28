@@ -7,7 +7,12 @@
 
 import { useCallback, useSyncExternalStore } from "react";
 import { LAYOUT_SLOTS, type LayoutStateStore, layoutState } from "./layoutState";
-import { type ProductLayoutPolicy, productLayout } from "./productLayout";
+import {
+  isContainerHiddenByProduct,
+  isViewRemovedByProduct,
+  type ProductLayoutPolicy,
+  productLayout,
+} from "./productLayout";
 import { useWorkbenchScope } from "./workbenchScope";
 import {
   HOST_CONTAINER_OWNER,
@@ -94,17 +99,30 @@ export function viewContainerFor(
   const moved = Object.hasOwn(locations, view.id) ? locations[view.id] : undefined;
   if (moved !== undefined && view.builtInTab === undefined) {
     const location = containerLocation(moved, registry);
-    if (location !== undefined && allowedLocations(view).includes(location)) return moved;
+    if (
+      location !== undefined &&
+      allowedLocations(view).includes(location) &&
+      !isContainerHiddenByProduct(moved)
+    ) {
+      return moved;
+    }
   }
   return defaultContainerOf(view);
 }
 
-/** Whether the user may move or hide `view` (not a rail tab's built-in, nor under a lock). */
+/**
+ * Whether the user may move or hide `view`: not a rail tab's built-in, not under a lock, and not
+ * removed by the product.
+ */
 export function canMoveView(
   view: MovableView,
   policy: ProductLayoutPolicy = productLayout,
 ): boolean {
-  return view.builtInTab === undefined && !policy.viewLocationsLocked();
+  return (
+    view.builtInTab === undefined &&
+    !policy.viewLocationsLocked() &&
+    !isViewRemovedByProduct(view, policy)
+  );
 }
 
 /** Whether `view` was moved away from where its extension put it. */
@@ -118,7 +136,8 @@ export function isViewMoved(
 
 /**
  * Moves `view` to `containerId` (its own container drops the move). Refused, returning false,
- * for a view that can't move, a location it can't be drawn at, or a container that isn't there.
+ * for a view that can't move, a location it can't be drawn at, or a container that isn't there
+ * or that the product removed.
  */
 export function moveView(
   view: MovableView,
@@ -133,6 +152,7 @@ export function moveView(
   if (!canMoveView(view, policy)) return false;
   const location = containerLocation(containerId, registry);
   if (location === undefined || !allowedLocations(view).includes(location)) return false;
+  if (isContainerHiddenByProduct(containerId, policy)) return false;
   const next: Record<string, string> = Object.fromEntries(
     Object.entries(readViewLocations(store, policy)).filter(([viewId]) => viewId !== view.id),
   );
@@ -157,6 +177,8 @@ export function generatedContainers(
 ): readonly ViewContainerDescriptor[] {
   const seen = new Map<string, ViewContainerDescriptor>();
   for (const view of views) {
+    // A view the product removed makes no entry.
+    if (isViewRemovedByProduct(view)) continue;
     const containerId = viewContainerFor(view, locations, registry);
     if (!isGeneratedContainer(containerId) || seen.has(containerId)) continue;
     // The view the entry was made for names it while it is there; another view otherwise.

@@ -145,6 +145,11 @@ export class LayoutStateStore {
     return this.scope;
   }
 
+  /** The store this one reads and writes: itself (the active mount's for the window's proxy). */
+  resolve(): LayoutStateStore {
+    return this;
+  }
+
   /**
    * Keeps the state of `scope` from now on (an embed's own, by its basename, so an embed and
    * the standalone app on one origin don't share their layout); listeners hear every slot.
@@ -344,6 +349,9 @@ function followActive(): void {
  * otherwise. Inside a mount, read the mount's own (`useWorkbenchScope`).
  */
 class ActiveLayoutStateStore extends LayoutStateStore {
+  override resolve(): LayoutStateStore {
+    return activeStore;
+  }
   override getScope(): string {
     return activeStore.getScope();
   }

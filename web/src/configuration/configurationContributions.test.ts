@@ -149,9 +149,9 @@ describe("parseConfigurationContributions", () => {
     const properties = contributions.nodes[0]!.properties;
     expect(properties["acme.x.plain"]?.description).toBe("Use \\*this\\* \\`x\\`");
     expect(properties["acme.x.plain"]?.enumDescriptions).toEqual(["\\[a\\](b)"]);
-    // The images' brackets are escaped: drawn as text, never loaded.
+    // The images' `!` and the tag's `<` are escaped: drawn as text, never loaded.
     expect(properties["acme.x.md"]?.description).toBe(
-      "See !\\[beacon](https://tracker.example/p.gif) and !\\[r][ref]  [docs](https://example.com)",
+      "See \\![beacon](https://tracker.example/p.gif) and \\![r][ref] \\<img src=x> [docs](https://example.com)",
     );
     // A built-in's description stays markdown.
     const builtIn = parseConfigurationContributions(

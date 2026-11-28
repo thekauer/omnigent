@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/context-menu";
 import {
   isContainerHiddenByProduct,
-  isViewHiddenByProduct,
+  isViewRemovedByProduct,
   productLayout,
   useProductLayout,
 } from "@/workbench/productLayout";
@@ -327,7 +327,7 @@ export function ContainerViewsMenu({
   )?.extensionId;
   // A view the product removed isn't offered to show again.
   const listed = containerViews(registered, containerId, owner, NO_VIEWS_LAYOUT, locations).filter(
-    (view) => canMoveView(view) && !isViewHiddenByProduct(view.id),
+    (view) => canMoveView(view) && !isViewRemovedByProduct(view),
   );
   return (
     <ContextMenu>

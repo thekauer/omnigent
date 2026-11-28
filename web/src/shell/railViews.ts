@@ -16,6 +16,7 @@ import {
 import { isViewHidden, useViewsLayout } from "@/workbench/viewsLayout";
 import {
   isContainerHiddenByProduct,
+  isViewRemovedByProduct,
   productLayout,
   useProductLayout,
 } from "@/workbench/productLayout";
@@ -486,6 +487,8 @@ export function viewsOfContainer(
   if (!filtered) {
     // The classic rail draws every secondary side bar container's views as its tabs.
     const drawnHere = (view: RailViewContribution) => {
+      // A view the product removed isn't drawn anywhere, moved or not.
+      if (isViewRemovedByProduct(view)) return false;
       const containerId = viewContainerOf(view, locations);
       // A container the product removed draws nothing.
       if (isContainerHiddenByProduct(containerId)) return false;

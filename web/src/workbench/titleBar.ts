@@ -176,6 +176,28 @@ export function titleBarItemCommandOf(value: unknown): TitleBarItemCommand | und
   return Object.freeze({ command, arguments: copied });
 }
 
+/** Joins an item's extension id and its own id: no extension id holds it. */
+const ITEM_KEY_SEPARATOR = ":";
+
+/** How many title bar items one extension may have at once. */
+export const MAX_TITLE_BAR_ITEMS_PER_EXTENSION = 20;
+
+/** An item past the cap: it keeps its fields, never draws. */
+function detachedTitleBarItem(id: string, region: TitleBarRegion): omnigent.TitleBarItem {
+  return {
+    id,
+    region,
+    priority: undefined,
+    text: "",
+    tooltip: undefined,
+    color: undefined,
+    command: undefined,
+    show: () => {},
+    hide: () => {},
+    dispose: () => {},
+  };
+}
+
 /**
  * The text items extensions create, per region: each region is a session header item
  * registry (the same text, tooltip and colour handling, higher priority further left), and
@@ -183,7 +205,7 @@ export function titleBarItemCommandOf(value: unknown): TitleBarItemCommand | und
  */
 export class TitleBarItemRegistry {
   private readonly regions = new Map<TitleBarRegion, SessionHeaderItemRegistry>(
-    TITLE_BAR_REGIONS.map((region) => [region, new SessionHeaderItemRegistry()]),
+    TITLE_BAR_REGIONS.map((region) => [region, new SessionHeaderItemRegistry(ITEM_KEY_SEPARATOR)]),
   );
   private readonly commands = new Map<string, TitleBarItemCommand>();
   /** Every item's id, across the regions: ids are unique in the window, as VS Code's. */
@@ -219,17 +241,28 @@ export class TitleBarItemRegistry {
       );
     }
     const where: TitleBarRegion = known ? region : "right";
-    // One id space for every region: a second item named the same gets a suffix.
-    let local = id ?? `item${++this.generatedIds}`;
-    if (this.ids.has(`${extensionId}.${local}`)) {
+    // Past its cap an extension's items are dropped: they'd crowd the bar out.
+    const owned = [...this.ids].filter((key) =>
+      key.startsWith(`${extensionId}${ITEM_KEY_SEPARATOR}`),
+    );
+    if (owned.length >= MAX_TITLE_BAR_ITEMS_PER_EXTENSION) {
       console.warn(
-        `[omnigent-extensions] ${extensionId}: duplicate title bar item ${extensionId}.${local}`,
+        `[omnigent-extensions] ${extensionId}: more than ${MAX_TITLE_BAR_ITEMS_PER_EXTENSION} title bar items; this one isn't drawn`,
+      );
+      return detachedTitleBarItem(`${extensionId}${ITEM_KEY_SEPARATOR}${id ?? "item"}`, where);
+    }
+    // One id space for every region: a second item named the same gets a suffix.
+    const keyOf = (local: string) => `${extensionId}${ITEM_KEY_SEPARATOR}${local}`;
+    let local = id ?? `item${++this.generatedIds}`;
+    if (this.ids.has(keyOf(local))) {
+      console.warn(
+        `[omnigent-extensions] ${extensionId}: duplicate title bar item ${keyOf(local)}`,
       );
       let suffix = 2;
-      while (this.ids.has(`${extensionId}.${local}#${suffix}`)) suffix += 1;
+      while (this.ids.has(keyOf(`${local}#${suffix}`))) suffix += 1;
       local = `${local}#${suffix}`;
     }
-    this.ids.add(`${extensionId}.${local}`);
+    this.ids.add(keyOf(local));
     const item = this.regions.get(where)!.create(extensionId, local, 1, priority, colorOf);
     const ids = this.ids;
     let given: string | omnigent.Command | undefined;

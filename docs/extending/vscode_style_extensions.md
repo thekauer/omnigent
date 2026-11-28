@@ -1454,8 +1454,12 @@ Deviations and why:
   `right` each draw the built-in items, then other extensions' `titleBar/*` menu entries
   (command buttons with the command's icon, or its title without one, gated by `when`, ordered
   by `group` as VS Code's menus are: `navigation` first, then `@order`; one per command and
-  region), then `window.createTitleBarItem` text items (their `priority` orders them among
-  themselves only; item ids are unique across the regions). The built-in items are the built-in
+  region: an entry whose `when` holds, then the command's own extension's; another extension's
+  entry for a command never shows its own tooltip), then `window.createTitleBarItem` text items
+  (their `priority` orders them among themselves only; ids are `<extension id>:<id>`, unique
+  across the regions). An extension has at most 20 entries and 20 text items; each region clips
+  and long titles truncate. The bar is a labeled region (not a `banner`, which a host page
+  embedding the app has), each of its regions a labeled group. The built-in items are the built-in
   `omnigent.workbench` extension's `titleBar/*` entries, which name a host-drawn item
   (`builtInItem`, built-ins only, as `builtInView`): the brand (the theme's logo and app
   name) on the left, the command center (it opens ⌘K; `window.commandCenter`) in the middle,

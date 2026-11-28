@@ -99,7 +99,7 @@ import { extensionRailTab, extensionRailTabViewId, type RightRailTab } from "./r
 import { useWorkspaceRail } from "./useWorkspaceRail";
 import { builtInTabView, hasRailTab, useRailViews } from "./railViews";
 import { RailTabStripMenu } from "./RailTabStripMenu";
-import { isViewHiddenByProduct } from "@/workbench/productLayout";
+import { isViewRemovedByProduct } from "@/workbench/productLayout";
 import { viewDragProps } from "./viewMoves";
 import { isViewHidden, useViewsLayout } from "@/workbench/viewsLayout";
 import { ViewContainerTitleActions } from "./ViewContainerTitleActions";
@@ -1285,8 +1285,8 @@ function WorkspacePanelImpl({
   const tabOrder = [defaultTab, ...defaultWorkspaceTabs.filter((tab) => tab !== defaultTab)];
   // A built-in tab whose view the product removed (`layout.hiddenViews`) gets no tab.
   const productRemovesTab = (tab: RailPanelTab) => {
-    const viewId = builtInTabView(extensionViews, tab)?.id;
-    return viewId !== undefined && isViewHiddenByProduct(viewId);
+    const view = builtInTabView(extensionViews, tab);
+    return view !== undefined && isViewRemovedByProduct(view);
   };
   const availablePanels = tabOrder.filter((tab) => {
     if (productRemovesTab(tab)) return false;

@@ -5,6 +5,7 @@
 import { Disposable } from "@/vscodeExtensions/base";
 import { BUILT_IN_COMMAND_OWNER } from "@/vscodeExtensions/builtinCommands";
 import type { CommandRegistry } from "@/vscodeExtensions/commands";
+import { isViewHiddenByProduct } from "./productLayout";
 import { NavigationEntries } from "./sidebarNavigation";
 
 /** Where each built-in entry goes. */
@@ -43,8 +44,9 @@ export function setNavigationHandler(command: string, handler: NavigationHandler
   };
 }
 
-/** Opens the entry `command` names: as its row does, else its path. */
+/** Opens the entry `command` names: as its row does, else its path; not one the product removed. */
 export function runNavigationEntry(command: string): void {
+  if (isViewHiddenByProduct(command)) return;
   const navigate = navigator;
   const path = NAVIGATION_PATHS[command];
   if (!navigate || path === undefined) return;

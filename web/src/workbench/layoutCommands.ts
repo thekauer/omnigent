@@ -15,6 +15,7 @@ import { resetViewLocations } from "./viewLocations";
 import { isContainerHiddenByProduct } from "./productLayout";
 import type { ConfigurationService } from "@/configuration/configurationService";
 import { isDesktopLayout } from "@/hooks/useIsMobileViewport";
+import { workbenchScopeOfState } from "./workbenchScope";
 
 export const TOGGLE_SIDEBAR_COMMAND = "workbench.action.toggleSidebarVisibility";
 export const CLOSE_SIDEBAR_COMMAND = "workbench.action.closeSidebar";
@@ -37,15 +38,21 @@ export function viewContainerCommand(containerId: string): string {
 /**
  * View: Reset Layout: what the user dragged and toggled goes (the layout state's layout slots),
  * the settings and the conversation list's own preferences stay; the side bar opens again on
- * its default container. A toast offers to undo it.
+ * its default container. A toast in the mount that was reset offers to undo it there, whichever
+ * mount is active by then.
  */
 export function resetLayout(layout: LayoutService, store: LayoutStateStore = layoutState): void {
-  const removed = store.resetSlots(RESETTABLE_LAYOUT_SLOTS);
+  // The mount active now, not when the undo is clicked.
+  const target = store.resolve();
+  const service = layout.resolve();
+  const removed = target.resetSlots(RESETTABLE_LAYOUT_SLOTS);
   // A phone's side bar is a drawer: it stays as it is.
-  if (isDesktopLayout()) layout.setPartHidden(false, Parts.SIDEBAR_PART);
+  if (isDesktopLayout()) service.setPartHidden(false, Parts.SIDEBAR_PART);
   if (Object.keys(removed).length === 0) return;
+  const toasterId = workbenchScopeOfState(target)?.toasterId;
   toast.success("Layout reset", {
-    action: { label: "Undo", onClick: () => store.restoreSlots(removed) },
+    ...(toasterId ? { toasterId } : {}),
+    action: { label: "Undo", onClick: () => target.restoreSlots(removed) },
   });
 }
 
@@ -76,11 +83,18 @@ export interface LayoutCommandOptions {
   readonly openMoveView?: (viewId?: string) => void;
 }
 
-/** The view keyboard focus is in, by its drawn element (a side bar pane or a rail tab's page). */
+/**
+ * The view keyboard focus is in, by its drawn element: a side bar view (`data-view`, built-in
+ * views too) or a rail tab's page.
+ */
 export function focusedViewId(): string | undefined {
   const active = typeof document === "undefined" ? null : document.activeElement;
-  const drawn = active?.closest?.('[data-testid^="extension-view-"]');
-  return drawn?.getAttribute("data-testid")?.slice("extension-view-".length) || undefined;
+  const drawn = active?.closest?.('[data-view], [data-testid^="extension-view-"]');
+  if (!drawn) return undefined;
+  const id =
+    drawn.getAttribute("data-view") ??
+    drawn.getAttribute("data-testid")?.slice("extension-view-".length);
+  return id || undefined;
 }
 
 /** Registers the layout commands and keeps the visibility context keys; returns the removal. */
