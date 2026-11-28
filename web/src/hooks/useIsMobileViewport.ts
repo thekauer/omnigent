@@ -27,7 +27,8 @@ const DESKTOP_QUERY = `(min-width: ${MOBILE_BREAKPOINT_PX}px)`;
  */
 export function isDesktopLayout(layout: LayoutService = layoutService): boolean {
   if (typeof window === "undefined") return false;
-  if (layout.getRoot()) return !layout.isMobileLayout();
+  const root = layout.getRootViewport();
+  if (root) return !root.mobile;
   return keepsDesktopLayout() || (!!window.matchMedia && window.matchMedia(DESKTOP_QUERY).matches);
 }
 
@@ -53,8 +54,13 @@ export function useIsMobileViewport(): boolean {
 /** {@link useIsMobileViewport} without the desktop window's override: the mount's width only. */
 export function useIsMobileLayout(): boolean {
   const { layout } = useWorkbenchScope();
-  const subscribe = useCallback((listener: () => void) => layout.onDidChangeViewport(listener), [
-    layout,
-  ]);
-  return useSyncExternalStore(subscribe, () => layout.isMobileLayout(), () => false);
+  const subscribe = useCallback(
+    (listener: () => void) => layout.onDidChangeViewport(listener),
+    [layout],
+  );
+  return useSyncExternalStore(
+    subscribe,
+    () => layout.isMobileLayout(),
+    () => false,
+  );
 }

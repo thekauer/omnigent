@@ -8,7 +8,6 @@
 import { CONVERSATIONS_CONTAINER } from "./viewContainers";
 import { LAYOUT_SLOTS, type LayoutStateStore, standaloneLayoutState } from "./layoutState";
 import {
-  DESKTOP_VIEWPORT,
   LAYOUT_WIDTH_ATTRIBUTE,
   type LayoutViewport,
   layoutWidthAttributeValue,
@@ -111,7 +110,8 @@ export class LayoutService {
   private rootSize: PartSize | undefined;
   private rootObserver: ResizeObserver | null = null;
   private readonly rootListeners = new Set<Listener<void>>();
-  private rootViewport: LayoutViewport = DESKTOP_VIEWPORT;
+  /** The root's layout once it has a box (a root not laid out yet follows the window). */
+  private rootViewport: LayoutViewport | null = null;
   private readonly viewportListeners = new Set<() => void>();
 
   constructor(store: LayoutStateStore = standaloneLayoutState) {
@@ -150,9 +150,11 @@ export class LayoutService {
     const next = box ? Object.freeze({ width: box.width, height: box.height }) : undefined;
     if (next?.width === this.rootSize?.width && next?.height === this.rootSize?.height) return;
     this.rootSize = next;
-    const viewport = next ? viewportOfSize(next.width, next.height) : DESKTOP_VIEWPORT;
-    if (this.root && next) {
-      this.root.setAttribute(LAYOUT_WIDTH_ATTRIBUTE, layoutWidthAttributeValue(viewport));
+    const viewport = next && next.width > 0 ? viewportOfSize(next.width, next.height) : null;
+    if (viewport) {
+      this.root?.setAttribute(LAYOUT_WIDTH_ATTRIBUTE, layoutWidthAttributeValue(viewport));
+    } else {
+      this.root?.removeAttribute(LAYOUT_WIDTH_ATTRIBUTE);
     }
     const viewportChanged = viewport !== this.rootViewport;
     this.rootViewport = viewport;
@@ -166,7 +168,12 @@ export class LayoutService {
    * media queries otherwise. Always the desktop layout in the desktop app.
    */
   getViewport(): LayoutViewport {
-    return this.rootSize ? this.rootViewport : windowViewport();
+    return this.rootViewport ?? windowViewport();
+  }
+
+  /** The root's own layout, or null while the parts follow the window (no root, or no box yet). */
+  getRootViewport(): LayoutViewport | null {
+    return this.rootViewport;
   }
 
   /** True below `md`: the mobile layout. */
@@ -183,7 +190,7 @@ export class LayoutService {
   onDidChangeViewport(listener: () => void): () => void {
     this.viewportListeners.add(listener);
     const offWindow = onDidChangeWindowViewport(() => {
-      if (!this.rootSize) listener();
+      if (!this.rootViewport) listener();
     });
     return () => {
       this.viewportListeners.delete(listener);
@@ -512,6 +519,9 @@ class ActiveLayoutService extends LayoutService {
   }
   override getViewport(): LayoutViewport {
     return activeService.getViewport();
+  }
+  override getRootViewport(): LayoutViewport | null {
+    return activeService.getRootViewport();
   }
   override isMobileLayout(): boolean {
     return activeService.isMobileLayout();

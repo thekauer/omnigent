@@ -8,11 +8,14 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import type { Agent } from "@/hooks/useAgents";
 import type { Conversation } from "@/hooks/useConversations";
 import type * as NativeBridgeModule from "@/lib/nativeBridge";
+import type * as PhoneMenuViewItemsModule from "./PhoneMenuViewItems";
 import { setOmnigentHostConfig } from "@/lib/host";
 import {
   SessionHeaderItemAlignment,
   sessionHeaderItems,
 } from "@/vscodeExtensions/sessionHeaderItems";
+import { configurationService } from "@/configuration/configurationService";
+import { contributedTitleBarEntries, TITLE_BAR_VISIBLE_SETTING } from "@/workbench/titleBar";
 import { ChatHeader } from "./ChatHeader";
 import {
   TerminalFirstContextProvider,
@@ -23,6 +26,14 @@ const { isIOSShellMock, isAndroidShellMock, isMobileMock } = vi.hoisted(() => ({
   isIOSShellMock: vi.fn(() => false),
   isAndroidShellMock: vi.fn(() => false),
   isMobileMock: vi.fn(() => false),
+}));
+
+const { phoneMenuViewsMock } = vi.hoisted(() => ({
+  phoneMenuViewsMock: vi.fn((): unknown[] => []),
+}));
+vi.mock("./PhoneMenuViewItems", async (importOriginal) => ({
+  ...(await importOriginal<typeof PhoneMenuViewItemsModule>()),
+  usePhoneMenuViews: () => phoneMenuViewsMock(),
 }));
 
 vi.mock("@/hooks/useIsMobileViewport", () => ({
@@ -72,6 +83,7 @@ const mobileMenu = {
   showSideChats: false,
   onOpenSideChats: () => {},
   onOpenMainExecutionLog: () => {},
+  onOpenView: undefined as ((viewId: string) => void) | undefined,
 };
 
 function renderHeader(props: {
@@ -1304,5 +1316,86 @@ describe("ChatHeader - extension session header items", () => {
     cleanup();
     renderHeader({ sidebarOpen: true, conversationId: "temp:12345678", pending: true });
     expect(screen.queryByTestId("session-header-item-pub.ext.cost")).toBeNull();
+  });
+});
+
+describe("ChatHeader — the phone menu (layout plan L9)", () => {
+  afterEach(() => {
+    phoneMenuViewsMock.mockReturnValue([]);
+    contributedTitleBarEntries.set([]);
+    configurationService.update(TITLE_BAR_VISIBLE_SETTING, undefined, "memory");
+  });
+
+  function openMenu() {
+    fireEvent.pointerDown(screen.getByTestId("session-actions-menu"), { button: 0 });
+    fireEvent.click(screen.getByTestId("session-actions-menu"));
+  }
+
+  it("lists the secondary side bar's other views, each opening its drawer", () => {
+    isMobileMock.mockReturnValue(true);
+    phoneMenuViewsMock.mockReturnValue([
+      {
+        id: "acme.notes.list",
+        name: "Notes",
+        title: undefined,
+        icon: "notebook",
+        badge: { value: 2 },
+      },
+    ]);
+    const onOpenView = vi.fn();
+    renderHeader({
+      sidebarOpen: false,
+      conversationId: "conv-1",
+      mobileMenu: { ...mobileMenu, onOpenView },
+    });
+    openMenu();
+    const row = screen.getByRole("menuitem", { name: /Notes/ });
+    expect(row).toHaveTextContent("2");
+    fireEvent.click(row);
+    expect(onOpenView).toHaveBeenCalledWith("acme.notes.list");
+  });
+
+  it("folds the title bar's items into the menu on a phone, with no session too", () => {
+    isMobileMock.mockReturnValue(true);
+    act(() => {
+      configurationService.update(TITLE_BAR_VISIBLE_SETTING, true, "memory");
+      contributedTitleBarEntries.set([
+        {
+          region: "right",
+          command: "acme.tools.run",
+          builtInItem: undefined,
+          title: "Run tools",
+          icon: undefined,
+          tooltip: undefined,
+          when: undefined,
+          extensionId: "acme.tools",
+          active: true,
+        },
+      ]);
+    });
+    renderHeader({ sidebarOpen: false });
+    openMenu();
+    expect(screen.getByRole("menuitem", { name: "Run tools" })).toBeInTheDocument();
+  });
+
+  it("keeps the title bar's items out of the desktop header's menus", () => {
+    act(() => {
+      configurationService.update(TITLE_BAR_VISIBLE_SETTING, true, "memory");
+      contributedTitleBarEntries.set([
+        {
+          region: "right",
+          command: "acme.tools.run",
+          builtInItem: undefined,
+          title: "Run tools",
+          icon: undefined,
+          tooltip: undefined,
+          when: undefined,
+          extensionId: "acme.tools",
+          active: true,
+        },
+      ]);
+    });
+    renderHeader({ sidebarOpen: false });
+    expect(screen.queryByTestId("session-actions-menu")).toBeNull();
   });
 });

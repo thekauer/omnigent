@@ -573,12 +573,12 @@ function AppShellImpl() {
   // Below md an open sidebar is a full-window drawer, so narrowing closes it
   // (except the settings menu) and remembers the desktop state for widening.
   const mobileViewport = useIsMobileViewport();
-  // The title bar (`window.titleBar.visible`): never on phones, where its items fold away.
-  // The macOS desktop app's own title strip holds the traffic lights (layout plan L9).
+  // The title bar (`window.titleBar.visible`): never on phones, where its items fold into the
+  // chat header's phone menu. In the macOS desktop app it is the window's title strip: the
+  // traffic lights sit in its left region (index.css).
   const titleBarSetting = useTitleBarSetting();
   const titleBarRemoved = useProductHidesPart(Parts.TITLEBAR_PART);
-  const titleBarShown =
-    titleBarSetting && !mobileViewport && !titleBarRemoved && !isMacElectronShell();
+  const titleBarShown = titleBarSetting && !mobileViewport && !titleBarRemoved;
   // The tabs host sits in the Workspace drawer once a narrow window has mounted it.
   const tabsInDrawer = mobileViewport && tabsDrawerTarget !== null;
   const sideBySideSidebar = useIsSideBySideSidebarViewport();
@@ -737,6 +737,8 @@ function AppShellImpl() {
   const [shellsPanelOpen, setShellsPanelOpen] = useState(false);
   const [githubPanelOpen, setGithubPanelOpen] = useState(false);
   const [contentSearchPanelOpen, setContentSearchPanelOpen] = useState(false);
+  // Another secondary side bar view's phone drawer (opened from the phone menu), by view id.
+  const [viewDrawer, setViewDrawer] = useState<string | null>(null);
   const [tasksPanelOpen, setTasksPanelOpen] = useState(false);
   const [sideChatsPanelOpen, setSideChatsPanelOpen] = useState(false);
   // The right "Workspace" rail (WorkspacePanel) remembers its open/closed
@@ -1534,6 +1536,7 @@ function AppShellImpl() {
     setTasksPanelOpen(false);
     setContentSearchPanelOpen(false);
     setSideChatsPanelOpen(false);
+    setViewDrawer(null);
     setFilesPanelShowHidden(undefined);
     // An open "Close shell?" dialog would target a terminal absent from the
     // new session's list.
@@ -1954,6 +1957,7 @@ function AppShellImpl() {
       setSideChatsPanelOpen(false); // close mobile side-chats drawer
       setContentSearchPanelOpen(false); // close mobile content-search drawer
       setTasksPanelOpen(false); // close mobile tasks drawer
+      setViewDrawer(null); // close a view's phone drawer
       // Pull the rail to the Files tab when parked on a tab where the viewer
       // won't render (Subagents). The Files tab surfaces the
       // FileViewer inline, so leave it undisturbed.
@@ -3542,6 +3546,17 @@ function AppShellImpl() {
             className={cn("app-shell relative flex h-dvh bg-sidebar text-foreground")}
             data-sidebar-location={sideBarLocation === "right" ? "right" : undefined}
             data-titlebar={titleBarShown ? "true" : undefined}
+            // The part at the window's top-left corner, where the macOS desktop app's traffic
+            // lights float: what needs their clearance (index.css).
+            data-window-corner={
+              sideBarLocation === "right"
+                ? workspacePanelVisible && !mobileViewport
+                  ? "auxiliarybar"
+                  : "main"
+                : sidebarOpen
+                  ? "sidebar"
+                  : "main"
+            }
             style={
               {
                 // The activity bar beside the side bar is part of the shell's left edge.
@@ -3774,6 +3789,8 @@ function AppShellImpl() {
                         ? () => showTabsTabOf("chat")
                         : openSideChatsPanel,
                       onOpenMainExecutionLog: openMainExecutionLog,
+                      viewDrawerOpen: viewDrawer !== null,
+                      onOpenView: tabsSidebar ? undefined : setViewDrawer,
                     }}
                   />
                 )}
@@ -3993,6 +4010,8 @@ function AppShellImpl() {
                 railTabsAvailable={railTabsAvailable}
                 contentSearchPanelOpen={contentSearchPanelOpen}
                 setContentSearchPanelOpen={setContentSearchPanelOpen}
+                viewDrawer={mobileViewport ? viewDrawer : null}
+                setViewDrawer={setViewDrawer}
                 setMobileFileTarget={setMobileFileTarget}
               />
               <WorkspaceTasksPublisher

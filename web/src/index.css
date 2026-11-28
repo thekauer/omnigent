@@ -1490,26 +1490,28 @@ html[data-electron-mac] .electron-sidebar-header-actions {
   display: flex;
   align-items: center;
 }
-/* Keep Collapse beside the traffic lights while the sidebar is open, and dock
- * the Back/Forward pair at its right edge. */
-html[data-electron-mac] .app-shell[data-sidebar-open] .electron-sidebar-header-actions {
+/* Keep Collapse beside the traffic lights while the sidebar is open at the window's corner
+ * (on the left), and dock the Back/Forward pair at its right edge. `data-window-corner` names
+ * the part at the window's top-left corner: `sidebar`, `auxiliarybar` (the secondary side bar,
+ * on the left while the side bar is on the right) or `main`. */
+html[data-electron-mac] .app-shell[data-window-corner="sidebar"] .electron-sidebar-header-actions {
   right: calc(100% - var(--app-sidebar-width) + 0.75rem);
 }
 html[data-electron-mac]
-  .app-shell[data-sidebar-open]
+  .app-shell[data-window-corner="sidebar"]
   .electron-sidebar-header-actions
   > [data-testid="sidebar-header-actions"] {
   width: 100%;
 }
 html[data-electron-mac]
-  .app-shell[data-sidebar-open]
+  .app-shell[data-window-corner="sidebar"]
   .electron-sidebar-header-actions
   [data-testid="history-navigation-buttons"] {
   margin-left: auto;
 }
 /* Clear the fixed native-control area plus the font-relative action cluster
- * when the collapsed sidebar exposes the chat header at the window edge. */
-html[data-electron-mac] .traffic-light-clearance {
+ * when the chat header reaches the window's corner (no side bar open on the left). */
+html[data-electron-mac] .app-shell[data-window-corner="main"] .traffic-light-clearance {
   padding-left: var(--mac-header-actions-clearance);
 }
 /* A pane's strip row at the window corner starts after the lights and the title-bar cluster
@@ -1517,7 +1519,7 @@ html[data-electron-mac] .traffic-light-clearance {
 .pane-strip-window-inset {
   display: none;
 }
-html[data-electron-mac] .app-shell:not([data-sidebar-open]) .pane-strip-window-inset {
+html[data-electron-mac] .app-shell[data-window-corner="main"] .pane-strip-window-inset {
   display: block;
   flex-shrink: 0;
   align-self: stretch;
@@ -1540,13 +1542,66 @@ html[data-electron-mac] [data-pane-strip-movable] .pane-strip-window-inset,
 html[data-electron-mac] [data-pane-strip-zoomable] .pane-strip-window-inset {
   -webkit-app-region: drag;
 }
-/* A maximized rail reaches the same window corner while the sidebar is closed.
- * Once the sidebar opens, the rail starts to its right and needs no clearance. */
+/* A maximized rail reaches the same window corner while the sidebar is closed, and a rail on
+ * the left (the side bar on the right) always does. Once the sidebar opens on the left, the
+ * rail starts to its right and needs no clearance. */
 html[data-electron-mac]
-  .app-shell:not([data-sidebar-open])
-  aside[aria-label="Workspace"][data-maximized]
+  .app-shell:is([data-window-corner="main"], [data-window-corner="auxiliarybar"])
+  aside[aria-label="Workspace"]:is([data-maximized], [data-side="left"])
   .workspace-tab-strip {
   padding-left: var(--mac-header-actions-clearance);
+}
+/* The macOS desktop app with the title bar on (`window.titleBar.visible`): the bar is the
+ * window's title strip, at least as tall as the native one. The lights and the cluster sit in
+ * its left region; the parts below it need no clearance of their own. */
+html[data-electron-mac] .app-shell[data-titlebar] {
+  padding-top: max(var(--ui-titlebar-height, 48px), var(--mac-titlebar-height));
+}
+html[data-electron-mac] .app-shell[data-titlebar] > .titlebar {
+  height: max(var(--ui-titlebar-height, 48px), var(--mac-titlebar-height));
+  padding-left: var(--mac-header-actions-clearance);
+  -webkit-app-region: drag;
+}
+html[data-electron-mac] .app-shell[data-titlebar] .electron-sidebar-header-actions {
+  right: auto;
+}
+html[data-electron-mac]
+  .app-shell[data-titlebar]
+  .electron-sidebar-header-actions
+  > [data-testid="sidebar-header-actions"] {
+  width: auto;
+}
+html[data-electron-mac]
+  .app-shell[data-titlebar]
+  .electron-sidebar-header-actions
+  [data-testid="history-navigation-buttons"] {
+  margin-left: revert-layer;
+}
+html[data-electron-mac] .app-shell[data-titlebar] .sidebar-header-row,
+html[data-electron-mac] .app-shell[data-titlebar] .settings-sidebar-header,
+html[data-electron-mac] .app-shell[data-titlebar] .traffic-light-clearance,
+html[data-electron-mac] .app-shell[data-titlebar] [data-pane-strip][data-pane-strip-title-bar-row],
+html[data-electron-mac]
+  .app-shell[data-titlebar]
+  aside[aria-label="Workspace"]
+  .workspace-tab-strip {
+  height: revert-layer;
+  padding: revert-layer;
+}
+html[data-electron-mac] .app-shell[data-titlebar] .conversations-sidebar.is-peek {
+  top: revert-layer;
+}
+html[data-electron-mac]
+  .app-shell[data-titlebar]
+  .conversations-sidebar.is-peek
+  .sidebar-header-row {
+  display: revert-layer;
+}
+html[data-electron-mac] .app-shell[data-titlebar] .canvas-workspace {
+  margin-top: revert-layer;
+}
+html[data-electron-mac] .app-shell[data-titlebar] .pane-strip-window-inset {
+  display: none;
 }
 /* Drag regions ignore z-order, so controls and overlays need counter-regions.
  * Scoped from <html> to cover portals outside AppShell on macOS only. */

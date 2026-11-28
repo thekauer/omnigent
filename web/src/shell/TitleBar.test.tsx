@@ -1,4 +1,12 @@
-import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  within,
+} from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import workbenchManifest from "@/builtinExtensions/omnigent.workbench/package.json";
@@ -9,9 +17,10 @@ import {
   COMMAND_CENTER_SETTING,
   contributedTitleBarEntries,
   LAYOUT_CONTROL_SETTING,
+  TITLE_BAR_VISIBLE_SETTING,
   titleBarItems,
 } from "@/workbench/titleBar";
-import { TitleBar } from "./TitleBar";
+import { TitleBar, useFoldedTitleBarItems } from "./TitleBar";
 
 let removeConfiguration = () => {};
 beforeAll(() => {
@@ -31,7 +40,7 @@ afterAll(() => removeConfiguration());
 afterEach(() => {
   cleanup();
   contributedTitleBarEntries.set([]);
-  for (const key of [COMMAND_CENTER_SETTING, LAYOUT_CONTROL_SETTING]) {
+  for (const key of [COMMAND_CENTER_SETTING, LAYOUT_CONTROL_SETTING, TITLE_BAR_VISIBLE_SETTING]) {
     configurationService.update(key, undefined, "memory");
   }
 });
@@ -156,5 +165,43 @@ describe("TitleBar", () => {
       region("right").querySelector('[data-titlebar-text-item="acme.tools:cost"]'),
     ).not.toBeNull();
     act(() => item.dispose());
+  });
+
+  it("folds its actionable items for a phone's menu, only while the bar is on", () => {
+    const entry = {
+      region: "right" as const,
+      command: "acme.tools.run",
+      builtInItem: undefined,
+      title: "Run tools",
+      icon: "play",
+      tooltip: undefined,
+      when: undefined,
+      extensionId: "acme.tools",
+      active: true,
+    };
+    act(() =>
+      contributedTitleBarEntries.set([
+        entry,
+        { ...entry, region: "left", command: "acme.tools.off", title: "Off", active: false },
+      ]),
+    );
+    const action = titleBarItems.create("acme.tools", "cost", "left", 0);
+    const label = titleBarItems.create("acme.tools", "label", "left", 0);
+    act(() => {
+      action.text = "$1.20";
+      action.command = "acme.tools.cost";
+      action.show();
+      label.text = "Read only";
+      label.show();
+    });
+    const { result } = renderHook(() => useFoldedTitleBarItems());
+    expect(result.current).toEqual([]);
+    act(() => configurationService.update(TITLE_BAR_VISIBLE_SETTING, true, "memory"));
+    // Region by region: the text item with a command (left), then the command entry (right).
+    expect(result.current.map((item) => item.label)).toEqual(["$1.20", "Run tools"]);
+    act(() => {
+      action.dispose();
+      label.dispose();
+    });
   });
 });

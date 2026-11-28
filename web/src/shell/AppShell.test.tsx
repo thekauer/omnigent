@@ -1,6 +1,7 @@
 vi.mock("@/lib/fetchSessionHostId", () => ({
   fetchSessionHostId: vi.fn().mockResolvedValue("local-host"),
 }));
+import { stubWindowMediaQueries } from "@/test/windowMediaQueries";
 import { productLayout } from "@/workbench/productLayout";
 import { type BuiltInHarness, startBuiltIns } from "@/test/builtInExtensions";
 import type { ReactNode } from "react";
@@ -2232,6 +2233,40 @@ describe("Workspace rail maximize", () => {
       expect(shell.className).not.toContain("flex-row-reverse");
     } finally {
       configurationService.update("workbench.sideBar.location", undefined, "memory");
+    }
+  });
+
+  it("names the part at the window's corner for the desktop app's traffic lights", () => {
+    vi.spyOn(window, "innerWidth", "get").mockReturnValue(1400);
+    stubWindowMediaQueries();
+    mockConversations([{ id: "conv_abc", permission_level: null }]);
+    const view = renderShell("/c/conv_abc");
+    const shell = () => document.querySelector(".app-shell")!;
+    expect(shell()).toHaveAttribute("data-window-corner", "sidebar");
+    view.unmount();
+    configurationService.update("workbench.sideBar.location", "right", "memory");
+    try {
+      renderShell("/c/conv_abc");
+      // The side bar on the right leaves the corner to the chat (or the rail on the left).
+      expect(shell().getAttribute("data-window-corner")).toMatch(/^(main|auxiliarybar)$/);
+    } finally {
+      configurationService.update("workbench.sideBar.location", undefined, "memory");
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("draws the title bar in the macOS desktop app, as its window's title strip", () => {
+    vi.stubGlobal("omnigentDesktop", { kind: "electron" });
+    vi.spyOn(navigator, "userAgent", "get").mockReturnValue("Mozilla/5.0 (Macintosh)");
+    configurationService.update("window.titleBar.visible", true, "memory");
+    try {
+      mockConversations([{ id: "conv_abc", permission_level: null }]);
+      renderShell("/c/conv_abc");
+      expect(document.querySelector('[data-part="titlebar"]')).not.toBeNull();
+      expect(document.querySelector(".app-shell")).toHaveAttribute("data-titlebar", "true");
+    } finally {
+      configurationService.update("window.titleBar.visible", undefined, "memory");
+      vi.unstubAllGlobals();
     }
   });
 

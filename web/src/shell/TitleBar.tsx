@@ -7,6 +7,7 @@ import { PanelLeftIcon, PanelRightIcon, SearchIcon } from "lucide-react";
 import { type ReactNode, useSyncExternalStore } from "react";
 import { COMMAND_PALETTE_KEYS, shortcutText } from "@/components/KeyboardShortcut";
 import omnigentWordmark from "@/assets/omnigent-wordmark.svg";
+import { DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { configurationService } from "@/configuration/configurationService";
 import { useBranding, useLogoUrl } from "@/lib/branding";
@@ -23,7 +24,9 @@ import {
   type TitleBarMenuEntry,
   useContributedTitleBarEntries,
   useTitleBarItems,
+  useTitleBarSetting,
 } from "@/workbench/titleBar";
+import { useProductHidesPart } from "@/workbench/productLayout";
 import { whenHolds, workbenchContext } from "@/workbench/workbenchContext";
 import { DEFAULT_RAIL_VIEW_ICON, railViewIcon } from "./railViewIcons";
 import { SidebarServerPicker } from "./SidebarServerPicker";
@@ -280,4 +283,77 @@ function TextItem({ item }: { item: TitleBarItemSnapshot }) {
     </span>
   );
   return item.tooltip ? <WithTooltip label={item.tooltip}>{body}</WithTooltip> : body;
+}
+
+/**
+ * The title bar's actionable items a phone folds into the chat header's menu (the bar is never
+ * drawn there): other extensions' `titleBar/*` commands, then text items with a command, region
+ * by region. None unless the bar is on (`window.titleBar.visible`, not removed by the product).
+ * The built-in items have phone forms of their own (the drawer's search, account and toggle).
+ */
+export function useFoldedTitleBarItems(): readonly FoldedTitleBarItem[] {
+  const on = useTitleBarSetting();
+  const removed = useProductHidesPart(Parts.TITLEBAR_PART);
+  const contributed = useContributedTitleBarEntries();
+  const items = useTitleBarItems();
+  if (!on || removed) return [];
+  const folded: FoldedTitleBarItem[] = [];
+  for (const region of TITLE_BAR_REGIONS) {
+    for (const entry of contributed) {
+      if (entry.region !== region || !entry.active) continue;
+      folded.push({
+        key: `command ${entry.extensionId} ${entry.command}`,
+        label: entry.title,
+        icon: entry.icon,
+        run: () => runCommand(entry.command),
+      });
+    }
+    for (const item of items.get(region) ?? []) {
+      const command = item.command;
+      if (!command) continue;
+      folded.push({
+        key: `text ${item.key}`,
+        label: item.text,
+        run: () => runCommand(command.command, command.arguments),
+      });
+    }
+  }
+  return folded;
+}
+
+export interface FoldedTitleBarItem {
+  readonly key: string;
+  readonly label: string;
+  readonly icon?: string;
+  readonly run: () => void;
+}
+
+/** The folded title bar items as menu rows, after a separator when `separated`. */
+export function FoldedTitleBarMenuItems({
+  items,
+  separated,
+}: {
+  items: readonly FoldedTitleBarItem[];
+  separated: boolean;
+}) {
+  if (items.length === 0) return null;
+  return (
+    <>
+      {separated && <DropdownMenuSeparator />}
+      {items.map((item) => {
+        const Icon = item.icon ? (railViewIcon(item.icon) ?? DEFAULT_RAIL_VIEW_ICON) : undefined;
+        return (
+          <DropdownMenuItem
+            key={item.key}
+            data-titlebar-folded-item={item.key}
+            onSelect={item.run}
+            className="mobile-touch-target gap-2.5 px-2.5 py-2 text-ui"
+          >
+            {Icon && <Icon className="size-4" aria-hidden />}
+            {item.label}
+          </DropdownMenuItem>
+        );
+      })}
+    </>
+  );
 }

@@ -36,6 +36,9 @@ export interface AppShellWorkspacePanelsProps {
   railTabsAvailable: { readonly "content-search": boolean; readonly tasks: boolean };
   contentSearchPanelOpen: boolean;
   setContentSearchPanelOpen: (open: boolean) => void;
+  /** The secondary side bar view whose phone drawer is open (from the phone menu), if any. */
+  viewDrawer: string | null;
+  setViewDrawer: (viewId: string | null) => void;
   setMobileFileTarget: (element: HTMLDivElement | null) => void;
 }
 
@@ -72,6 +75,8 @@ export function AppShellWorkspacePanels({
   railTabsAvailable,
   contentSearchPanelOpen,
   setContentSearchPanelOpen,
+  viewDrawer,
+  setViewDrawer,
   setMobileFileTarget,
 }: AppShellWorkspacePanelsProps) {
   return (
@@ -183,6 +188,13 @@ export function AppShellWorkspacePanels({
           />
         </MobilePanelDrawer>
       )}
+      {conversationId && mobileViewport && (
+        <ViewDrawer
+          viewId={viewDrawer}
+          conversationId={conversationId}
+          onClose={() => setViewDrawer(null)}
+        />
+      )}
       <div ref={setMobileFileTarget} className="md:hidden" />
     </>
   );
@@ -208,4 +220,35 @@ function BuiltInTabView({
       visible={visible}
     />
   ) : null;
+}
+
+/** Another secondary side bar view in a phone's drawer, opened from the phone menu. */
+function ViewDrawer({
+  viewId,
+  conversationId,
+  onClose,
+}: {
+  viewId: string | null;
+  conversationId: string;
+  onClose: () => void;
+}) {
+  const { views, settled } = useRailViews();
+  const view = viewId === null ? undefined : views.find((candidate) => candidate.id === viewId);
+  return (
+    <MobilePanelDrawer
+      open={view !== undefined}
+      title={view ? (view.title ?? view.name) : ""}
+      onClose={onClose}
+      testId="view-panel-drawer"
+    >
+      {view && (
+        <ExtensionRailView
+          viewId={view.id}
+          settled={settled}
+          conversationId={conversationId}
+          visible
+        />
+      )}
+    </MobilePanelDrawer>
+  );
 }

@@ -1,11 +1,16 @@
 import { act, cleanup, render, renderHook } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { isDesktopLayout, useIsMobileViewport } from "@/hooks/useIsMobileViewport";
+import { useIsSideBySideSidebarViewport } from "@/hooks/useIsSideBySideSidebarViewport";
+import { useResizableSidebar } from "@/hooks/useResizableSidebar";
+import { readPanelSizePreference } from "@/lib/panelSizePreferences";
 import { usePartVisible, useWorkbenchPart } from "@/shell/useWorkbenchParts";
 import { activityBarWidthPx, orderActivityBarItems } from "./activityBar";
 import { LAYOUT_SLOTS, layoutState, standaloneLayoutState } from "./layoutState";
 import { layoutService, Parts, standaloneLayoutService } from "./layoutService";
 import { rootRelativeLength } from "./layoutTokens";
+import { LAYOUT_WIDTH_ATTRIBUTE, viewportOfSize } from "./layoutViewport";
 import { matchesIdPattern, productLayout } from "./productLayout";
 import { isViewHidden } from "./viewsLayout";
 import {
@@ -157,5 +162,102 @@ describe("an embed's root", () => {
     scope.layout.setRoot(null);
     root.remove();
     render(<div />);
+  });
+});
+
+describe("an embed's breakpoints (decision 14)", () => {
+  function mountRoot(
+    scope: ReturnType<typeof createWorkbenchScope>,
+    width: number,
+    height: number,
+  ) {
+    const root = document.createElement("div");
+    let box = { width, height };
+    root.getBoundingClientRect = () => box as DOMRect;
+    document.body.append(root);
+    act(() => scope.layout.setRoot(root));
+    return {
+      root,
+      resize(next: { width: number; height: number }) {
+        box = next;
+        // jsdom has no ResizeObserver: measure as a resize would.
+        act(() => {
+          scope.layout.setRoot(null);
+          scope.layout.setRoot(root);
+        });
+      },
+      remove() {
+        scope.layout.setRoot(null);
+        root.remove();
+      },
+    };
+  }
+
+  it("follow the root's box, not the window's, and mark it for the CSS variants", () => {
+    const scope = createWorkbenchScope("/narrow");
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <WorkbenchScopeProvider scope={scope}>{children}</WorkbenchScopeProvider>
+    );
+    const mobile = renderHook(() => [useIsMobileViewport(), useIsSideBySideSidebarViewport()], {
+      wrapper,
+    });
+    // No box yet: the window's answer (the test window is desktop).
+    expect(mobile.result.current).toEqual([false, false]);
+    const root = mountRoot(scope, 390, 844);
+    expect(root.root).toHaveAttribute(LAYOUT_WIDTH_ATTRIBUTE, "mobile");
+    expect(mobile.result.current).toEqual([true, false]);
+    expect(isDesktopLayout(scope.layout)).toBe(false);
+    root.resize({ width: 800, height: 700 });
+    expect(mobile.result.current).toEqual([true, true]);
+    root.resize({ width: 1400, height: 900 });
+    expect(root.root).toHaveAttribute(LAYOUT_WIDTH_ATTRIBUTE, "desktop");
+    expect(mobile.result.current).toEqual([false, false]);
+    expect(isDesktopLayout(scope.layout)).toBe(true);
+    // A root with no box (not laid out) follows the window again, unmarked.
+    root.resize({ width: 0, height: 0 });
+    expect(root.root).not.toHaveAttribute(LAYOUT_WIDTH_ATTRIBUTE);
+    root.remove();
+    expect(root.root).not.toHaveAttribute(LAYOUT_WIDTH_ATTRIBUTE);
+  });
+
+  it("keep the desktop layout in the desktop app at any root width", () => {
+    vi.stubGlobal("omnigentDesktop", { kind: "electron" });
+    try {
+      expect(viewportOfSize(390, 844)).toEqual({ mobile: false, sideBySide: false });
+    } finally {
+      vi.unstubAllGlobals();
+    }
+    expect(viewportOfSize(390, 844)).toEqual({ mobile: true, sideBySide: false });
+    // The band needs 600px at a squarish aspect.
+    expect(viewportOfSize(700, 1200).sideBySide).toBe(false);
+    expect(viewportOfSize(1180, 900).sideBySide).toBe(true);
+    expect(viewportOfSize(1181, 900).mobile).toBe(false);
+  });
+});
+
+describe("the side bar's dragged width", () => {
+  it("is each mount's own", () => {
+    const first = createWorkbenchScope("/first");
+    const second = createWorkbenchScope("/second");
+    const wrapper =
+      (scope: typeof first) =>
+      ({ children }: { children: ReactNode }) => (
+        <WorkbenchScopeProvider scope={scope}>{children}</WorkbenchScopeProvider>
+      );
+    vi.spyOn(window, "innerWidth", "get").mockReturnValue(2000);
+    const one = renderHook(() => useResizableSidebar(), { wrapper: wrapper(first) });
+    const two = renderHook(() => useResizableSidebar(), { wrapper: wrapper(second) });
+    act(() =>
+      one.result.current.handleProps.onKeyDown({
+        key: "ArrowRight",
+        preventDefault: () => {},
+      } as React.KeyboardEvent),
+    );
+    expect(one.result.current.width).toBe(340);
+    expect(two.result.current.width).toBe(320);
+    expect(readPanelSizePreference("sidebarWidthPx", first.state)).toBe(340);
+    expect(readPanelSizePreference("sidebarWidthPx", second.state)).toBeNull();
+    expect(readPanelSizePreference("sidebarWidthPx", standaloneLayoutState)).toBeNull();
+    vi.restoreAllMocks();
   });
 });

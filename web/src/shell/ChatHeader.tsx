@@ -60,6 +60,8 @@ import { useOmnigentAnalytics } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
 import { MOBILE_GLASS_SURFACE } from "./mobileGlass";
 import { TAB_BADGE_BASE } from "./railTabs";
+import { PhoneMenuViewItems, usePhoneMenuViews } from "./PhoneMenuViewItems";
+import { FoldedTitleBarMenuItems, useFoldedTitleBarItems } from "./TitleBar";
 import { TerminalSplitControls } from "./TerminalSplitControls";
 import { ViewModeMenuItems, ViewModeToggle } from "./ViewModeToggle";
 import { SidebarOpenButton } from "./SidebarOpenButton";
@@ -138,6 +140,10 @@ interface MobileSessionMenuProps {
   onOpenSideChats: () => void;
   /** Open the main execution-log push panel. */
   onOpenMainExecutionLog: () => void;
+  /** The secondary side bar view whose phone drawer is open, if any. */
+  viewDrawerOpen?: boolean;
+  /** Open another secondary side bar view's phone drawer; unset: the menu doesn't list them. */
+  onOpenView?: (viewId: string) => void;
 }
 
 /**
@@ -393,6 +399,11 @@ export function ChatHeader({
 }: ChatHeaderProps) {
   const isMobile = useIsMobileViewport();
   const canvas = useCanvasWorkspace();
+  // A phone has no title bar: its actionable items fold into this menu (layout plan L9).
+  const foldedTitleBarItems = useFoldedTitleBarItems();
+  const foldedTitleBar = isMobile && foldedTitleBarItems.length > 0;
+  // The secondary side bar's other views, each a drawer of its own on a phone.
+  const phoneMenuViews = usePhoneMenuViews();
   useCanvasHeaderPaletteCommands(canvas);
   const { trackClick } = useOmnigentAnalytics();
   const hasPageTitle = !conversationId && pageTitle !== undefined;
@@ -415,6 +426,7 @@ export function ChatHeader({
     !mobileMenu.tasksPanelOpen &&
     !mobileMenu.contentSearchPanelOpen &&
     !mobileMenu.sideChatsPanelOpen &&
+    !mobileMenu.viewDrawerOpen &&
     (hasRailContent || mobileMenu.debugMode) ? (
       <>
         {showFilesPanel && (
@@ -528,6 +540,19 @@ export function ChatHeader({
             Logs
           </DropdownMenuItem>
         )}
+        {mobileMenu.onOpenView && (
+          <PhoneMenuViewItems views={phoneMenuViews} onOpenView={mobileMenu.onOpenView} />
+        )}
+      </>
+    ) : null;
+  // The phone menu's rows after the session's own: the workspace entries, then the title bar's.
+  const phoneMenuItems =
+    workspaceItems || foldedTitleBar ? (
+      <>
+        {workspaceItems}
+        {foldedTitleBar && (
+          <FoldedTitleBarMenuItems items={foldedTitleBarItems} separated={!!workspaceItems} />
+        )}
       </>
     ) : null;
   const showShare = !pending && canShare;
@@ -552,7 +577,7 @@ export function ChatHeader({
         hasAgentInfo={isMobile && hasAgentInfo}
         onAgentInfo={onAgentInfo}
         viewItems={isMobile ? <ViewModeMenuItems /> : null}
-        workspaceItems={isMobile ? workspaceItems : null}
+        workspaceItems={isMobile ? phoneMenuItems : null}
       />
     ) : null;
   // Slack-style "Move to…" shortcut on the breadcrumb's folder tag: click it to
@@ -619,14 +644,15 @@ export function ChatHeader({
           sidebar row — on a phone the sidebar is collapsed and the
           nesting is invisible, so this affordance is the only way
           out of a child session without opening the sidebar. */}
-      {/* With the sidebar closed this slot reaches the window corner,
-          where the macOS Electron shell's traffic lights float — drop
-          just this slot below them (the right action cluster stays up
-          in the title-bar strip). Inert outside the shell (index.css). */}
+      {/* With no side bar open on the left this slot reaches the window
+          corner, where the macOS Electron shell's traffic lights float — pad
+          just this slot past them (the right action cluster stays up in the
+          title-bar strip). Inert outside the shell and off the corner
+          (`data-window-corner` in index.css). */}
       <div
         className={cn(
           "flex min-w-0 items-center gap-1 md:gap-6",
-          !sidebarOpen && !canvas && "traffic-light-clearance",
+          !canvas && "traffic-light-clearance",
         )}
       >
         {!sidebarOpen && (!canvas || canvas.compact || canvas.focused) && (
@@ -740,7 +766,11 @@ export function ChatHeader({
             It carries Fork, Share, Agent info, and the workspace-rail entries
             so a phone still needs only one trigger. */}
         {!pending &&
-          (hasHeaderMenu || workspaceItems || canFork || (isMobile && mobileMenu.terminalFirst)) &&
+          (hasHeaderMenu ||
+            workspaceItems ||
+            foldedTitleBar ||
+            canFork ||
+            (isMobile && mobileMenu.terminalFirst)) &&
           (!actionConversation || !isMobile) && (
             // Non-modal on mobile: modal mode's body-wide pointer-events:none
             // makes the menu the sole touch target, so touch-target adjustment
@@ -820,8 +850,8 @@ export function ChatHeader({
                     Agent info
                   </DropdownMenuItem>
                 )}
-                {hasHeaderMenu && workspaceItems && <DropdownMenuSeparator />}
-                {workspaceItems}
+                {hasHeaderMenu && phoneMenuItems && <DropdownMenuSeparator />}
+                {phoneMenuItems}
               </DropdownMenuContent>
             </DropdownMenu>
           )}
