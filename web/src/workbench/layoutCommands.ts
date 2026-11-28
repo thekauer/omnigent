@@ -6,7 +6,7 @@ import { Disposable } from "@/vscodeExtensions/base";
 import { BUILT_IN_COMMAND_OWNER } from "@/vscodeExtensions/builtinCommands";
 import type { CommandRegistry } from "@/vscodeExtensions/commands";
 import { ContextKeyService } from "@/vscodeExtensions/contextKeys";
-import { type LayoutService, Parts } from "./layoutService";
+import { findPartElement, type LayoutService, type Part, Parts } from "./layoutService";
 import { toggleActivityBarVisibility } from "./activityBar";
 import { type LayoutStateStore, layoutState, RESETTABLE_LAYOUT_SLOTS } from "./layoutState";
 import { toast } from "sonner";
@@ -16,6 +16,7 @@ import { isContainerHiddenByProduct } from "./productLayout";
 import type { ConfigurationService } from "@/configuration/configurationService";
 import { isDesktopLayout } from "@/hooks/useIsMobileViewport";
 import { workbenchScopeOfState } from "./workbenchScope";
+import { layoutWidthOf } from "./layoutViewport";
 
 export const TOGGLE_SIDEBAR_COMMAND = "workbench.action.toggleSidebarVisibility";
 export const CLOSE_SIDEBAR_COMMAND = "workbench.action.closeSidebar";
@@ -62,15 +63,23 @@ export const LAYOUT_COMMAND_ALIASES: Readonly<Record<string, string>> = Object.f
   "toggle-right-sidebar": TOGGLE_AUXILIARY_BAR_COMMAND,
 });
 
-/** VS Code's context keys for the parts' visibility. */
+/** VS Code's context keys for the parts' visibility (the title bar's is Omnigent's). */
 export const PART_VISIBILITY_CONTEXT_KEYS = Object.freeze({
   [Parts.SIDEBAR_PART]: "sideBarVisible",
   [Parts.AUXILIARYBAR_PART]: "auxiliaryBarVisible",
   [Parts.ACTIVITYBAR_PART]: "activityBarVisible",
+  [Parts.TITLEBAR_PART]: "titleBarVisible",
 } as const);
 
 /** VS Code's key for the container the open side bar shows. */
 export const ACTIVE_VIEWLET_CONTEXT_KEY = "activeViewlet";
+/** VS Code's keys for the secondary side bar's maximized state and focus, and the focused view. */
+export const AUXILIARY_BAR_MAXIMIZED_CONTEXT_KEY = "auxiliaryBarMaximized";
+export const SIDE_BAR_FOCUS_CONTEXT_KEY = "sideBarFocus";
+export const AUXILIARY_BAR_FOCUS_CONTEXT_KEY = "auxiliaryBarFocus";
+export const FOCUSED_VIEW_CONTEXT_KEY = "focusedView";
+/** Omnigent's width class (`phone`, `band`, `desktop`) of the layout the parts draw. */
+export const LAYOUT_WIDTH_CONTEXT_KEY = "omnigent.layoutWidth";
 
 export interface LayoutCommandOptions {
   readonly contextKeys?: ContextKeyService;
@@ -83,18 +92,28 @@ export interface LayoutCommandOptions {
   readonly openMoveView?: (viewId?: string) => void;
 }
 
-/**
- * The view keyboard focus is in, by its drawn element: a side bar view (`data-view`, built-in
- * views too) or a rail tab's page.
- */
-export function focusedViewId(): string | undefined {
-  const active = typeof document === "undefined" ? null : document.activeElement;
-  const drawn = active?.closest?.('[data-view], [data-testid^="extension-view-"]');
+/** The view a drawn element belongs to: a side bar view (`data-view`) or a rail tab's page. */
+function viewIdOf(element: Element | null): string | undefined {
+  const drawn = element?.closest?.('[data-view], [data-testid^="extension-view-"]');
   if (!drawn) return undefined;
   const id =
     drawn.getAttribute("data-view") ??
     drawn.getAttribute("data-testid")?.slice("extension-view-".length);
   return id || undefined;
+}
+
+/** The view keyboard focus is in. */
+export function focusedViewId(): string | undefined {
+  return viewIdOf(typeof document === "undefined" ? null : document.activeElement);
+}
+
+/** The focused element, when it is inside the active mount (any, without a root). */
+function focusInActiveLayout(layout: LayoutService): Element | null {
+  if (typeof document === "undefined") return null;
+  const active = document.activeElement;
+  if (!active) return null;
+  const root = layout.getRoot();
+  return !root || root.contains(active) ? active : null;
 }
 
 /** Registers the layout commands and keeps the visibility context keys; returns the removal. */
@@ -196,11 +215,37 @@ export function registerLayoutCommands(
         ACTIVE_VIEWLET_CONTEXT_KEY,
         layout.isVisible(Parts.SIDEBAR_PART) ? layout.getActiveViewContainer() : undefined,
       );
+      contextKeys.setHost(
+        AUXILIARY_BAR_MAXIMIZED_CONTEXT_KEY,
+        layout.isVisible(Parts.AUXILIARYBAR_PART) && layout.isMaximized(Parts.AUXILIARYBAR_PART),
+      );
+      contextKeys.setHost(LAYOUT_WIDTH_CONTEXT_KEY, layoutWidthOf(layout.getViewport()));
+      // Focus is read where it is: inside the part's element of the active mount.
+      const focused = focusInActiveLayout(layout);
+      const inPart = (part: Part) => {
+        const element = findPartElement(part, layout.getRoot());
+        return focused !== null && element !== null && element.contains(focused);
+      };
+      contextKeys.setHost(SIDE_BAR_FOCUS_CONTEXT_KEY, inPart(Parts.SIDEBAR_PART));
+      contextKeys.setHost(AUXILIARY_BAR_FOCUS_CONTEXT_KEY, inPart(Parts.AUXILIARYBAR_PART));
+      contextKeys.setHost(FOCUSED_VIEW_CONTEXT_KEY, viewIdOf(focused));
     };
     sync();
+    // Focus moves inside the page, so it is read as it moves; the active mount's own focus
+    // (which activates it) follows through the layout's switch.
+    const onFocusChange = () => sync();
+    const onDocument = typeof document === "undefined" ? null : document;
+    onDocument?.addEventListener("focusin", onFocusChange, true);
+    onDocument?.addEventListener("focusout", onFocusChange, true);
     registrations.push(
       new Disposable(layout.onDidChangePartVisibility(sync)),
       new Disposable(layout.onDidChangeSideBar(sync)),
+      new Disposable(layout.onDidChangeLayout(sync)),
+      new Disposable(layout.onDidChangeViewport(sync)),
+      new Disposable(() => {
+        onDocument?.removeEventListener("focusin", onFocusChange, true);
+        onDocument?.removeEventListener("focusout", onFocusChange, true);
+      }),
     );
   }
   return Disposable.from(...registrations);

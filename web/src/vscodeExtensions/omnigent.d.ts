@@ -225,6 +225,69 @@ declare module "omnigent" {
     readonly variants: Readonly<Record<string, string>>;
   }
 
+  /**
+   * A workbench part, by VS Code's `workbench.parts.*` id. The title bar, activity bar, primary
+   * side bar, main part and secondary side bar are drawn; the panel and status bar are reserved
+   * and never on screen.
+   */
+  export type WorkbenchPart =
+    | "workbench.parts.titlebar"
+    | "workbench.parts.activitybar"
+    | "workbench.parts.sidebar"
+    | "workbench.parts.main"
+    | "workbench.parts.auxiliarybar"
+    | "workbench.parts.panel"
+    | "workbench.parts.statusbar";
+
+  /** A part's box, in CSS pixels. */
+  export interface PartSize {
+    readonly width: number;
+    readonly height: number;
+  }
+
+  /**
+   * The width class of the layout on screen: `phone` below the medium breakpoint, `band` the
+   * side-by-side band beside it (the side bar docks beside the chat), `desktop` above.
+   */
+  export type LayoutWidth = "phone" | "band" | "desktop";
+
+  /** A part's visibility changed (`window.layout.onDidChangePartVisibility`). */
+  export interface PartVisibilityChangeEvent {
+    readonly part: WorkbenchPart;
+    readonly visible: boolean;
+  }
+
+  /**
+   * The workbench layout on screen, as plain data, as VS Code's layout reads. There are no
+   * setters: an extension changes the layout through the layout commands (such as
+   * `workbench.action.toggleSidebarVisibility`). It follows the mounted app the window's
+   * commands reach, the one last mounted or used.
+   */
+  export interface WindowLayout {
+    /** Whether the part is on screen. False for a part the workbench doesn't draw. */
+    readonly isPartVisible: (part: WorkbenchPart) => boolean;
+    /** The part's box while it is on screen; undefined when it is hidden or not drawn. */
+    readonly getPartSize: (part: WorkbenchPart) => PartSize | undefined;
+    /** The side the primary side bar sits on. */
+    readonly sideBarLocation: "left" | "right";
+    /**
+     * The view container the primary side bar shows (`omnigent.conversations` or a contributed
+     * container); undefined while the side bar is hidden.
+     */
+    readonly activeViewContainer: string | undefined;
+    /** The width class of the layout on screen. */
+    readonly width: LayoutWidth;
+    /** Fires when a part's visibility changes, never for a part's unchanged visibility. */
+    readonly onDidChangePartVisibility: Event<PartVisibilityChangeEvent>;
+    /** Fires when the container the side bar shows changes, or the side bar is hidden or shown. */
+    readonly onDidChangeActiveViewContainer: Event<string | undefined>;
+    /**
+     * Fires when the layout's sizes, the side bar's location or the width class change. A drag
+     * reports at most once per 100 ms; read the layout in the listener.
+     */
+    readonly onDidChangeLayout: Event<void>;
+  }
+
   /** How a tree item shows its children, as `vscode.TreeItemCollapsibleState`. */
   export enum TreeItemCollapsibleState {
     /** A leaf. */
@@ -831,6 +894,13 @@ declare module "omnigent" {
      * that already has content.
      */
     export function createPullRequestView(viewId: string): PullRequestView;
+
+    /**
+     * The workbench layout on screen (plain data and change events). It follows the active
+     * mounted app: when the window's commands reach another app, the reads and events change
+     * to that app's layout, and the events fire where its values differ.
+     */
+    export const layout: WindowLayout;
   }
 
   /**
@@ -864,7 +934,11 @@ declare module "omnigent" {
    *
    * Context keys the host sets: `config.<setting>` for each setting with a
    * string, number or boolean value (see {@link workspace.getConfiguration}), and `view.<view id>.available`
-   * while the workspace on screen can show that view's tab.
+   * while the workspace on screen can show that view's tab. The layout's keys
+   * follow the same active app: `sideBarVisible`, `auxiliaryBarVisible`,
+   * `activityBarVisible`, `titleBarVisible`, `activeViewlet`,
+   * `auxiliaryBarMaximized`, `sideBarFocus`, `auxiliaryBarFocus`, `focusedView`
+   * and `omnigent.layoutWidth` (`phone`, `band` or `desktop`).
    */
   export namespace commands {
     /**

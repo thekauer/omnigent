@@ -3440,6 +3440,7 @@ function AppShellImpl() {
         else if (!inSettings) handleSidebarClose();
       },
       toggle: toggleLeftSidebar,
+      width: sidebarWidth,
     },
     !sidebarRemoved,
   );
@@ -3469,6 +3470,8 @@ function AppShellImpl() {
       },
       toggle: toggleRightPanelFromHotkey,
       toggleMaximized: toggleRightPanelMaximized,
+      maximized: rightPanelMaximized,
+      width: inlinePanelWidth,
     },
     !gridRoute && !auxiliaryBarRemoved,
   );

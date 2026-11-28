@@ -66,3 +66,11 @@ export const LAYOUT_WIDTH_ATTRIBUTE = "data-layout-width";
 export function layoutWidthAttributeValue(viewport: LayoutViewport): "mobile" | "desktop" {
   return viewport.mobile ? "mobile" : "desktop";
 }
+
+/** The width class extensions read (`window.layout.width`, `omnigent.layoutWidth`). */
+export type LayoutWidth = "phone" | "band" | "desktop";
+
+export function layoutWidthOf(viewport: LayoutViewport): LayoutWidth {
+  if (!viewport.mobile) return "desktop";
+  return viewport.sideBySide ? "band" : "phone";
+}

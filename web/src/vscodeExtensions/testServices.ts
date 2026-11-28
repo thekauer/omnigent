@@ -15,6 +15,7 @@ import { RailViewRegistry } from "@/shell/railViews";
 import { WorkspaceBridge } from "@/shell/workspaceBridge";
 import { ContextKeyService } from "./contextKeys";
 import { ViewsService } from "./viewsService";
+import { LayoutService } from "@/workbench/layoutService";
 import { ViewContainerRegistry } from "@/workbench/viewContainers";
 import { WorkspaceService } from "./workspaceService";
 
@@ -103,6 +104,7 @@ export function hostServices(overrides: Partial<HostServices> = {}): HostService
     ...(overrides.themes ? { themes: overrides.themes } : {}),
     ...(overrides.colorThemes ? { colorThemes: overrides.colorThemes } : {}),
     ...(overrides.configuration ? { configuration: overrides.configuration } : {}),
+    layout: overrides.layout ?? new LayoutService(),
     titleBarItems: overrides.titleBarItems ?? new TitleBarItemRegistry(),
   };
 }

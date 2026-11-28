@@ -44,6 +44,9 @@ import type { SessionTreeService } from "./sessionTreeService";
 import type { PullRequestsService } from "./pullRequestsService";
 import type { TasksService } from "./tasksService";
 import type { KeybindingService } from "./keybindings";
+import { ExtensionLayoutEvents, visibleViewContainer } from "./layoutEvents";
+import { isPart, type LayoutService, layoutService, Parts } from "@/workbench/layoutService";
+import { layoutWidthOf } from "@/workbench/layoutViewport";
 import type { ViewsService } from "./viewsService";
 import { textSearchQueryProblem, type WorkspaceService } from "./workspaceService";
 
@@ -105,6 +108,8 @@ export interface HostServices {
   colorThemes?: ColorThemes;
   /** Contributed settings and their defaults; without it, they are ignored. */
   configuration?: ConfigurationContributionSink;
+  /** The layout extensions read (`window.layout`); the window's (the active mount's) by default. */
+  layout?: LayoutService;
 }
 
 /** Where an extension's `contributes.configuration` and `configurationDefaults` go. */
@@ -440,6 +445,19 @@ export function createExtensionApi(
   }
   const reportEmitterError = (error: unknown) => logError("EventEmitter listener threw", error);
 
+  // The layout's read side: plain data, and events that report only changes (layout plan L10).
+  const layout = services.layout ?? layoutService;
+  const layoutEvents = new ExtensionLayoutEvents(layout, reportEmitterError);
+  const onDidChangePartVisibility = guard(
+    layoutEvents.visibility.event,
+    "onDidChangePartVisibility",
+  );
+  const onDidChangeActiveViewContainer = guard(
+    layoutEvents.activeViewContainer.event,
+    "onDidChangeActiveViewContainer",
+  );
+  const onDidChangeLayout = guard(layoutEvents.layout.event, "onDidChangeLayout");
+
   // Progress this extension shows; a Node command's progress joins the latest one.
   const openProgress: ProgressReporter[] = [];
   const trackProgress = (progress: ProgressReporter) => {
@@ -680,6 +698,26 @@ export function createExtensionApi(
       withProgress,
       showInformationMessage: (message: string) => showMessage("info", message),
       showErrorMessage: (message: string) => showMessage("error", message),
+      layout: Object.freeze({
+        isPartVisible: (part: omnigent.WorkbenchPart) => isPart(part) && layout.isVisible(part),
+        getPartSize: (part: omnigent.WorkbenchPart): omnigent.PartSize | undefined => {
+          if (!isPart(part)) return undefined;
+          const size = layout.getSize(part);
+          return size ? Object.freeze({ width: size.width, height: size.height }) : undefined;
+        },
+        get sideBarLocation(): "left" | "right" {
+          return layout.getLocation(Parts.SIDEBAR_PART) === "right" ? "right" : "left";
+        },
+        get activeViewContainer(): string | undefined {
+          return visibleViewContainer(layout);
+        },
+        get width(): omnigent.LayoutWidth {
+          return layoutWidthOf(layout.getViewport());
+        },
+        onDidChangePartVisibility,
+        onDidChangeActiveViewContainer,
+        onDidChangeLayout,
+      }),
     }),
     commands: Object.freeze({ registerCommand, executeCommand }),
     hosts: Object.freeze({ registerReconnectProvider }),
@@ -778,6 +816,7 @@ export function createExtensionApi(
     api: Object.freeze(api),
     dispose: () => {
       disposed = true;
+      layoutEvents.dispose();
       const owned = [...resources];
       resources.clear();
       disposeAll(owned, (error) => logError("dispose failed", error));

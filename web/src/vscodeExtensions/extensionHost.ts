@@ -198,6 +198,7 @@ export function createExtensionRuntime(options: ExtensionRuntimeOptions = {}): E
       keybindings,
       themes,
       configuration: options.configuration ?? configurationService,
+      layout: options.layout ?? layoutService,
     },
     ...options.hostOptions,
   });

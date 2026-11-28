@@ -65,7 +65,7 @@ export interface PartController {
   setHidden: (hidden: boolean) => void;
   /** The shell's toggle, when it differs from flipping `isVisible` (a pinned side bar). */
   toggle?: () => void;
-  /** The part's current box size, when the shell measures it. */
+  /** The part's current box size, when the shell measures it (else its element's box). */
   getSize?: () => PartSize | undefined;
   /** Sets the part's size (a drag's outcome), when the shell lets it be set. */
   setSize?: (size: Partial<PartSize>) => void;
@@ -73,6 +73,22 @@ export interface PartController {
   focus?: () => void;
   /** Maximizes the part over the main part, or restores it (the secondary side bar's). */
   toggleMaximized?: () => void;
+  /** Whether the part is maximized over the main part. */
+  isMaximized?: () => boolean;
+}
+
+/**
+ * The element that draws `part` in `root` (an embed's root; null: the window). Without a root,
+ * an embed's parts (inside its `.omnigent-app` scope) are not the window's.
+ */
+export function findPartElement(part: Part, root: HTMLElement | null): HTMLElement | null {
+  const hook = `[data-part="${partHook(part)}"]`;
+  if (root) return root.querySelector<HTMLElement>(hook);
+  if (typeof document === "undefined") return null;
+  for (const element of document.querySelectorAll<HTMLElement>(hook)) {
+    if (!element.closest(".omnigent-app")) return element;
+  }
+  return null;
 }
 
 /** A value or an update of the previous one, as React's `setState` takes. */
@@ -274,8 +290,19 @@ export class LayoutService {
     else controller.setHidden(this.isVisible(part));
   }
 
+  /** A visible part's box: the shell's own measure, else its element's. Undefined when hidden. */
   getSize(part: Part): PartSize | undefined {
-    return this.controllers.get(part)?.getSize?.();
+    const controller = this.controllers.get(part);
+    if (!controller || !this.isVisible(part)) return undefined;
+    if (controller.getSize) return controller.getSize();
+    const element = findPartElement(part, this.root);
+    if (!element) return undefined;
+    const box = element.getBoundingClientRect();
+    return Object.freeze({ width: box.width, height: box.height });
+  }
+
+  isMaximized(part: Part): boolean {
+    return this.controllers.get(part)?.isMaximized?.() ?? false;
   }
 
   setSize(part: Part, size: Partial<PartSize>): void {
@@ -457,6 +484,9 @@ class ActiveLayoutService extends LayoutService {
   }
   override getSize(part: Part): PartSize | undefined {
     return activeService.getSize(part);
+  }
+  override isMaximized(part: Part): boolean {
+    return activeService.isMaximized(part);
   }
   override setSize(part: Part, size: Partial<PartSize>): void {
     activeService.setSize(part, size);

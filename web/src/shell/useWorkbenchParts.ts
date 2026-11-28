@@ -22,6 +22,13 @@ export interface WorkbenchPartState {
   readonly focus?: () => void;
   /** Maximizes the part over the main part, or restores it. */
   readonly toggleMaximized?: () => void;
+  /** Whether the part is maximized. */
+  readonly maximized?: boolean;
+  /**
+   * The part's width as the shell draws it: a drag's changes reach the layout listeners through
+   * it (the part's box is measured when read, not when it changes).
+   */
+  readonly width?: number;
 }
 
 /**
@@ -51,11 +58,12 @@ export function useWorkbenchPart(
       },
       focus: () => latest.current.focus?.(),
       toggleMaximized: () => latest.current.toggleMaximized?.(),
+      isMaximized: () => latest.current.maximized ?? false,
     });
   }, [enabled, part, service]);
   useLayoutEffect(() => {
     if (enabled) service.partChanged(part);
-  }, [enabled, part, service, state.visible]);
+  }, [enabled, part, service, state.visible, state.maximized, state.width]);
 }
 
 /** The side bar's remembered desktop open state, or undefined when none is stored. */

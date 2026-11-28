@@ -1286,6 +1286,9 @@ Plain ESM with `// @ts-check`; no build step.
 | `workspace.getConfiguration`, `onDidChangeConfiguration`             | same, plus `inspect`; every registered setting                | `config.*` context keys as in VS Code               |
 | `contributes.configuration`, `contributes.configurationDefaults`     | same (layout plan L1), keys under the extension's id          | Values in the settings JSON; no language overrides  |
 | `workbench.action.toggleSidebarVisibility`, `toggleAuxiliaryBar`, `closeSidebar`, `closeAuxiliaryBar`; `sideBarVisible`, `auxiliaryBarVisible` | same (layout plan L2) | Through `commands.executeCommand`; no default keys of their own |
+| (none)                                                               | `window.layout`: `isPartVisible(part)`, `getPartSize(part)`, `sideBarLocation`, `activeViewContainer`, `width`; `onDidChangePartVisibility`, `onDidChangeActiveViewContainer`, `onDidChangeLayout` (layout plan L10) | Plain data and change events, no setters; `part` is a `workbench.parts.*` id; follows the active app |
+| `auxiliaryBarMaximized`, `sideBarFocus`, `auxiliaryBarFocus`, `focusedView` context keys | same (layout plan L10) | Focus inside the part's or the view's element of the active app |
+| (none)                                                               | `titleBarVisible` and `omnigent.layoutWidth` (`phone`, `band`, `desktop`) context keys | The title bar part on screen; the width class `window.layout.width` reads (layout plan L10) |
 | `contributes.submenus` and submenu menus                             | same, in `view/title`                                         | Drawn as a dropdown naming the toggled entry        |
 | `TreeView.message` as a `MarkdownString` with command links          | `[text](command:id)` in a plain string                        | No other markdown                                   |
 | `SourceControl.inputBox`                                             | `TreeView.searchInput` with `contributes.views[].searchInput` | Query, toggles and fields; per chat session         |
@@ -1488,6 +1491,16 @@ Deviations and why:
   `ui-sheet-gap-top-titlebar` token. A product's own items that need React (a workspace
   switcher) wait for the trusted tier's slots on the same region ids; on phones the bar's items
   are to fold into the chat header's menu (layout plan L9).
+- The layout's read side (layout plan L10) is `window.layout`: `isPartVisible` and `getPartSize`
+  take a `workbench.parts.*` id (the reserved panel and status bar are never on screen), and
+  `sideBarLocation`, `activeViewContainer` (undefined while the side bar is hidden) and `width`
+  (`phone` below the medium breakpoint, `band` in the side-by-side band, `desktop` above) are
+  plain values. `onDidChangePartVisibility`, `onDidChangeActiveViewContainer` and
+  `onDidChangeLayout` fire where their values differ; a drag reports at most once per 100 ms.
+  There are no setters: an extension changes the layout through the layout commands. The
+  reads and events follow the app the window's commands reach, as its context keys do, so an
+  activation switch reports the values that differ. `sideBarLocation` is `left` until the side
+  bar location setting (layout plan L5) lands.
 - `builtInView` has no VS Code equivalent: the sessions container's views are host
   React components (VS Code's own views are workbench code). The side bar's header
   row keeps its host-drawn search and collapse buttons; `viewContainer/title` entries

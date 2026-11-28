@@ -152,3 +152,16 @@ describe("LayoutService root removal", () => {
     expect(onViewport).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("LayoutService part boxes", () => {
+  it("reports whether the shell maximized a part, false when it doesn't", () => {
+    const layout = new LayoutService();
+    const auxiliary = part(true);
+    expect(layout.isMaximized(Parts.AUXILIARYBAR_PART)).toBe(false);
+    layout.registerPart(Parts.AUXILIARYBAR_PART, {
+      ...auxiliary.controller,
+      isMaximized: () => true,
+    });
+    expect(layout.isMaximized(Parts.AUXILIARYBAR_PART)).toBe(true);
+  });
+});
