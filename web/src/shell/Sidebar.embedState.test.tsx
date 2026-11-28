@@ -121,7 +121,9 @@ describe("an inactive embed's sidebar", () => {
     );
     fireEvent.contextMenu(screen.getByTestId("sidebar-primary-nav"));
     fireEvent.click(screen.getByRole("menuitemcheckbox", { name: /New session/ }));
-    expect(embed.state.get(LAYOUT_SLOTS.hiddenNavigationEntries)).toEqual(["omnigent.newSession"]);
+    expect(embed.state.get(LAYOUT_SLOTS.hiddenNavigationEntries)).toEqual({
+      "omnigent.newSession": true,
+    });
     expect(standaloneLayoutState.get(LAYOUT_SLOTS.hiddenNavigationEntries)).toBeUndefined();
   });
 });

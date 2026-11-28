@@ -99,9 +99,9 @@ import { extensionRailTab, extensionRailTabViewId, type RightRailTab } from "./r
 import { useWorkspaceRail } from "./useWorkspaceRail";
 import { builtInTabView, hasRailTab, useRailViews } from "./railViews";
 import { RailTabStripMenu } from "./RailTabStripMenu";
-import { isViewRemovedByProduct } from "@/workbench/productLayout";
 import { viewDragProps } from "./viewMoves";
 import { isViewHidden, useViewsLayout } from "@/workbench/viewsLayout";
+import { useDefaultHiddenViews } from "@/workbench/defaultHiddenViews";
 import { useWorkbenchScope } from "@/workbench/workbenchScope";
 import { ViewContainerTitleActions } from "./ViewContainerTitleActions";
 import { RIGHT_PANEL_CONTAINER } from "@/workbench/viewContainers";
@@ -938,6 +938,7 @@ function WorkspacePanelImpl({
   const isMobile = mobileViewport && !contained;
   const { views: extensionViews, settled: extensionViewsSettled } = useRailViews();
   const viewsLayout = useViewsLayout();
+  const defaultHiddenViews = useDefaultHiddenViews();
   const activeView = resolveWorkspaceActiveView(
     {
       rightRailTab,
@@ -1285,10 +1286,10 @@ function WorkspacePanelImpl({
   const { productLayout: productPolicy } = useWorkbenchScope();
   const defaultTab = readDefaultWorkspaceTab();
   const tabOrder = [defaultTab, ...defaultWorkspaceTabs.filter((tab) => tab !== defaultTab)];
-  // A built-in tab whose view the product removed (`layout.hiddenViews`) gets no tab.
+  // A built-in tab whose view the product removed, or the user or the defaults hid, gets no tab.
   const productRemovesTab = (tab: RailPanelTab) => {
     const view = builtInTabView(extensionViews, tab);
-    return view !== undefined && isViewRemovedByProduct(view, productPolicy);
+    return view !== undefined && isViewHidden(view, viewsLayout, productPolicy, defaultHiddenViews);
   };
   const availablePanels = tabOrder.filter((tab) => {
     if (productRemovesTab(tab)) return false;
@@ -1307,7 +1308,9 @@ function WorkspacePanelImpl({
     ...extensionViews
       // A view whose `when` doesn't hold, or a hidden one, gets no tab.
       .filter((view) =>
-        hasRailTab(view, (candidate) => isViewHidden(candidate, viewsLayout, productPolicy)),
+        hasRailTab(view, (candidate) =>
+          isViewHidden(candidate, viewsLayout, productPolicy, defaultHiddenViews),
+        ),
       )
       .map((view) => extensionRailTab(view.id)),
   ];

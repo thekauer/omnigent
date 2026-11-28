@@ -28,7 +28,7 @@ export const LAYOUT_SLOTS = Object.freeze({
   collapsedSections: "omnigent.conversations.list.collapsedSections",
   /** Names of the expanded project folders. */
   expandedProjects: "omnigent.conversations.list.expandedProjects",
-  /** Ids of the side bar's navigation entries the user hid (`sidebar/navigation` commands). */
+  /** `{ [command id]: boolean }`: the side bar's navigation entries the user hid (true) or showed (false). */
   hiddenNavigationEntries: "omnigent.conversations.navigation.hidden",
   /** Ids of the collapsed session families. */
   collapsedFamilies: "omnigent.conversations.list.collapsedFamilies",

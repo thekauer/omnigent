@@ -51,6 +51,7 @@ const ITEM_TOKENS: Record<string, { kind: string; light?: string; dark?: string 
     light: "var(--secondary-foreground)",
     dark: "var(--secondary-foreground)",
   },
+  "ui-account-avatar-radius": { kind: "length", light: "9999px", dark: "9999px" },
   "ui-font-timestamp": { kind: "font" },
   "ui-activitybar-foreground": {
     kind: "color",
@@ -123,6 +124,11 @@ describe("item tokens", () => {
     expect(INDEX_CSS).toContain(
       "color: var(--ui-account-avatar-foreground, var(--secondary-foreground));",
     );
+    // The radius: the fallback, and the root that clips it (and its ring).
+    expect(INDEX_CSS).toContain("border-radius: var(--ui-account-avatar-radius, 9999px);");
+    expect(INDEX_CSS).toContain(
+      '[data-slot="avatar"]:has(> [data-slot="account-avatar"])::after {',
+    );
     // Timestamps: the message ones and the list's updated time.
     expect(BUBBLE_PARTS_TSX.match(/font-\(family-name:--ui-font-timestamp\)/g)).toHaveLength(2);
     expect(SIDEBAR_TSX).toContain(
@@ -166,6 +172,7 @@ describe("item tokens", () => {
       "ui-composer-send-foreground": "#0a0a0a",
       "ui-account-avatar-background": "linear-gradient(135deg, #006bff, #a1a1a1)",
       "ui-account-avatar-foreground": "#0a0a0a",
+      "ui-account-avatar-radius": "0",
       "ui-font-timestamp": '"Geist Mono Variable", ui-monospace, monospace',
       "ui-activitybar-foreground": "var(--muted-foreground)",
       "ui-activitybar-active-foreground": "var(--primary)",
@@ -175,7 +182,8 @@ describe("item tokens", () => {
       "ui-activitybar-badge-foreground": "#ffffff",
     });
     expect(parsed.issues).toEqual([]);
-    expect(Object.keys(parsed.tokens)).toHaveLength(12);
+    expect(Object.keys(parsed.tokens)).toHaveLength(13);
+    expect(parsed.tokens["ui-account-avatar-radius"]?.value).toBe("0");
     expect(parsed.tokens["ui-account-avatar-background"]?.value).toBe(
       "linear-gradient(135deg, #006bff, #a1a1a1)",
     );

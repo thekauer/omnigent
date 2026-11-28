@@ -69,9 +69,9 @@ export function moveViewTo(viewId: string, containerId: string, scope: Workbench
   const view = findView(viewId);
   if (!view) return false;
   const { state: store, productLayout: policy } = scope;
-  // A view moved somewhere shows there, hidden before or not.
+  // A view moved somewhere shows there, hidden before or not (a default-hidden one too).
   if (moveView(view, containerId, { store, policy })) {
-    updateViewLayout(viewId, { hidden: undefined }, store, policy);
+    updateViewLayout(viewId, { hidden: false }, store, policy);
   } else {
     toast.warning(
       policy.viewLocationsLocked()

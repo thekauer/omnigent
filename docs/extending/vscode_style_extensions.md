@@ -1393,7 +1393,20 @@ Deviations and why:
   (the list back on My sessions, the canvas the address names), and open their pages otherwise;
   other extensions' entries follow them as command rows (a built-in entry's id is refused).
   Right-clicking the navigation (its padding or a command row; a link keeps the browser's own
-  menu) hides and shows entries (layout state `omnigent.conversations.navigation.hidden`).
+  menu) hides and shows entries. Its choices are layout state (`omnigent.conversations.navigation.hidden`,
+  a map of command id to `true` hidden or `false` shown; the list of hidden ids an earlier build
+  stored reads as hidden, and is rewritten as a map on the next change). An entry with no choice
+  takes `workbench.view.defaultHidden`.
+- `workbench.view.defaultHidden` (layout plan L11, decision 11; registered by the built-in
+  `omnigent.workbench` extension, overridable by `configurationDefaults`, so an extension such as
+  DevHub sets it) is a list of view ids, navigation entry command ids or `*` patterns that
+  start hidden: `omnigent.files.view` hides the Files tab, `omnigent.newSession` the New session
+  row. The user's own choice wins: a view or entry shown again from a right-click menu (the side
+  bar's header row, the rail's tab strip, the navigation's padding) is stored shown, so it stays
+  shown across reloads, until View: Reset Layout returns to the defaults. A product's `hiddenViews`
+  still removes what it names. A default never hides a container's last shown view: where the
+  defaults would hide all of a side bar container's views, they don't apply to that container. The
+  built-in Files tab, which can't move, is listed in the rail's tab strip only while hidden.
   `workbench.secondarySideBar.defaultVisibility` `visible` and `visibleInWorkspace` act the
   same: the secondary side bar shows in a session only. At `workbench.sideBar.location: right`
   the phone drawer's edge swipes and the macOS desktop app's title strip still assume the

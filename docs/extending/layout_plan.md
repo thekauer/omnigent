@@ -371,12 +371,12 @@ All in `my-extensions/dev` (`thekauer.dev`), no fork code beyond the mechanisms:
 | Avatar with popover, Settings at the bottom; footer gone | Accounts and Manage global items |
 | Top bar 48px: logo, workspace switcher, app grid, avatar | `window.titleBar.visible: true`; brand and account built-in items; the switcher and grid wait for trusted-tier slots (a product's, not an extension's) |
 | Sidebar `clamp(220px, 20vw, 280px)` | Theme token `ui-sidebar-width` |
-| "New session" gone from the nav | The nav entry `omnigent.newSession` hidden (decision 10) |
+| "New session" gone from the nav | `configurationDefaults`: `workbench.view.defaultHidden: ["omnigent.newSession"]` (decision 10 and 11); the user's show is stored, Reset Layout returns to the default |
 | Inbox, Canvas, Automations sidebar views | The built-in containers |
 | Right panel 280-400px, wide mode `min(720px, 50vw)` | `ui-auxiliarybar-width`, `-max-width` tokens; maximize in `viewContainer/title` |
 | Auto-hidden under 1180px | `omnigent.secondarySideBar.autoHideBelow: 1180` in `configurationDefaults` |
 | Close (x) and Expand in the tab bar | Built-in container title actions |
-| Files tab gone | Hidden view in layout state seeded by `configurationDefaults` (decision 11) |
+| Files tab gone | `configurationDefaults`: `workbench.view.defaultHidden: ["omnigent.files.view"]` (decision 11). The default is a setting, not a seeded layout state: the user's show is stored over it, and Reset Layout returns to it |
 | Title bar under the tab bar with meta and refresh | Exists (`view-title`, `TreeView.description`, `view/title`); restyle only |
 | Segmented Chat / Terminal toggle in the header | Not this stage (menus everywhere: `chat/title`) |
 

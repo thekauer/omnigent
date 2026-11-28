@@ -3,8 +3,13 @@
 // `visibility`. Plain data; React reads it through `useViewsLayout`.
 
 import { useCallback, useSyncExternalStore } from "react";
+import { NO_DEFAULT_HIDDEN } from "./defaultHiddenViews";
 import { LAYOUT_SLOTS, type LayoutStateStore } from "./layoutState";
-import { isViewRemovedByProduct, type ProductLayoutPolicy } from "./productLayout";
+import {
+  isViewRemovedByProduct,
+  matchesIdPattern,
+  type ProductLayoutPolicy,
+} from "./productLayout";
 import { createStableSnapshot } from "./stableSnapshot";
 import { useWorkbenchScope } from "./workbenchScope";
 
@@ -73,8 +78,9 @@ export function isViewCollapsed(
 
 /**
  * Whether a view is hidden: removed by the product (`hiddenViews`, or its own container in
- * `hiddenContainers`), else the user's choice, else its contribution's `visibility`. `policy` is
- * the product policy of the mount the view is drawn in.
+ * `hiddenContainers`), else the user's choice (shown or hidden, stored), else the defaults
+ * (`workbench.view.defaultHidden`, `defaults` here), else its contribution's `visibility`.
+ * `policy` is the product policy of the mount the view is drawn in.
  */
 export function isViewHidden(
   view: {
@@ -84,9 +90,12 @@ export function isViewHidden(
   },
   layout: ViewsLayout,
   policy: ProductLayoutPolicy,
+  defaults: readonly string[] = NO_DEFAULT_HIDDEN,
 ): boolean {
   if (isViewRemovedByProduct(view, policy)) return true;
-  return layout[view.id]?.hidden ?? view.visibility === "hidden";
+  const chosen = layout[view.id]?.hidden;
+  if (chosen !== undefined) return chosen;
+  return matchesIdPattern(view.id, defaults) || view.visibility === "hidden";
 }
 
 const snapshot = createStableSnapshot<ViewsLayout>();

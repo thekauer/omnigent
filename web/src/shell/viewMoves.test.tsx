@@ -175,7 +175,8 @@ describe("moving views", () => {
     expect(layoutState.get(LAYOUT_SLOTS.viewLocations)).toEqual({
       "acme.tools.list": "acme.other",
     });
-    expect(layoutState.get(LAYOUT_SLOTS.views)).toBeUndefined();
+    // The move shows the view: an explicit shown entry, so a default-hidden view shows too.
+    expect(layoutState.get(LAYOUT_SLOTS.views)).toEqual({ "acme.tools.list": { hidden: false } });
     removal();
     source.remove();
   });

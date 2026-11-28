@@ -258,6 +258,13 @@ export const WORKBENCH_TOKENS = defineTokens("workbench", [
     default: { light: "var(--secondary-foreground)", dark: "var(--secondary-foreground)" },
   },
   {
+    id: "ui-account-avatar-radius",
+    kind: "length",
+    description:
+      "The account avatar's corner radius, round (9999px) today; a square theme sets 0. Rounds the avatar's fallback and its root.",
+    default: { light: "9999px", dark: "9999px" },
+  },
+  {
     id: "ui-activitybar-foreground",
     description: "An activity bar item's icon, while it is not the active one.",
     default: { light: "var(--muted-foreground)", dark: "var(--muted-foreground)" },

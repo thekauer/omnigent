@@ -38,7 +38,7 @@ import {
   NavigationEntries,
   setNavigationEntryHidden,
   useContributedNavigation,
-  useHiddenNavigationEntries,
+  useNavigationEntryHidden,
 } from "@/workbench/sidebarNavigation";
 import { WorkbenchContextKeys, whenHolds } from "@/workbench/workbenchContext";
 import { currentExtensionHost } from "@/vscodeExtensions/extensionHost";
@@ -1941,12 +1941,10 @@ function SidebarNavigationView({ view }: BuiltInViewProps) {
 /** The navigation entries drawn now: the built-ins whose `when` holds, then others', unhidden. */
 function useNavigationEntries(keys: Readonly<Record<string, boolean>>): readonly NavigationEntry[] {
   const contributed = useContributedNavigation();
-  const hidden = useHiddenNavigationEntries();
+  const hidden = useNavigationEntryHidden();
   const { productLayout: policy } = useWorkbenchScope();
   useProductLayout(policy);
-  return allNavigationEntries(keys, contributed, policy).filter(
-    (entry) => !hidden.includes(entry.id),
-  );
+  return allNavigationEntries(keys, contributed, policy).filter((entry) => !hidden(entry.id));
 }
 
 function allNavigationEntries(
@@ -1978,9 +1976,9 @@ function SidebarNavigationMenu({ children }: { children: ReactNode }) {
     contributed,
     policy,
   );
-  // The mount's own layout state: the menu reads and writes its hidden entries there.
+  // The mount's own layout state: the menu reads and writes its entries' choices there.
   const navigationState = useWorkbenchScope().state;
-  const hidden = useHiddenNavigationEntries(navigationState);
+  const hidden = useNavigationEntryHidden(navigationState);
   // The extension pages' entry is listed only while there are pages to show.
   const hasExtensionPages = useExtensions().some(
     (extension) => extension.primary_navigation.length > 0,
@@ -2008,7 +2006,7 @@ function SidebarNavigationMenu({ children }: { children: ReactNode }) {
         {listed.map((entry) => (
           <ContextMenuCheckboxItem
             key={entry.id}
-            checked={!hidden.includes(entry.id)}
+            checked={!hidden(entry.id)}
             onCheckedChange={(checked) =>
               setNavigationEntryHidden(entry.id, !checked, navigationState)
             }

@@ -15,6 +15,7 @@ import {
 import { RIGHT_PANEL_CONTAINER } from "@/workbench/viewContainers";
 import { canMoveView } from "@/workbench/viewLocations";
 import { isViewRemovedByProduct } from "@/workbench/productLayout";
+import { useDefaultHiddenViews } from "@/workbench/defaultHiddenViews";
 import { isViewHidden, useViewsLayout } from "@/workbench/viewsLayout";
 import { useWorkbenchScope } from "@/workbench/workbenchScope";
 import { extensionRailTabViewId, type RightRailTab } from "./railTabs";
@@ -33,13 +34,13 @@ export function RailTabStripMenu({
   const scope = useWorkbenchScope();
   const { productLayout: policy } = scope;
   const drop = useViewDropTarget(useCallback(() => RIGHT_PANEL_CONTAINER, []));
-  const listed = views.filter(
-    (view) =>
-      view.builtInTab === undefined &&
-      view.active &&
-      canMoveView(view, policy) &&
-      !isViewRemovedByProduct(view, policy),
-  );
+  const defaults = useDefaultHiddenViews();
+  // A built-in tab can't move, so it is listed only while hidden, to show it again.
+  const listed = views.filter((view) => {
+    if (!view.active || isViewRemovedByProduct(view, policy)) return false;
+    if (view.builtInTab === undefined) return canMoveView(view, policy);
+    return !policy.viewLocationsLocked() && isViewHidden(view, layout, policy, defaults);
+  });
   // The view of the tab the menu opened on, if any.
   const [target, setTarget] = useState<RailView | undefined>(undefined);
   return (
@@ -71,7 +72,7 @@ export function RailTabStripMenu({
         {listed.map((view) => (
           <ContextMenuCheckboxItem
             key={view.id}
-            checked={!isViewHidden(view, layout, policy)}
+            checked={!isViewHidden(view, layout, policy, defaults)}
             onCheckedChange={(checked) => setViewHidden(view.id, !checked, scope)}
           >
             {view.name}

@@ -9,7 +9,9 @@ import { useCallback, useSyncExternalStore } from "react";
 import conversationsManifest from "@/builtinExtensions/omnigent.conversations/package.json";
 import { parseContributions } from "@/vscodeExtensions/contributions";
 import type { WhenClause } from "@/vscodeExtensions/when";
+import { useDefaultHiddenViews } from "./defaultHiddenViews";
 import { LAYOUT_SLOTS, type LayoutStateStore, layoutState } from "./layoutState";
+import { matchesIdPattern } from "./productLayout";
 import { useWorkbenchScope } from "./workbenchScope";
 
 export interface NavigationEntry {
@@ -103,32 +105,68 @@ export function useContributedNavigation(): readonly ContributedNavigationEntry[
   );
 }
 
-const NO_HIDDEN: readonly string[] = Object.freeze([]);
+/**
+ * What the user chose for each navigation entry, by command id: `true` hidden, `false` shown.
+ * An entry not here takes the defaults (`workbench.view.defaultHidden`). The slot used to hold
+ * the hidden ids as a list; a list reads as hidden.
+ */
+export type NavigationEntryChoices = Readonly<Record<string, boolean>>;
 
-/** The entries the user hid, by id. */
+const NO_CHOICES: NavigationEntryChoices = Object.freeze({});
+
+export function readNavigationEntryChoices(store: LayoutStateStore): NavigationEntryChoices {
+  const stored: unknown = store.get(LAYOUT_SLOTS.hiddenNavigationEntries);
+  if (Array.isArray(stored)) {
+    const ids = [...new Set(stored.filter((id): id is string => typeof id === "string"))];
+    return withoutProto(Object.fromEntries(ids.map((id) => [id, true])));
+  }
+  if (typeof stored !== "object" || stored === null) return NO_CHOICES;
+  return withoutProto(
+    Object.fromEntries(
+      Object.entries(stored).filter(([, value]) => typeof value === "boolean"),
+    ) as Record<string, boolean>,
+  );
+}
+
+function withoutProto(choices: Record<string, boolean>): NavigationEntryChoices {
+  const kept = Object.fromEntries(Object.entries(choices).filter(([id]) => id !== "__proto__"));
+  return Object.keys(kept).length === 0 ? NO_CHOICES : Object.freeze(kept);
+}
+
+/** The entries the user hid (not the ones the defaults hide). */
 export function readHiddenNavigationEntries(
   store: LayoutStateStore = layoutState,
 ): readonly string[] {
-  const stored = store.get(LAYOUT_SLOTS.hiddenNavigationEntries);
-  return Array.isArray(stored)
-    ? Object.freeze([...new Set(stored.filter((id): id is string => typeof id === "string"))])
-    : NO_HIDDEN;
+  const choices = readNavigationEntryChoices(store);
+  return Object.freeze(Object.keys(choices).filter((id) => choices[id] === true));
 }
 
+/** Shows or hides an entry; the choice is stored either way, so a default doesn't undo it. */
 export function setNavigationEntryHidden(
   id: string,
   hidden: boolean,
   store: LayoutStateStore = layoutState,
 ): void {
-  const others = readHiddenNavigationEntries(store).filter((entry) => entry !== id);
-  const next = hidden ? [...others, id] : others;
-  store.set(LAYOUT_SLOTS.hiddenNavigationEntries, next.length > 0 ? next : undefined);
+  const choices = { ...readNavigationEntryChoices(store), [id]: hidden };
+  store.set(LAYOUT_SLOTS.hiddenNavigationEntries, choices);
 }
 
-/** The last hidden list read per store: each mount's snapshot stays stable on its own. */
-const hiddenCaches = new WeakMap<LayoutStateStore, { text: string; ids: readonly string[] }>();
+/** Whether the user's choice, or failing one the defaults, hides the entry `id`. */
+export function isNavigationEntryHidden(
+  id: string,
+  choices: NavigationEntryChoices,
+  defaults: readonly string[],
+): boolean {
+  return Object.hasOwn(choices, id) ? choices[id] === true : matchesIdPattern(id, defaults);
+}
 
-export function useHiddenNavigationEntries(given?: LayoutStateStore): readonly string[] {
+/** The last choices read per store: each mount's snapshot stays stable on its own. */
+const choicesCaches = new WeakMap<
+  LayoutStateStore,
+  { text: string; choices: NavigationEntryChoices }
+>();
+
+function useNavigationEntryChoices(given?: LayoutStateStore): NavigationEntryChoices {
   // The mount's own layout state unless one is given.
   const scoped = useWorkbenchScope().state;
   const store = given ?? scoped;
@@ -136,13 +174,23 @@ export function useHiddenNavigationEntries(given?: LayoutStateStore): readonly s
   return useSyncExternalStore(
     subscribe,
     () => {
-      const ids = readHiddenNavigationEntries(store);
-      const text = ids.join("\n");
-      const cached = hiddenCaches.get(store);
-      if (cached?.text === text) return cached.ids;
-      hiddenCaches.set(store, { text, ids });
-      return ids;
+      const choices = readNavigationEntryChoices(store);
+      const text = JSON.stringify(choices);
+      const cached = choicesCaches.get(store);
+      if (cached?.text === text) return cached.choices;
+      choicesCaches.set(store, { text, choices });
+      return choices;
     },
-    () => NO_HIDDEN,
+    () => NO_CHOICES,
+  );
+}
+
+/** Whether an entry is hidden now, by the user's choice or the defaults; re-read on a change. */
+export function useNavigationEntryHidden(given?: LayoutStateStore): (id: string) => boolean {
+  const choices = useNavigationEntryChoices(given);
+  const defaults = useDefaultHiddenViews();
+  return useCallback(
+    (id: string) => isNavigationEntryHidden(id, choices, defaults),
+    [choices, defaults],
   );
 }

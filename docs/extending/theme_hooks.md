@@ -27,7 +27,7 @@ hook only for what no token covers yet.
 | `panel-toggle` | The session header's right panel toggle; `data-panel-open` is set while the panel is open. |
 | `composer-stop` | The composer's send button while it interrupts the running turn. |
 | `composer-send` | The composer's send button otherwise (its colours: `ui-composer-send-background` and `-foreground`, while it can send). |
-| `account-avatar` | The account avatar's fallback: the activity bar's Accounts item and the title bar's account item (its colours: `ui-account-avatar-background` and `-foreground`). |
+| `account-avatar` | The account avatar's fallback: the activity bar's Accounts item and the title bar's account item (its colours: `ui-account-avatar-background` and `-foreground`; its corner radius `ui-account-avatar-radius`, round by default, which rounds the avatar's root too). |
 | `user-bubble` | A user message's bubble. |
 | `working-indicator` | The transcript's "Working..." row (contains `.otto-working`). |
 | `fold-label` | The label of the transcript's fold row ("Worked for 5s"). Also `.ui-label`. |

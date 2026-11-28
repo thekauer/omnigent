@@ -375,7 +375,8 @@ Defaults must match today exactly.
   -foreground (the send button while it can send; unset: the primary call-to-action, the
   disabled send keeps its muted look), ui-account-avatar-background (an image: a gradient
   works)/-foreground (the account avatar in the activity bar's Accounts item and the title bar's
-  account item), ui-font-timestamp (message and list timestamps; unset: the document font), and
+  account item), ui-account-avatar-radius (a length, 9999px round by default; the avatar's
+  fallback and root), ui-font-timestamp (message and list timestamps; unset: the document font), and
   the activity bar's ui-activitybar-foreground (an item's icon), -active-foreground,
   -active-background, -active-border (its 2px edge) and -badge-background/-foreground. The
   activity bar's ids have VS Code aliases (`activityBar.foreground`, `.inactiveForeground`,

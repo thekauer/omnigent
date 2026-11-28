@@ -2036,6 +2036,12 @@ body {
 [data-slot="account-avatar"] {
   background: var(--ui-account-avatar-background, var(--secondary));
   color: var(--ui-account-avatar-foreground, var(--secondary-foreground));
+  border-radius: var(--ui-account-avatar-radius, 9999px);
+}
+/* The avatar root clips its fallback, so it takes the radius too, and its ring. */
+[data-slot="avatar"]:has(> [data-slot="account-avatar"]),
+[data-slot="avatar"]:has(> [data-slot="account-avatar"])::after {
+  border-radius: var(--ui-account-avatar-radius, 9999px);
 }
 
 /* Keep mobile sidebar glyphs uniform. Desktop icon geometry is unchanged. */

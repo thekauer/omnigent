@@ -236,7 +236,12 @@ describe("the side bar's navigation entries", () => {
     setNavigationEntryHidden(NavigationEntries.usage, true);
     setNavigationEntryHidden(NavigationEntries.usage, false);
     expect(readHiddenNavigationEntries()).toEqual([NavigationEntries.newSession]);
+    // A show is a stored choice, so a default hiding the entry can't undo it.
     setNavigationEntryHidden(NavigationEntries.newSession, false);
-    expect(layoutState.get(LAYOUT_SLOTS.hiddenNavigationEntries)).toBeUndefined();
+    expect(readHiddenNavigationEntries()).toEqual([]);
+    expect(layoutState.get(LAYOUT_SLOTS.hiddenNavigationEntries)).toEqual({
+      [NavigationEntries.newSession]: false,
+      [NavigationEntries.usage]: false,
+    });
   });
 });

@@ -13,6 +13,7 @@ import {
   type ViewLocations,
   viewContainerFor,
 } from "@/workbench/viewLocations";
+import { useDefaultHiddenViews } from "@/workbench/defaultHiddenViews";
 import { isViewHidden, useViewsLayout } from "@/workbench/viewsLayout";
 import {
   isContainerHiddenByProduct,
@@ -542,6 +543,7 @@ export function useRailViewIds(registry: RailViewRegistry = railViews): {
   const layout = useViewsLayout();
   const locations = useViewLocations();
   const { productLayout: policy } = useWorkbenchScope();
+  const defaults = useDefaultHiddenViews();
   const key = useSyncExternalStore(registry.subscribe, () => {
     const snapshot = viewsOfContainer(
       registry.getSnapshot(),
@@ -554,7 +556,7 @@ export function useRailViewIds(registry: RailViewRegistry = railViews): {
       .filter(
         (view) =>
           view.builtInTab !== undefined ||
-          hasRailTab(view, (candidate) => isViewHidden(candidate, layout, policy)),
+          hasRailTab(view, (candidate) => isViewHidden(candidate, layout, policy, defaults)),
       )
       .map((view) => `\n${view.id}`);
     return `${snapshot.settled ? "1" : "0"}${ids.join("")}`;

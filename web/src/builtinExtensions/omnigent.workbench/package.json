@@ -76,6 +76,16 @@
           "defaultOverridable": true,
           "description": "Hides the secondary side bar while the window is narrower than this many pixels (0: never), and shows it again when the window widens."
         },
+        "workbench.view.defaultHidden": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "scope": "window",
+          "defaultOverridable": true,
+          "description": "The views and navigation entries that start hidden: view ids (`omnigent.files.view`), navigation entry command ids (`omnigent.newSession`) or `*` patterns. A product's `hiddenViews` still removes what it names; a view or entry the user shows again stays shown across reloads, until View: Reset Layout."
+        },
         "window.titleBar.visible": {
           "type": "boolean",
           "default": false,
