@@ -145,7 +145,9 @@ describe("item tokens", () => {
       "color: var(--ui-account-avatar-foreground, var(--secondary-foreground));",
     );
     // The radius: the fallback, and the root that clips it (and its ring).
-    expect(INDEX_CSS).toContain("border-radius: var(--ui-account-avatar-radius, var(--ui-radius-pill));");
+    expect(INDEX_CSS).toContain(
+      "border-radius: var(--ui-account-avatar-radius, var(--ui-radius-pill));",
+    );
     expect(INDEX_CSS).toContain(
       '[data-slot="avatar"]:has(> [data-slot="account-avatar"])::after {',
     );
