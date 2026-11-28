@@ -3,6 +3,7 @@ import {
   createWorkbenchScope,
   holdWorkbenchLayoutKey,
   releaseWorkbenchScope,
+  useActivateWorkbenchOnUse,
   type WorkbenchScope,
   WorkbenchScopeProvider,
 } from "@/workbench/workbenchScope";
@@ -338,21 +339,12 @@ function useMountedWorkbench(workbench: WorkbenchScope): void {
   useLayoutEffect(() => {
     const releaseLayoutKey = holdWorkbenchLayoutKey(workbench);
     activateWorkbenchScope(workbench);
-    const root = () => workbench.layout.getRoot();
-    const onUse = (event: Event) => {
-      const element = root();
-      if (element && event.target instanceof Node && element.contains(event.target)) {
-        activateWorkbenchScope(workbench);
-      }
-    };
-    const events = ["pointerdown", "keydown", "focusin"] as const;
-    for (const type of events) document.addEventListener(type, onUse, true);
     return () => {
-      for (const type of events) document.removeEventListener(type, onUse, true);
       releaseWorkbenchScope(workbench);
       releaseLayoutKey();
     };
   }, [workbench]);
+  useActivateWorkbenchOnUse(workbench, () => workbench.layout.getRoot());
 }
 
 /** Text of a plain-data prop, to compare renders by value; a prop that isn't JSON is invalid. */

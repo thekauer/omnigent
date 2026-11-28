@@ -3,12 +3,12 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ComposerConfigChoice } from "@/components/composer/ComposerConfigSections";
 import { EmbeddedProvider } from "@/lib/embedded";
-import { setEmbedRoot } from "@/lib/host";
+import { standaloneLayoutService } from "@/workbench/layoutService";
 import { useComposerConfigCycleHotkeys } from "./useComposerConfigCycleHotkeys";
 
 afterEach(() => {
   cleanup();
-  setEmbedRoot(null);
+  standaloneLayoutService.setRoot(null);
   document.body.innerHTML = "";
   vi.restoreAllMocks();
   vi.useRealTimers();
@@ -145,7 +145,7 @@ describe("useComposerConfigCycleHotkeys", () => {
     const composer = document.createElement("textarea");
     root.appendChild(composer);
     document.body.appendChild(root);
-    setEmbedRoot(root);
+    standaloneLayoutService.setRoot(root);
     renderHook(
       () => useComposerConfigCycleHotkeys([choice("next", { onSelect: select })], undefined),
       { wrapper: EmbeddedProvider },

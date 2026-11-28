@@ -20,7 +20,7 @@ vi.mock("@/shell/extensionViews/ExtensionRailView", () => ({
   MissingBuiltInView: () => <button type="button">src</button>,
 }));
 
-import { setEmbedRoot } from "@/lib/host";
+import { standaloneLayoutService } from "@/workbench/layoutService";
 import { FilesPanelDrawer } from "@/shell/FilesPanelDrawer";
 import { CodeMirrorComposerInput } from "@/components/composer/engine/testing/codeMirrorComposer";
 import {
@@ -55,7 +55,7 @@ beforeEach(() => {
 afterEach(() => {
   blocks = [];
   embedded = false;
-  setEmbedRoot(null);
+  standaloneLayoutService.setRoot(null);
 });
 
 describe("useApproveHotkey", () => {
@@ -403,7 +403,7 @@ describe("useApproveHotkey Esc", () => {
     blocks = [pending];
     embedded = true;
     document.body.innerHTML = '<div id="app"><button>In app</button></div><button>Host</button>';
-    setEmbedRoot(document.getElementById("app"));
+    standaloneLayoutService.setRoot(document.getElementById("app"));
     renderHook(() => useApproveHotkey(true));
     const hostHandler = vi.fn();
     const host = screen.getByRole("button", { name: "Host" });

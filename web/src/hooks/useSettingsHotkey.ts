@@ -4,6 +4,7 @@ import { isMacPlatform } from "@/lib/hotkeys";
 import { supportsDesktopCommands } from "@/lib/nativeBridge";
 import { useNavigate } from "@/lib/routing";
 import { matchesShortcut } from "@/lib/shortcuts/registry";
+import { isActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
 
 /**
  * True for Cmd+Alt+, on Apple platforms or Ctrl+Alt+, elsewhere. Never in the
@@ -21,9 +22,11 @@ export function isSettingsHotkey(
 export function useSettingsHotkey(enabled = true, isMac = isMacPlatform()): void {
   const navigate = useNavigate();
 
+  const scope = useWorkbenchScope();
   useEffect(() => {
     if (!enabled) return;
     const handler = (event: globalThis.KeyboardEvent): void => {
+      if (!isActiveWorkbenchScope(scope)) return;
       if (event.repeat || !isSettingsHotkey(event, isMac)) return;
       event.preventDefault();
       event.stopPropagation();
@@ -31,5 +34,5 @@ export function useSettingsHotkey(enabled = true, isMac = isMacPlatform()): void
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [enabled, isMac, navigate]);
+  }, [enabled, isMac, navigate, scope]);
 }

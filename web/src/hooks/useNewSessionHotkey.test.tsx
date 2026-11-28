@@ -2,7 +2,7 @@ import { cleanup, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { EmbeddedProvider } from "@/lib/embedded";
-import { setEmbedRoot } from "@/lib/host";
+import { standaloneLayoutService } from "@/workbench/layoutService";
 
 import { isNewSessionHotkey, useNewSessionHotkey } from "./useNewSessionHotkey";
 
@@ -11,7 +11,7 @@ vi.mock("@/lib/routing", () => ({ useNavigate: () => navigate }));
 
 afterEach(() => {
   cleanup();
-  setEmbedRoot(null);
+  standaloneLayoutService.setRoot(null);
   navigate.mockReset();
   document.body.innerHTML = "";
 });
@@ -145,7 +145,7 @@ describe("useNewSessionHotkey", () => {
     const input = document.createElement("input");
     root.appendChild(input);
     document.body.appendChild(root);
-    setEmbedRoot(root);
+    standaloneLayoutService.setRoot(root);
     renderHook(() => useNewSessionHotkey(true, false), { wrapper: EmbeddedProvider });
 
     const outside = press({ key: "O", code: "KeyO", ctrlKey: true, shiftKey: true });

@@ -9,6 +9,7 @@ import { isMacPlatform } from "@/lib/hotkeys";
 import { isElectronShell } from "@/lib/nativeBridge";
 import { useLocation, useNavigate, useNavigationType } from "@/lib/routing";
 import { matchesShortcut } from "@/lib/shortcuts/registry";
+import { isActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
 
 /** Surfaces that keep bracket chords (Monaco outdent/indent, the PTY, the palette). */
 const BRACKET_OWNING_SURFACES = ".xterm, .monaco-editor, [cmdk-input]";
@@ -81,6 +82,7 @@ export function useHistoryNavigation(isMac = isMacPlatform()): void {
   const location = useLocation();
   const navigationType = useNavigationType();
   const embedded = useIsEmbedded();
+  const scope = useWorkbenchScope();
   // Set during the first render, before anything below reads it.
   useState(() => {
     firstAppEntry = embedded ? historyIndex() : 0;
@@ -97,6 +99,7 @@ export function useHistoryNavigation(isMac = isMacPlatform()): void {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (!isActiveWorkbenchScope(scope)) return;
       if (event.repeat || event.defaultPrevented) return;
       let delta: -1 | 1;
       if (matchesShortcut(event, "history.back", { mac: isMac })) delta = -1;
@@ -110,12 +113,14 @@ export function useHistoryNavigation(isMac = isMacPlatform()): void {
     // Chromium already maps the mouse back/forward buttons to history; taking them here
     // also stops them at the first in-app entry.
     const onMouseUp = (event: MouseEvent) => {
+      if (!isActiveWorkbenchScope(scope)) return;
       const delta = event.button === 3 ? -1 : event.button === 4 ? 1 : 0;
       if (delta === 0) return;
       event.preventDefault();
       go(delta);
     };
     const onRequest = (event: Event) => {
+      if (!isActiveWorkbenchScope(scope)) return;
       const { detail } = event as CustomEvent<unknown>;
       if (detail === -1 || detail === 1) go(detail);
     };
@@ -132,7 +137,7 @@ export function useHistoryNavigation(isMac = isMacPlatform()): void {
         window.removeEventListener("mouseup", onMouseUp);
       }
     };
-  }, [go, isMac]);
+  }, [go, isMac, scope]);
 
   useDesktopCommand("go-back", () => go(-1));
   useDesktopCommand("go-forward", () => go(1));

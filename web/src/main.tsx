@@ -45,6 +45,7 @@ import { applyBootProductConfigs, applyServerProductConfig } from "./product/pro
 import { themeService } from "./theme/themeService";
 import { initChatStore } from "./store/chatStore";
 import { railViews } from "./shell/railViews";
+import { standaloneWorkbenchScope, useActivateWorkbenchOnUse } from "./workbench/workbenchScope";
 import { startExtensionHost } from "./vscodeExtensions/extensionHost";
 import "katex/dist/katex.min.css";
 import "streamdown/styles.css";
@@ -179,6 +180,8 @@ const DOCUMENT_BRAND_DEFAULTS = readDocumentBrandDefaults();
 
 function RootApp({ initialInfo }: { initialInfo: ServerInfo | "loading" }) {
   const [info, setInfo] = useState<ServerInfo | "loading">(initialInfo);
+  // The standalone app takes the window's commands back when it is used after an embed.
+  useActivateWorkbenchOnUse(standaloneWorkbenchScope, () => document.getElementById("root"));
   useEffect(() => {
     let alive = true;
     void bootServerInfo.settled.then((resolved) => {

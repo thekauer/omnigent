@@ -5,6 +5,7 @@ import { useEffect, useRef, useSyncExternalStore } from "react";
 import { matchesShortcut } from "@/shell/workspaceTabs/workspaceSidebarShortcuts";
 import { isFocusInDialogOrMenu, isMacPlatform } from "./hotkeys";
 import { isFocusInFindBar } from "./findBarFocus";
+import { isActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
 
 // A terminal, whose shell owns Ctrl+F (forward one character).
 const TERMINAL_SURFACE = "[data-terminal-id]";
@@ -128,6 +129,7 @@ export function registerFindSurface(surface: FindSurface): () => void {
 export function useFindSurface(surface: FindSurface | null): void {
   const latest = useRef(surface);
   latest.current = surface;
+  const scope = useWorkbenchScope();
   const registered = surface !== null;
   const fallback = surface?.fallback ?? false;
   const owner = surface?.owner;
@@ -136,10 +138,11 @@ export function useFindSurface(surface: FindSurface | null): void {
     return registerFindSurface({
       fallback,
       owner,
-      isActive: () => latest.current?.isActive() ?? false,
+      // A surface of a mount that isn't the active one never takes the chord.
+      isActive: () => isActiveWorkbenchScope(scope) && (latest.current?.isActive() ?? false),
       openFind: () => latest.current?.openFind(),
     });
-  }, [registered, fallback, owner]);
+  }, [registered, fallback, owner, scope]);
 }
 
 /** Opens find where the user is working, as the chord does. */

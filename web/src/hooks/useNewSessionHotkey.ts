@@ -1,11 +1,11 @@
 import { useEffect } from "react";
 
 import { useIsEmbedded } from "@/lib/embedded";
-import { getEmbedRoot } from "@/lib/host";
 import { isMacPlatform } from "@/lib/hotkeys";
 import { isNativeShell } from "@/lib/nativeBridge";
 import { useNavigate } from "@/lib/routing";
 import { matchesShortcut } from "@/lib/shortcuts/registry";
+import { isActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
 
 /** Browser Cmd/Ctrl+Shift+O; native shells Cmd/Ctrl+N. */
 export function isNewSessionHotkey(
@@ -21,11 +21,13 @@ export function useNewSessionHotkey(enabled = true, isMac = isMacPlatform()): vo
   const navigate = useNavigate();
   const isEmbedded = useIsEmbedded();
 
+  const scope = useWorkbenchScope();
   useEffect(() => {
     if (!enabled) return;
     const handler = (e: globalThis.KeyboardEvent): void => {
+      if (!isActiveWorkbenchScope(scope)) return;
       if (e.repeat || !isNewSessionHotkey(e, isMac)) return;
-      const embedRoot = getEmbedRoot();
+      const embedRoot = scope.layout.getRoot();
       if (isEmbedded && (!embedRoot || !e.composedPath().includes(embedRoot))) return;
       e.preventDefault();
       e.stopPropagation();
@@ -33,5 +35,5 @@ export function useNewSessionHotkey(enabled = true, isMac = isMacPlatform()): vo
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [enabled, isMac, isEmbedded, navigate]);
+  }, [enabled, isMac, isEmbedded, navigate, scope]);
 }

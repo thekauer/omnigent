@@ -10,7 +10,11 @@ import { CapabilitiesProvider } from "@/lib/CapabilitiesContext";
 import { FALLBACK_SERVER_INFO } from "@/lib/capabilities";
 import type { Bubble } from "@/lib/renderItems";
 import { ForkDialogContextProvider } from "@/shell/ForkDialogContext";
-import { type PaletteCommand, usePaletteCommandsStore } from "@/store/paletteCommands";
+import {
+  type PaletteCommand,
+  sourceOfMountedKey,
+  usePaletteCommandsStore,
+} from "@/store/paletteCommands";
 
 import type { UserMessageBlock } from "@/lib/blocks";
 import { writePeerSessionMessageDisplay } from "@/lib/peerSessionMessagePreferences";
@@ -65,7 +69,7 @@ function withFlag(on: boolean, openForkDialog = vi.fn()) {
 
 const conversationCommands = (): PaletteCommand[] =>
   Object.entries(usePaletteCommandsStore.getState().groups)
-    .filter(([source]) => source.startsWith("conversation"))
+    .filter(([key]) => sourceOfMountedKey(key).startsWith("conversation"))
     .flatMap(([, group]) => group.commands);
 const command = (label: string) => {
   const found = conversationCommands().find((candidate) => candidate.label === label);

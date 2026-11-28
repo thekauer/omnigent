@@ -6,6 +6,7 @@ import { useEffect, useRef } from "react";
 import { useDesktopCommand } from "@/lib/desktopCommands";
 import { TAB_KEY_OWNING_DIALOG_OR_MENU } from "@/lib/hotkeys";
 import { matchesShortcut } from "@/shell/workspaceTabs/workspaceSidebarShortcuts";
+import { isActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
 
 /** Monaco and the CodeMirror file editor both bind the fold keys. */
 const FOLDING_EDITORS = ".monaco-editor, .cm-editor";
@@ -35,9 +36,11 @@ export function useWorkspaceTabStepChords(onStep: ((direction: -1 | 1) => void) 
   const enabled = onStep !== null;
   useDesktopCommand("previous-tab", enabled ? () => latest.current?.(-1) : null);
   useDesktopCommand("next-tab", enabled ? () => latest.current?.(1) : null);
+  const scope = useWorkbenchScope();
   useEffect(() => {
     if (!enabled) return;
     const handler = (event: KeyboardEvent) => {
+      if (!isActiveWorkbenchScope(scope)) return;
       const direction = matchesShortcut(event, "workspace.previousTab")
         ? -1
         : matchesShortcut(event, "workspace.nextTab")
@@ -55,7 +58,7 @@ export function useWorkspaceTabStepChords(onStep: ((direction: -1 | 1) => void) 
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [enabled]);
+  }, [enabled, scope]);
 }
 
 /** The strip's button for `tabId`, which carries it as `data-workspace-tab-id`. */

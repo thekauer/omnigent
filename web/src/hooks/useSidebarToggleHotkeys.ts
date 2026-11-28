@@ -16,6 +16,7 @@ import { useEffect, useRef } from "react";
 import { isMacPlatform } from "@/lib/hotkeys";
 import { isNativeShell } from "@/lib/nativeBridge";
 import { matchesShortcut } from "@/lib/shortcuts/registry";
+import { isActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
 
 export interface SidebarToggleHandlers {
   /** Flip the left (Conversations) sidebar. */
@@ -66,8 +67,10 @@ export function useSidebarToggleHotkeys(
   const latest = useRef(handlers);
   latest.current = handlers;
 
+  const scope = useWorkbenchScope();
   useEffect(() => {
     const handler = (e: globalThis.KeyboardEvent): void => {
+      if (!isActiveWorkbenchScope(scope)) return;
       const side = sidebarToggleSide(e, isMac);
       const toggle =
         side === "left"
@@ -88,5 +91,5 @@ export function useSidebarToggleHotkeys(
     // Capture before a focused xterm encodes Ctrl+Alt+[ / ] for its PTY.
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
-  }, [isMac]);
+  }, [isMac, scope]);
 }

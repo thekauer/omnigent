@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 
 import { isMacPlatform } from "@/lib/hotkeys";
 import { matchesShortcut } from "@/lib/shortcuts/registry";
+import { isActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
 
 type ViewMode = "chat" | "terminal";
 
@@ -26,10 +27,12 @@ export function useViewModeToggleHotkey(
   const latest = useRef(options);
   latest.current = options;
 
+  const scope = useWorkbenchScope();
   useEffect(() => {
     if (!options.enabled) return;
 
     const handler = (event: globalThis.KeyboardEvent): void => {
+      if (!isActiveWorkbenchScope(scope)) return;
       if (event.repeat || !isViewModeToggleHotkey(event, isMac)) return;
       event.preventDefault();
       event.stopPropagation();
@@ -40,5 +43,5 @@ export function useViewModeToggleHotkey(
     // Capture before xterm can forward the chord into the active terminal.
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
-  }, [isMac, options.enabled]);
+  }, [isMac, options.enabled, scope]);
 }

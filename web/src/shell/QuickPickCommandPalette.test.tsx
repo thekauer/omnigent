@@ -8,8 +8,10 @@ import { readQuickPickHistory } from "@/components/ui/quick-pick";
 import {
   type PaletteCommand,
   unavailableBecause,
+  mountedSourceKey,
   usePaletteCommandsStore,
 } from "@/store/paletteCommands";
+import { standaloneWorkbenchScope } from "@/workbench/workbenchScope";
 
 import { QuickPickCommandPalette } from "./QuickPickCommandPalette";
 
@@ -186,7 +188,12 @@ describe("QuickPickCommandPalette feature commands", () => {
   beforeEach(() => useConversations.mockReturnValue({ data: { pages: [] }, isFetching: false }));
   const offer = (commands: PaletteCommand[]) =>
     act(() =>
-      usePaletteCommandsStore.getState().register("tabs", { heading: "Workspace", commands }),
+      usePaletteCommandsStore
+        .getState()
+        .register(mountedSourceKey(standaloneWorkbenchScope.id, "tabs"), {
+          heading: "Workspace",
+          commands,
+        }),
     );
   const command = (id: string, overrides: Partial<PaletteCommand> = {}): PaletteCommand => ({
     id,
@@ -279,7 +286,7 @@ describe("QuickPickCommandPalette feature commands", () => {
           change === "withdrawn"
             ? {}
             : {
-                tabs: {
+                [mountedSourceKey(standaloneWorkbenchScope.id, "tabs")]: {
                   heading: "Workspace",
                   commands: [{ ...later, availability: unavailableBecause("Not now.") }],
                 },

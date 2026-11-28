@@ -17,7 +17,11 @@ import {
   type QuickPickSegment,
 } from "@/components/ui/quick-pick";
 import { occurrenceRanges } from "@/components/ui/quick-pick/match";
-import { isCommandAvailable, usePaletteCommandsStore } from "@/store/paletteCommands";
+import {
+  groupsOfMount,
+  isCommandAvailable,
+  usePaletteCommandsStore,
+} from "@/store/paletteCommands";
 import { useAppCommands } from "./appCommands";
 import { SESSION_SWITCHER, useQuickPickAppCommands } from "./quickPickAppCommands";
 import type { CommandPaletteProps } from "./CommandPalette";
@@ -35,6 +39,7 @@ import {
   resetPaletteToRoot,
 } from "./commandPaletteChildPage";
 import { currentPaletteCommand, paletteCommandItems } from "./paletteCommandRows";
+import { useWorkbenchScope } from "@/workbench/workbenchScope";
 import { PaletteSessionContext } from "./PaletteSessionContext";
 import type { PaletteTarget as PaletteRow } from "./paletteTarget";
 import { type OptionSettingReader, useSettingChoicesPage } from "./settingChoicesPage";
@@ -98,7 +103,13 @@ export function QuickPickCommandPalette({
     onToggleRightSidebar,
     rightSidebarShortcutEnabled,
   });
-  const featureGroups = usePaletteCommandsStore((state) => state.groups);
+  // The rows of the app this palette is open in.
+  const mount = useWorkbenchScope().id;
+  const allFeatureGroups = usePaletteCommandsStore((state) => state.groups);
+  const featureGroups = useMemo(
+    () => groupsOfMount(allFeatureGroups, mount),
+    [allFeatureGroups, mount],
+  );
   const context = useCommandContext();
   // Only an open palette follows focus between regions; a closed one skips those renders.
   const region = useCommandRegion(open);
@@ -122,7 +133,7 @@ export function QuickPickCommandPalette({
   ) =>
     currentPaletteCommand(itemId, rowTargetKey, {
       appCommands: latestAppCommands.current,
-      featureGroups: usePaletteCommandsStore.getState().groups,
+      featureGroups: groupsOfMount(usePaletteCommandsStore.getState().groups, mount),
       targetKey: commandTargetKey(latestContext.current, inRegion),
     });
   /** The command `item` runs now, or null once it no longer applies. */

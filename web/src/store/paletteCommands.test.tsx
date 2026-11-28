@@ -1,11 +1,22 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderHook } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { SearchIcon } from "lucide-react";
 import {
+  groupsOfMount,
+  mountedSourceKey,
   usePaletteCommands,
   usePaletteCommandsStore,
   type PaletteCommand,
 } from "./paletteCommands";
+import {
+  createWorkbenchScope,
+  standaloneWorkbenchScope,
+  WorkbenchScopeProvider,
+  type WorkbenchScope,
+} from "@/workbench/workbenchScope";
+
+const MOUNT = standaloneWorkbenchScope.id;
 
 const command = (id: string): PaletteCommand => ({
   id,
@@ -22,7 +33,7 @@ describe("usePaletteCommands", () => {
     const commands = [command("a")];
     const { unmount } = renderHook(() => usePaletteCommands("list", "Pull requests", commands));
     expect(usePaletteCommandsStore.getState().groups).toEqual({
-      list: { heading: "Pull requests", commands },
+      [mountedSourceKey(MOUNT, "list")]: { heading: "Pull requests", commands },
     });
     unmount();
     expect(usePaletteCommandsStore.getState().groups).toEqual({});
@@ -36,7 +47,9 @@ describe("usePaletteCommands", () => {
       { initialProps: { commands: first } },
     );
     rerender({ commands: second });
-    expect(usePaletteCommandsStore.getState().groups.list.commands).toBe(second);
+    expect(
+      usePaletteCommandsStore.getState().groups[mountedSourceKey(MOUNT, "list")]?.commands,
+    ).toBe(second);
     rerender({ commands: [] });
     expect(usePaletteCommandsStore.getState().groups).toEqual({});
   });
@@ -45,6 +58,34 @@ describe("usePaletteCommands", () => {
     const { unmount } = renderHook(() => usePaletteCommands("one", "One", [command("a")]));
     renderHook(() => usePaletteCommands("two", "Two", [command("b")]));
     unmount();
-    expect(Object.keys(usePaletteCommandsStore.getState().groups)).toEqual(["two"]);
+    expect(Object.keys(usePaletteCommandsStore.getState().groups)).toEqual([
+      mountedSourceKey(MOUNT, "two"),
+    ]);
+  });
+
+  it("offers a source under each mount, so the same source on two apps stays apart", () => {
+    const first = createWorkbenchScope("/one");
+    const second = createWorkbenchScope("/two");
+    const wrapper = (scope: WorkbenchScope) =>
+      function Wrapper({ children }: { children: ReactNode }) {
+        return <WorkbenchScopeProvider scope={scope}>{children}</WorkbenchScopeProvider>;
+      };
+    const firstCommands = [command("a")];
+    const secondCommands = [command("b")];
+    renderHook(() => usePaletteCommands("list", "Pull requests", firstCommands), {
+      wrapper: wrapper(first),
+    });
+    renderHook(() => usePaletteCommands("list", "Pull requests", secondCommands), {
+      wrapper: wrapper(second),
+    });
+
+    const groups = usePaletteCommandsStore.getState().groups;
+    expect(groupsOfMount(groups, first.id)).toEqual({
+      [mountedSourceKey(first.id, "list")]: { heading: "Pull requests", commands: firstCommands },
+    });
+    expect(groupsOfMount(groups, second.id)[mountedSourceKey(second.id, "list")]?.commands).toBe(
+      secondCommands,
+    );
+    expect(groupsOfMount(groups, MOUNT)).toEqual({});
   });
 });

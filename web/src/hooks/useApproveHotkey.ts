@@ -26,7 +26,6 @@ import { create } from "zustand";
 
 import { schemaFields } from "@/components/blocks/ElicitationSchemaForm";
 import { useIsEmbedded } from "@/lib/embedded";
-import { getEmbedRoot } from "@/lib/host";
 import {
   isFocusInDialogOrMenu,
   isEscapeOwnerOpen,
@@ -38,6 +37,7 @@ import { composerTargetOf } from "@/components/composer/engine/composerInput";
 import type { AnyBlock, ElicitationBlock } from "@/lib/blocks";
 import { matchesShortcut, shortcutKeys } from "@/lib/shortcuts/registry";
 import { useChatStore } from "@/store/chatStore";
+import { isActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
 
 /** Glyphs for the chord this hook matches; shown on the Approve button it would press. */
 export const APPROVE_KEYS = shortcutKeys("approval.accept");
@@ -149,10 +149,12 @@ export function isDraftingTarget(target: EventTarget | null): boolean {
 
 export function useApproveHotkey(isMac = isMacPlatform()): void {
   const isEmbedded = useIsEmbedded();
+  const scope = useWorkbenchScope();
   useEffect(() => {
     const handler = (e: globalThis.KeyboardEvent): void => {
+      if (!isActiveWorkbenchScope(scope)) return;
       // Embedded, keys from the host page around the app aren't the app's.
-      const embedRoot = getEmbedRoot();
+      const embedRoot = scope.layout.getRoot();
       if (isEmbedded && (!embedRoot || !e.composedPath().includes(embedRoot))) return;
       if (e.key === "Escape") {
         if (e.repeat || e.isComposing || !matchesShortcut(e, "approval.decline")) return;
@@ -194,5 +196,5 @@ export function useApproveHotkey(isMac = isMacPlatform()): void {
       window.removeEventListener("keydown", handler, true);
       useApproveHotkeyBindings.setState((state) => ({ count: state.count - 1 }));
     };
-  }, [isMac, isEmbedded]);
+  }, [isMac, isEmbedded, scope]);
 }

@@ -71,6 +71,7 @@ import {
   type PaletteCommand,
   usePaletteCommands,
 } from "@/store/paletteCommands";
+import { isActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
 
 export const SPLIT_PENDING_REASON = "Wait for the new pane to open.";
 
@@ -246,8 +247,10 @@ export function useTerminalPaneHotkeys({
   const runPaneKeyRef = useRef(runPaneKey);
   runPaneKeyRef.current = runPaneKey;
 
+  const scope = useWorkbenchScope();
   useEffect(() => {
     const handler = (event: globalThis.KeyboardEvent): void => {
+      if (!isActiveWorkbenchScope(scope)) return;
       // An IME composition owns its keys, including the one that starts it.
       if (event.isComposing || !latest.current.enabled) return;
       const id = matchedPaneShortcut(event);
@@ -274,7 +277,7 @@ export function useTerminalPaneHotkeys({
     // Capture, before the focused terminal forwards the chord to its shell.
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
-  }, [focus]);
+  }, [focus, scope]);
 
   // The keyboard coming into these panes makes them the ones ⌘K lists commands for.
   useEffect(() => {

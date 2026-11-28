@@ -6,7 +6,7 @@ import {
   resetComposerHeightsForTests,
   setComposerHeight,
 } from "@/lib/composerHeightState";
-import { usePaletteCommandsStore } from "@/store/paletteCommands";
+import { sourceOfMountedKey, usePaletteCommandsStore } from "@/store/paletteCommands";
 
 import {
   COMPOSER_HEIGHT_COMMAND_SOURCE,
@@ -39,7 +39,7 @@ function mount(scope = "session:a", enabled = true) {
 
 const heightGroups = () =>
   Object.entries(usePaletteCommandsStore.getState().groups)
-    .filter(([source]) => source.startsWith(`${COMPOSER_HEIGHT_COMMAND_SOURCE}:`))
+    .filter(([key]) => sourceOfMountedKey(key).startsWith(`${COMPOSER_HEIGHT_COMMAND_SOURCE}:`))
     .map(([, group]) => group);
 const rows = () => heightGroups().flatMap((group) => group.commands);
 const row = () => rows()[0];

@@ -23,6 +23,7 @@ import {
   workspaceHistoryCommands,
 } from "./model";
 import { workspaceCommandIcon } from "./useWorkspacePaletteCommands";
+import { isActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
 
 export interface WorkspaceHistoryCommandOptions {
   /** The session whose history this is, which scopes the ⌘K rows; null offers nothing. */
@@ -81,8 +82,10 @@ export function useWorkspaceHistoryCommands(
   );
   usePaletteCommands(`workspace-history:${conversationId ?? "none"}`, "Workspace", paletteCommands);
 
+  const scope = useWorkbenchScope();
   useEffect(() => {
     const handler = (event: globalThis.KeyboardEvent): void => {
+      if (!isActiveWorkbenchScope(scope)) return;
       if (isFocusInDialogOrMenu() || isKeyOwningOverlayOpen() || focusOwnsLineKeys(event)) return;
       const command = commandsRef.current.find((candidate) =>
         matchesShortcut(event, SHORTCUTS[candidate.direction], { mac: isMac }),
@@ -97,7 +100,7 @@ export function useWorkspaceHistoryCommands(
     };
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
-  }, [isMac]);
+  }, [isMac, scope]);
 
   return commands;
 }

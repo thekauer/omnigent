@@ -2,9 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { ComposerConfigChoice } from "@/components/composer/ComposerConfigSections";
 import { useIsEmbedded } from "@/lib/embedded";
-import { getEmbedRoot } from "@/lib/host";
 import { isImeCompositionKeyEvent } from "@/lib/ime";
 import { matchesShortcut } from "@/lib/shortcuts/registry";
+import { isActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
 
 /** Ctrl+Alt+M/E cycles the same model/effort choices offered by the composer menu. */
 export function useComposerConfigCycleHotkeys(
@@ -32,6 +32,7 @@ export function useComposerConfigCycleHotkeys(
     setPreviewRequest(null);
   }, []);
 
+  const scope = useWorkbenchScope();
   useEffect(() => {
     if (!previewRequest || pending) return;
     const timeout = window.setTimeout(() => {
@@ -65,6 +66,7 @@ export function useComposerConfigCycleHotkeys(
   useEffect(() => {
     if (!enabled) return;
     const handler = (event: globalThis.KeyboardEvent): void => {
+      if (!isActiveWorkbenchScope(scope)) return;
       if (
         event.defaultPrevented ||
         event.repeat ||
@@ -84,7 +86,7 @@ export function useComposerConfigCycleHotkeys(
         return;
       }
       if (!choices?.length) return;
-      const embedRoot = getEmbedRoot();
+      const embedRoot = scope.layout.getRoot();
       if (isEmbedded && (!embedRoot || !event.composedPath().includes(embedRoot))) return;
       const focused = document.activeElement;
       if (
@@ -105,6 +107,6 @@ export function useComposerConfigCycleHotkeys(
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [enabled, isEmbedded]);
+  }, [enabled, isEmbedded, scope]);
   return { preview, dismissPreview };
 }

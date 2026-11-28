@@ -7240,13 +7240,18 @@ describe("new-session browser shortcut", () => {
         app,
       ),
     );
-    if (embedded) setEmbedRoot(view.container);
+    if (embedded) {
+      setEmbedRoot(view.container);
+      // The mount's own root, as the embed sets it on its scope.
+      standaloneLayoutService.setRoot(view.container);
+    }
     const composer = screen.getByRole("textbox", { name: "Message" });
     composer.focus();
     fireEvent.keyDown(composer, { code: "KeyN", ctrlKey: true, altKey: true });
     expect(screen.queryByText("New session route")).toBeNull();
     fireEvent.keyDown(composer, { key: "O", code: "KeyO", ctrlKey: true, shiftKey: true });
     expect(screen.getByText("New session route")).toBeInTheDocument();
+    standaloneLayoutService.setRoot(null);
     setEmbedRoot(null);
   });
 });

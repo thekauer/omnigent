@@ -1,9 +1,9 @@
 import { useEffect, useRef } from "react";
 
 import { useIsEmbedded } from "@/lib/embedded";
-import { getEmbedRoot } from "@/lib/host";
 import { isMacPlatform } from "@/lib/hotkeys";
 import { matchesShortcut, type ShortcutId } from "@/lib/shortcuts/registry";
+import { isActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
 
 // Surfaces that own their keystrokes, so a session shortcut pressed there is left alone.
 const KEY_OWNING_SURFACES =
@@ -24,12 +24,14 @@ export function useCurrentSessionShortcut(
   latest.current = onTrigger;
   const isEmbedded = useIsEmbedded();
 
+  const scope = useWorkbenchScope();
   useEffect(() => {
     if (!enabled) return;
     const handler = (event: globalThis.KeyboardEvent): void => {
+      if (!isActiveWorkbenchScope(scope)) return;
       if (event.defaultPrevented || event.repeat || event.isComposing) return;
       if (!matchesShortcut(event, shortcutId, { mac: isMac })) return;
-      const embedRoot = getEmbedRoot();
+      const embedRoot = scope.layout.getRoot();
       if (isEmbedded && (!embedRoot || !event.composedPath().includes(embedRoot))) return;
       const focused = document.activeElement;
       if (focused instanceof Element && focused.closest(KEY_OWNING_SURFACES)) return;
@@ -39,5 +41,5 @@ export function useCurrentSessionShortcut(
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [shortcutId, enabled, isMac, isEmbedded]);
+  }, [shortcutId, enabled, isMac, isEmbedded, scope]);
 }

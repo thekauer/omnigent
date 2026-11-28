@@ -4,7 +4,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type * as EditorLinksModule from "@/lib/editorLinks";
 import type * as NativeBridgeModule from "@/lib/nativeBridge";
 import type * as RevealInFileManagerModule from "../RevealInFileManager";
-import { isCommandListed, usePaletteCommandsStore } from "@/store/paletteCommands";
+import {
+  isCommandListed,
+  sourceOfMountedKey,
+  usePaletteCommandsStore,
+} from "@/store/paletteCommands";
 import { FileActionHost, fileLink } from "./FileActionHost";
 import { requestFileAction, useFileActionStore } from "./fileActionStore";
 import { publishFocusedFile, useFocusedFileStore } from "./focusedFile";
@@ -245,8 +249,8 @@ describe("FileActionHost", () => {
 
 describe("the focused file in ⌘K", () => {
   function fileGroup() {
-    return Object.entries(usePaletteCommandsStore.getState().groups).find(([source]) =>
-      source.startsWith("file:focused:"),
+    return Object.entries(usePaletteCommandsStore.getState().groups).find(([key]) =>
+      sourceOfMountedKey(key).startsWith("file:focused:"),
     )?.[1];
   }
 

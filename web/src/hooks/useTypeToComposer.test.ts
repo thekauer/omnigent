@@ -10,14 +10,14 @@ vi.mock("@/lib/nativeBridge", async (importOriginal) => ({
   isNativeShell: () => nativeShell,
 }));
 
-import { setEmbedRoot } from "@/lib/host";
+import { standaloneLayoutService } from "@/workbench/layoutService";
 import { typesIntoComposer, useTypeToComposer } from "./useTypeToComposer";
 
 afterEach(() => {
   cleanup();
   embedded = false;
   nativeShell = false;
-  setEmbedRoot(null);
+  standaloneLayoutService.setRoot(null);
   document.body.innerHTML = "";
 });
 
@@ -114,7 +114,7 @@ describe("useTypeToComposer embedded", () => {
       <div id="app"><div id="conversation"><p>reply</p></div></div>`;
     const app = document.getElementById("app")!;
     embedded = true;
-    setEmbedRoot(app);
+    standaloneLayoutService.setRoot(app);
     const focusComposer = vi.fn();
     renderHook(() =>
       useTypeToComposer(focusComposer, { current: document.getElementById("conversation") }),
@@ -129,7 +129,7 @@ describe("useTypeToComposer embedded", () => {
   it("takes typing with focus on the body in a native shell, whose root isn't focusable", () => {
     document.body.innerHTML = `<div id="app"><div id="conversation"><p>reply</p></div></div>`;
     embedded = true;
-    setEmbedRoot(document.getElementById("app"));
+    standaloneLayoutService.setRoot(document.getElementById("app"));
     const focusComposer = vi.fn();
     renderHook(() =>
       useTypeToComposer(focusComposer, { current: document.getElementById("conversation") }),
@@ -147,7 +147,7 @@ describe("useTypeToComposer embedded", () => {
       <div id="app" tabindex="-1"><div id="conversation"><p>reply</p></div></div>`;
     const app = document.getElementById("app")!;
     embedded = true;
-    setEmbedRoot(app);
+    standaloneLayoutService.setRoot(app);
     const focusComposer = vi.fn();
     renderHook(() =>
       useTypeToComposer(focusComposer, { current: document.getElementById("conversation") }),

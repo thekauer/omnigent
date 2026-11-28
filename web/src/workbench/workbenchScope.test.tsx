@@ -5,7 +5,11 @@ import { isDesktopLayout, useIsMobileViewport } from "@/hooks/useIsMobileViewpor
 import { useIsSideBySideSidebarViewport } from "@/hooks/useIsSideBySideSidebarViewport";
 import { useResizableSidebar } from "@/hooks/useResizableSidebar";
 import { readPanelSizePreference, writePanelSizePreference } from "@/lib/panelSizePreferences";
-import { usePartVisible, useWorkbenchPart } from "@/shell/useWorkbenchParts";
+import {
+  usePartVisible,
+  useWorkbenchContextKeys,
+  useWorkbenchPart,
+} from "@/shell/useWorkbenchParts";
 import { installResizableWidth } from "@/test/resizableWidth";
 import { stubWindowMediaQueries } from "@/test/windowMediaQueries";
 import { activityBarWidthPx, orderActivityBarItems } from "./activityBar";
@@ -20,6 +24,7 @@ import {
   isViewHiddenByProduct,
 } from "./productLayout";
 import { isViewHidden } from "./viewsLayout";
+import { WorkbenchContext } from "./workbenchContext";
 import {
   activateWorkbenchScope,
   activeWorkbenchScope,
@@ -28,6 +33,9 @@ import {
   isActiveWorkbenchScope,
   releaseWorkbenchScope,
   useIsActiveWorkbenchScope,
+  standaloneWorkbenchScope,
+  useActivateWorkbenchOnUse,
+  type WorkbenchScope,
   WorkbenchScopeProvider,
 } from "./workbenchScope";
 
@@ -546,6 +554,51 @@ describe("each mount's product layout", () => {
   });
 });
 
+describe("the standalone app's re-activation on use", () => {
+  it("takes the window's commands back from an embed when the user uses the standalone app", () => {
+    const root = document.createElement("div");
+    const control = document.createElement("button");
+    root.appendChild(control);
+    document.body.appendChild(root);
+    const embed = createWorkbenchScope("/embed");
+    activateWorkbenchScope(embed);
+    renderHook(() => useActivateWorkbenchOnUse(standaloneWorkbenchScope, () => root));
+    try {
+      // The embed is used last, so it still has the window's commands.
+      expect(isActiveWorkbenchScope(embed)).toBe(true);
+      expect(isActiveWorkbenchScope(standaloneWorkbenchScope)).toBe(false);
+
+      control.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      expect(isActiveWorkbenchScope(standaloneWorkbenchScope)).toBe(true);
+      expect(layoutService.getStore()).toBe(standaloneLayoutState);
+      expect(isActiveWorkbenchScope(embed)).toBe(false);
+    } finally {
+      cleanup();
+      root.remove();
+      releaseWorkbenchScope(embed);
+    }
+  });
+
+  it("ignores use outside the standalone app's tree", () => {
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+    const outside = document.createElement("div");
+    document.body.appendChild(outside);
+    const embed = createWorkbenchScope("/embed");
+    activateWorkbenchScope(embed);
+    renderHook(() => useActivateWorkbenchOnUse(standaloneWorkbenchScope, () => root));
+    try {
+      outside.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+      expect(isActiveWorkbenchScope(embed)).toBe(true);
+    } finally {
+      cleanup();
+      root.remove();
+      outside.remove();
+      releaseWorkbenchScope(embed);
+    }
+  });
+});
+
 describe("each mount's Move View picker", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -576,5 +629,41 @@ describe("each mount's Move View picker", () => {
     locked.moveViewPicker.open();
     expect(locked.moveViewPicker.store.getState().open).toBe(false);
     expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+describe("window context keys follow the active mount", () => {
+  function wrapperOf(scope: WorkbenchScope) {
+    return function Wrapper({ children }: { children: ReactNode }) {
+      return <WorkbenchScopeProvider scope={scope}>{children}</WorkbenchScopeProvider>;
+    };
+  }
+
+  it("publishes only the active mount's keys, and republishes them when it becomes active", () => {
+    const shellContext = new WorkbenchContext();
+    const first = createWorkbenchScope("/one");
+    const second = createWorkbenchScope("/two");
+    const firstKeys = { "omnigent.session.hasWorkspace": true };
+    const secondKeys = { "omnigent.session.hasTasks": true };
+    renderHook(() => useWorkbenchContextKeys(firstKeys, shellContext), {
+      wrapper: wrapperOf(first),
+    });
+    renderHook(() => useWorkbenchContextKeys(secondKeys, shellContext), {
+      wrapper: wrapperOf(second),
+    });
+    try {
+      activateWorkbenchScope(first);
+      activateWorkbenchScope(second);
+      expect(shellContext.snapshot()).toEqual(secondKeys);
+
+      // The first mount's keys reach the window once it is used again, and the second's go.
+      activateWorkbenchScope(first);
+      expect(shellContext.snapshot()).toEqual(firstKeys);
+      releaseWorkbenchScope(first);
+      expect(shellContext.snapshot()).toEqual(secondKeys);
+    } finally {
+      releaseWorkbenchScope(second);
+      releaseWorkbenchScope(first);
+    }
   });
 });

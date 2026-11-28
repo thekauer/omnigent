@@ -68,6 +68,7 @@ import {
 import { TranscriptPaletteCommands } from "@/components/chat/TranscriptPaletteCommands";
 import { usePeerSessionMessageDisplay } from "@/lib/peerSessionMessagePreferences";
 import { SCROLL_RESTORE_BUDGET_MS } from "@/shell/useScrollRestore";
+import { isActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
 
 export interface TranscriptProps {
   /** Ref callback for the conversation wrapper element (SelectionPopup scope +
@@ -295,9 +296,11 @@ function TranscriptImpl({
     ],
   );
   const [nativeFindConversationId, setNativeFindConversationId] = useState<string | null>(null);
+  const scope = useWorkbenchScope();
   useEffect(() => setNativeFindConversationId(null), [conversationId]);
   useEffect(() => {
     const handleFind = (event: globalThis.KeyboardEvent) => {
+      if (!isActiveWorkbenchScope(scope)) return;
       if (!display.conversationId || !isNativeFindShortcut(event)) return;
       // Native find runs after keydown dispatch. Commit every row before the
       // browser scans the DOM so off-screen messages participate.
@@ -306,13 +309,15 @@ function TranscriptImpl({
     window.addEventListener("keydown", handleFind);
     // The desktop Edit > Find… menu opens its find bar without a keydown.
     const unsubscribeFindOpened = onFindOpened(() => {
-      if (display.conversationId) setNativeFindConversationId(display.conversationId);
+      if (isActiveWorkbenchScope(scope) && display.conversationId) {
+        setNativeFindConversationId(display.conversationId);
+      }
     });
     return () => {
       window.removeEventListener("keydown", handleFind);
       unsubscribeFindOpened();
     };
-  }, [display.conversationId]);
+  }, [display.conversationId, scope]);
   const disableVirtualization = nativeFindConversationId === display.conversationId;
   const [searchParams] = useSearchParams();
   const messageId = searchParams.get(MESSAGE_QUERY_PARAM);
@@ -393,6 +398,7 @@ function TranscriptImpl({
   // Cmd+Alt+↑/↓ (Ctrl+Alt on win/linux) user-turn navigation.
   useEffect(() => {
     const handler = (e: globalThis.KeyboardEvent) => {
+      if (!isActiveWorkbenchScope(scope)) return;
       if (!hasCommandModifier(e) || !e.altKey) return;
       if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
       if (e.defaultPrevented) return;
@@ -402,7 +408,7 @@ function TranscriptImpl({
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [nav]);
+  }, [nav, scope]);
 
   const showWorkingIndicator =
     !sandboxFailed && shouldShowWorkingIndicator(display.showsWorking, display.bubbles);

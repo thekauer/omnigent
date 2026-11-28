@@ -6,6 +6,7 @@ import { type RefObject, useEffect } from "react";
 
 import { isMacPlatform } from "@/lib/hotkeys";
 import { matchedShortcutChordIndex } from "@/lib/shortcuts/registry";
+import { isActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
 
 /** Index of the workspace tab a keydown picks, or -1 when it isn't the chord. */
 export function workspaceTabIndex(e: globalThis.KeyboardEvent, isMac = isMacPlatform()): number {
@@ -20,11 +21,13 @@ export function useWorkspaceTabHotkeys(
   select: RefObject<(index: number) => boolean>,
   isMac = isMacPlatform(),
 ): void {
+  const scope = useWorkbenchScope();
   useEffect(() => {
     // The key of the chord last handled, so holding it doesn't leak repeats (⌃3 is
     // Escape in a terminal) without picking the tab again.
     let held: string | null = null;
     const handler = (e: globalThis.KeyboardEvent): void => {
+      if (!isActiveWorkbenchScope(scope)) return;
       if (e.defaultPrevented) return;
       if (e.repeat) {
         if (held === e.code && workspaceTabIndex(e, isMac) !== -1) {
@@ -54,5 +57,5 @@ export function useWorkspaceTabHotkeys(
       window.removeEventListener("keydown", handler, true);
       window.removeEventListener("keyup", release, true);
     };
-  }, [select, isMac]);
+  }, [select, isMac, scope]);
 }

@@ -4,6 +4,8 @@ import { createContext, useContext, useEffect } from "react";
 import type { LucideIcon } from "lucide-react";
 import { create } from "zustand";
 
+import { useWorkbenchScope } from "@/workbench/workbenchScope";
+
 import type { PaletteSetting } from "./paletteSettings";
 
 /** Whether a command can run here. Unavailable with no reason hides it; a reason greys it out. */
@@ -106,10 +108,32 @@ export interface PaletteCommandGroup {
 }
 
 interface PaletteCommandsState {
-  /** Source id → that source's group, in registration order. */
+  /** Mounted source key (see `mountedSourceKey`) → that source's group, in registration order. */
   groups: Record<string, PaletteCommandGroup>;
   register: (source: string, group: PaletteCommandGroup) => void;
   unregister: (source: string) => void;
+}
+
+/** Separates a mount's id from a source's key; no source id holds it. */
+const MOUNT_SEPARATOR = "\u0001";
+
+/** The key a source registers under in `mount`: each app on a page lists its own rows. */
+export function mountedSourceKey(mount: string, source: string): string {
+  return `${mount}${MOUNT_SEPARATOR}${source}`;
+}
+
+/** The source a mounted key registers, without its mount. */
+export function sourceOfMountedKey(key: string): string {
+  return key.slice(key.indexOf(MOUNT_SEPARATOR) + MOUNT_SEPARATOR.length);
+}
+
+/** The groups one mount offers (its palette lists and runs only these). */
+export function groupsOfMount(
+  groups: Readonly<Record<string, PaletteCommandGroup>>,
+  mount: string,
+): Record<string, PaletteCommandGroup> {
+  const prefix = `${mount}${MOUNT_SEPARATOR}`;
+  return Object.fromEntries(Object.entries(groups).filter(([key]) => key.startsWith(prefix)));
 }
 
 /**
@@ -142,8 +166,10 @@ export function usePaletteCommands(
   commands: PaletteCommand[],
 ): void {
   const scope = useContext(PaletteCommandScopeContext);
+  const mount = useWorkbenchScope().id;
   // A scoped source is its scope's own, so another pane mounting the same source can't withdraw it.
-  const key = scope ? `${scope.namespace}::${source}` : source;
+  // Each mount's sources are its own: another app on the page doesn't withdraw or list them.
+  const key = mountedSourceKey(mount, scope ? `${scope.namespace}::${source}` : source);
   const offered = scope && !scope.enabled ? NO_COMMANDS : commands;
   const register = usePaletteCommandsStore((state) => state.register);
   const unregister = usePaletteCommandsStore((state) => state.unregister);

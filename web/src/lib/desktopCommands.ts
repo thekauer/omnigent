@@ -15,6 +15,12 @@ import {
   setDesktopCommandState,
   supportsDesktopCommands,
 } from "@/lib/nativeBridge";
+import {
+  activeWorkbenchScope,
+  subscribeActiveWorkbenchScope,
+  type WorkbenchScope,
+  useWorkbenchScope,
+} from "@/workbench/workbenchScope";
 
 export type { DesktopCommand, DesktopCommandEvent };
 
@@ -23,6 +29,8 @@ export type DesktopCommandHandler = (event: DesktopCommandEvent) => boolean | vo
 
 interface Registration {
   command: DesktopCommand;
+  /** The mount whose surface registered it: the menu's commands are the active mount's. */
+  scope: WorkbenchScope;
   priority: number;
   /** Pinned / archived state of the open session, for the menu's labels. */
   active: boolean | undefined;
@@ -41,26 +49,41 @@ const availabilityListeners = new Set<() => void>();
 // still asks, so ⌘Q never goes dead.
 const COMMANDS_THROUGH_DIALOGS: ReadonlySet<DesktopCommand> = new Set(["reload", "quit"]);
 
+/** The registrations of the active mount, highest priority first. */
+function activeRegistrations(): Registration[] {
+  const active = activeWorkbenchScope();
+  return [...registrations]
+    .filter((registration) => registration.scope === active)
+    .sort((a, b) => b.priority - a.priority);
+}
+
 function dispatch(event: DesktopCommandEvent): void {
   // A modal dialog or open menu owns the keyboard, like a sheet in a native app.
   if (isFocusInDialogOrMenu() && !COMMANDS_THROUGH_DIALOGS.has(event.command)) return;
-  const candidates = [...registrations]
-    .filter((registration) => registration.command === event.command)
-    .sort((a, b) => b.priority - a.priority);
+  // The active mount's handlers first; another mount's only when the active one registered none.
+  const forCommand = (candidate: Registration[]) =>
+    candidate.filter((registration) => registration.command === event.command);
+  const own = forCommand(activeRegistrations());
+  const candidates = own.length > 0 ? own : forCommand(sortedRegistrations());
   for (const registration of candidates) {
     if (registration.handle(event) !== false) return;
   }
 }
 
+function sortedRegistrations(): Registration[] {
+  return [...registrations].sort((a, b) => b.priority - a.priority);
+}
+
 function isActive(command: DesktopCommand): boolean {
-  return [...registrations].some(
+  return activeRegistrations().some(
     (registration) => registration.command === command && registration.active === true,
   );
 }
 
 function reportState(): void {
   reportQueued = false;
-  const commands = [...new Set([...registrations].map((registration) => registration.command))];
+  // The menu reflects the active mount: its commands are the ones offered here.
+  const commands = [...new Set(activeRegistrations().map((registration) => registration.command))];
   const state = {
     commands: commands.sort(),
     sessionPinned: isActive("toggle-pin-session"),
@@ -107,6 +130,9 @@ function register(registration: Registration): () => void {
   };
 }
 
+// The menu follows the active mount, so it is reported again when another takes over.
+subscribeActiveWorkbenchScope(queueReport);
+
 /**
  * Handle a native menu command while mounted. A null handler unregisters it,
  * which disables the shell's menu item. Handlers run highest `priority` first;
@@ -117,6 +143,7 @@ export function useDesktopCommand(
   handler: DesktopCommandHandler | null,
   { priority = 0, active }: { priority?: number; active?: boolean } = {},
 ): void {
+  const scope = useWorkbenchScope();
   // Held in a ref so a fresh closure each render doesn't re-register. Published once the
   // render commits: a render that suspends must not hand its handler to the menu.
   const latest = useRef(handler);
@@ -129,11 +156,12 @@ export function useDesktopCommand(
     if (!enabled) return;
     return register({
       command,
+      scope,
       priority,
       active,
       handle: (event) => (latest.current ? latest.current(event) : false),
     });
-  }, [enabled, command, priority, active]);
+  }, [enabled, command, priority, active, scope]);
 }
 
 /** Forget registrations, the bridge subscription, and the last report. */

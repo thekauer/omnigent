@@ -5,6 +5,7 @@ import { useEffect, useRef } from "react";
 
 import { isFocusInDialogOrMenu, isMacPlatform } from "@/lib/hotkeys";
 import { matchesShortcut } from "@/lib/shortcuts/registry";
+import { isActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
 
 /** -1 for Cmd/Ctrl+Alt+Shift+[, 1 for Cmd/Ctrl+Alt+Shift+], 0 for anything else. */
 export function paneCycleHotkeyStep(
@@ -30,10 +31,12 @@ export function usePaneCycleHotkey(options: PaneCycleHotkeyOptions, isMac = isMa
   const latest = useRef(options);
   latest.current = options;
 
+  const scope = useWorkbenchScope();
   useEffect(() => {
     if (!options.enabled) return;
 
     const handler = (event: globalThis.KeyboardEvent): void => {
+      if (!isActiveWorkbenchScope(scope)) return;
       const step = paneCycleHotkeyStep(event, isMac);
       if (step === 0 || isFocusInDialogOrMenu()) return;
       event.preventDefault();
@@ -48,5 +51,5 @@ export function usePaneCycleHotkey(options: PaneCycleHotkeyOptions, isMac = isMa
     // Capture before a focused xterm can forward the chord to its PTY.
     window.addEventListener("keydown", handler, true);
     return () => window.removeEventListener("keydown", handler, true);
-  }, [isMac, options.enabled]);
+  }, [isMac, options.enabled, scope]);
 }

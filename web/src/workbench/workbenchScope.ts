@@ -9,6 +9,8 @@ import {
   createElement,
   type ReactNode,
   useContext,
+  useEffect,
+  useRef,
   useSyncExternalStore,
 } from "react";
 import { createMoveViewPicker, type MoveViewPicker } from "@/store/moveViewPicker";
@@ -26,7 +28,10 @@ import {
 } from "./productLayout";
 
 export interface WorkbenchScope {
-  /** The mount's id, unique in the window: the key of its conversation view. */
+  /**
+   * The mount's id, unique in the window (the standalone app's is "window"): the key of its
+   * conversation view and of its palette rows.
+   */
   readonly id: string;
   readonly layout: LayoutService;
   readonly state: LayoutStateStore;
@@ -43,7 +48,7 @@ export interface WorkbenchScope {
  * even while one is active (the window's commands follow the active one through the proxies).
  */
 const WINDOW_SCOPE: WorkbenchScope = Object.freeze({
-  id: "workbench-window",
+  id: "window",
   layout: standaloneLayoutService,
   state: standaloneLayoutState,
   productLayout: standaloneProductLayout,
@@ -61,6 +66,9 @@ const layoutKeys = new WeakMap<WorkbenchScope, string>();
 const heldLayoutKeys = new Map<string, WorkbenchScope>();
 const warnedLayoutKeys = new Set<string>();
 let createdScopes = 0;
+
+/** The standalone app's scope; an embed's mounts have their own (`createWorkbenchScope`). */
+export const standaloneWorkbenchScope: WorkbenchScope = WINDOW_SCOPE;
 
 const WorkbenchScopeContext = createContext<WorkbenchScope>(WINDOW_SCOPE);
 
@@ -147,31 +155,23 @@ export function workbenchScopeOfState(store: LayoutStateStore): WorkbenchScope |
 const active: WorkbenchScope[] = [];
 const activationListeners = new Set<() => void>();
 
-/** The mount last activated, or the standalone app's scope while none is. */
-export function activeWorkbenchScope(): WorkbenchScope {
-  return active[active.length - 1] ?? WINDOW_SCOPE;
-}
-
 function publish(): void {
   const top = active[active.length - 1];
   // The service first: the state's listeners then read the new mount's service.
   setActiveLayoutService(top?.layout ?? null);
   setActiveProductLayout(top?.productLayout ?? null);
   setActiveLayoutState(top?.state ?? null);
-  for (const listener of activationListeners) listener();
+  for (const listener of [...activationListeners]) listener();
 }
 
-/** Notified whenever the active scope changes. Returns an unsubscribe function. */
-export function subscribeWorkbenchActivation(listener: () => void): () => void {
-  activationListeners.add(listener);
-  return () => {
-    activationListeners.delete(listener);
-  };
+/** The mount the window's commands reach: the one last activated, else the standalone app. */
+export function activeWorkbenchScope(): WorkbenchScope {
+  return active[active.length - 1] ?? WINDOW_SCOPE;
 }
 
 /** Re-renders when `scope` becomes or stops being the active one. */
 export function useIsActiveWorkbenchScope(scope: WorkbenchScope): boolean {
-  return useSyncExternalStore(subscribeWorkbenchActivation, () => isActiveWorkbenchScope(scope));
+  return useSyncExternalStore(subscribeActiveWorkbenchScope, () => isActiveWorkbenchScope(scope));
 }
 
 /** Makes `scope` the one the window's commands reach (a mount, or the user's use of it). */
@@ -185,8 +185,41 @@ export function activateWorkbenchScope(scope: WorkbenchScope): void {
 
 /** Whether the window's keybindings reach `scope` (the standalone app's while no mount is). */
 export function isActiveWorkbenchScope(scope: WorkbenchScope): boolean {
-  const top = active[active.length - 1];
-  return top ? top === scope : scope === WINDOW_SCOPE;
+  return activeWorkbenchScope() === scope;
+}
+
+/** Calls `listener` each time the active mount changes. */
+export function subscribeActiveWorkbenchScope(listener: () => void): () => void {
+  activationListeners.add(listener);
+  return () => {
+    activationListeners.delete(listener);
+  };
+}
+
+/**
+ * Makes `scope` the active one when the user points, types or focuses inside `getRoot()`
+ * (the mount's own tree), so a mount used after another took over gets the window's
+ * commands back.
+ */
+export function useActivateWorkbenchOnUse(
+  scope: WorkbenchScope,
+  getRoot: () => Element | null,
+): void {
+  const latestRoot = useRef(getRoot);
+  latestRoot.current = getRoot;
+  useEffect(() => {
+    const onUse = (event: Event) => {
+      const element = latestRoot.current();
+      if (element && event.target instanceof Node && element.contains(event.target)) {
+        activateWorkbenchScope(scope);
+      }
+    };
+    const events = ["pointerdown", "keydown", "focusin"] as const;
+    for (const type of events) document.addEventListener(type, onUse, true);
+    return () => {
+      for (const type of events) document.removeEventListener(type, onUse, true);
+    };
+  }, [scope]);
 }
 
 /** The mount went: the one used before it is active again (none: the standalone app). */

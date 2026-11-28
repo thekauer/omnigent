@@ -2,13 +2,13 @@ import { cleanup, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { EmbeddedProvider } from "@/lib/embedded";
-import { setEmbedRoot } from "@/lib/host";
+import { standaloneLayoutService } from "@/workbench/layoutService";
 
 import { isRenameSessionHotkey, useRenameSessionHotkey } from "./useRenameSessionHotkey";
 
 afterEach(() => {
   cleanup();
-  setEmbedRoot(null);
+  standaloneLayoutService.setRoot(null);
   document.body.innerHTML = "";
 });
 
@@ -123,7 +123,7 @@ describe("useRenameSessionHotkey", () => {
     const composer = document.createElement("textarea");
     root.appendChild(composer);
     document.body.appendChild(root);
-    setEmbedRoot(root);
+    standaloneLayoutService.setRoot(root);
     renderHook(() => useRenameSessionHotkey(rename, true, false), { wrapper: EmbeddedProvider });
 
     const outside = event();

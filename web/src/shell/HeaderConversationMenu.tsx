@@ -76,7 +76,6 @@ import { useIsMobileViewport } from "@/hooks/useIsMobileViewport";
 import { useDesktopCommand } from "@/lib/desktopCommands";
 import { supportsDesktopCommands } from "@/lib/nativeBridge";
 import { useIsEmbedded } from "@/lib/embedded";
-import { getEmbedRoot } from "@/lib/host";
 import { hasCommandModifier, isFocusInDialogOrMenu } from "@/lib/hotkeys";
 import { useNavigate } from "@/lib/routing";
 import { showArchiveUndoToast } from "./archiveUndoToast";
@@ -88,6 +87,7 @@ import { conversationDisplayLabel } from "./sidebarNav";
 import { MobileHeaderButton } from "./MobileHeaderButton";
 import { RenameSessionDialog } from "./RenameSessionDialog";
 import { SessionMenuHeader } from "./SessionMenuHeader";
+import { isActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
 
 interface HeaderConversationMenuProps {
   conversation: Conversation;
@@ -186,9 +186,11 @@ export function HeaderConversationMenu({
     setAutomationOpen(false);
   }, [conversation.id]);
 
+  const scope = useWorkbenchScope();
   useEffect(() => {
     if (!canAddAgent) return;
     const handleAddAgent = (event: globalThis.KeyboardEvent) => {
+      if (!isActiveWorkbenchScope(scope)) return;
       if (
         event.defaultPrevented ||
         event.repeat ||
@@ -201,7 +203,7 @@ export function HeaderConversationMenu({
       ) {
         return;
       }
-      const embedRoot = getEmbedRoot();
+      const embedRoot = scope.layout.getRoot();
       if (isEmbedded && (!embedRoot || !event.composedPath().includes(embedRoot))) return;
       if (isFocusInDialogOrMenu() || document.activeElement?.closest(".xterm, .monaco-editor"))
         return;
@@ -211,7 +213,7 @@ export function HeaderConversationMenu({
     };
     window.addEventListener("keydown", handleAddAgent);
     return () => window.removeEventListener("keydown", handleAddAgent);
-  }, [addAgentPath, canAddAgent, isEmbedded, navigate]);
+  }, [addAgentPath, canAddAgent, isEmbedded, navigate, scope]);
 
   const closeMenu = () => {
     setMenuOpen(false);

@@ -6,7 +6,11 @@ import { useEffect, useLayoutEffect, useRef, useSyncExternalStore } from "react"
 
 import type { ContextKeyValue } from "@/vscodeExtensions/contextKeys";
 import { LAYOUT_SLOTS, type LayoutStateStore, layoutState } from "@/workbench/layoutState";
-import { useWorkbenchScope } from "@/workbench/workbenchScope";
+import {
+  isActiveWorkbenchScope,
+  subscribeActiveWorkbenchScope,
+  useWorkbenchScope,
+} from "@/workbench/workbenchScope";
 import { type WorkbenchContext, workbenchContext } from "@/workbench/workbenchContext";
 import type { LayoutService, Part } from "@/workbench/layoutService";
 
@@ -88,28 +92,30 @@ export function useRememberSidebarVisible(open: boolean, remember: boolean): voi
 }
 
 /**
- * Publishes the shell's workbench context keys while mounted: keys left out of a later render
- * are removed, and all of them on unmount.
+ * Publishes the shell's workbench context keys while this mount is the active one, and again
+ * when it becomes active: the window's keys are the active mount's, so an inactive mount
+ * publishes nothing, and the keys go when the mount does.
  */
 export function useWorkbenchContextKeys(
   values: Readonly<Record<string, ContextKeyValue>>,
   context: WorkbenchContext = workbenchContext,
 ): void {
-  const published = useRef<readonly string[]>([]);
+  const scope = useWorkbenchScope();
+  const latest = useRef(values);
+  latest.current = values;
   useEffect(() => {
-    const removed = Object.fromEntries(
-      published.current.filter((key) => !Object.hasOwn(values, key)).map((key) => [key, undefined]),
-    );
-    context.update({ ...removed, ...values });
-    published.current = Object.keys(values);
-  }, [context, values]);
-  useEffect(
-    () => () => {
-      context.update(Object.fromEntries(published.current.map((key) => [key, undefined])));
-      published.current = [];
-    },
-    [context],
-  );
+    if (isActiveWorkbenchScope(scope)) context.replace(values);
+  }, [context, scope, values]);
+  useEffect(() => {
+    const publishIfActive = () => {
+      if (isActiveWorkbenchScope(scope)) context.replace(latest.current);
+    };
+    const unsubscribe = subscribeActiveWorkbenchScope(publishIfActive);
+    return () => {
+      unsubscribe();
+      if (isActiveWorkbenchScope(scope)) context.replace({});
+    };
+  }, [context, scope]);
 }
 
 /** Whether `part` is on screen, kept current. */

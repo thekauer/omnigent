@@ -57,6 +57,16 @@ export class WorkbenchContext {
     }
   }
 
+  /** Makes `values` the whole set of keys: the keys of the mount that is now the active one. */
+  replace(values: Readonly<Record<string, ContextKeyValue>>): void {
+    const patch: Record<string, ContextKeyValue | undefined> = {};
+    for (const key of Object.keys(this.values)) {
+      if (!Object.hasOwn(values, key)) patch[key] = undefined;
+    }
+    Object.assign(patch, values);
+    this.update(patch);
+  }
+
   subscribe(listener: Listener): () => void {
     this.listeners.add(listener);
     return () => {

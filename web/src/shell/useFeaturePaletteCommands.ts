@@ -3,6 +3,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
+import { useWorkbenchScope } from "@/workbench/workbenchScope";
+
 import type { FeaturePaletteRow, FeaturePaletteSource } from "./featurePaletteRows";
 import { useTabsSidebar } from "./useTabsSidebar";
 
@@ -42,6 +44,8 @@ export interface FeaturePaletteCommands {
 }
 
 export function useFeaturePaletteCommands(open: boolean): FeaturePaletteCommands {
+  // The rows of the app this palette is open in.
+  const mount = useWorkbenchScope().id;
   // Where the sidebar shows as tabs, as the app shell decides; elsewhere nothing loads.
   const enabled = useTabsSidebar();
   const [source, setSource] = useState(loaded);
@@ -56,13 +60,13 @@ export function useFeaturePaletteCommands(open: boolean): FeaturePaletteCommands
   const listed = enabled && open ? source : null;
   const rows = useSyncExternalStore(
     listed?.subscribe ?? noSubscription,
-    () => listed?.rows() ?? NO_ROWS,
+    () => listed?.rows(mount) ?? NO_ROWS,
   );
 
   const runAfterClose = useRef<(() => void) | null>(null);
   const accept = useCallback(
     (row: FeaturePaletteRow, close: () => void) => {
-      const command = source?.command(row.id) ?? null;
+      const command = source?.command(row.id, mount) ?? null;
       if (command === null) {
         close();
         return;
@@ -75,7 +79,7 @@ export function useFeaturePaletteCommands(open: boolean): FeaturePaletteCommands
       close();
       if (!command.movesFocus) command.run();
     },
-    [source],
+    [source, mount],
   );
   const onCloseAutoFocus = useCallback(() => {
     const run = runAfterClose.current;

@@ -17,7 +17,11 @@ import type {
   SelectedLineRange,
 } from "@pierre/diffs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { isCommandAvailable, usePaletteCommandsStore } from "@/store/paletteCommands";
+import {
+  isCommandAvailable,
+  sourceOfMountedKey,
+  usePaletteCommandsStore,
+} from "@/store/paletteCommands";
 import {
   DiffReview,
   type DiffReviewProps,
@@ -197,7 +201,7 @@ async function settle() {
 /** The review's toolbar commands in ⌘K, apart from those for its current file. */
 function toolbarCommandGroups() {
   return Object.entries(usePaletteCommandsStore.getState().groups)
-    .filter(([source]) => !/^diff-review-(viewed|markdown|file|folder)/.test(source))
+    .filter(([key]) => !/^diff-review-(viewed|markdown|file|folder)/.test(sourceOfMountedKey(key)))
     .map(([, group]) => group);
 }
 
@@ -1216,7 +1220,7 @@ describe("the current file's actions in ⌘K", () => {
     });
   const fileCommands = () =>
     Object.entries(usePaletteCommandsStore.getState().groups)
-      .filter(([source]) => source.startsWith("diff-review-file"))
+      .filter(([key]) => sourceOfMountedKey(key).startsWith("diff-review-file"))
       .flatMap(([, group]) => group.commands);
 
   afterEach(() => {
@@ -1280,7 +1284,7 @@ describe("the current file's actions in ⌘K", () => {
 
   const folderCommands = () =>
     Object.entries(usePaletteCommandsStore.getState().groups)
-      .filter(([source]) => source.startsWith("diff-review-folder"))
+      .filter(([key]) => sourceOfMountedKey(key).startsWith("diff-review-folder"))
       .flatMap(([, group]) => group.commands);
 
   it("gives ⌘K a focused folder's menu actions instead of the file's, until focus leaves", async () => {
@@ -1573,7 +1577,7 @@ describe("file headers", () => {
 
     // ⌘K lists every action, whatever the header shows, by its palette name where it has one.
     const commands = Object.entries(usePaletteCommandsStore.getState().groups)
-      .filter(([source]) => source.startsWith("diff-review-file"))
+      .filter(([key]) => sourceOfMountedKey(key).startsWith("diff-review-file"))
       .flatMap(([, group]) => group.commands);
     expect(commands.map((command) => [command.id, command.label])).toEqual([
       ["file.open-on-code-host", "Open in GitHub"],

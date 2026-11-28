@@ -4,6 +4,7 @@ import { GlobeIcon } from "lucide-react";
 import { hotkeyAvailability, useHotkeyCommand } from "@/hooks/useHotkeyCommand";
 import { isMacPlatform } from "@/lib/hotkeys";
 import { matchesShortcut } from "@/shell/workspaceTabs/workspaceSidebarShortcuts";
+import { isActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
 
 // Terminals and code editors bind their own chords, so they keep this one.
 const TEXT_ENTRY_SURFACE = ".xterm, .monaco-editor, .cm-editor";
@@ -33,9 +34,11 @@ export function useNewBrowserHotkey(
     movesFocus: true,
   });
 
+  const scope = useWorkbenchScope();
   useEffect(() => {
     if (!enabled) return;
     const handler = (event: globalThis.KeyboardEvent): void => {
+      if (!isActiveWorkbenchScope(scope)) return;
       if (event.repeat || !isNewBrowserHotkey(event, isMac)) return;
       const active = document.activeElement;
       if (active instanceof Element && active.closest(TEXT_ENTRY_SURFACE) !== null) return;
@@ -45,5 +48,5 @@ export function useNewBrowserHotkey(
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [enabled, isMac]);
+  }, [enabled, isMac, scope]);
 }

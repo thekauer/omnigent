@@ -15,6 +15,7 @@ import { useEffect, useRef } from "react";
 import { isMacPlatform } from "@/lib/hotkeys";
 import { useNavigate } from "@/lib/routing";
 import { matchedShortcutChordIndex, SESSION_NUMBER_DIGITS } from "@/lib/shortcuts/registry";
+import { isActiveWorkbenchScope, useWorkbenchScope } from "@/workbench/workbenchScope";
 
 /** Index → the digit that selects it. Shared with the sidebar's row hints so binding and label
  *  can't drift. */
@@ -34,8 +35,10 @@ export function useSessionNumberHotkeys(
   const latest = useRef({ orderedSessionIds, activeId });
   latest.current = { orderedSessionIds, activeId };
 
+  const scope = useWorkbenchScope();
   useEffect(() => {
     const handler = (e: globalThis.KeyboardEvent): void => {
+      if (!isActiveWorkbenchScope(scope)) return;
       // Native: plain Cmd/Ctrl+digit (Alt+chord is the message hotkey). Browser:
       // Cmd/Ctrl+Alt+digit, since plain Cmd/Ctrl+digit is the native tab-switch;
       // AltGr+digit there composes a character instead. Shift is left to other bindings.
@@ -53,5 +56,5 @@ export function useSessionNumberHotkeys(
 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [navigate, isMac]);
+  }, [navigate, isMac, scope]);
 }

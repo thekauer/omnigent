@@ -1,18 +1,18 @@
 import { cleanup, fireEvent, renderHook, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { EmbeddedProvider } from "@/lib/embedded";
-import { setEmbedRoot } from "@/lib/host";
+import { standaloneLayoutService } from "@/workbench/layoutService";
 import { useDismissOnEscape } from "./useDismissOnEscape";
 
 afterEach(() => {
   cleanup();
-  setEmbedRoot(null);
+  standaloneLayoutService.setRoot(null);
   document.body.replaceChildren();
 });
 
 it("embedded, leaves host Escape untouched and dismisses for Escape inside the app", () => {
   document.body.innerHTML = '<div id="app"><button>In app</button></div><button>Host</button>';
-  setEmbedRoot(document.getElementById("app"));
+  standaloneLayoutService.setRoot(document.getElementById("app"));
   const dismiss = vi.fn();
   renderHook(() => useDismissOnEscape(true, dismiss), { wrapper: EmbeddedProvider });
 

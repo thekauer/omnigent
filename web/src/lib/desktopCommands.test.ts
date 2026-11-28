@@ -9,6 +9,12 @@ import {
   useDesktopCommand,
 } from "./desktopCommands";
 import type { DesktopCommandState } from "./nativeBridge";
+import { inWorkbenchScope } from "@/test/workbenchScopeWrapper";
+import {
+  activateWorkbenchScope,
+  createWorkbenchScope,
+  releaseWorkbenchScope,
+} from "@/workbench/workbenchScope";
 
 type CommandListener = (event: { command: string; browserViewId: string | null }) => void;
 
@@ -247,5 +253,69 @@ describe("useAvailableDesktopCommands", () => {
     fork.unmount();
     await act(flushReports);
     expect([...available.result.current]).toEqual([]);
+  });
+});
+
+describe("native menu commands across mounts", () => {
+  it("runs the active mount's handler, and another mount's only when the active one has none", () => {
+    const first = createWorkbenchScope("/one");
+    const second = createWorkbenchScope("/two");
+    const firstClose = vi.fn();
+    const secondClose = vi.fn();
+    const secondTerminal = vi.fn();
+    renderHook(() => useDesktopCommand("close", firstClose), { wrapper: inWorkbenchScope(first) });
+    renderHook(
+      () => {
+        useDesktopCommand("close", secondClose);
+        useDesktopCommand("new-terminal", secondTerminal);
+      },
+      { wrapper: inWorkbenchScope(second) },
+    );
+    try {
+      activateWorkbenchScope(first);
+      activateWorkbenchScope(second);
+      send("close");
+      expect(secondClose).toHaveBeenCalledTimes(1);
+      expect(firstClose).not.toHaveBeenCalled();
+
+      // The first mount is used again: its handler runs, the second's does not.
+      activateWorkbenchScope(first);
+      send("close");
+      expect(firstClose).toHaveBeenCalledTimes(1);
+      expect(secondClose).toHaveBeenCalledTimes(1);
+
+      // The first mount registered no new terminal, so the second mount's handles it.
+      send("new-terminal");
+      expect(secondTerminal).toHaveBeenCalledTimes(1);
+    } finally {
+      releaseWorkbenchScope(second);
+      releaseWorkbenchScope(first);
+    }
+  });
+
+  it("reports the commands the active mount can run", async () => {
+    const first = createWorkbenchScope("/one");
+    const second = createWorkbenchScope("/two");
+    renderHook(() => useDesktopCommand("close", vi.fn()), { wrapper: inWorkbenchScope(first) });
+    renderHook(() => useDesktopCommand("new-terminal", vi.fn()), {
+      wrapper: inWorkbenchScope(second),
+    });
+    try {
+      activateWorkbenchScope(first);
+      await flushReports();
+      expect(setDesktopCommandState).toHaveBeenLastCalledWith(
+        expect.objectContaining({ commands: ["close"] }),
+      );
+      expect(setDesktopCommandState.mock.calls.at(-1)?.[0]?.commands).not.toContain("new-terminal");
+
+      activateWorkbenchScope(second);
+      await flushReports();
+      expect(setDesktopCommandState).toHaveBeenLastCalledWith(
+        expect.objectContaining({ commands: ["new-terminal"] }),
+      );
+    } finally {
+      releaseWorkbenchScope(second);
+      releaseWorkbenchScope(first);
+    }
   });
 });

@@ -1,5 +1,11 @@
 import { renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { inWorkbenchScope } from "@/test/workbenchScopeWrapper";
+import {
+  activateWorkbenchScope,
+  createWorkbenchScope,
+  releaseWorkbenchScope,
+} from "@/workbench/workbenchScope";
 import { isMacPlatform } from "./hotkeys";
 import {
   findTarget,
@@ -8,6 +14,7 @@ import {
   openFindFromCommand,
   registerFindSurface,
   useCanOpenFindFromCommand,
+  useFindSurface,
 } from "./findRouting";
 
 const releases: (() => void)[] = [];
@@ -215,5 +222,35 @@ describe("the ⌘K Find command", () => {
     register({ fallback: true, isActive: () => true, openFind: vi.fn() });
     rerender();
     expect(result.current).toBe(true);
+  });
+});
+
+describe("find surfaces across mounts", () => {
+  it("routes the chord only to a surface of the mount in use", () => {
+    const first = createWorkbenchScope("/first");
+    const second = createWorkbenchScope("/second");
+    const openFirst = vi.fn();
+    const openSecond = vi.fn();
+    renderHook(() => useFindSurface({ isActive: () => true, openFind: openFirst }), {
+      wrapper: inWorkbenchScope(first),
+    });
+    renderHook(() => useFindSurface({ isActive: () => true, openFind: openSecond }), {
+      wrapper: inWorkbenchScope(second),
+    });
+    try {
+      activateWorkbenchScope(first);
+      activateWorkbenchScope(second);
+      pressFind();
+      expect(openSecond).toHaveBeenCalledTimes(1);
+      expect(openFirst).not.toHaveBeenCalled();
+
+      activateWorkbenchScope(first);
+      pressFind();
+      expect(openFirst).toHaveBeenCalledTimes(1);
+      expect(openSecond).toHaveBeenCalledTimes(1);
+    } finally {
+      releaseWorkbenchScope(second);
+      releaseWorkbenchScope(first);
+    }
   });
 });

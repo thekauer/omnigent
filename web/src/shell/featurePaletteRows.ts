@@ -7,6 +7,7 @@ import type { LucideIcon } from "lucide-react";
 import { chordKeys } from "@/lib/shortcuts/chord";
 import { shortcutKeys } from "@/shell/workspaceTabs/workspaceSidebarShortcuts";
 import {
+  groupsOfMount,
   isCommandAvailable,
   isCommandListed,
   type PaletteCommand,
@@ -30,10 +31,10 @@ export interface FeaturePaletteRow {
 
 export interface FeaturePaletteSource {
   subscribe: (listener: () => void) => () => void;
-  /** The rows offered now; the same array until the offered commands change. */
-  rows: () => readonly FeaturePaletteRow[];
-  /** The row's command as offered now, if it can run; null once withdrawn or unavailable. */
-  command: (rowId: string) => PaletteCommand | null;
+  /** The rows `mount` offers now; the same array until the offered commands change. */
+  rows: (mount: string) => readonly FeaturePaletteRow[];
+  /** The row's command as `mount` offers it now, if it can run; null once withdrawn or unavailable. */
+  command: (rowId: string, mount: string) => PaletteCommand | null;
 }
 
 const rowId = (source: string, command: PaletteCommand) => `${source}\u0000${command.id}`;
@@ -72,19 +73,31 @@ export function featurePaletteRows(
   );
 }
 
-let cached: { groups: Record<string, PaletteCommandGroup>; rows: FeaturePaletteRow[] } | null =
-  null;
+// The rows of each mount, cached until the registered groups change.
+const cachedRows = new WeakMap<
+  Readonly<Record<string, PaletteCommandGroup>>,
+  Map<string, FeaturePaletteRow[]>
+>();
 
 export const featurePaletteSource: FeaturePaletteSource = {
   subscribe: (listener) => usePaletteCommandsStore.subscribe(listener),
-  rows: () => {
+  rows: (mount) => {
     const { groups } = usePaletteCommandsStore.getState();
-    if (cached?.groups !== groups) cached = { groups, rows: featurePaletteRows(groups) };
-    return cached.rows;
+    let byMount = cachedRows.get(groups);
+    if (!byMount) {
+      byMount = new Map();
+      cachedRows.set(groups, byMount);
+    }
+    let rows = byMount.get(mount);
+    if (!rows) {
+      rows = featurePaletteRows(groupsOfMount(groups, mount));
+      byMount.set(mount, rows);
+    }
+    return rows;
   },
-  command: (id) => {
+  command: (id, mount) => {
     const { groups } = usePaletteCommandsStore.getState();
-    for (const [source, group] of Object.entries(groups)) {
+    for (const [source, group] of Object.entries(groupsOfMount(groups, mount))) {
       const command = group.commands.find((candidate) => rowId(source, candidate) === id);
       if (command) return isCommandAvailable(command.availability) ? command : null;
     }
