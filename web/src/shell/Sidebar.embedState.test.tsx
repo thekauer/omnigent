@@ -100,4 +100,28 @@ describe("an inactive embed's sidebar", () => {
     expect(embed.state.get(LAYOUT_SLOTS.expandedProjects)).toEqual([]);
     expect(standaloneLayoutState.get(LAYOUT_SLOTS.expandedProjects)).toBeUndefined();
   });
+
+  it("hides a navigation entry from its own menu into its own layout state", () => {
+    const embed = createWorkbenchScope("/sidebar-embed-nav");
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(
+      <QueryClientProvider client={qc}>
+        <WorkbenchScopeProvider scope={embed}>
+          <SidebarDataProvider config={sidebarConfig}>
+            <TooltipProvider>
+              <MemoryRouter initialEntries={["/c/sibling_b"]}>
+                <Routes>
+                  <Route path="/c/:conversationId" element={<Sidebar open onClose={vi.fn()} />} />
+                </Routes>
+              </MemoryRouter>
+            </TooltipProvider>
+          </SidebarDataProvider>
+        </WorkbenchScopeProvider>
+      </QueryClientProvider>,
+    );
+    fireEvent.contextMenu(screen.getByTestId("sidebar-primary-nav"));
+    fireEvent.click(screen.getByRole("menuitemcheckbox", { name: /New session/ }));
+    expect(embed.state.get(LAYOUT_SLOTS.hiddenNavigationEntries)).toEqual(["omnigent.newSession"]);
+    expect(standaloneLayoutState.get(LAYOUT_SLOTS.hiddenNavigationEntries)).toBeUndefined();
+  });
 });

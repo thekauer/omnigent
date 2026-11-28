@@ -1978,7 +1978,9 @@ function SidebarNavigationMenu({ children }: { children: ReactNode }) {
     contributed,
     policy,
   );
-  const hidden = useHiddenNavigationEntries();
+  // The mount's own layout state: the menu reads and writes its hidden entries there.
+  const navigationState = useWorkbenchScope().state;
+  const hidden = useHiddenNavigationEntries(navigationState);
   // The extension pages' entry is listed only while there are pages to show.
   const hasExtensionPages = useExtensions().some(
     (extension) => extension.primary_navigation.length > 0,
@@ -2007,7 +2009,9 @@ function SidebarNavigationMenu({ children }: { children: ReactNode }) {
           <ContextMenuCheckboxItem
             key={entry.id}
             checked={!hidden.includes(entry.id)}
-            onCheckedChange={(checked) => setNavigationEntryHidden(entry.id, !checked)}
+            onCheckedChange={(checked) =>
+              setNavigationEntryHidden(entry.id, !checked, navigationState)
+            }
           >
             {entry.title}
           </ContextMenuCheckboxItem>

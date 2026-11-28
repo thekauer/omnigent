@@ -125,7 +125,8 @@ export function setNavigationEntryHidden(
   store.set(LAYOUT_SLOTS.hiddenNavigationEntries, next.length > 0 ? next : undefined);
 }
 
-let hiddenCache: { text: string; ids: readonly string[] } | undefined;
+/** The last hidden list read per store: each mount's snapshot stays stable on its own. */
+const hiddenCaches = new WeakMap<LayoutStateStore, { text: string; ids: readonly string[] }>();
 
 export function useHiddenNavigationEntries(given?: LayoutStateStore): readonly string[] {
   // The mount's own layout state unless one is given.
@@ -137,8 +138,10 @@ export function useHiddenNavigationEntries(given?: LayoutStateStore): readonly s
     () => {
       const ids = readHiddenNavigationEntries(store);
       const text = ids.join("\n");
-      if (hiddenCache?.text !== text) hiddenCache = { text, ids };
-      return hiddenCache.ids;
+      const cached = hiddenCaches.get(store);
+      if (cached?.text === text) return cached.ids;
+      hiddenCaches.set(store, { text, ids });
+      return ids;
     },
     () => NO_HIDDEN,
   );
