@@ -211,7 +211,7 @@ import {
   useIsWideViewport,
 } from "./SessionOverview";
 import { extensionRailTabViewId, type RightRailTab } from "./railTabs";
-import { useRailViewIds } from "./railViews";
+import { useHiddenBuiltInTabs, useRailViewIds } from "./railViews";
 import { ActivityBar } from "./ActivityBar";
 import { activityBarWidthPx, useActivityBarLocation } from "@/workbench/activityBar";
 import { TITLE_BAR_VISIBLE_SETTING, useTitleBarSetting } from "@/workbench/titleBar";
@@ -1353,7 +1353,7 @@ function AppShellImpl() {
   // Per-tab availability for the right workspace rail — the single source
   // of truth shared by the tab-fallback effect below, the rail's mount
   // gate, and the header's collapse toggle, so they can never disagree.
-  const railTabsAvailable = useMemo(() => {
+  const railTabsEnabled = useMemo(() => {
     const viewAvailable = (tab: string) => whenHolds(builtInTabWhen(tab), workbenchKeys);
     return {
       // Files, Changes and Pull Requests need the session's on-disk workspace; Pull
@@ -1376,11 +1376,24 @@ function AppShellImpl() {
       // menu). Mobile keeps a shells drawer (see ``showShellsTab`` below).
     } as const;
   }, [workbenchKeys]);
+  // The tabs the user, the defaults or the product hid get no tab and no fallback. The rail
+  // still mounts for the tabs it has (its strip's menu shows the hidden ones again).
+  const hiddenBuiltInTabs = useHiddenBuiltInTabs();
+  const railTabsAvailable = useMemo(
+    () =>
+      Object.fromEntries(
+        Object.entries(railTabsEnabled).map(([tab, enabled]) => [
+          tab,
+          enabled && !hiddenBuiltInTabs.includes(tab),
+        ]),
+      ) as typeof railTabsEnabled,
+    [railTabsEnabled, hiddenBuiltInTabs],
+  );
   // Whether the rail has anything at all to show. When false the workspace
   // card doesn't mount and the header hides its collapse toggle — a
   // no-filesystem agent with no terminals/sub-agents would otherwise
   // render an empty white card with no way to dismiss it.
-  const hasRailContent = Object.values(railTabsAvailable).some(Boolean);
+  const hasRailContent = Object.values(railTabsEnabled).some(Boolean);
   rightSidebarWindowRef.current = {
     canShow: Boolean(conversationId) && hasRailContent,
     width: inlinePanelWidthInWiderWindow,

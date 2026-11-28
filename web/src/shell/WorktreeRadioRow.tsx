@@ -1,6 +1,6 @@
 import type { HostWorktree } from "@/hooks/useHostWorktrees";
 import { copyText } from "@/lib/clipboard";
-import { relativeTime } from "@/lib/relativeTime";
+import { relativeTime, TIMESTAMP_FONT_CLASS } from "@/lib/relativeTime";
 import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
@@ -105,6 +105,7 @@ export function WorktreeRadioRow({
             <span
               className={cn(
                 "shrink-0 text-xs text-muted-foreground",
+                TIMESTAMP_FONT_CLASS,
                 spacious && "leading-4",
                 selector && "leading-4",
               )}
@@ -123,7 +124,7 @@ export function WorktreeRadioRow({
         >
           <p className="sidebar-compact-text font-medium" data-testid={`${testId}-tooltip-title`}>
             {displayName}
-            <span className="font-normal text-muted-foreground">
+            <span className={cn("font-normal text-muted-foreground", TIMESTAMP_FONT_CLASS)}>
               {" · "}
               {updatedLabel}
             </span>

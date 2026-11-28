@@ -1287,12 +1287,14 @@ function WorkspacePanelImpl({
   const defaultTab = readDefaultWorkspaceTab();
   const tabOrder = [defaultTab, ...defaultWorkspaceTabs.filter((tab) => tab !== defaultTab)];
   // A built-in tab whose view the product removed, or the user or the defaults hid, gets no tab.
-  const productRemovesTab = (tab: RailPanelTab) => {
+  // The rail has no last-shown rule (the side bar's): every one of its tabs can be hidden, and
+  // the strip's menu shows them again.
+  const builtInTabHidden = (tab: RailPanelTab) => {
     const view = builtInTabView(extensionViews, tab);
     return view !== undefined && isViewHidden(view, viewsLayout, productPolicy, defaultHiddenViews);
   };
   const availablePanels = tabOrder.filter((tab) => {
-    if (productRemovesTab(tab)) return false;
+    if (builtInTabHidden(tab)) return false;
     if (tab === "subagents") return true;
     if (tab === "github") return pending || showGithubTab;
     if (tab === "tasks") return showTasksTab;
@@ -1301,12 +1303,12 @@ function WorkspacePanelImpl({
   const pinnedTabs = readPinnedWorkspaceTabs();
   const visiblePermanentTabs: RailPanelTab[] = [
     ...availablePanels.filter((tab) => pinnedTabs.includes(tab)),
-    ...(showContentSearch && (pending || showFilesPanel) && !productRemovesTab("content-search")
+    ...(showContentSearch && (pending || showFilesPanel) && !builtInTabHidden("content-search")
       ? ["content-search" as const]
       : []),
     // Extension views follow the built-ins, in the registry's order.
     ...extensionViews
-      // A view whose `when` doesn't hold, or a hidden one, gets no tab.
+      // A view whose `when` doesn't hold, or a hidden one, gets no tab (no last-shown rule here).
       .filter((view) =>
         hasRailTab(view, (candidate) =>
           isViewHidden(candidate, viewsLayout, productPolicy, defaultHiddenViews),

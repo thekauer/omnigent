@@ -17,8 +17,10 @@ import { invalidateLayoutTokens, LayoutTokens, readLengthToken } from "./layoutT
 import { createWorkbenchScope } from "./workbenchScope";
 import {
   builtInNavigationEntries,
+  isNavigationEntryHidden,
   NavigationEntries,
   readHiddenNavigationEntries,
+  readNavigationEntryChoices,
   setNavigationEntryHidden,
 } from "./sidebarNavigation";
 import {
@@ -236,9 +238,17 @@ describe("the side bar's navigation entries", () => {
     setNavigationEntryHidden(NavigationEntries.usage, true);
     setNavigationEntryHidden(NavigationEntries.usage, false);
     expect(readHiddenNavigationEntries()).toEqual([NavigationEntries.newSession]);
-    // A show is a stored choice, so a default hiding the entry can't undo it.
+    // A show is a stored choice, so a default hiding the entry can't undo it: with the defaults
+    // hiding New session, the stored show still shows it.
     setNavigationEntryHidden(NavigationEntries.newSession, false);
     expect(readHiddenNavigationEntries()).toEqual([]);
+    expect(
+      isNavigationEntryHidden(
+        NavigationEntries.newSession,
+        readNavigationEntryChoices(layoutState),
+        [NavigationEntries.newSession],
+      ),
+    ).toBe(false);
     expect(layoutState.get(LAYOUT_SLOTS.hiddenNavigationEntries)).toEqual({
       [NavigationEntries.newSession]: false,
       [NavigationEntries.usage]: false,

@@ -249,7 +249,7 @@ import { useServerInfo } from "@/lib/CapabilitiesContext";
 import { isFeatureEnabled, isSingleUserMode, SHARING_OFF_REASON } from "@/lib/capabilities";
 import { useProjectKanbanEnabled } from "@/lib/projectKanbanPreferences";
 import { useBranding } from "@/lib/branding";
-import { relativeTime } from "@/lib/relativeTime";
+import { relativeTime, TIMESTAMP_FONT_CLASS } from "@/lib/relativeTime";
 import { showToast } from "@/components/ui/toast";
 import { showArchiveUndoToast } from "./archiveUndoToast";
 import { unpinWithUndo } from "./unpinUndoToast";
@@ -2007,9 +2007,14 @@ function SidebarNavigationMenu({ children }: { children: ReactNode }) {
           <ContextMenuCheckboxItem
             key={entry.id}
             checked={!hidden(entry.id)}
-            onCheckedChange={(checked) =>
-              setNavigationEntryHidden(entry.id, !checked, navigationState)
-            }
+            onCheckedChange={(checked) => {
+              if (setNavigationEntryHidden(entry.id, !checked, navigationState, policy)) return;
+              showToast(
+                checked
+                  ? "Navigation entries can't be shown in this product"
+                  : "Navigation entries can't be hidden in this product",
+              );
+            }}
           >
             {entry.title}
           </ContextMenuCheckboxItem>
@@ -6333,7 +6338,9 @@ function LegacySessionTooltipContent({
         {conversation.title ?? conversation.id}
         <span className="font-normal text-muted-foreground">
           {" · "}
-          {relativeTime(conversation.updated_at * 1000)}
+          <span className={TIMESTAMP_FONT_CLASS}>
+            {relativeTime(conversation.updated_at * 1000)}
+          </span>
         </span>
       </p>
       <p
@@ -6400,7 +6407,9 @@ function SessionTooltipContent({
         {conversation.title ?? conversation.id}
       </p>
       <p className="mt-1 flex items-center gap-1.5 text-sm text-muted-foreground">
-        <span className="shrink-0">{relativeTime(conversation.updated_at * 1000)}</span>
+        <span className={cn("shrink-0", TIMESTAMP_FONT_CLASS)}>
+          {relativeTime(conversation.updated_at * 1000)}
+        </span>
         <span aria-hidden>·</span>
         <SessionHarnessIcon conversation={conversation} testId="session-tooltip-harness" />
         <span data-testid="session-tooltip-location" className="flex min-w-0 items-center gap-1.5">

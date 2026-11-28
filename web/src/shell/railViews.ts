@@ -439,7 +439,9 @@ export const railViews = new RailViewRegistry();
 
 /**
  * Whether an extension view gets a tab in the classic rail: its `when` holds and it isn't
- * hidden (by its `visibility`, or by the user in the layout state's `hidden`).
+ * hidden (by its `visibility`, or by the user, the defaults or the product). The side bar's
+ * last-shown rule (`containerViews`) doesn't apply to the rail: every tab can be hidden, and the
+ * strip's menu lists hidden ones to show again.
  */
 export function hasRailTab(
   view: RailView,
@@ -565,6 +567,30 @@ export function useRailViewIds(registry: RailViewRegistry = railViews): {
     const [settled, ...ids] = key.split("\n");
     return { ids, settled: settled === "1" };
   }, [key]);
+}
+
+const NO_HIDDEN_TABS: readonly string[] = Object.freeze([]);
+
+/**
+ * The built-in tabs whose views are hidden now (by the product, the user or the defaults): the
+ * rail gives them no tab, and the rail's tab fallbacks skip them. Unlike a container's last shown
+ * view, nothing keeps one shown: the rail's strip menu lists them to show again.
+ */
+export function useHiddenBuiltInTabs(registry: RailViewRegistry = railViews): readonly string[] {
+  const layout = useViewsLayout();
+  const { productLayout: policy } = useWorkbenchScope();
+  const defaults = useDefaultHiddenViews();
+  useProductLayout(policy);
+  const key = useSyncExternalStore(registry.subscribe, () =>
+    registry
+      .getSnapshot()
+      .views.filter(
+        (view) => view.builtInTab !== undefined && isViewHidden(view, layout, policy, defaults),
+      )
+      .map((view) => view.builtInTab)
+      .join("\n"),
+  );
+  return useMemo(() => (key === "" ? NO_HIDDEN_TABS : key.split("\n")), [key]);
 }
 
 /** The view that stands in for a built-in tab, if a built-in extension registered one. */

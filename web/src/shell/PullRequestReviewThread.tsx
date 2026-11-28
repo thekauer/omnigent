@@ -7,9 +7,10 @@ import {
   MessageSquareIcon,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { absoluteTime, relativeTime } from "@/lib/relativeTime";
+import { absoluteTime, relativeTime, TIMESTAMP_FONT_CLASS } from "@/lib/relativeTime";
 import type { ReviewThread } from "@/lib/pullRequestReviewThreads";
 import { usePullRequestCommentComposer } from "@/hooks/usePullRequests";
+import { cn } from "@/lib/utils";
 import { PullRequestCommentForm } from "./PullRequestCommentComposer";
 import { PullRequestReviewBody } from "./PullRequestReviewBody";
 
@@ -91,7 +92,10 @@ export function PullRequestReviewThread({
                     <span className="min-w-0 truncate font-medium">
                       {comment.author ?? "unknown"}
                     </span>
-                    <span className="text-muted-foreground" title={absoluteTime(timestamp)}>
+                    <span
+                      className={cn("text-muted-foreground", TIMESTAMP_FONT_CLASS)}
+                      title={absoluteTime(timestamp)}
+                    >
                       {relativeTime(timestamp)}
                     </span>
                     {comment.url && (

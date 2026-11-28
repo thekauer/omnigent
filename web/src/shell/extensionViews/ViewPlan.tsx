@@ -42,7 +42,12 @@ import {
   type TaskMenuAction,
 } from "@/components/workflows/taskParts";
 import { useNow } from "@/hooks/useNow";
-import { absoluteTime, formatMessageTimestamp, relativeTime } from "@/lib/relativeTime";
+import {
+  absoluteTime,
+  formatMessageTimestamp,
+  relativeTime,
+  TIMESTAMP_FONT_CLASS,
+} from "@/lib/relativeTime";
 import {
   type JournalEntry,
   type StepProgress,
@@ -99,7 +104,11 @@ function Ago({ seconds }: { seconds: number }) {
   const now = useNow();
   const ago = relativeTime(seconds * 1000, now.getTime());
   return (
-    <time dateTime={new Date(seconds * 1000).toISOString()} title={absoluteTime(seconds * 1000)}>
+    <time
+      dateTime={new Date(seconds * 1000).toISOString()}
+      title={absoluteTime(seconds * 1000)}
+      className={TIMESTAMP_FONT_CLASS}
+    >
       {ago === "now" ? "just now" : `${ago} ago`}
     </time>
   );

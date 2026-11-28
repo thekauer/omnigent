@@ -137,7 +137,7 @@ import {
   type Suggestion,
   type SuggestionUpdate,
 } from "@/lib/proactiveInbox";
-import { relativeTime } from "@/lib/relativeTime";
+import { relativeTime, TIMESTAMP_FONT_CLASS } from "@/lib/relativeTime";
 import { Link, useNavigate } from "@/lib/routing";
 import { useOmnigentAnalytics } from "@/lib/analytics";
 import {
@@ -1335,7 +1335,12 @@ function InboxCard({
             {preview && <span className="text-muted-foreground"> — {preview}</span>}
           </span>
         )}
-        <span className="min-w-8 shrink-0 text-right text-sm text-muted-foreground">
+        <span
+          className={cn(
+            "min-w-8 shrink-0 text-right text-sm text-muted-foreground",
+            TIMESTAMP_FONT_CLASS,
+          )}
+        >
           {/* Server timestamps are epoch seconds; relativeTime takes ms. */}
           {relativeTime(at * 1000)}
         </span>

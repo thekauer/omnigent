@@ -270,6 +270,13 @@ export const WORKBENCH_TOKENS = defineTokens("workbench", [
     default: { light: "var(--muted-foreground)", dark: "var(--muted-foreground)" },
   },
   {
+    id: "ui-activitybar-item-size",
+    kind: "length",
+    description:
+      "The side bar's activity bar item, a square of this size. 2.5rem (40px) today; the top and bottom placements keep their 32px items.",
+    default: { light: "2.5rem", dark: "2.5rem" },
+  },
+  {
     id: "ui-activitybar-active-foreground",
     description: "The active activity bar item's icon.",
     default: {

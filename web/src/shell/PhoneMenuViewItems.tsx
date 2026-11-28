@@ -1,6 +1,7 @@
 // The secondary side bar's other views in a phone's chat header menu (layout plan L9): every view
 // with a tab in the right panel that isn't a built-in tab (the menu lists those itself), each
-// opening its drawer. The rail's own rule decides which: active, shown, in the container.
+// opening its drawer. The rail's own rule decides which: active and shown (the side bar's
+// last-shown rule doesn't apply to the rail, so a hidden view is not listed here).
 
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";

@@ -3,6 +3,8 @@ import { Link } from "@/lib/routing";
 import { ArrowDownIcon, ArrowUpIcon } from "lucide-react";
 import type { SessionUsage } from "@/lib/usageApi";
 import { formatSessionCostUsd } from "@/lib/formatCost";
+import { TIMESTAMP_FONT_CLASS } from "@/lib/relativeTime";
+import { cn } from "@/lib/utils";
 
 interface Props {
   sessions: SessionUsage[];
@@ -146,7 +148,12 @@ export function UsageSessionTable({ sessions, now }: Props) {
               <td className="px-3 py-2 text-right tabular-nums">
                 {formatSessionCostUsd(s.costUsd)}
               </td>
-              <td className="whitespace-nowrap px-3 py-2 text-right text-muted-foreground">
+              <td
+                className={cn(
+                  "whitespace-nowrap px-3 py-2 text-right text-muted-foreground",
+                  TIMESTAMP_FONT_CLASS,
+                )}
+              >
                 {formatRelativeDate(s.updatedAt, currentTime)}
               </td>
             </tr>

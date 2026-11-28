@@ -26,7 +26,7 @@ import {
 } from "@/workbench/viewContainers";
 import { generatedContainerId } from "@/workbench/viewLocations";
 import { moveViewDestinations } from "./MoveViewPicker";
-import { RailViewRegistry, railViews, useRailViews } from "./railViews";
+import { RailViewRegistry, railViews, useHiddenBuiltInTabs, useRailViews } from "./railViews";
 import { RailTabStripMenu } from "./RailTabStripMenu";
 import { ContainerViewsMenu, useSideBarContainers, ViewContainerViews } from "./ViewContainerViews";
 import { useViewDropTarget, viewDragProps } from "./viewMoves";
@@ -241,6 +241,49 @@ describe("the menus that list views", () => {
     expect(screen.getByRole("menuitemcheckbox", { name: "Things" })).toBeChecked();
   });
 
+  it("lists the rail's hidden built-in tab and shows it again, with every rail tab hidden", async () => {
+    const registry = new RailViewRegistry();
+    registry.register({
+      id: "omnigent.files.view",
+      extensionId: "omnigent.files",
+      name: "Files",
+      icon: undefined,
+      builtInTab: "files",
+    });
+    registry.register({
+      id: "acme.tools.list",
+      extensionId: "acme.tools",
+      name: "Things",
+      icon: undefined,
+    });
+    layoutState.set(LAYOUT_SLOTS.views, {
+      "omnigent.files.view": { hidden: true },
+      "acme.tools.list": { hidden: true },
+    });
+    function Strip() {
+      const { views } = useRailViews(registry);
+      // No rail tab is drawn: the strip is still there, and its menu is still reachable.
+      return (
+        <RailTabStripMenu views={views}>
+          <div role="toolbar">
+            <span>no tabs</span>
+          </div>
+        </RailTabStripMenu>
+      );
+    }
+    render(<Strip />);
+    fireEvent.contextMenu(screen.getByRole("toolbar"));
+    const files = await screen.findByRole("menuitemcheckbox", { name: "Files" });
+    expect(files).not.toBeChecked();
+    expect(screen.getByRole("menuitemcheckbox", { name: "Things" })).not.toBeChecked();
+    fireEvent.click(files);
+    // Shown from the menu: stored shown, the other one still hidden.
+    expect(layoutState.get(LAYOUT_SLOTS.views)).toEqual({
+      "omnigent.files.view": { hidden: false },
+      "acme.tools.list": { hidden: true },
+    });
+  });
+
   it("lists the side bar container's views, and leaves a link's own menu alone", async () => {
     const { registry } = setup();
     render(
@@ -256,6 +299,33 @@ describe("the menus that list views", () => {
     const item = await screen.findByRole("menuitemcheckbox", { name: "Things" });
     // The last view shown can't be hidden.
     expect(item).toHaveAttribute("aria-disabled", "true");
+  });
+});
+
+describe("the rail's hidden built-in tabs", () => {
+  it("are the built-in views hidden now, which the tab fallbacks skip", () => {
+    const registry = new RailViewRegistry();
+    registry.register({
+      id: "omnigent.changes.view",
+      extensionId: "omnigent.changes",
+      name: "Changes",
+      icon: undefined,
+      builtInTab: "changes",
+    });
+    registry.register({
+      id: "omnigent.files.view",
+      extensionId: "omnigent.files",
+      name: "Files",
+      icon: undefined,
+      builtInTab: "files",
+    });
+    const { result } = renderHook(() => useHiddenBuiltInTabs(registry));
+    expect(result.current).toEqual([]);
+    act(() => layoutState.set(LAYOUT_SLOTS.views, { "omnigent.files.view": { hidden: true } }));
+    expect(result.current).toEqual(["files"]);
+    // The product's removal counts too.
+    act(() => productLayout.set({ hiddenViews: ["omnigent.changes.*"] }));
+    expect(result.current).toEqual(["changes", "files"]);
   });
 });
 

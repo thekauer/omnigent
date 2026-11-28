@@ -278,7 +278,7 @@ function ActivityBarItem({
           data-view-drop-target={viewDrop["data-view-drop-target"]}
           className={cn(
             "activitybar-item relative flex cursor-pointer items-center justify-center rounded-(--radius-otto-button) text-(--ui-activitybar-foreground) transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring",
-            vertical ? "size-10" : "size-8",
+            vertical ? "size-(--ui-activitybar-item-size)" : "size-8",
             active &&
               "bg-(--ui-activitybar-active-background) text-(--ui-activitybar-active-foreground)",
             active &&

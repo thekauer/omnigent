@@ -69,7 +69,7 @@ import {
 import { useSandboxStarting } from "@/hooks/useSessionReconnect";
 import { gitProviderCopy, type GitProviderCopy } from "@/lib/gitProviders";
 import { parseHttpUrl } from "@/lib/openLinkInApp";
-import { absoluteTime, relativeTime } from "@/lib/relativeTime";
+import { absoluteTime, relativeTime, TIMESTAMP_FONT_CLASS } from "@/lib/relativeTime";
 import {
   normalizePullRequestInfo,
   usePullRequestChangedFiles,
@@ -493,7 +493,10 @@ function PullRequestCommentCard({
           {comment.author ?? "unknown"}
         </span>
         {rel && (
-          <span className="shrink-0 text-muted-foreground/70" title={absoluteTime(ts)}>
+          <span
+            className={cn("shrink-0 text-muted-foreground/70", TIMESTAMP_FONT_CLASS)}
+            title={absoluteTime(ts)}
+          >
             {rel}
           </span>
         )}
@@ -558,7 +561,11 @@ function PullRequestTimelineRow({
             event.sha && <code title={event.sha}>{event.sha.slice(0, 7)}</code>
           )}
           {time && (
-            <time dateTime={event.created_at!} title={absoluteTime(timestamp)} className="ml-auto">
+            <time
+              dateTime={event.created_at!}
+              title={absoluteTime(timestamp)}
+              className={cn("ml-auto", TIMESTAMP_FONT_CLASS)}
+            >
               {time}
             </time>
           )}

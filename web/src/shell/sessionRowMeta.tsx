@@ -15,7 +15,7 @@ import {
   type NativeCodingAgentIconKind,
   WRAPPER_LABEL_KEY,
 } from "@/lib/nativeCodingAgents";
-import { relativeTime } from "@/lib/relativeTime";
+import { relativeTime, TIMESTAMP_FONT_CLASS } from "@/lib/relativeTime";
 import { isCurrentServerLocal } from "@/lib/serverOrigin";
 
 import {
@@ -100,7 +100,9 @@ export function SessionEnvironmentLabel({
 // Its own component so only rows showing the timestamp subscribe to the shared clock.
 export function SessionUpdatedLabel({ updatedAt }: { updatedAt: number }) {
   const now = useNow();
-  return relativeTime(updatedAt * 1000, now.getTime());
+  return (
+    <span className={TIMESTAMP_FONT_CLASS}>{relativeTime(updatedAt * 1000, now.getTime())}</span>
+  );
 }
 
 // Brand-color glyphs for harnesses ComposerAgentIcon draws in mono. Claude and Codex

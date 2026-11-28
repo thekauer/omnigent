@@ -5,6 +5,12 @@ const WEEK_MS = 7 * DAY_MS;
 const MONTH_MS = 30 * DAY_MS;
 const YEAR_MS = 365 * DAY_MS;
 
+/**
+ * The font of a timestamp in a message or a list (`--ui-font-timestamp`); unset, it inherits
+ * the document font.
+ */
+export const TIMESTAMP_FONT_CLASS = "font-(family-name:--ui-font-timestamp)";
+
 // "mo" (not "m") for months disambiguates from minutes.
 export function relativeTime(timestampMs: number, nowMs: number = Date.now()): string {
   // A non-finite timestamp (missing/malformed updated_at) would make every

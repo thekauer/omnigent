@@ -16,7 +16,7 @@ import {
   sameRevisions,
   shortCommit,
 } from "@/lib/customComparison";
-import { relativeTime } from "@/lib/relativeTime";
+import { relativeTime, TIMESTAMP_FONT_CLASS } from "@/lib/relativeTime";
 import type { WorkingCopyComparisonOwner } from "@/lib/workingCopyComparisonOwner";
 import { createComparisonOwner } from "@/lib/workingCopyComparisons";
 import { IconButton } from "./PullRequestPanelControls";
@@ -182,7 +182,10 @@ export function BranchCommitToolbar({
           {commit.authoredAtMs !== null && (
             <>
               <span aria-hidden="true">·</span>
-              <time dateTime={new Date(commit.authoredAtMs).toISOString()} className="shrink-0">
+              <time
+                dateTime={new Date(commit.authoredAtMs).toISOString()}
+                className={`shrink-0 ${TIMESTAMP_FONT_CLASS}`}
+              >
                 {relativeTime(commit.authoredAtMs)}
               </time>
             </>

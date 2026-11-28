@@ -19,7 +19,7 @@ import {
   MAXIMUM_BRANCH_COMMITS,
 } from "@/lib/branchCommits";
 import { shortCommit } from "@/lib/customComparison";
-import { relativeTime } from "@/lib/relativeTime";
+import { relativeTime, TIMESTAMP_FONT_CLASS } from "@/lib/relativeTime";
 import { cn } from "@/lib/utils";
 
 export const COMMITS_FILTER_LABEL = "Filter commits";
@@ -140,7 +140,7 @@ function SectionBody({
                     {commit.authoredAtMs !== null && (
                       <time
                         dateTime={new Date(commit.authoredAtMs).toISOString()}
-                        className="shrink-0"
+                        className={cn("shrink-0", TIMESTAMP_FONT_CLASS)}
                       >
                         {relativeTime(commit.authoredAtMs)}
                       </time>

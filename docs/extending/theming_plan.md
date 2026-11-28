@@ -377,11 +377,14 @@ Defaults must match today exactly.
   works)/-foreground (the account avatar in the activity bar's Accounts item and the title bar's
   account item), ui-account-avatar-radius (a length, 9999px round by default; the avatar's
   fallback and root), ui-font-timestamp (message and list timestamps; unset: the document font), and
-  the activity bar's ui-activitybar-foreground (an item's icon), -active-foreground,
+  the activity bar's ui-activitybar-item-size (a side bar item's square; 2.5rem, the 40px of
+  the size-10 it was, while the top and bottom placements keep their 32px items),
+  ui-activitybar-foreground (an idle item's icon), -active-foreground (the active item's icon),
   -active-background, -active-border (its 2px edge) and -badge-background/-foreground. The
-  activity bar's ids have VS Code aliases (`activityBar.foreground`, `.inactiveForeground`,
-  `.activeBackground`, `.activeBorder`, `activityBarBadge.background`/`.foreground`); the others
-  have none in VS Code.
+  activity bar's ids have VS Code aliases: `activityBar.foreground` is the active item's icon
+  (`-active-foreground`), `activityBar.inactiveForeground` the idle one's (`ui-activitybar-foreground`),
+  and `.activeBackground`, `.activeBorder`, `activityBarBadge.background`/`.foreground` the rest;
+  the others have none in VS Code.
 
 ## Theme contribution API (VS Code-shaped)
 

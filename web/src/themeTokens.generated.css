@@ -195,6 +195,7 @@
   --ui-account-avatar-foreground: var(--secondary-foreground);
   --ui-account-avatar-radius: 9999px;
   --ui-activitybar-foreground: var(--muted-foreground);
+  --ui-activitybar-item-size: 2.5rem;
   --ui-activitybar-active-foreground: var(--sidebar-active-foreground);
   --ui-activitybar-active-background: var(--sidebar-active);
   --ui-activitybar-active-border: var(--sidebar-active-foreground);
@@ -558,6 +559,7 @@
   --ui-account-avatar-foreground: var(--secondary-foreground);
   --ui-account-avatar-radius: 9999px;
   --ui-activitybar-foreground: var(--muted-foreground);
+  --ui-activitybar-item-size: 2.5rem;
   --ui-activitybar-active-foreground: var(--sidebar-active-foreground);
   --ui-activitybar-active-background: var(--sidebar-active);
   --ui-activitybar-active-border: var(--sidebar-active-foreground);

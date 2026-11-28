@@ -4,7 +4,7 @@ import { Loader2Icon } from "lucide-react";
 import { useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { PULL_REQUEST_COMMITS_LIMIT, type PullRequestCommit } from "@/hooks/usePullRequests";
-import { relativeTime } from "@/lib/relativeTime";
+import { relativeTime, TIMESTAMP_FONT_CLASS } from "@/lib/relativeTime";
 
 /** Commits whose sha, title or author contains `query`, ignoring case. */
 export function filterCommits(
@@ -70,7 +70,10 @@ export function PullRequestCommitsList({
                   <span className="shrink-0 font-mono">{commit.sha.slice(0, 7)}</span>
                   {commit.author && <span className="truncate">{commit.author}</span>}
                   {Number.isFinite(authoredAt) && (
-                    <time dateTime={commit.date ?? undefined} className="shrink-0">
+                    <time
+                      dateTime={commit.date ?? undefined}
+                      className={`shrink-0 ${TIMESTAMP_FONT_CLASS}`}
+                    >
                       {relativeTime(authoredAt)}
                     </time>
                   )}

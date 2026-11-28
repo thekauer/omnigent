@@ -35,7 +35,9 @@ export function RailTabStripMenu({
   const { productLayout: policy } = scope;
   const drop = useViewDropTarget(useCallback(() => RIGHT_PANEL_CONTAINER, []));
   const defaults = useDefaultHiddenViews();
-  // A built-in tab can't move, so it is listed only while hidden, to show it again.
+  // A built-in tab can't move, so it is listed only while hidden, to show it again. The menu is
+  // off only when there is nothing to list: a hidden tab stays reachable here even when every
+  // rail tab is hidden.
   const listed = views.filter((view) => {
     if (!view.active || isViewRemovedByProduct(view, policy)) return false;
     if (view.builtInTab === undefined) return canMoveView(view, policy);

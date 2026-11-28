@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 
 import { describe, expect, it } from "vitest";
 
+import { TIMESTAMP_FONT_CLASS } from "@/lib/relativeTime";
 import { VSCODE_COLOR_ALIAS_MAP } from "./vscodeColorAliases";
 import { parseThemeFile, type ThemeFileOptions } from "./themeFile";
 import { getToken } from "./tokens/registry";
@@ -19,6 +20,20 @@ const ACTIVITY_BAR_TSX = source("../shell/ActivityBar.tsx");
 const SIDEBAR_TSX = source("../shell/Sidebar.tsx");
 const SERVER_PICKER_TSX = source("../shell/SidebarServerPicker.tsx");
 const BUBBLE_PARTS_TSX = source("../components/chat/chatBubbleParts.tsx");
+const SESSION_ROW_META_TSX = source("../shell/sessionRowMeta.tsx");
+// The list and review timestamps that take the timestamp font (the session hover card and the
+// Kanban card are in Sidebar.tsx and sessionRowMeta.tsx).
+const TIMESTAMP_LIST_FILES = [
+  "pages/InboxPage.tsx",
+  "shell/PullRequestCommitsList.tsx",
+  "shell/ChangesReviewCommit.tsx",
+  "shell/ChangesReviewCommits.tsx",
+  "shell/PullRequestReviewThread.tsx",
+  "shell/PullRequestPanelDetails.tsx",
+  "shell/extensionViews/ViewPlan.tsx",
+  "shell/WorktreeRadioRow.tsx",
+  "components/usage/UsageSessionTable.tsx",
+];
 
 const OPTIONS: ThemeFileOptions = {
   uiTheme: "dark",
@@ -53,6 +68,7 @@ const ITEM_TOKENS: Record<string, { kind: string; light?: string; dark?: string 
   },
   "ui-account-avatar-radius": { kind: "length", light: "9999px", dark: "9999px" },
   "ui-font-timestamp": { kind: "font" },
+  "ui-activitybar-item-size": { kind: "length", light: "2.5rem", dark: "2.5rem" },
   "ui-activitybar-foreground": {
     kind: "color",
     light: "var(--muted-foreground)",
@@ -129,13 +145,22 @@ describe("item tokens", () => {
     expect(INDEX_CSS).toContain(
       '[data-slot="avatar"]:has(> [data-slot="account-avatar"])::after {',
     );
-    // Timestamps: the message ones and the list's updated time.
+    // Timestamps: the message ones, and every list's or hover card's time through the shared class.
     expect(BUBBLE_PARTS_TSX.match(/font-\(family-name:--ui-font-timestamp\)/g)).toHaveLength(2);
     expect(SIDEBAR_TSX).toContain(
       '"right-2 font-(family-name:--ui-font-timestamp) text-sm text-muted-foreground"',
     );
+    expect(TIMESTAMP_FONT_CLASS).toBe("font-(family-name:--ui-font-timestamp)");
+    // The session hover card's two times (the import, and the two uses), and the Kanban card's
+    // (through SessionUpdatedLabel in sessionRowMeta.tsx).
+    expect(SIDEBAR_TSX.match(/TIMESTAMP_FONT_CLASS/g)).toHaveLength(3);
+    expect(SESSION_ROW_META_TSX).toContain("TIMESTAMP_FONT_CLASS");
+    for (const file of TIMESTAMP_LIST_FILES) {
+      expect(source(`../${file}`), file).toContain("TIMESTAMP_FONT_CLASS");
+    }
     // The activity bar's items: idle, active, the active edge and the badge.
     expect(ACTIVITY_BAR_TSX).toContain("text-(--ui-activitybar-foreground)");
+    expect(ACTIVITY_BAR_TSX).toContain("size-(--ui-activitybar-item-size)");
     expect(ACTIVITY_BAR_TSX).toContain("bg-(--ui-activitybar-active-background)");
     expect(ACTIVITY_BAR_TSX).toContain("text-(--ui-activitybar-active-foreground)");
     expect(ACTIVITY_BAR_TSX).toContain("before:bg-(--ui-activitybar-active-border)");
@@ -144,8 +169,8 @@ describe("item tokens", () => {
   });
 
   it("maps the VS Code activity bar ids onto the item tokens", () => {
+    // VS Code's `activityBar.foreground` is the active item's, `inactiveForeground` the idle one's.
     expect(VSCODE_COLOR_ALIAS_MAP.get("activityBar.foreground")).toEqual([
-      "ui-activitybar-foreground",
       "ui-activitybar-active-foreground",
     ]);
     expect(VSCODE_COLOR_ALIAS_MAP.get("activityBar.inactiveForeground")).toEqual([
@@ -174,6 +199,7 @@ describe("item tokens", () => {
       "ui-account-avatar-foreground": "#0a0a0a",
       "ui-account-avatar-radius": "0",
       "ui-font-timestamp": '"Geist Mono Variable", ui-monospace, monospace',
+      "ui-activitybar-item-size": "36px",
       "ui-activitybar-foreground": "var(--muted-foreground)",
       "ui-activitybar-active-foreground": "var(--primary)",
       "ui-activitybar-active-background": "var(--sidebar-active)",
@@ -182,7 +208,8 @@ describe("item tokens", () => {
       "ui-activitybar-badge-foreground": "#ffffff",
     });
     expect(parsed.issues).toEqual([]);
-    expect(Object.keys(parsed.tokens)).toHaveLength(13);
+    expect(Object.keys(parsed.tokens)).toHaveLength(14);
+    expect(parsed.tokens["ui-activitybar-item-size"]?.value).toBe("36px");
     expect(parsed.tokens["ui-account-avatar-radius"]?.value).toBe("0");
     expect(parsed.tokens["ui-account-avatar-background"]?.value).toBe(
       "linear-gradient(135deg, #006bff, #a1a1a1)",
