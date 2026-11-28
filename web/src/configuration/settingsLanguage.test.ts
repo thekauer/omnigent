@@ -304,6 +304,22 @@ describe("settingsHover", () => {
     expect(value?.contents).toMatch(/^"compact": Compact/);
     expect(settingsHover(text, 0, schema())).toBeNull();
   });
+
+  it("draws an extension's enum value and the document's key as text, never markdown", () => {
+    const image = "![x](https://evil.example/p.png)";
+    const hostile: SettingsSchemaNode = {
+      type: "object",
+      properties: {
+        "acme.x.mode": { type: "string", enum: [image], enumDescriptions: ["Looks nice"] },
+        [image]: { type: "integer", description: "Odd." },
+      },
+    };
+    const text = JSON.stringify({ "acme.x.mode": image, [image]: 1 });
+    const value = settingsHover(text, text.indexOf(image) + 3, hostile);
+    expect(value?.contents).toMatch(/^"!\\\[x\\\]\(https:\/\/evil\.example\/p\.png\)": Looks nice/);
+    const key = settingsHover(text, text.lastIndexOf(image) + 3, hostile);
+    expect(key?.contents).toContain("**!\\[x\\](https://evil.example/p.png)**");
+  });
 });
 
 describe("spanOfPath", () => {

@@ -16,6 +16,7 @@ import {
   printParseErrorCode,
 } from "jsonc-parser";
 
+import { escapeMarkdown } from "./markdownText";
 import { parseSettingsText, SET_BY_PRODUCT } from "./settingsDocument";
 import {
   childSchema,
@@ -377,12 +378,13 @@ function hoverAt(text: string, offset: number, schema: SettingsSchemaNode): Sett
   if (!entry) return null;
   const lines: string[] = [];
   const isKey = property.children?.[0] === node;
-  if (isKey) lines.push(`**${String(node.value)}**`);
+  // The key and value are the document's text, drawn as written: never markdown.
+  if (isKey) lines.push(`**${escapeMarkdown(String(node.value))}**`);
   if (entry.description) lines.push(entry.description);
   if (!isKey && entry.enum && typeof node.value === "string") {
     const index = entry.enum.indexOf(node.value);
     const label = index >= 0 ? entry.enumDescriptions?.[index] : undefined;
-    if (label) lines.unshift(`${quote(node.value)}: ${label}`);
+    if (label) lines.unshift(`${escapeMarkdown(quote(node.value))}: ${label}`);
   }
   // A lock or a hidden key is the marker's to say, shown in the same hover.
   if (lines.length === 0) return null;

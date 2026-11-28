@@ -1130,6 +1130,18 @@ def test_product_settings_keep_an_invalid_lock_past_the_budget_locked() -> None:
     ) == {"locked": {"acme.big": big}, "locked_invalid": ["acme.deep"]}
 
 
+def test_product_settings_keep_locks_past_the_entry_limit_locked() -> None:
+    """Locks past the entry limit lock their keys to their defaults; defaults past it go."""
+    many = {f"acme.k{index}": True for index in range(501)}
+    served = load_product_settings(
+        {"product": {"settings": {"locked": many, "defaults": dict(many)}}}
+    )
+    assert served is not None
+    assert len(served["locked"]) == 500
+    assert served["locked_invalid"] == ["acme.k500"]
+    assert len(served["defaults"]) == 500
+
+
 def test_product_layout_strips_ascii_whitespace_only() -> None:
     """As the web trims: a control character other than ASCII whitespace stays (and fails)."""
     assert load_product_layout({"product": {"layout": {"hidden_views": [" a ", "\x1cb"]}}}) == {

@@ -474,6 +474,9 @@ PRODUCT_VALUE_MAX_DEPTH = 8
 PRODUCT_VALUE_MAX_NODES = 2_000
 PRODUCT_NUMBER_COST = 24
 _PRODUCT_SETTINGS_MAP_LIMIT = 500
+# The most keys served locked to their default: locks past the map limit, the budget or
+# readability. The web keeps the same limit.
+PRODUCT_LOCKED_INVALID_LIMIT = 5_000
 _PRODUCT_SETTING_KEY_LIMIT = 128
 _PRODUCT_LAYOUT_LIST_LIMIT = 200
 _PRODUCT_LAYOUT_ID_LIMIT = 200
@@ -607,12 +610,19 @@ def load_product_settings(config: Mapping[str, Any]) -> dict[str, Any] | None:
         entries: dict[str, Any] = {}
         for index, (key, value) in enumerate(raw.items()):
             if index >= _PRODUCT_SETTINGS_MAP_LIMIT:
-                logger.warning(
-                    "server config product.settings.%s has over %d entries",
-                    kind,
-                    _PRODUCT_SETTINGS_MAP_LIMIT,
-                )
-                break
+                if index == _PRODUCT_SETTINGS_MAP_LIMIT:
+                    logger.warning(
+                        "server config product.settings.%s has over %d entries%s",
+                        kind,
+                        _PRODUCT_SETTINGS_MAP_LIMIT,
+                        "; the rest stay locked to their defaults" if kind == "locked" else "",
+                    )
+                if kind != "locked":
+                    break
+                # A lock past the limit still locks its key, to its default.
+                if _is_setting_key(key):
+                    invalid.append(key)
+                continue
             if not _is_setting_key(key):
                 logger.warning(
                     "server config product.settings.%s.%s is not a setting key; ignoring it",
@@ -647,7 +657,14 @@ def load_product_settings(config: Mapping[str, Any]) -> dict[str, Any] | None:
             out[kind] = entries
         if kind == "locked" and invalid:
             # Invalid locks never spend the budget: a lock past it still locks its key.
-            out["locked_invalid"] = list(dict.fromkeys(invalid))
+            kept = list(dict.fromkeys(invalid))
+            if len(kept) > PRODUCT_LOCKED_INVALID_LIMIT:
+                logger.error(
+                    "server config product.settings.locked has over %d keys locked to their "
+                    "default; the rest aren't locked",
+                    PRODUCT_LOCKED_INVALID_LIMIT,
+                )
+            out["locked_invalid"] = kept[:PRODUCT_LOCKED_INVALID_LIMIT]
     if over:
         shown = ", ".join(name[:64] for name in over[:10])
         more = f" and {len(over) - 10} more" if len(over) > 10 else ""

@@ -1422,12 +1422,14 @@ Deviations and why:
   hidden), `hiddenContainers` and `hiddenViews` (ids or `*` patterns; navigation entries'
   command ids too, so `omnigent.newSession` hides the New session row) remove what they name:
   not drawn, not offered in the menus, their `workbench.view.<id>` and `<view>.focus` commands
-  do nothing. `containerOrder` is the activity bar's order before the user's moves;
-  `lockViewLocations` keeps views where their extensions put them. Each layout field comes
-  from the highest source that sets it. Each key fails open (a malformed one is left out with
+  do nothing; a built-in navigation entry's command doesn't run either (another extension's
+  entry only goes from the side bar: its command is the extension's). `containerOrder` is the activity bar's order before the user's moves;
+  `lockViewLocations` keeps views where their extensions put them. What a product removes adds
+  up: the `hidden*` lists are the union of every source's and any source's `lockViewLocations:
+  true` locks; `containerOrder` comes from the highest source that sets it. Each key fails open (a malformed one is left out with
   a warning; the server warns about camelCase keys, the web about snake_case ones); a locked
-  value that can't be read (a lone surrogate, too deep, too large a structure, a getter, or
-  past the budget) still locks its key, to its default (`locked_invalid` from the server); budgets
+  value that can't be read (a lone surrogate, too deep, too large a structure, a getter, past
+  the budget, or past the map's 500 entries) still locks its key, to its default (`locked_invalid` from the server); budgets
   (`PRODUCT_SETTINGS_MAX_CHARS`, `PRODUCT_LAYOUT_MAX_CHARS`, the per-value depth and node
   limits) agree between the server and the web, counted in UTF-16 units (a number counts a
   fixed 24, as the two languages print numbers differently). A failed `/v1/info` probe keeps
@@ -1455,7 +1457,8 @@ Deviations and why:
   (command buttons with the command's icon, or its title without one, gated by `when`, ordered
   by `group` as VS Code's menus are: `navigation` first, then `@order`; one per command and
   region: an entry whose `when` holds, then the command's own extension's; another extension's
-  entry for a command never shows its own tooltip), then `window.createTitleBarItem` text items
+  entry for a command never shows its own tooltip, and a command's owner is the longest loaded
+  extension id it starts with, so `acme.tools` doesn't title or tooltip `acme.tools.admin.run`), then `window.createTitleBarItem` text items
   (their `priority` orders them among themselves only; ids are `<extension id>:<id>`, unique
   across the regions). An extension has at most 20 entries and 20 text items; each region clips
   and long titles truncate. The bar is a labeled region (not a `banner`, which a host page

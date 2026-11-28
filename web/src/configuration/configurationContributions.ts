@@ -4,6 +4,7 @@
 
 import remarkParse from "remark-parse";
 import { unified } from "unified";
+import { escapeMarkdown } from "./markdownText";
 import { nullMap, snapshotPlainData } from "@/theme/validate";
 import type {
   ConfigurationNode,
@@ -66,12 +67,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** `text` as markdown that draws exactly that text. */
-export function escapeMarkdown(text: string): string {
-  return text
-    .replace(/[\\`*_[\]<>|~]/g, (char) => `\\${char}`)
-    .replace(/^(\s*)([#>+-]|\d+\.)/gm, "$1\\$2");
-}
+export { escapeMarkdown };
 
 /** The markdown parser the sanitizer reads code spans and reference definitions with. */
 const markdownParser = unified().use(remarkParse);

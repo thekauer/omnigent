@@ -268,6 +268,8 @@ export class TitleBarItemRegistry {
     let given: string | omnigent.Command | undefined;
     const commands = this.commands;
     const publish = () => this.publish();
+    // A disposed handle owns nothing: its setters and a second dispose leave live items alone.
+    let disposed = false;
     return {
       id: item.id,
       region: where,
@@ -295,6 +297,7 @@ export class TitleBarItemRegistry {
       },
       set command(value: string | omnigent.Command | undefined) {
         given = value ?? undefined;
+        if (disposed) return;
         const command = titleBarItemCommandOf(value);
         if (command) commands.set(item.id, command);
         else commands.delete(item.id);
@@ -303,6 +306,8 @@ export class TitleBarItemRegistry {
       show: () => item.show(),
       hide: () => item.hide(),
       dispose: () => {
+        if (disposed) return;
+        disposed = true;
         commands.delete(item.id);
         ids.delete(item.id);
         item.dispose();

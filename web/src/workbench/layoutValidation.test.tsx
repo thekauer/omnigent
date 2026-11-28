@@ -51,7 +51,7 @@ import {
   MAX_TITLE_BAR_ITEMS_PER_EXTENSION,
   TitleBarItemRegistry,
 } from "@/workbench/titleBar";
-import { RailViewRegistry } from "@/shell/railViews";
+import { RailViewRegistry, viewsOfContainer } from "@/shell/railViews";
 import { useSideBarContainers, ViewContainerViews } from "@/shell/ViewContainerViews";
 import { useViewDropTarget } from "@/shell/viewMoves";
 
@@ -133,6 +133,16 @@ describe("hiddenContainers holds for the container's views wherever they go", ()
     const view = registry.get("acme.tools.list")!;
     expect(viewContainerFor(view, { "acme.tools.list": "gone.container" })).toBe("acme.tools");
     expect(viewContainerFor(view, { "acme.tools.list": "" } as never)).toBe("acme.tools");
+  });
+  it("a container's views follow a later change to the product's removed views", () => {
+    const { registry } = setup();
+    const snapshot = registry.getSnapshot();
+    const ids = () => viewsOfContainer(snapshot, "acme.tools").views.map((view) => view.id);
+    expect(ids()).toEqual(["acme.tools.list"]);
+    productLayout.set({ hiddenViews: ["acme.tools.list"] });
+    expect(ids()).toEqual([]);
+    productLayout.set(null);
+    expect(ids()).toEqual(["acme.tools.list"]);
   });
   it("hiddenViews still wins over a forged views layout", () => {
     const { registry } = setup();
@@ -282,6 +292,35 @@ describe("menus squatting (title bar, navigation)", () => {
     views.extensionSettled("evil.ext");
     expect(titleBar[0]?.tooltip).toBeUndefined();
   });
+  it("a shorter extension id doesn't own a longer loaded extension's commands", () => {
+    const titleBar: ContributedTitleBarEntry[] = [];
+    const views = new ViewsService({
+      registry: new RailViewRegistry(),
+      containers: new ViewContainerRegistry({ warn: () => {} }),
+      contextKeys: new ContextKeyService(),
+      executeCommand: async () => undefined,
+      showError: () => {},
+      titleBar: { set: (e) => titleBar.splice(0, titleBar.length, ...e) },
+    });
+    const squatter = parseContributions("acme.tools", {
+      commands: [{ command: "acme.tools.admin.run", title: "Click to unlock" }],
+      menus: { "titleBar/right": [{ command: "acme.tools.admin.run", tooltip: "Unlock" }] },
+    });
+    views.addExtension("acme.tools", squatter.contributions);
+    views.extensionSettled("acme.tools");
+    const owner = parseContributions("acme.tools.admin", {
+      commands: [{ command: "acme.tools.admin.run", title: "Run" }],
+      menus: {
+        "titleBar/right": [{ command: "acme.tools.admin.run", tooltip: "Run it", when: "false" }],
+      },
+    });
+    views.addExtension("acme.tools.admin", owner.contributions);
+    views.extensionSettled("acme.tools.admin");
+    // The squatter's shown entry draws, but in the owner's words.
+    expect(titleBar.map((e) => [e.extensionId, e.title, e.tooltip])).toEqual([
+      ["acme.tools", "Run", undefined],
+    ]);
+  });
   it("an extension's title bar menu entries are capped", () => {
     const titleBar: ContributedTitleBarEntry[] = [];
     const views = new ViewsService({
@@ -335,6 +374,27 @@ describe("title bar items", () => {
         .some((item) => item.key === "good.ext:x"),
     ).toBe(true);
   });
+  it("a stale handle disposed again frees no live item's slot", () => {
+    const reg = new TitleBarItemRegistry();
+    for (let round = 0; round < 100; round++) {
+      const stale = reg.create("evil.ext", `k${round}`, "center", 0);
+      stale.dispose();
+      const live = reg.create("evil.ext", `k${round}`, "center", 0);
+      live.text = "live";
+      live.command = "evil.ext.run";
+      live.show();
+      stale.dispose();
+      stale.command = "evil.ext.other";
+    }
+    for (let extra = 0; extra < 20; extra++) {
+      const item = reg.create("evil.ext", `extra${extra}`, "center", 0);
+      item.text = "extra";
+      item.show();
+    }
+    const center = reg.getSnapshot().get("center")!;
+    expect(center.length).toBe(MAX_TITLE_BAR_ITEMS_PER_EXTENSION);
+    expect(center.every((item) => item.command?.command !== "evil.ext.other")).toBe(true);
+  });
   it("id collisions across extensions and regions", () => {
     const reg = new TitleBarItemRegistry();
     const a = reg.create("a", "b.x", "left", 0);
@@ -379,6 +439,20 @@ describe("L8 product config", () => {
       "test",
     );
     expect(parsed?.lockedInvalid ?? []).toContain("b.key");
+  });
+  it("locks past the entry limit still lock their keys; defaults past it go", () => {
+    const many = (count: number) =>
+      Object.fromEntries(Array.from({ length: count }, (_, index) => [`acme.k${index}`, true]));
+    const parsed = parseProductSettings({ locked: many(501), defaults: many(501) }, "test");
+    expect(Object.keys(parsed?.locked ?? {})).toHaveLength(500);
+    expect(parsed?.lockedInvalid).toEqual(["acme.k500"]);
+    expect(Object.keys(parsed?.defaults ?? {})).toHaveLength(500);
+    // The server's list of such keys reads back whole.
+    const served = parseProductSettings(
+      { lockedInvalid: Array.from({ length: 600 }, (_, index) => `acme.k${index}`) },
+      "test",
+    );
+    expect(served?.lockedInvalid).toHaveLength(600);
   });
   it("a navigation entry the product removed doesn't run", () => {
     productLayout.set({ hiddenViews: ["omnigent.openAutomations"] });

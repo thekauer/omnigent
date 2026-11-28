@@ -54,6 +54,11 @@ export const PRODUCT_VALUE_MAX_NODES = 2_000;
 export const PRODUCT_NUMBER_COST = 24;
 
 const MAP_LIMIT = 500;
+/**
+ * The most keys locked to their default (`lockedInvalid`): locks past the map's limit, the budget
+ * or readability. Far over any real product; the server keeps the same limit.
+ */
+export const PRODUCT_LOCKED_INVALID_LIMIT = 5_000;
 const LIST_LIMIT = 200;
 const SETTING_KEY = /^[A-Za-z0-9._-]{1,128}$/;
 const LAYOUT_ID = /^[A-Za-z0-9._*/-]{1,200}$/;
@@ -233,13 +238,18 @@ export function parseProductSettings(
   } = {};
   const invalid: string[] = [];
   const given = plainValue(block.lockedInvalid)?.value;
-  for (const key of Array.isArray(given) ? given.slice(0, MAP_LIMIT) : []) {
+  for (const key of Array.isArray(given) ? given.slice(0, PRODUCT_LOCKED_INVALID_LIMIT) : []) {
     if (typeof key === "string" && SETTING_KEY.test(key)) invalid.push(key);
   }
   // Invalid locks never spend the budget: a lock past it still locks its key (the server agrees).
   const spendInvalid = (lockedKeys: Readonly<Record<string, unknown>>) => {
     const kept = [...new Set(invalid)].filter((key) => !Object.hasOwn(lockedKeys, key));
-    if (kept.length > 0) out.lockedInvalid = kept;
+    if (kept.length > PRODUCT_LOCKED_INVALID_LIMIT) {
+      warn(
+        `locked has more than ${PRODUCT_LOCKED_INVALID_LIMIT} keys locked to their default; the rest aren't locked`,
+      );
+    }
+    if (kept.length > 0) out.lockedInvalid = kept.slice(0, PRODUCT_LOCKED_INVALID_LIMIT);
   };
   for (const kind of ["locked", "defaults"] as const) {
     const map = block[kind];
@@ -254,8 +264,16 @@ export function parseProductSettings(
     let count = 0;
     for (const [key, entryValue] of mapEntries) {
       if (count >= MAP_LIMIT) {
-        warn(`${kind} has more than ${MAP_LIMIT} entries`);
-        break;
+        // A lock past the limit still locks its key, to its default; a default goes.
+        if (count === MAP_LIMIT) {
+          warn(
+            `${kind} has more than ${MAP_LIMIT} entries${kind === "locked" ? "; the rest stay locked to their defaults" : ""}`,
+          );
+        }
+        count += 1;
+        if (kind !== "locked") break;
+        if (SETTING_KEY.test(key)) invalid.push(key);
+        continue;
       }
       count += 1;
       if (!SETTING_KEY.test(key)) {

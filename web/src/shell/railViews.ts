@@ -481,8 +481,13 @@ export function viewsOfContainer(
     byContainer = new Map();
     byLocations.set(locations, byContainer);
   }
-  // The product's removed containers are part of what is drawn.
-  const cacheKey = `${container}\n${(productLayout.get().hiddenContainers ?? []).join("\n")}`;
+  // What the product removes (views and containers) is part of what is drawn.
+  const policy = productLayout.get();
+  const cacheKey = [
+    container,
+    (policy.hiddenContainers ?? []).join("\n"),
+    (policy.hiddenViews ?? []).join("\n"),
+  ].join("\0");
   let filtered = byContainer.get(cacheKey);
   if (!filtered) {
     // The classic rail draws every secondary side bar container's views as its tabs.

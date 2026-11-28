@@ -324,9 +324,21 @@ function capPerExtension<Entry extends { readonly extensionId: string }>(
   });
 }
 
-/** Whether `extensionId` owns `command` (its id starts with the extension's). */
-function ownsCommand(extensionId: string, command: string): boolean {
-  return commandIdProblem(extensionId, command) === undefined;
+/**
+ * Whether `extensionId` owns `command`: its id starts with the extension's, and with no longer
+ * loaded extension id (`acme.tools` doesn't own `acme.tools.admin.run` while `acme.tools.admin`
+ * is loaded), as a setting key belongs to the longest loaded extension id.
+ */
+function ownsCommand(
+  extensionId: string,
+  command: string,
+  loaded: ReadonlySet<string> = new Set(),
+): boolean {
+  if (commandIdProblem(extensionId, command) !== undefined) return false;
+  for (const other of loaded) {
+    if (other.length > extensionId.length && command.startsWith(`${other}.`)) return false;
+  }
+  return true;
 }
 
 /**
@@ -338,9 +350,11 @@ function oneEntryPerCommand<Item extends { readonly command: string }>(
   entries: readonly { readonly extensionId: string; readonly item: Item }[],
   keyOf: (item: Item) => string,
   holds: (item: Item) => boolean,
+  loaded: ReadonlySet<string>,
 ): { readonly extensionId: string; readonly item: Item }[] {
   const rank = (entry: { readonly extensionId: string; readonly item: Item }) =>
-    (holds(entry.item) ? 0 : 2) + (ownsCommand(entry.extensionId, entry.item.command) ? 0 : 1);
+    (holds(entry.item) ? 0 : 2) +
+    (ownsCommand(entry.extensionId, entry.item.command, loaded) ? 0 : 1);
   const chosen = new Map<string, { readonly extensionId: string; readonly item: Item }>();
   for (const entry of entries) {
     const key = keyOf(entry.item);
@@ -355,7 +369,14 @@ function oneEntryPerCommand<Item extends { readonly command: string }>(
 export class ViewsService {
   private readonly options: ViewsServiceOptions;
   private readonly views = new Map<string, ViewEntry>();
-  private readonly commandInfo = new Map<string, CommandContribution>();
+  /** Every extension's `contributes.commands`, in load order; read through `commandInfoOf`. */
+  private readonly commandInfo: {
+    readonly extensionId: string;
+    readonly builtIn: boolean;
+    readonly command: CommandContribution;
+  }[] = [];
+  /** The loaded extensions' ids (with how many times each is loaded). */
+  private readonly loadedExtensions = new Map<string, number>();
   private readonly menus: { extensionId: string; item: MenuItemContribution }[] = [];
   private readonly containerMenus: { extensionId: string; item: MenuItemContribution }[] = [];
   private readonly welcome: { extensionId: string; entry: ViewWelcomeContribution }[] = [];
@@ -545,6 +566,16 @@ export class ViewsService {
   }
 
   /** Registers an extension's views, commands and menus; returns their removal. */
+  /** A command's title and icon: a built-in's, or its owner's (see `ownsCommand`). */
+  private commandInfoOf(command: string): CommandContribution | undefined {
+    const loaded = new Set(this.loadedExtensions.keys());
+    return this.commandInfo.find(
+      (entry) =>
+        entry.command.command === command &&
+        (entry.builtIn || ownsCommand(entry.extensionId, command, loaded)),
+    )?.command;
+  }
+
   addExtension(
     extensionId: string,
     contributions: ExtensionContributions,
@@ -552,6 +583,7 @@ export class ViewsService {
   ): () => void {
     const added: string[] = [];
     const focusCommands: Disposable[] = [];
+    this.loadedExtensions.set(extensionId, (this.loadedExtensions.get(extensionId) ?? 0) + 1);
     for (const command of contributions.commands) {
       // An extension titles only its own commands: another's (a host command, say) keeps
       // its own owner's title and icon, so a menu entry can't pass for something else.
@@ -561,7 +593,7 @@ export class ViewsService {
         );
         continue;
       }
-      if (!this.commandInfo.has(command.command)) this.commandInfo.set(command.command, command);
+      this.commandInfo.push({ extensionId, builtIn, command });
     }
     for (const submenu of contributions.submenus) {
       if (!this.submenus.has(submenu.id)) this.submenus.set(submenu.id, submenu);
@@ -682,11 +714,14 @@ export class ViewsService {
         this.views.get(viewId)?.handle.dispose();
         this.views.delete(viewId);
       }
-      for (const command of contributions.commands) {
-        if (this.commandInfo.get(command.command) === command) {
-          this.commandInfo.delete(command.command);
+      for (let index = this.commandInfo.length - 1; index >= 0; index -= 1) {
+        if (contributions.commands.includes(this.commandInfo[index]!.command)) {
+          this.commandInfo.splice(index, 1);
         }
       }
+      const loads = (this.loadedExtensions.get(extensionId) ?? 1) - 1;
+      if (loads > 0) this.loadedExtensions.set(extensionId, loads);
+      else this.loadedExtensions.delete(extensionId);
       for (const submenu of contributions.submenus) {
         if (this.submenus.get(submenu.id) === submenu) this.submenus.delete(submenu.id);
       }
@@ -791,7 +826,7 @@ export class ViewsService {
             (entry) => entry.submenu === undefined && (!entry.when || entry.when.evaluate(lookup)),
           )
           .map((entry) => {
-            const info = this.commandInfo.get(entry.command);
+            const info = this.commandInfoOf(entry.command);
             const title = info?.title ?? entry.command;
             return {
               id: entry.command,
@@ -814,7 +849,7 @@ export class ViewsService {
         });
         continue;
       }
-      const info = this.commandInfo.get(item.command);
+      const info = this.commandInfoOf(item.command);
       const title = info?.title ?? item.command;
       actions.push({
         id,
@@ -857,10 +892,11 @@ export class ViewsService {
     }
     const holds = (item: { readonly when?: WhenClause | undefined }) =>
       !item.when || item.when.evaluate(lookup);
+    const loaded = new Set(this.loadedExtensions.keys());
     (this.options.navigation ?? contributedNavigation).set(
-      oneEntryPerCommand(this.navigation, (item) => item.command, holds).map(
+      oneEntryPerCommand(this.navigation, (item) => item.command, holds, loaded).map(
         ({ extensionId, item }) => {
-          const info = this.commandInfo.get(item.command);
+          const info = this.commandInfoOf(item.command);
           return {
             id: item.command,
             title: info?.title ?? item.command,
@@ -875,12 +911,17 @@ export class ViewsService {
     );
     (this.options.titleBar ?? contributedTitleBarEntries).set(
       capPerExtension(
-        oneEntryPerCommand(this.titleBar, (item) => `${item.region}\n${item.command}`, holds),
+        oneEntryPerCommand(
+          this.titleBar,
+          (item) => `${item.region}\n${item.command}`,
+          holds,
+          loaded,
+        ),
         MAX_TITLE_BAR_ITEMS_PER_EXTENSION,
       )
         .sort((left, right) => compareTitleBarEntries(left.item, right.item))
         .map(({ extensionId, item }) => {
-          const info = this.commandInfo.get(item.command);
+          const info = this.commandInfoOf(item.command);
           return {
             region: item.region,
             command: item.command,
@@ -888,7 +929,7 @@ export class ViewsService {
             title: info?.title ?? item.command,
             icon: info?.icon,
             // Another extension's command keeps its owner's words: no tooltip of the entry's.
-            tooltip: ownsCommand(extensionId, item.command) ? item.tooltip : undefined,
+            tooltip: ownsCommand(extensionId, item.command, loaded) ? item.tooltip : undefined,
             when: item.when,
             extensionId,
             group: item.group,

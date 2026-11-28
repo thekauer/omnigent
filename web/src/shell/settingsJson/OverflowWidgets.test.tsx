@@ -36,7 +36,13 @@ const overflowNode = () => document.querySelector<HTMLElement>(`[${OVERFLOW_WIDG
 const overflowNodes = () => document.querySelectorAll(`[${OVERFLOW_WIDGETS_ATTRIBUTE}]`);
 
 // The dialog's portal and the editor inside it mount together (a loaded editor chunk).
-function DialogWithWidgets({ onNode = () => {} }: { onNode?: (node: HTMLDivElement | null) => void }) {
+const ignoreNode = () => {};
+
+function DialogWithWidgets({
+  onNode = ignoreNode,
+}: {
+  onNode?: (node: HTMLDivElement | null) => void;
+}) {
   return createPortal(
     <div data-testid="dialog">
       <OverflowWidgets onNode={onNode} />
