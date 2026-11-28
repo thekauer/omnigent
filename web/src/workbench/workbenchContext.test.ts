@@ -68,6 +68,7 @@ describe("views layout", () => {
         { id: "acme.view", visibility: "hidden" },
         readViewsLayout(store, NO_POLICY),
         NO_POLICY,
+        [],
       ),
     ).toBe(true);
     updateViewLayout("acme.view", { hidden: false }, store, NO_POLICY);

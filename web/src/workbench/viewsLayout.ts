@@ -3,7 +3,6 @@
 // `visibility`. Plain data; React reads it through `useViewsLayout`.
 
 import { useCallback, useSyncExternalStore } from "react";
-import { NO_DEFAULT_HIDDEN } from "./defaultHiddenViews";
 import { LAYOUT_SLOTS, type LayoutStateStore } from "./layoutState";
 import {
   isViewRemovedByProduct,
@@ -90,7 +89,7 @@ export function isViewHidden(
   },
   layout: ViewsLayout,
   policy: ProductLayoutPolicy,
-  defaults: readonly string[] = NO_DEFAULT_HIDDEN,
+  defaults: readonly string[],
 ): boolean {
   if (isViewRemovedByProduct(view, policy)) return true;
   const chosen = layout[view.id]?.hidden;

@@ -95,7 +95,7 @@ export function containerViews(
   layout: ViewsLayout,
   locations: ViewLocations,
   policy: ProductLayoutPolicy,
-  defaults: readonly string[] = NO_DEFAULT_HIDDEN,
+  defaults: readonly string[],
 ): readonly RailViewContribution[] {
   // A container the product removed draws nothing.
   if (isContainerHiddenByProduct(containerId, policy)) return [];
@@ -111,7 +111,7 @@ export function containerViews(
   );
   const drawn = candidates.filter((view) => !isViewHidden(view, layout, policy, defaults));
   if (drawn.length > 0) return drawn;
-  return candidates.filter((view) => !isViewHidden(view, layout, policy));
+  return candidates.filter((view) => !isViewHidden(view, layout, policy, NO_DEFAULT_HIDDEN));
 }
 
 /** The views of `containerId` drawn now, in order. */
@@ -162,7 +162,7 @@ function sideBarContainersOf(
   layout: ViewsLayout,
   locations: ViewLocations,
   policy: ProductLayoutPolicy,
-  defaults: readonly string[] = NO_DEFAULT_HIDDEN,
+  defaults: readonly string[],
 ): { container: ViewContainerDescriptor; views: readonly RailViewContribution[] }[] {
   // The side bar entries moving a view made follow the registered containers.
   const sideBar = [
@@ -360,6 +360,7 @@ export function ContainerViewsMenu({
     NO_VIEWS_LAYOUT,
     locations,
     policy,
+    NO_DEFAULT_HIDDEN,
   ).filter((view) => canMoveView(view, policy) && !isViewRemovedByProduct(view, policy));
   const drawn = new Set(
     containerViews(registered, containerId, owner, layout, locations, policy, defaults).map(

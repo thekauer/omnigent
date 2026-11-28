@@ -171,8 +171,8 @@ describe("id patterns", () => {
 describe("the product's layout", () => {
   it("hides views by id or pattern, and orders the activity bar before the user", () => {
     productLayout.set({ hiddenViews: ["acme.*"], containerOrder: ["omnigent.inbox", "acme.*"] });
-    expect(isViewHidden({ id: "acme.tools.list" }, {}, productLayout)).toBe(true);
-    expect(isViewHidden({ id: "omnigent.inbox.list" }, {}, productLayout)).toBe(false);
+    expect(isViewHidden({ id: "acme.tools.list" }, {}, productLayout, [])).toBe(true);
+    expect(isViewHidden({ id: "omnigent.inbox.list" }, {}, productLayout, [])).toBe(false);
     const items = ["omnigent.conversations", "acme.tools", "omnigent.inbox"].map((id) => ({ id }));
     expect(orderActivityBarItems(items, { order: [], hidden: [] }).map((item) => item.id)).toEqual([
       "omnigent.inbox",

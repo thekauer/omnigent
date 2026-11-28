@@ -93,7 +93,9 @@ describe("views the defaults hide", () => {
     const store = new LayoutStateStore();
     const policy = NO_PRODUCT_POLICY;
     expect(isViewHidden(files, readViewsLayout(store, policy), policy, [FILES_VIEW])).toBe(true);
-    expect(isViewHidden(files, readViewsLayout(store, policy), policy)).toBe(false);
+    expect(isViewHidden(files, readViewsLayout(store, policy), policy, NO_DEFAULT_HIDDEN)).toBe(
+      false,
+    );
 
     expect(updateViewLayout(FILES_VIEW, { hidden: false }, store, policy)).toBe(true);
     expect(isViewHidden(files, readViewsLayout(reload(), policy), policy, [FILES_VIEW])).toBe(
@@ -157,6 +159,7 @@ describe("views the defaults hide", () => {
       {},
       {},
       NO_PRODUCT_POLICY,
+      NO_DEFAULT_HIDDEN,
     );
     expect(listed.map((view) => view.id)).toEqual(["acme.tools.a", "acme.tools.b"]);
   });
@@ -167,8 +170,10 @@ describe("the product's patterns", () => {
     const policy = new ProductLayoutPolicy();
     policy.set({ hiddenViews: ["omnigent.files.*", "omnigent.open*"] });
     const shown = { [FILES_VIEW]: { hidden: false } };
-    expect(isViewHidden({ id: FILES_VIEW }, shown, policy)).toBe(true);
-    expect(isViewHidden({ id: "omnigent.changes.view" }, {}, policy)).toBe(false);
+    expect(isViewHidden({ id: FILES_VIEW }, shown, policy, NO_DEFAULT_HIDDEN)).toBe(true);
+    expect(isViewHidden({ id: "omnigent.changes.view" }, {}, policy, NO_DEFAULT_HIDDEN)).toBe(
+      false,
+    );
     const choices = { [USAGE]: false };
     expect(isNavigationEntryHidden(USAGE, choices, [], policy)).toBe(true);
     expect(isNavigationEntryHidden(NEW_SESSION, choices, [], policy)).toBe(false);
